@@ -57,10 +57,31 @@ function fn(name) {
     throw new Error(`${name} does not close`);
 }
 
-/** Run one of the page's pure builders in isolation. */
+/**
+ * Run one of the page's pure builders in isolation.
+ *
+ * The named dependencies are a STARTING POINT; anything else the builder
+ * reaches for is resolved by following the ReferenceError, through the same
+ * declaration reader the placement and flag tests use. A hand-written list was
+ * the original shape here and it broke the moment the console gained one more
+ * helper — reporting a working console as broken, which is the failure mode a
+ * bounded scan always has.
+ */
+const { declSource } = require('./console-render');
+
 function build(names, call, preamble) {
-    const src = names.map(fn).join('\n');
-    return new Function(`${preamble || ''}\n${src}\nreturn (${call});`)();
+    const need = new Set(names);
+    for (let i = 0; i < 60; i++) {
+        const src = [...need].map(n => declSource(n) || fn(n)).filter(Boolean).join('\n');
+        try {
+            return new Function(`${preamble || ''}\n${src}\nreturn (${call});`)();
+        } catch (err) {
+            const m = /(\w+) is not defined/.exec(err.message);
+            if (m && declSource(m[1]) && !need.has(m[1])) { need.add(m[1]); continue; }
+            throw err;
+        }
+    }
+    throw new Error('more than 60 dependencies; the resolver gave up');
 }
 
 // ══ WE-2.1 · overlays ═══════════════════════════════════════════════════════

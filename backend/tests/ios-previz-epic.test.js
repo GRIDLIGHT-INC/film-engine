@@ -109,13 +109,26 @@ const CLAIMS = [
         why: 'the gap Phase 4 closes is a control, not a capability',
         holds() {
             const UI = src('src/index.html');
-            const hit = ['camera/propose', 'camera/explore', 'cinematography'].filter((k) => UI.includes(k));
+            /*
+             * A CALL, not the WORD. `UI.includes('cinematography')` matched the
+             * `cinematography_ai` FLAG KEY the moment ICP-017 wired it, and
+             * reported the page as calling a route it does not call — the same
+             * looseness that once matched `gridlight-client` in an import for a
+             * column named `client`. A route is reached by being FETCHED.
+             */
+            const hit = ['camera/propose', 'camera/explore', 'shots/cinematography']
+                .filter((k) => new RegExp(`api\\([^)]*${k.replace('/', '\\/')}`).test(UI));
             return hit.length === 0 || `the page already calls: ${hit.join(', ')}`;
         },
     },
     {
-        id: 'four-flags-live-and-unread',
-        why: 'a Phase 4 task exists solely to make them reach the page',
+        /* Was `four-flags-live-and-unread`. Pinning a task as UNDONE makes the
+         * epic's own task turn the suite red for SUCCEEDING, which is backwards
+         * — the same reshape ios-mic-key-absent needed. It now pins what
+         * ICP-017 delivered: every sub-flag gates a region, so the gap fails
+         * here if it ever reopens. */
+        id: 'sub-flags-gate-a-region',
+        why: 'ICP-017 delivered it; a flag that gates nothing is declared and ignored again',
         holds() {
             const UI = src('src/index.html');
             const S = src('backend/routes/app-settings.js');
@@ -123,8 +136,10 @@ const CLAIMS = [
                 'camera_explore', 'world_splats'];
             const undeclared = flags.filter((f) => !S.includes(f));
             if (undeclared.length) return `left app-settings: ${undeclared.join(', ')}`;
-            const read = flags.filter((f) => UI.includes(f));
-            return read.length === 0 || `page already reads: ${read.join(', ')}`;
+            const map = /const WORLD_FLAG_REGIONS = Object\.freeze\(\{([\s\S]*?)\}\)/.exec(UI);
+            if (!map) return 'the page declares no flag-to-region map, so no flag gates anything';
+            const ungated = flags.filter((f) => !new RegExp(`${f}\\s*:`).test(map[1]));
+            return ungated.length === 0 || `these flags gate nothing: ${ungated.join(', ')}`;
         },
     },
     {
@@ -324,8 +339,18 @@ const CLAIMS = [
         id: 'console-suite-is-behaviour-only',
         why: 'the placement-test constraint exists because of this',
         holds() {
-            const t = src('backend/tests/world-console.test.js');
-            return !/data-region|column|placement/i.test(t)
+            /*
+             * COMMENTS STRIPPED FIRST. The bare word match fired on the word
+             * "placement" inside a comment explaining that this file delegates
+             * to the placement test's reader — reporting the constraint as
+             * broken because it was being DESCRIBED. Third time in this
+             * dispatch a word-match stood in for a real assertion; every
+             * comment in these files is a whole-line one, so a line-based
+             * strip never touches code.
+             */
+            const t = src('backend/tests/world-console.test.js').split('\n')
+                .filter((l) => !/^\s*(\/\*|\*|\/\/)/.test(l)).join('\n');
+            return !/data-region|we-center|we-right|we-rail/i.test(t)
                 || 'world-console.test.js now asserts placement — restate the constraint';
         },
     },

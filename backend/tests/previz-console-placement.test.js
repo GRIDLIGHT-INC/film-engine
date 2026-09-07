@@ -101,41 +101,16 @@ function designColumns() {
 
 /* ── the console, rendered ──────────────────────────────────────────────── */
 
-function fnSource(name) {
-    const at = UI.indexOf(`function ${name}(`);
-    if (at < 0) return null;
-    let depth = 0;
-    for (let i = UI.indexOf('{', at); i < UI.length; i++) {
-        if (UI[i] === '{') depth++;
-        else if (UI[i] === '}' && --depth === 0) return UI.slice(at, i + 1);
-    }
-    return null;
-}
+const { declSource: fnSource, renderConsole } = require('./console-render');
 
-/**
- * Execute the console builder, resolving its dependency closure from the page.
- *
- * Resolved by following the ReferenceErrors rather than by listing the helpers:
- * a hand-written dependency list goes stale the first time the console reaches
- * for one more, and the failure reads as the console being broken.
+/*
+ * PLACEMENT IS CHECKED WITH THE FEATURE FULLY ENABLED. Five regions are behind
+ * their own flag (ICP-017) and every flag defaults OFF, so rendering with the
+ * defaults would hide regions and report them as never built — a layout test
+ * answering a question about configuration.
  */
-function renderConsole() {
-    const need = new Set(['worldConsoleHtml']);
-    const pre = 'const WORLD = { overlays:null, lens:35, mode:"keep", pinned:null, world:null, '
-        + 'version:null, move:null, moves:[] }; const esc = s => String(s == null ? "" : s);';
-    for (let i = 0; i < 40; i++) {
-        const src = [...need].map(fnSource).filter(Boolean).join('\n');
-        try {
-            return new Function(`${pre}\n${src}\nreturn worldConsoleHtml(`
-                + `{ id:"p1", aspect_ratio:"16:9" }, { name:"Maple Street", locked:0 }, { version:3 });`)();
-        } catch (err) {
-            const m = /(\w+) is not defined/.exec(err.message);
-            if (m && fnSource(m[1]) && !need.has(m[1])) { need.add(m[1]); continue; }
-            throw new Error(`the console builder could not be run: ${err.message}`);
-        }
-    }
-    throw new Error('the console builder has more than 40 dependencies; the resolver gave up');
-}
+const ALL_FLAGS = { world_engine: true, marble_generation: true, cinematography_ai: true,
+                    reference_match: true, camera_explore: true, world_splats: true };
 
 /**
  * Which structural column encloses a position in the rendered HTML.
@@ -238,7 +213,7 @@ test('the column scan can actually TELL the columns apart', () => {
      * stinguishable from a working one. This proves it discriminates before
      * anything is asserted with it.
      */
-    const html = renderConsole();
+    const html = renderConsole(ALL_FLAGS);
     const centre = html.indexOf('we-center');
     const right = html.indexOf('we-right');
     assert.ok(centre > -1 && right > -1, 'the console renders neither a centre nor a right column');
@@ -248,7 +223,7 @@ test('the column scan can actually TELL the columns apart', () => {
 });
 
 test('EVERY built region renders, and in the column the design puts it in', () => {
-    const html = renderConsole();
+    const html = renderConsole(ALL_FLAGS);
     const cols = designColumns();
     const wrong = [];
     for (const r of designRegions()) {
@@ -271,7 +246,7 @@ test('every unbuilt region is named with the task that builds it, and is really 
      * built and left out of the placement check, which is precisely how a
      * region comes to render in the wrong column with the suite green.
      */
-    const html = renderConsole();
+    const html = renderConsole(ALL_FLAGS);
     const regions = designRegions();
     const stale = [];
     for (const [s, why] of Object.entries(NOT_BUILT)) {
@@ -290,7 +265,7 @@ test('the gap is measured, not asserted', () => {
      * The number this task exists to establish, computed rather than typed, so
      * the next dispatch reads a current figure rather than yesterday's.
      */
-    const html = renderConsole();
+    const html = renderConsole(ALL_FLAGS);
     const regions = designRegions();
     const built = regions.filter(r => locate(r, html));
     assert.strictEqual(built.length + Object.keys(NOT_BUILT).length, regions.length,

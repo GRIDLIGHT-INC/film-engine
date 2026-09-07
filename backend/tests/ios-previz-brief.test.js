@@ -109,14 +109,26 @@ const CLAIMS = [
         why: 'the brief says the gap is a control, not a capability',
         holds() {
             const UI = src('src/index.html');
-            const reached = ['camera/propose', 'camera/explore', 'cinematography']
-                .filter((k) => UI.includes(k));
+            /*
+             * A CALL, not the WORD. `UI.includes('cinematography')` matched the
+             * `cinematography_ai` FLAG KEY the moment ICP-017 wired it, and
+             * reported the page as already calling a route it does not call —
+             * the same looseness that once matched `gridlight-client` in an
+             * import for a column named `client`. A route is reached by being
+             * fetched.
+             */
+            const reached = ['camera/propose', 'camera/explore', 'shots/cinematography']
+                .filter((k) => new RegExp(`api\\([^)]*${k.replace('/', '\\/')}`).test(UI));
             return reached.length === 0 || `page already calls: ${reached.join(', ')}`;
         },
     },
     {
-        id: 'world-subflags-unread',
-        why: 'the brief says four flags are ON in settings and none is read by the page',
+        /* Was `world-subflags-unread`, which asserted that NO flag was read —
+         * true when the brief was written and false the moment ICP-017 landed,
+         * so a fidelity test failed for the work SUCCEEDING. It pins the
+         * outcome instead: every sub-flag gates a region of the design. */
+        id: 'world-subflags-read-and-gating',
+        why: 'ICP-017 closed the gap the brief recorded; a flag gating nothing has reopened it',
         holds() {
             const UI = src('src/index.html');
             const S = src('backend/routes/app-settings.js');
@@ -124,8 +136,10 @@ const CLAIMS = [
                 'camera_explore', 'world_splats'];
             const declared = flags.filter((f) => S.includes(f));
             assert.deepStrictEqual(declared, flags, 'a flag left app-settings');
-            const read = flags.filter((f) => UI.includes(f));
-            return read.length === 0 || `page reads: ${read.join(', ')}`;
+            const map = /const WORLD_FLAG_REGIONS = Object\.freeze\(\{([\s\S]*?)\}\)/.exec(UI);
+            if (!map) return 'the page declares no flag-to-region map, so no flag gates anything';
+            const ungated = flags.filter((f) => !new RegExp(`${f}\\s*:`).test(map[1]));
+            return ungated.length === 0 || `these flags gate nothing: ${ungated.join(', ')}`;
         },
     },
     {

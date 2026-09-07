@@ -272,6 +272,7 @@ film-engine/
 │       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
 │       ├── world-console.test.js   # The console renders what the design draws, and nothing when the flag is off
 │       ├── previz-console-placement.test.js # ...and in which column — derived from the handoff's own headings
+│       ├── world-flags.test.js   # A flag turned off hides its region, instead of being declared and ignored
 │       ├── cinematography.test.js  # The model directs; the engine hands over facts and refuses the impossible
 │       ├── world-timeline.test.js  # A surface over the move model that already existed, driving no second one
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
@@ -4301,6 +4302,7 @@ node --test backend/tests/repair-audio.test.js
 node --test backend/tests/range-requests.test.js
 node --test backend/tests/background-replace.test.js
 node --test backend/tests/previz-console-placement.test.js
+node --test backend/tests/world-flags.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js

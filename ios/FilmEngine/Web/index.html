@@ -17310,6 +17310,43 @@ THREE.GLTFLoader = GLTFLoader;
 
     function worldEngineOn() { return worldFlagOn('world_engine'); }
 
+    /* ── WHICH FLAG GATES WHICH REGION ──────────────────────────────────────
+     *
+     * Six boolean settings gate the World Engine. `world_engine` is the master
+     * — it decides whether the console exists at all. The other five each gate
+     * ONE region of the design, and until now every one of them was declared
+     * in app-settings.js, returned by GET /settings, fetched into WORLD_FLAGS
+     * and read by nothing: a director could switch off the one flag documented
+     * as unlocking spending and watch the button that spends stay put.
+     *
+     * The values are the DESIGN'S OWN REGION SLUGS, so a flag cannot gate
+     * something the handoff does not draw — the placement test derives the
+     * same slugs from the same headings and the two are held equal.
+     *
+     * A MAP RATHER THAN A CHECK PER REGION, because three of these five gate
+     * regions that are not built yet. When ICP-018 adds Direct the Shot it
+     * wraps it in worldRegionOn('direct-the-shot') and the flag is live on the
+     * day it lands, instead of being remembered later or not at all.
+     */
+    const WORLD_FLAG_REGIONS = Object.freeze({
+        marble_generation: 'create-spatial-world',
+        cinematography_ai: 'direct-the-shot',
+        reference_match:   'match-reference-composition',
+        camera_explore:    'explore-shot',
+        world_splats:      'spatial-world',
+    });
+
+    /*
+     * An UNGATED region renders. That default is deliberate: most of the
+     * console is not behind a flag, and defaulting to hidden would make every
+     * region built from here on invisible until somebody remembered to add it
+     * to the map — a failure that looks exactly like the region not existing.
+     */
+    function worldRegionOn(slug) {
+        const flag = Object.keys(WORLD_FLAG_REGIONS).find(f => WORLD_FLAG_REGIONS[f] === slug);
+        return flag ? worldFlagOn(flag) : true;
+    }
+
     /*
      * The eleven composition overlays the design draws. Thirds and Horizon are
      * on by default and the other nine are off: an overlay drawn over a frame
@@ -17464,7 +17501,8 @@ THREE.GLTFLoader = GLTFLoader;
               ${world && world.locked ? '<span class="we-chip">WORLD LOCKED</span>' : ''}
             </div>
             <div>
-              <button class="we-btn" onclick="worldOpenCreate()">NEW WORLD</button>
+              ${worldRegionOn('create-spatial-world')
+                ? '<button class="we-btn" onclick="worldOpenCreate()">NEW WORLD</button>' : ''}
             </div>
           </div>
           <div class="we-main">
@@ -17474,7 +17512,8 @@ THREE.GLTFLoader = GLTFLoader;
                   <span class="we-label">CAMERA VIEW</span>
                   <span class="we-live" id="weCamSpec"></span>
                   <button class="we-btn" onclick="worldToggleOverlayMenu()">OVERLAYS · <span id="weOvCount">0</span></button>
-                  <button class="we-btn we-amber" onclick="worldOpenMatchReference()">MATCH REFERENCE</button>
+                  ${worldRegionOn('match-reference-composition')
+                    ? '<button class="we-btn we-amber" onclick="worldOpenMatchReference()">MATCH REFERENCE</button>' : ''}
                 </div>
                 <div class="we-ov-menu" id="weOverlayMenu" style="display:none;">${worldOverlayMenuHtml()}</div>
                 <div class="we-frame" id="weFrame"
