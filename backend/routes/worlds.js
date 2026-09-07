@@ -332,6 +332,15 @@ async function handleWorlds(req, res, urlParts, query) {
                     prompt: body.prompt,
                     images: body.images,
                     video: body.video,
+                    /*
+                     * Whether a single image is a 360 panorama. Marble's own
+                     * docs call a panorama the most accurate spatial
+                     * representation, and until this was carried through, every
+                     * world was built on 'auto' because nothing could say
+                     * otherwise. Undefined still means auto; the adapter
+                     * refuses anything outside the recorded domain.
+                     */
+                    is_pano: body.is_pano,
                 }, { includeSplats: body.include_splats === true });
                 return json(res, out.pending ? 202 : 200, out);
             } catch (err) { return fail(res, err); }

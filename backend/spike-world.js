@@ -41,6 +41,14 @@ const MODEL = process.env.WORLDLABS_MODEL || 'marble-1.0-draft';
  */
 const { AZIMUTH, MAX_INPUT_IMAGES } = require('./lib/providers/worldlabs');
 
+/*
+ * A spike that cannot ask for a panorama cannot spike the input Marble calls
+ * the most accurate. `--pano` / `--no-pano`; saying nothing still means auto.
+ */
+const panoArg = process.argv.includes('--pano') ? true
+    : process.argv.includes('--no-pano') ? false
+    : 'auto';
+
 function arg(name, fallback) {
     const i = process.argv.indexOf('--' + name);
     return i === -1 ? fallback : (process.argv[i + 1] || true);
@@ -107,10 +115,10 @@ async function call(pathname, init) {
         prompt = plates.length > 1
             ? { type: 'multi-image',
                 multi_image_prompt: plates.map(p => ({ azimuth: AZIMUTH[p.view] ?? 0, content: imageRef(p.file) })) }
-            : { type: 'image', image_prompt: imageRef(plates[0].file), is_pano: 'auto' };
+            : { type: 'image', image_prompt: imageRef(plates[0].file), is_pano: panoArg };
     } else if (image) {
         sources = [path.basename(image)];
-        prompt = { type: 'image', image_prompt: imageRef(image), is_pano: 'auto' };
+        prompt = { type: 'image', image_prompt: imageRef(image), is_pano: panoArg };
     } else {
         console.error('Give --location <id> or --image <path>.'); process.exit(1);
     }

@@ -122,7 +122,16 @@ function enumsFromRefusal(json) {
         const loc = (Array.isArray(d.loc) ? d.loc : []).filter((x) => typeof x === 'string');
         const key = [...loc].reverse().find((x) => !/[[\]']/.test(x));
         if (!key || key === 'body') continue;
-        const vals = [...String(exp).matchAll(/'([^']+)'/g)].map((m) => m[1]);
+        /*
+         * Quoted literals AND bare booleans. Marble answers is_pano with
+         * "Input should be 'auto', True or False" — capturing only the quoted
+         * half recorded the domain as ['auto'], and a picker built from that
+         * offers one value while the provider accepts three. The record being
+         * incomplete is worse than absent: it looks authoritative.
+         */
+        const text = String(exp);
+        const vals = [...text.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+        for (const m of text.matchAll(/\b(True|False)\b/g)) vals.push(m[1].toLowerCase());
         if (vals.length) found[key] = [...new Set([...(found[key] || []), ...vals])].sort();
     }
     return found;

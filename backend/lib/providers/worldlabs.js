@@ -48,6 +48,35 @@ const DEFAULT_MODEL = 'marble-1.0-draft';
  */
 const AZIMUTH = Object.freeze({ north: 0, east: 90, south: 180, west: 270, '': 0 });
 
+/**
+ * What `is_pano` may be, from the provider's own refusal rather than the docs.
+ *
+ * Marble answers "Input should be 'auto', True or False", recorded by ICP-004
+ * in backend/tests/fixtures/marble-contract.json and re-derivable for nothing
+ * with `node backend/tests/refresh-marble-contract.js`. It is declared here
+ * because it is a fact about Marble, in the same place `MAX_INPUT_IMAGES` and
+ * the model list live — a picker built from a guess offers values the provider
+ * refuses.
+ */
+const PANO_VALUES = Object.freeze(['auto', true, false]);
+
+/**
+ * A caller's is_pano, or the default.
+ *
+ * `p.is_pano || 'auto'` was the old line and it could never say FALSE: false is
+ * falsy, so an explicit "read this as a flat frame, not a panorama" collapsed
+ * back to auto and looked like the feature working. Undefined is the only thing
+ * that means "no opinion".
+ */
+function panoFor(value) {
+    if (value === undefined || value === null) return 'auto';
+    if (!PANO_VALUES.includes(value)) {
+        throw new Error(`is_pano must be one of ${PANO_VALUES.map(v => JSON.stringify(v)).join(', ')}`
+            + ` — Marble refuses anything else. Got ${JSON.stringify(value)}.`);
+    }
+    return value;
+}
+
 /** Documented input ceiling: Direction Control accepts at most four images. */
 const MAX_INPUT_IMAGES = 4;
 
@@ -115,7 +144,7 @@ function buildWorldPrompt(payload) {
                 // value that cannot coerce, it answers "Input should be 'auto',
                 // True or False". An int probe validated by coercion and made it
                 // look absent — the reason the contract records the domain.
-                type: 'image', image_prompt: images[0].ref, is_pano: p.is_pano || 'auto',
+                type: 'image', image_prompt: images[0].ref, is_pano: panoFor(p.is_pano),
                 ...(p.prompt ? { text_prompt: String(p.prompt) } : {}),
             },
             dropped: 0,
@@ -271,4 +300,4 @@ const adapter = {
     meter: meterWorldLabs,
 };
 
-module.exports = { adapter, buildRequest, meterWorldLabs, buildWorldPrompt, MODELS, DEFAULT_MODEL, AZIMUTH, MAX_INPUT_IMAGES };
+module.exports = { adapter, buildRequest, meterWorldLabs, buildWorldPrompt, MODELS, DEFAULT_MODEL, AZIMUTH, MAX_INPUT_IMAGES, PANO_VALUES, panoFor };

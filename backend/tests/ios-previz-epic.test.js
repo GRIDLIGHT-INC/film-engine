@@ -212,10 +212,25 @@ const CLAIMS = [
             || 'the world route no longer accepts video',
     },
     {
-        id: 'is-pano-not-settable',
-        why: 'ICP-005 makes it settable; it must still be hardcoded',
-        holds: () => !/is_pano/.test(src('backend/routes/worlds.js'))
-            || 'the route already accepts is_pano',
+        /*
+         * Was `is-pano-not-settable`, the fifth claim in this epic to pin the
+         * ABSENCE of work. It now pins the outcome, and pins it against the
+         * RECORDED contract rather than a list typed here — ICP-004 established
+         * that Marble accepts 'auto', True or False, and a domain invented in a
+         * test is one that drifts from the provider silently.
+         */
+        id: 'is-pano-settable',
+        why: 'ICP-006 made the panorama flag reachable; a caller must still be able to set it',
+        holds() {
+            const wl = require(path.join(REPO, 'backend/lib/providers/worldlabs'));
+            if (!Array.isArray(wl.PANO_VALUES)) return 'the adapter no longer declares the is_pano domain';
+            const one = wl.buildWorldPrompt({ images: [{ uri: 'https://x/a.jpg' }], is_pano: false });
+            if (one.prompt.is_pano !== false) {
+                return 'a caller can no longer ask for is_pano:false — a falsy default is eating it';
+            }
+            return /is_pano:\s*body\.is_pano/.test(src('backend/routes/worlds.js'))
+                || 'the generate route no longer forwards is_pano';
+        },
     },
     {
         /*

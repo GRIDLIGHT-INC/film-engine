@@ -397,6 +397,13 @@ const PRODUCTION_TOOLS = [
             world_version_id: { type: 'string' }, prompt: { type: 'string' },
             images: { type: 'array', description: 'Plates: [{ data (base64) or uri, extension, view }]' },
             video: { type: 'object', description: 'A walkthrough: { data or uri, extension }' },
+            is_pano: {
+                description:
+                    'Whether a SINGLE image is a 360 panorama. One of "auto", true or false — '
+                    + 'the provider refuses anything else. World Labs call a panorama the most '
+                    + 'accurate spatial representation, so say true when the image really is one; '
+                    + 'say false to stop a wide frame being read as one. Omit for auto.',
+            },
             include_splats: { type: 'boolean', description: 'Also download the Gaussian splats (25 MB at full res). Off by default.' },
         }, required: ['world_version_id'],
     },

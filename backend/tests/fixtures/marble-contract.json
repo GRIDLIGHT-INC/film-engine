@@ -59,7 +59,9 @@
    ],
    "enums": {
     "is_pano": [
-     "auto"
+     "auto",
+     "false",
+     "true"
     ],
     "model": [
      "Marble 0.1-mini",
