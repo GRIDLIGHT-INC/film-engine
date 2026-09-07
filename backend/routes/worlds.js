@@ -174,6 +174,54 @@ function complexityInputs(shotId, ctx) {
  * Newest first per kind, because a plate is re-rendered against the same shot
  * and a package must carry the one on screen rather than the first ever made.
  */
+/**
+ * The images and video a generation runs on.
+ *
+ * By default, exactly what the caller sent — every world generated before this
+ * passed its own bytes, and making stored captures mandatory would break them.
+ * With `use_captures: true` the world's LOCATION supplies them instead: the
+ * panorama or orbit clip a director actually shot of the place, already
+ * uploaded, rather than re-sending bytes the engine is holding.
+ *
+ * Nothing is silently dropped. Whatever is not used comes back as
+ * `captures_excluded` with a reason, because a scan that vanishes looks exactly
+ * like a capture that failed to upload.
+ */
+function captureInputs(db, versionId, body) {
+    if (!body || body.use_captures !== true) {
+        return { images: body && body.images, video: body && body.video };
+    }
+    const worlds = require('../lib/worlds');
+    const v = worlds.getVersion(db, versionId);
+    const world = v && worlds.getWorld(db, v.world_id);
+    const locationId = world && world.location_id;
+    if (!locationId) {
+        return { images: body.images, video: body.video, capture_note: 'This world is not linked to a location, so it has no stored captures.' };
+    }
+    const rows = db.prepare(
+        `SELECT id, file_path, file_name, size_bytes, metadata
+           FROM film_assets WHERE location_id = ? ORDER BY created_at DESC`).all(locationId);
+    const captures = rows.map(r => {
+        let m = {};
+        try { m = JSON.parse(r.metadata || '{}'); } catch (_) { m = {}; }
+        return m.kind === 'world_capture'
+            ? { id: r.id, file_path: r.file_path, file_name: r.file_name, size_bytes: r.size_bytes,
+                capture_kind: m.capture_kind, is_pano: m.is_pano, view: m.view }
+            : null;
+    }).filter(Boolean);
+
+    const plan = require('../lib/capture-to-world').planFromCaptures(captures);
+    return {
+        images: plan.images.length ? plan.images : undefined,
+        video: plan.video || undefined,
+        is_pano: plan.is_pano,
+        capture_note: plan.empty
+            ? 'This location has no stored captures yet. Upload one with world_capture_upload.'
+            : plan.why || null,
+        captures_excluded: plan.excluded,
+    };
+}
+
 function exportAssets(db_, shotId, version) {
     const out = {};
     const shotRows = db_.prepare(
@@ -330,8 +378,7 @@ async function handleWorlds(req, res, urlParts, query) {
             try {
                 const out = await worlds.generateVersion(db, versionId, {
                     prompt: body.prompt,
-                    images: body.images,
-                    video: body.video,
+                    ...captureInputs(db, versionId, body),
                     /*
                      * Whether a single image is a 360 panorama. Marble's own
                      * docs call a panorama the most accurate spatial

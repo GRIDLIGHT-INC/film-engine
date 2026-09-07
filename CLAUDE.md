@@ -119,6 +119,7 @@ film-engine/
 │   │   ├── orientation-plans.js   # One current plan scan; prior scans move to recoverable storage
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── capture-policy.js      # What a capture may be, from the ceilings that actually bind it
+│   │   ├── capture-to-world.js    # A capture nobody can generate from is a file, not an input
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
@@ -285,6 +286,7 @@ film-engine/
 │       ├── capture-policy.test.js  # Three ceilings, and the one that actually decides
 │       ├── location-plate-provider.test.js # Reaching the floor is a provider choice, not a setting
 │       ├── view-anchoring.test.js   # An edit cannot move the camera, and the director should learn that first
+│       ├── capture-to-world.test.js # Three kinds of capture, and they do not map the same way
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4272,6 +4274,7 @@ node --test backend/tests/is-pano.test.js
 node --test backend/tests/capture-policy.test.js
 node --test backend/tests/location-plate-provider.test.js
 node --test backend/tests/view-anchoring.test.js
+node --test backend/tests/capture-to-world.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js

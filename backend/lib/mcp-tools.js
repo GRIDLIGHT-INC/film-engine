@@ -397,6 +397,15 @@ const PRODUCTION_TOOLS = [
             world_version_id: { type: 'string' }, prompt: { type: 'string' },
             images: { type: 'array', description: 'Plates: [{ data (base64) or uri, extension, view }]' },
             video: { type: 'object', description: 'A walkthrough: { data or uri, extension }' },
+            use_captures: {
+                type: 'boolean',
+                description:
+                    'Build from the captures already stored against this world\'s LOCATION — the '
+                    + 'panorama or orbit clip a director actually shot of the place — instead of '
+                    + 'images you send here. A LiDAR scan is deliberately NOT used: a GLB is already '
+                    + 'geometry and belongs in the previs stage, not in a reconstruction. Anything '
+                    + 'not used comes back in captures_excluded with a reason.',
+            },
             is_pano: {
                 description:
                     'Whether a SINGLE image is a 360 panorama. One of "auto", true or false — '
