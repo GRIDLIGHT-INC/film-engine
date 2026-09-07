@@ -176,7 +176,7 @@ const RATE_BOOK = {
             'claude-haiku-4-5': { components: { input: 1.00 * M,  output: 5.00 * M } },
         },
         source: 'https://docs.claude.com/en/docs/about-claude/pricing',
-        checked: '2026-08-22',
+        checked: '2026-09-07',
         note: 'Not charged to the project: the LLM runs on a Claude subscription through the MCP host. The per-million-token list rates are kept for installs that pay per token — clear the subscription flag with a rate override to apply them. Cache reads bill at ~0.1x and cache writes at ~1.25x.',
     },
 
@@ -360,10 +360,18 @@ const RATE_BOOK = {
             'gen3a_turbo':  { native_per_unit: 5 },
             'act_two':      { native_per_unit: 5 },
             'veo3':         { native_per_unit: 12 },
+            /*
+             * The first VIDEO-TO-VIDEO row, and the only one with a minimum.
+             * It bills by the length of the SOURCE clip rather than the clip
+             * produced — there is no duration field on that endpoint — so a
+             * careless 30-second input is $8.40, not the $1.40 a five-second
+             * request would suggest.
+             */
+            'aleph2':       { native_per_unit: 28, minimum_native: 56 },
         },
         source: 'https://docs.dev.runwayml.com/guides/pricing/',
         checked: '2026-08-22',
-        note: 'gen4.5 is 12 credits/second — a 5s clip is $0.60. gen3a_turbo and veo3 are not in the published table; they inherit their tier and are flagged as inferred.',
+        note: 'aleph2 is 28 credits/second of SOURCE with a 56-credit minimum, verified first-party in backend/tests/fixtures/aleph-contract.json. gen4.5 is 12 credits/second — a 5s clip is $0.60. gen3a_turbo and veo3 are not in the published table; they inherit their tier and are flagged as inferred.',
         inferred_models: ['gen3a_turbo', 'veo3'],
     },
     'runway:image': {

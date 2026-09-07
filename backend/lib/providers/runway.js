@@ -24,6 +24,9 @@
 
 const { getCredential } = require('./credentials');
 
+/** Runway's own developer-portal credit price. */
+const USD_PER_CREDIT = 0.01;
+
 const DEFAULT_BASE_URL = 'https://api.dev.runwayml.com/v1';
 // Runway pins behaviour to a dated version header; sending it is not optional.
 const RUNWAY_VERSION = '2024-11-06';
@@ -469,6 +472,21 @@ function buildVideoToVideoRequest(p, model, policy) {
     const seed = normalizeSeed(p.seed);
     if (seed !== undefined) body.seed = seed;
 
+    /*
+     * The SOURCE length rides with the body but never reaches the wire.
+     *
+     * Runway bills this endpoint by the length of the clip handed in and there
+     * is no duration field to carry it, so the estimator has to see it — but
+     * an unrecognised field spread into the request would travel to the
+     * provider. Non-enumerable is the same trick `__project_id` uses on a
+     * provider config: readable here, invisible to JSON.stringify.
+     */
+    if (Number.isFinite(Number(p.sourceSeconds)) && Number(p.sourceSeconds) > 0) {
+        Object.defineProperty(body, '__sourceSeconds', {
+            value: Number(p.sourceSeconds), enumerable: false, writable: false,
+        });
+    }
+
     return {
         url: `${baseUrl()}/video_to_video`, headers: jsonHeaders(), body, mode: 'video_to_video',
         // Never silently: over-sending is a refusal that costs a generation.
@@ -578,8 +596,81 @@ function sanitizedPromptImage(value) {
 
 function estimateVideoCredits(body) {
     const policy = RUNWAY_VIDEO_MODELS[body.model] || RUNWAY_VIDEO_MODELS['gen4.5'];
-    const raw = body.duration * policy.creditsPerSecond + (body.promptImage ? (policy.firstFrameCredits || 0) : 0);
+    /*
+     * BILLED SECONDS, which are not always the seconds you asked for.
+     *
+     * Every image-to-video model bills the clip it generates, so `duration` is
+     * the number. This endpoint has no duration at all and bills the SOURCE —
+     * so multiplying by an absent field produced NaN, and NaN passes every
+     * budget comparison because every comparison against it is false. A gate
+     * that cannot refuse is not a gate.
+     */
+    const seconds = policy.duration && policy.duration.ofSource
+        ? body.__sourceSeconds
+        : body.duration;
+    if (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0) {
+        // Refuse rather than guess. A default length is a confident number that
+        // is wrong by however much the real clip differs, and nobody would know
+        // it was invented.
+        return null;
+    }
+    const raw = Number(seconds) * policy.creditsPerSecond
+        + (body.promptImage ? (policy.firstFrameCredits || 0) : 0);
     return Math.max(policy.minimumCredits || 0, raw);
+}
+
+/**
+ * What this will cost, and whether we actually know.
+ *
+ * `known: false` is a real answer. A source clip nobody has measured cannot be
+ * priced, and the honest response is the worst case the window allows rather
+ * than a plausible middle.
+ */
+function quoteVideo(body) {
+    const policy = RUNWAY_VIDEO_MODELS[body.model] || RUNWAY_VIDEO_MODELS['gen4.5'];
+    const credits = estimateVideoCredits(body);
+    const worst = Math.max(policy.minimumCredits || 0,
+        (policy.duration && policy.duration.max ? policy.duration.max : 10) * policy.creditsPerSecond);
+    if (Number.isFinite(credits)) {
+        return { known: true, credits, worst_case_credits: worst, usd: credits * USD_PER_CREDIT, why: null };
+    }
+    return {
+        known: false, credits: null, worst_case_credits: worst,
+        usd: null, worst_case_usd: worst * USD_PER_CREDIT,
+        why: `${body.model} bills by the length of the SOURCE clip and this one has not been `
+            + `measured. Until it is, the only honest figure is the worst case the window allows: `
+            + `${policy.duration.max}s at ${policy.creditsPerSecond} credits a second.`,
+    };
+}
+
+/**
+ * May this request be sent?
+ *
+ * Refuses what it CANNOT PRICE as well as what it cannot afford. A gate written
+ * as `if (cost > remaining) refuse` lets an unpriceable request straight
+ * through, because NaN fails every comparison — which is the exact defect this
+ * replaces.
+ */
+function checkBudget(body, opts) {
+    const remaining = opts && Number(opts.remainingUsd);
+    const q = quoteVideo(body);
+    if (!q.known) {
+        return {
+            ok: false,
+            why: `${q.why} Its worst case is $${q.worst_case_usd.toFixed(2)}, which is what a budget `
+                + 'would have to allow. Measure the clip and try again.',
+        };
+    }
+    if (!Number.isFinite(remaining)) return { ok: true, why: null, usd: q.usd };
+    if (q.usd > remaining) {
+        return {
+            ok: false, usd: q.usd,
+            why: `This edit costs about $${q.usd.toFixed(2)} and $${remaining.toFixed(2)} of budget `
+                + 'remains. Runway bills the length of the clip handed in, not the length asked for, '
+                + 'so trimming the source is what makes it cheaper.',
+        };
+    }
+    return { ok: true, why: null, usd: q.usd };
 }
 
 /**
@@ -1012,6 +1103,7 @@ const adapter = {
 
 module.exports = {
     buildVideoRequest,
+    estimateVideoCredits, quoteVideo, checkBudget, USD_PER_CREDIT,
     describeVideoRequest,
     KNOWN_VIDEO_MODELS,
     KNOWN_IMAGE_MODELS,
