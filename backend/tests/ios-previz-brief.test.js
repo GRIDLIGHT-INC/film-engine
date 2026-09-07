@@ -157,12 +157,27 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-video-to-video-model',
-        why: 'the brief says keep-actor-change-background has no provider path today',
+        /*
+         * Was `no-video-to-video-model`, the sixth claim in this epic to pin the
+         * ABSENCE of work. It now pins what ICP-012 delivered — and pins it
+         * against the CONTRACT ICP-011 recorded from Runway's own spec, not a
+         * list typed here, because the epic's own constraints section is wrong
+         * about this endpoint.
+         */
+        id: 'video-to-video-registered',
+        why: 'ICP-012 gave the engine its first video-to-video path; losing it re-breaks background replacement',
         holds() {
-            const files = ['backend/lib/providers/runway.js', 'backend/lib/mcp-tools.js'];
-            const hit = files.filter((f) => /aleph/i.test(src(f)));
-            return hit.length === 0 || `aleph now appears in: ${hit.join(', ')}`;
+            const runway = require(path.join(REPO, 'backend/lib/providers/runway'));
+            const c = JSON.parse(fs.readFileSync(
+                path.join(REPO, 'backend/tests/fixtures/aleph-contract.json'), 'utf8'));
+            const e = runway.RUNWAY_VIDEO_MODELS[c.schema.model];
+            if (!e) return `${c.schema.model} has left RUNWAY_VIDEO_MODELS`;
+            if (e.endpoint !== 'video_to_video') return 'the model no longer declares video_to_video';
+            const req = runway.buildVideoRequest({
+                model: c.schema.model, videoUri: 'https://x/c.mp4', promptText: 'x',
+            });
+            return /\/video_to_video$/.test(req.url)
+                || `an aleph request now goes to ${req.url}`;
         },
     },
     {

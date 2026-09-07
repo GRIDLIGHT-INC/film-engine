@@ -78,6 +78,32 @@ const RUNWAY_VIDEO_SOURCE = 'https://docs.dev.runwayml.com/api/';
  * silently reprice every estimate already made against it.
  */
 const RUNWAY_VIDEO_MODELS = Object.freeze({
+    /*
+     * THE FIRST VIDEO-TO-VIDEO MODEL HERE. Every other entry is
+     * image_to_video or text_to_video, so "keep the actor, change the
+     * background" had no provider path at all.
+     *
+     * Every number is from the contract ICP-011 read out of Runway's own
+     * OpenAPI spec, changelog and pricing page — see
+     * backend/tests/fixtures/aleph-contract.json, which a test holds this entry
+     * equal to. The epic's own constraints section is WRONG about this
+     * endpoint (it says frameImages pinned to first/last; Runway says keyframes
+     * pinned by time), which is exactly why the contract was verified first.
+     *
+     * `duration` is NOT a request field on this endpoint. The 2-30s window is a
+     * property of the SOURCE clip, so an estimate must price the video handed
+     * in — the same trap RBF-001 measured on Seedance.
+     */
+    aleph2: {
+        endpoint: 'video_to_video', duration: { min: 2, max: 30, ofSource: true },
+        ratios: [], targetAspectRatios: ['16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16', '21:9'],
+        creditsPerSecond: 28, minimumCredits: 56,
+        imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0,
+        maxKeyframes: 5, keyframePositions: ['seconds', 'at'],
+        promptLimit: 1000, dataUriLimitBytes: 5 * 1024 * 1024,
+        deprecatedAlias: 'aleph2_alpha',
+        status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
     'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'], creditsPerSecond: 12, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
     gen4_turbo: { endpoint: 'image_to_video', duration: { min: 5, max: 10, allowed: [5, 10] }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
     'veo3.1': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
@@ -366,8 +392,103 @@ function normalizeReferenceImages(refs) {
  * consistent with the rest of the scene. Without one it degrades to
  * text-to-video, which supports a narrower set of ratios.
  */
+/**
+ * A source clip Runway can actually fetch.
+ *
+ * The endpoint accepts an HTTPS URL, a Runway upload URI, or a base64 data URI
+ * CAPPED AT 5MB. A 2-30 second clip is nowhere near 5MB, so a source video
+ * cannot travel inline at all — it must be hosted, which is what
+ * lib/frame-handles.js already exists to do. Refusing here names the remedy;
+ * sending it buys a rejection whose message reads like a credential problem.
+ */
+function requireFetchableVideo(uri, policy) {
+    const v = String(uri || '');
+    if (!v) throw new Error('aleph needs a source video: pass videoUri.');
+    if (/^data:/i.test(v)) {
+        const cap = Math.floor((policy.dataUriLimitBytes || 0) / 1048576);
+        throw new Error(`A source clip cannot be sent as a data URI — Runway caps one at ${cap}MB `
+            + 'and a 2-30 second clip is far larger. Host it and pass the URL (lib/frame-handles.js '
+            + 'mints an opaque, scoped, expiring one).');
+    }
+    if (!/^https?:\/\//i.test(v) && !/^runway:/i.test(v)) {
+        throw new Error(`Runway cannot fetch "${v}" — it must be an https URL or a runway: upload `
+            + 'URI. A path on this machine is not reachable from their side; mint a frame handle.');
+    }
+    return v;
+}
+
+/** A keyframe image Runway can fetch, or a data URI inside its own cap. */
+function keyframeUri(uri, policy) {
+    const v = String(uri || '');
+    if (!v) throw new Error('a keyframe needs a uri');
+    if (/^data:/i.test(v)) {
+        // base64 is four thirds of the bytes, so the payload is three quarters
+        // of the string — the same arithmetic the upload ceiling uses.
+        const bytes = Math.floor((v.split(',')[1] || '').length * 3 / 4);
+        const cap = policy.dataUriLimitBytes || 5 * 1024 * 1024;
+        if (bytes > cap) {
+            throw new Error(`That keyframe is ${Math.round(bytes / 1048576)}MB as a data URI and `
+                + `Runway caps one at ${Math.floor(cap / 1048576)}MB. Host it instead.`);
+        }
+        return v;
+    }
+    if (!/^https?:\/\//i.test(v) && !/^runway:/i.test(v)) {
+        throw new Error(`Runway cannot fetch the keyframe "${v}" — pass an https URL, a runway: `
+            + 'upload URI, or a data URI under the 5MB cap.');
+    }
+    return v;
+}
+
+/** The aleph2 request, in the shape the verified contract describes. */
+function buildVideoToVideoRequest(p, model, policy) {
+    const body = { model, videoUri: requireFetchableVideo(p.videoUri || p.video_uri, policy) };
+
+    // OPTIONAL. The aggregator called it required; Runway requires only
+    // videoUri and model, so demanding it would refuse a keyframe-only edit.
+    const prompt = p.promptText || p.motion_prompt || p.prompt;
+    if (prompt) body.promptText = String(prompt).slice(0, policy.promptLimit || 1000);
+
+    const given = Array.isArray(p.keyframes) ? p.keyframes : [];
+    const dropped = given.slice(policy.maxKeyframes);
+    const kept = given.slice(0, policy.maxKeyframes).map(k => ({
+        /*
+         * A keyframe MAY be a data URI, and a source clip may not. Both are
+         * capped at 5MB, and a still under 5MB is ordinary while a 2-30 second
+         * clip never is — so the asymmetry is real rather than an oversight.
+         */
+        uri: keyframeUri(k.uri, policy),
+        // Pinned BY TIME: an absolute `seconds` or a fractional `at`. There is
+        // no first/last keyword on this endpoint, whatever the aggregator said.
+        ...(Number.isFinite(k.seconds) ? { seconds: k.seconds }
+            : Number.isFinite(k.at) ? { at: k.at } : { seconds: 0 }),
+        ...(k.range ? { range: k.range } : {}),
+    }));
+    if (kept.length) body.keyframes = kept;
+
+    if (p.targetAspectRatio) body.targetAspectRatio = p.targetAspectRatio;
+    const seed = normalizeSeed(p.seed);
+    if (seed !== undefined) body.seed = seed;
+
+    return {
+        url: `${baseUrl()}/video_to_video`, headers: jsonHeaders(), body, mode: 'video_to_video',
+        // Never silently: over-sending is a refusal that costs a generation.
+        ...(dropped.length ? { dropped: dropped.map(k => k.uri) } : {}),
+    };
+}
+
 function buildVideoRequest(payload) {
     const p = payload || {};
+    /*
+     * The OPERATION comes from the model's own registry entry, not from
+     * whether an image happens to be attached. Every entry declares its
+     * endpoint; deriving it from the payload is what made video-to-video
+     * unreachable no matter what a caller passed.
+     */
+    const chosen = pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL);
+    const chosenPolicy = RUNWAY_VIDEO_MODELS[chosen];
+    if (chosenPolicy && chosenPolicy.endpoint === 'video_to_video') {
+        return buildVideoToVideoRequest(p, chosen, chosenPolicy);
+    }
     // The video endpoints take a single promptImage — referenceImages is a
     // text_to_image field and gen4.5 does not document it. So when the
     // consistency system supplies locked references but no storyboard keyframe,

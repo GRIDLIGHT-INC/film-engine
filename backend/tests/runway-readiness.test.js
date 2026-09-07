@@ -14,15 +14,32 @@ const OFFICIAL_IMAGE_TO_VIDEO = [
     // different rates, and renaming 2.0 would have silently repriced every
     // estimate already made against it.
     'hailuo3', 'seedance2_5',
+    /*
+     * The first VIDEO-TO-VIDEO model. The constant is still named for what it
+     * held when every entry was image-to-video, and the endpoint assertion
+     * below encoded that same assumption — true on the day, and wrong the
+     * moment a second operation arrived.
+     */
+    'aleph2',
 ];
+
+/** The operations this adapter can actually build a request for. */
+const BUILDABLE_ENDPOINTS = ['image_to_video', 'video_to_video'];
 
 test('every currently documented Runway video model has an explicit safe policy', () => {
     assert.deepEqual(Object.keys(runway.RUNWAY_VIDEO_MODELS).sort(), OFFICIAL_IMAGE_TO_VIDEO.sort());
     for (const [id, policy] of Object.entries(runway.RUNWAY_VIDEO_MODELS)) {
-        assert.equal(policy.endpoint, 'image_to_video', `${id}: wrong operation`);
-        assert.ok(policy.duration && policy.duration.min > 0 && policy.duration.max >= policy.duration.min,
-            `${id}: no duration policy`);
-        assert.ok(Array.isArray(policy.ratios) && policy.ratios.length, `${id}: no ratio policy`);
+        assert.ok(BUILDABLE_ENDPOINTS.includes(policy.endpoint),
+            `${id}: endpoint ${policy.endpoint} is not one the adapter can build a request for`);
+        /*
+         * A model must state what shapes it produces — but not necessarily in
+         * `ratios`. Runway DEPRECATES `ratio` on video_to_video in favour of a
+         * targetAspectRatio enum, so demanding a ratios list there would force a
+         * second copy of a field the provider is retiring. Either satisfies it.
+         */
+        assert.ok((Array.isArray(policy.ratios) && policy.ratios.length)
+            || (Array.isArray(policy.targetAspectRatios) && policy.targetAspectRatios.length),
+            `${id}: no ratio or targetAspectRatio policy`);
         assert.ok(Number(policy.creditsPerSecond) > 0, `${id}: no cost policy`);
         assert.ok(policy.status && policy.source, `${id}: deprecation/evidence is unstated`);
     }

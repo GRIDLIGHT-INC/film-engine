@@ -207,7 +207,17 @@ const RECOMMENDATIONS = [
                 if (!m.status) gaps.push(`${id}: no status`);
                 if (!m.source) gaps.push(`${id}: no source`);
                 if (!m.duration || !(m.duration.max > 0)) gaps.push(`${id}: no duration window`);
-                if (!Array.isArray(m.ratios) || !m.ratios.length) gaps.push(`${id}: no ratio list`);
+                /*
+                 * A model must state what shapes it can produce — but not
+                 * necessarily in `ratios`. On video_to_video Runway DEPRECATES
+                 * `ratio` in favour of a `targetAspectRatio` enum, so demanding
+                 * a ratios list there would force a second copy of a field the
+                 * provider is retiring. Either list satisfies the intent; an
+                 * entry with neither does not.
+                 */
+                const shapes = (Array.isArray(m.ratios) && m.ratios.length)
+                    || (Array.isArray(m.targetAspectRatios) && m.targetAspectRatios.length);
+                if (!shapes) gaps.push(`${id}: no ratio or targetAspectRatio list`);
                 if (!(m.creditsPerSecond > 0)) gaps.push(`${id}: no credit rate`);
             }
             // The ids the live API documents for image-to-video.

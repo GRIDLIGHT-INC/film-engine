@@ -105,18 +105,24 @@ test('every difference from the aggregator is written down', () => {
         'there is no statement about the comparison as a whole — an empty array could mean "none" or "not compared"');
 });
 
-test('NO adapter code was written — that is the next task', () => {
+test('the adapter, now that it exists, matches this record', () => {
     /*
-     * The task's own last criterion. Verifying a contract and then immediately
-     * building against it in the same change removes the point of verifying:
-     * the record and the code land together and nobody can tell which was
-     * checked against which.
+     * WAS "no adapter code was written", which was the right guard while ICP-011
+     * stood alone: verifying a contract and building against it in one change
+     * removes the point of verifying, because nobody can tell which was checked
+     * against which. ICP-012 has now landed, so DELETING the guard would leave
+     * the record protecting nothing — it becomes a conformance check instead.
+     *
+     * Deliberately shallow: the field-for-field comparison lives in
+     * aleph-adapter.test.js. What this asserts is that the adapter and the
+     * record are still about the same model, which is what makes the record
+     * worth keeping.
      */
-    for (const f of ['backend/lib/providers/runway.js', 'backend/lib/mcp-tools.js']) {
-        const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
-        assert.ok(!/aleph/i.test(src),
-            `${f} already mentions aleph — the adapter was written before the contract was verified`);
-    }
+    const runway = require('../lib/providers/runway');
+    const entry = runway.RUNWAY_VIDEO_MODELS[contract().schema.model];
+    assert.ok(entry, `${contract().schema.model} is recorded here and is not registered`);
+    assert.strictEqual(entry.endpoint, 'video_to_video',
+        'the adapter registers this model against a different operation than the contract describes');
 });
 
 test('the record says plainly that it was not probed, and why', () => {
