@@ -28917,6 +28917,84 @@ ${fountainText.slice(0, 50000)}`;
      * built from the FREE preview, so the number under the button is the number
      * that will be charged.
      */
+    /* ── Keep the actor, change the background ───────────────────────────
+     *
+     * The one control here that EDITS footage instead of making some. It is
+     * two steps on purpose: the instruction is asked for first, then the
+     * shared gate shows the assembled prompt and the real cost — because the
+     * price depends on the clip's measured LENGTH, so a confirmation raised
+     * before the source is known would show a number that is not the one
+     * charged.
+     */
+    function askBackgroundInstruction() {
+        return new Promise(resolve => {
+            const id = 'bgInstructionModal';
+            showModalHtml(id, `
+                <h3 style="margin-top:0;">Replace the background</h3>
+                <p class="text-sm text-muted" style="line-height:1.5;">
+                  Describe the PLACE and nothing else. The people, their positions and the camera
+                  are preserved by the model — describing them again is what makes it re-render them.
+                </p>
+                <div class="form-group">
+                  <label>The new background</label>
+                  <textarea id="bgInstructionText" rows="3"
+                    placeholder="a rain-soaked street at night, sodium streetlights, wet asphalt"></textarea>
+                </div>
+                <div class="flex-between" style="margin-top:12px;">
+                  <button class="btn btn-secondary btn-sm" onclick="bgInstructionDone(null)">Cancel</button>
+                  <button class="btn btn-primary btn-sm" onclick="bgInstructionDone()">See what it would cost</button>
+                </div>`);
+            BG_INSTRUCTION = resolve;
+            const box = document.getElementById('bgInstructionText');
+            if (box) box.focus();
+        });
+    }
+    let BG_INSTRUCTION = null;
+    function bgInstructionDone(force) {
+        const box = document.getElementById('bgInstructionText');
+        const value = force === null ? null : ((box && box.value) || '').trim();
+        closeModal('bgInstructionModal');
+        const done = BG_INSTRUCTION; BG_INSTRUCTION = null;
+        if (done) done(value);
+    }
+
+    async function replaceBackground(shotId, btn) {
+        const instruction = await askBackgroundInstruction();
+        if (!instruction) return;   // cancelled, or nothing said
+        return confirmPaidImage({
+            capability: 'video',
+            title: 'Replace the background',
+            note: 'The performance in this clip is kept and re-rendered somewhere else. Runway '
+                + 'bills this by the length of the clip handed IN, not the length asked for, so a '
+                + 'longer take costs more for the same edit. The result lands as a NEW version — '
+                + 'the take being edited survives.',
+            previewUrl: `/shots/${shotId}/video/background/preview?instruction=`
+                + encodeURIComponent(instruction),
+            editable: false,
+            notEditableWhy: 'The clause that holds the actor still is not editable — deleting it is '
+                + 'what makes the model re-render the performance. Change the background above.',
+            send: async () => {
+                setStatus('Replacing the background…', true);
+                if (btn) { btn.disabled = true; btn.dataset.was = btn.textContent; btn.textContent = 'Replacing…'; }
+                try {
+                    const res = await api(`/shots/${shotId}/video/background/generate`,
+                        { method: 'POST', body: JSON.stringify({ instruction }) });
+                    setStatus(res && res.ok
+                        ? `Background replaced — v${res.version} on this shot. The previous take is still there.`
+                        : `Could not replace the background (${(res && res.stage) || 'unknown'} stage): `
+                          + ((res && res.reason) || 'no reason given'));
+                    if (typeof loadVideoShots === 'function') loadVideoShots();
+                } catch (err) {
+                    setStatus('Could not replace the background: ' + err.message);
+                } finally {
+                    // A spinner still turning after a failure is worse than
+                    // none: it says work is happening when nothing is.
+                    if (btn) { btn.disabled = false; if (btn.dataset.was) btn.textContent = btn.dataset.was; }
+                }
+            },
+        });
+    }
+
     async function orbitRefsheet(characterId) {
         return confirmPaidImage({
             capability: 'video',
@@ -34002,6 +34080,7 @@ ${fountainText.slice(0, 50000)}`;
                         <a class="btn btn-secondary btn-sm" href="${videoUrl}" target="_blank" rel="noopener">Download</a>
                         <button class="btn btn-secondary btn-sm" onclick="lipsyncShot('${s.id}', this)" title="Sync to dialogue audio (needs generated voice)">Lip-sync</button>
                         <button class="btn btn-secondary btn-sm" onclick="postShot('${s.id}', this)" title="Upscale / enhance">Upscale</button>
+                        <button class="btn btn-secondary btn-sm" onclick="replaceBackground('${s.id}', this)" title="Keep the performance, put it somewhere else">Background&hellip;</button>
                         ${longShot ? '<button class="btn btn-secondary btn-sm" onclick="stitchShot(\'' + s.id + '\', this)" title="Split &gt;5s shot into sub-clips and stitch">Stitch</button>' : ''}` : '';
                 const supplied = [
                     media.audio_dialogue && 'dialogue', media.audio_sfx && 'SFX',

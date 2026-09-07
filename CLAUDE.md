@@ -194,6 +194,7 @@ film-engine/
 │   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
 │   │   ├── frame-handles.js      # A frame a provider can fetch: opaque, scoped, expiring
 │   │   ├── repair-run.js         # Extract, host, generate, splice, register — and every failure names its stage
+│   │   ├── video-edit.js        # Keep the actor, change the background — priced from the SOURCE
 │   │   ├── repair-bridge.js      # A fault that lives BETWEEN two shots: a bridge, not a splice
 │   │   ├── look-development.js    # Style presets carry a look, not a subject
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
@@ -304,6 +305,7 @@ film-engine/
 │       ├── repair-tools.test.js     # A capability with no MCP surface is one the model cannot use
 │       ├── repair-audio.test.js     # A repaired master that lost its sound is a broken deliverable
 │       ├── range-requests.test.js   # A suffix range is the END of the file — the black screen in playback
+│       ├── background-replace.test.js # Every stage names itself; every entry point one runner
 │       ├── repair-bridge.test.js    # Across a cut, neither shot is the one at fault
 │       ├── editor-transport.test.js # A mark you cannot place on the frame you meant is not a mark
 │       ├── repair-dispatch.test.js  # Every path that starts a repair must tell a bridge from a splice
@@ -4295,6 +4297,7 @@ node --test backend/tests/repair-run.test.js
 node --test backend/tests/repair-tools.test.js
 node --test backend/tests/repair-audio.test.js
 node --test backend/tests/range-requests.test.js
+node --test backend/tests/background-replace.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
 node --test backend/tests/repair-dispatch.test.js

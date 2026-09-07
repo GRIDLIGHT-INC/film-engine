@@ -274,6 +274,18 @@ function handleVideoGen(req, res, urlParts, query) {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
             return generateVideo(req, res, shotId);
         }
+        /*
+         * BACKGROUND REPLACEMENT — the only path here that EDITS footage
+         * rather than making some. Free preview and paid generate are separate
+         * verbs on separate sub-paths: a preview that could spend is not a
+         * preview, and the confirmation reads this one before the money goes.
+         */
+        if (sub === 'background' && urlParts[5] === 'preview' && req.method === 'GET') {
+            return previewBackground(res, shotId, query);
+        }
+        if (sub === 'background' && urlParts[5] === 'generate' && req.method === 'POST') {
+            return replaceBackground(req, res, shotId);
+        }
         if (sub === 'stitch' && req.method === 'POST') return stitchVideo(req, res, shotId);
         if (!sub && req.method === 'GET') return getVideoStatus(req, res, shotId);
         return json(res, 405, { error: 'Method not allowed' });
@@ -644,6 +656,115 @@ function listVideoJobs(req, res, projectId, query) {
 }
 
 // -- FILM-033: Multi-Clip Stitching for Long Shots -----------------------
+
+/* ── Background replacement ──────────────────────────────────────────────
+ *
+ * "Keep the actor in the scene but change the background."
+ *
+ * The one operation that takes footage which already exists and changes a
+ * single thing about it. Every rule about clips, models, windows, prices,
+ * hosting and versioning lives in lib/video-edit.js — this file only finds
+ * the shot's current clip and hands it over, because a second implementation
+ * is how the route gets a fix the MCP tool does not.
+ */
+function shotWithProject(shotId) {
+    // JOINED TO THE SCENE: film_shots has no project_id. A bare SELECT * reads
+    // undefined and then resolves a path under the directory "undefined",
+    // which fails as a missing clip rather than as the schema mistake it is.
+    return db.prepare(`SELECT s.*, sc.project_id FROM film_shots s
+        JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(shotId);
+}
+
+/** The cut a background replacement edits: the best one this shot has. */
+function currentClipFor(shotId) {
+    return db.prepare(
+        `SELECT * FROM film_assets WHERE shot_id = ?
+            AND asset_type IN ('video_final','video_synced','video_raw')
+          ORDER BY CASE asset_type WHEN 'video_final' THEN 0 WHEN 'video_synced' THEN 1 ELSE 2 END,
+                   version DESC, created_at DESC LIMIT 1`).get(shotId);
+}
+
+function backgroundSource(shotId) {
+    const shot = shotWithProject(shotId);
+    if (!shot) return { error: 404, why: 'Shot not found' };
+    const clip = currentClipFor(shotId);
+    if (!clip) return { shot, clip: null, sourcePath: null };
+    return { shot, clip, sourcePath: getFilePath(shot.project_id, 'video', clip.file_name) };
+}
+
+/**
+ * What this edit would send and what it would cost. FREE.
+ *
+ * Answers in the shape the shared confirmation reads — prompt, provider,
+ * model, estimated_cost, notes — so a background replacement goes through the
+ * same gate as everything else that spends rather than a second dialog.
+ */
+async function previewBackground(res, shotId, query) {
+    const { planBackgroundEdit, EDIT_MODEL, buildBackgroundPrompt } = require('../lib/video-edit');
+    const src = backgroundSource(shotId);
+    if (src.error) return json(res, src.error, { error: src.why });
+
+    const instruction = String((query && query.instruction) || '').trim();
+    const provider = 'runway';
+    /*
+     * A refusal is a 200 CARRYING ITS REASON, not a 4xx. "This shot has no
+     * footage yet" is an ANSWER to the question the dialog is asking, and a
+     * 4xx would have the page report it as a failure to reach the engine.
+     * The prompt is still built, because the gate shows the prompt and an
+     * empty one reads as the preview having broken.
+     */
+    const plan = planBackgroundEdit({
+        sourcePath: src.sourcePath,
+        // The gate opens before a director has typed anything, so the preview
+        // has to describe the operation rather than refuse to describe it.
+        instruction: instruction || 'the new background you describe below',
+    });
+
+    const notes = [];
+    if (!src.clip) notes.push('This shot has no footage yet. Generate or upload a clip first — a '
+        + 'background replacement edits footage that already exists.');
+    if (plan.refused) notes.push(plan.reason);
+    if (!instruction) notes.push('Describe the new background in the prompt below. The performance '
+        + 'is preserved by the model, so do not describe the people — saying them again is what '
+        + 'makes it re-render them.');
+
+    return json(res, 200, {
+        shot_id: shotId, shot_code: src.shot.shot_code,
+        capability: 'video',
+        can_generate: !plan.refused && !!src.clip,
+        provider, model: EDIT_MODEL,
+        prompt: plan.refused ? buildBackgroundPrompt(instruction || 'the new background you describe') : plan.prompt,
+        ceiling: 1000,
+        source: plan.refused ? null : plan.source,
+        estimated_cost: plan.refused || !plan.quote.known ? null : {
+            usd: plan.quote.usd, native: plan.quote.credits, native_unit: 'credits',
+        },
+        notes,
+        note: 'Runway bills this by the length of the clip handed IN, not the length asked for, '
+            + 'so a longer source costs more even though nothing else changes.',
+    });
+}
+
+/** SPENDS. One generation, landing as a new version on this shot. */
+async function replaceBackground(req, res, shotId) {
+    const { runBackgroundEdit } = require('../lib/video-edit');
+    const src = backgroundSource(shotId);
+    if (src.error) return json(res, src.error, { error: src.why });
+
+    // server.js has already parsed it; every other handler in this file reads
+    // req.body, and a second reader is one more thing to disagree.
+    const body = (req && req.body) || {};
+    const result = await runBackgroundEdit({
+        db, projectId: src.shot.project_id, shotId, shotCode: src.shot.shot_code,
+        sourcePath: src.sourcePath,
+        instruction: String(body.instruction || body.prompt_override || ''),
+        ignoreBudget: !!body.ignore_budget,
+    });
+    // 402 is what every other budget gate here answers, and an agent branches
+    // on it; every other refusal is a 200 naming its stage.
+    if (!result.ok && result.code === 'over_budget') return json(res, 402, result);
+    return json(res, 200, result);
+}
 
 async function stitchVideo(req, res, shotId) {
     const ctx = loadShotContext(shotId);

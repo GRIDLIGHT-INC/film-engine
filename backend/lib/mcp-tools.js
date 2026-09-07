@@ -1152,6 +1152,57 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id'],
     },
     {
+        name: 'video_background_preview',
+        handler: handleVideoGen, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/video/background/preview`
+            + (a.instruction ? `?instruction=${encodeURIComponent(a.instruction)}` : ''),
+        description:
+            'What replacing this shot\u2019s background would send, and what it would COST. FREE and '
+            + 'side-effect-free \u2014 nothing is exposed, generated or written, so try three '
+            + 'backgrounds before buying one. '
+            + 'It reports the assembled prompt, the model, the measured length of the source clip '
+            + 'and the credit estimate. '
+            + 'THE PRICE IS THE LENGTH OF THE CLIP HANDED IN, not the length of anything asked for: '
+            + 'this model bills the source, so a 20-second take costs twice a 10-second one for the '
+            + 'same edit. A clip nobody can measure is REFUSED rather than priced at a guess. '
+            + 'SPENDS NOTHING.',
+        schema: {
+            shot_id: { type: 'string' },
+            instruction: { type: 'string', description:
+                'What the new background should be. Describe ONLY the background \u2014 the people, '
+                + 'their positions and the camera are preserved by the model, and describing them '
+                + 'again is what makes it re-render them.' },
+        }, required: ['shot_id'],
+    },
+    {
+        name: 'video_background_replace',
+        handler: handleVideoGen, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/video/background/generate`,
+        body: a => ({ instruction: a.instruction,
+            ...(a.ignore_budget ? { ignore_budget: true } : {}) }),
+        description:
+            'SPENDS CREDITS \u2014 keep the performance in this shot\u2019s footage and put it '
+            + 'somewhere else. Run video_background_preview first and read the cost; this does not '
+            + 'ask again. '
+            + 'The actor is preserved BY THE MODEL rather than by a matte, so describe only what '
+            + 'changes: naming the people pulls the result toward a fresh generation of them. '
+            + 'It measures the source, exposes it at a URL the provider can fetch, generates the '
+            + 'edit and registers the result as a NEW VERSION. THE PREVIOUS TAKE SURVIVES \u2014 '
+            + 'the footage being edited was paid for and nothing is overwritten. '
+            + 'Every failure names the STAGE it happened at \u2014 plan, budget, host, generate or '
+            + 'register \u2014 so "it failed" is never the whole answer. '
+            + 'A source outside the model\u2019s 2\u201330 second window is refused before anything '
+            + 'is sent, with trimming named as the way through. Over budget it refuses with 402 '
+            + 'before generating; pass ignore_budget to override that deliberately.',
+        schema: {
+            shot_id: { type: 'string' },
+            instruction: { type: 'string', description:
+                'The new background. Describe the PLACE and nothing else \u2014 not the people, not '
+                + 'their wardrobe, not the camera.' },
+            ignore_budget: { type: 'boolean', description: 'Generate even if the projected cost exceeds the project budget.' },
+        }, required: ['shot_id', 'instruction'],
+    },
+    {
         name: 'sequence_create',
         handler: handleSequences, method: 'POST',
         path: a => `/film/projects/${a.project_id}/sequences`,

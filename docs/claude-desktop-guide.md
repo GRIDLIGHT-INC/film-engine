@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**265 tools, 68 families.** Everything the app can do, you can ask for in a
+**267 tools, 68 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -341,7 +341,18 @@ background travels with it. Free.
 `sequence_create` · `sequence_list` · `sequence_plan` · `sequence_generate` ·
 `sequence_plan_inbetweens` · `sequence_inbetweens` · `sequence_station_list` ·
 `sequence_station_update` · `sequence_station_delete` · `sequence_inbetweens_approve` ·
-`sequence_generate_native` · `sequence_update` · `sequence_stitch` · `sequence_delete` · `video_preview`
+`sequence_generate_native` · `sequence_update` · `sequence_stitch` · `sequence_delete` · `video_preview` ·
+`video_background_preview` · `video_background_replace`
+
+**Keep the actor, change the background.** Every other generator here makes a
+NEW picture; `video_background_replace` takes footage that already exists and
+changes one thing about it — the performance is preserved by the model rather
+than by a matte, so describe the PLACE and nothing else. Naming the people is
+what makes it re-render them. `video_background_preview` prices it for free
+first, and the price is the length of the clip handed IN rather than anything
+asked for: a 20-second take costs twice a 10-second one for the same edit, so
+trimming the source is what makes it cheaper. The result lands as a NEW version
+and the take being edited survives.
 
 **The in-between strip.** A shot reaches a video model as ONE picture and a
 sentence, so on a five-second push-in seconds two, three and four are the
