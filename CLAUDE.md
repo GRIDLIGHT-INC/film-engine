@@ -306,6 +306,7 @@ film-engine/
 │       ├── repair-audio.test.js     # A repaired master that lost its sound is a broken deliverable
 │       ├── range-requests.test.js   # A suffix range is the END of the file — the black screen in playback
 │       ├── background-replace.test.js # Every stage names itself; every entry point one runner
+│       ├── seedance-video-edit-retired.test.js # A measured trap must not read as the cheap option
 │       ├── repair-bridge.test.js    # Across a cut, neither shot is the one at fault
 │       ├── editor-transport.test.js # A mark you cannot place on the frame you meant is not a mark
 │       ├── repair-dispatch.test.js  # Every path that starts a repair must tell a bridge from a splice
@@ -4298,6 +4299,7 @@ node --test backend/tests/repair-tools.test.js
 node --test backend/tests/repair-audio.test.js
 node --test backend/tests/range-requests.test.js
 node --test backend/tests/background-replace.test.js
+node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js
 node --test backend/tests/repair-dispatch.test.js

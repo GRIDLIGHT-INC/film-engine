@@ -66,6 +66,44 @@ test('every workflow the adapter can choose has a declared image field', () => {
         `these workflows would be sent an unchecked field name: ${undeclared.join(', ')}`);
 });
 
+
+/**
+ * A workflow the builder REFUSES, and why that is not a gap in the field map.
+ *
+ * ICP-015 retired `video-edit` as an edit on the RBF-001 evidence: its
+ * images_list entries are style references rather than keyframes, so an edit
+ * cannot be steered by them at all. The MuAPI field name is still recorded
+ * above — the upscale reaches the same endpoint through buildPostRequest — but
+ * it can no longer be reached through buildVideoRequest, so the field
+ * assertions below cannot be made against it.
+ *
+ * DERIVED BY ATTEMPTING THE BUILD rather than listed, so lifting the refusal
+ * brings the field checks back with nothing to remember.
+ */
+function buildOrRefusal(args) {
+    try { return { built: buildVideoRequest(args) }; }
+    catch (err) { return { refused: err.message }; }
+}
+
+test('a workflow the builder refuses says WHY, and points somewhere', () => {
+    const refused = [];
+    for (const workflow of Object.keys(IMAGE_FIELD)) {
+        const r = buildOrRefusal({
+            prompt: 'x', workflow, duration_s: 5,
+            source_video: 'https://example.test/clip.mp4',
+        });
+        if (r.refused) refused.push([workflow, r.refused]);
+    }
+    // A refusal set that has quietly become empty means this policing nothing.
+    assert.ok(refused.length >= 1,
+        'no workflow is refused any more — if video-edit was deliberately re-opened, delete this '
+        + 'test; if not, the refusal has been lost');
+    for (const [workflow, why] of refused) {
+        assert.match(why, /aleph/i, `${workflow} is refused and points nowhere: ${why}`);
+        assert.match(why, /RBF-001/, `${workflow} is refused without citing the evidence`);
+    }
+});
+
 const PICTURES = [
     'https://example.test/a.png', 'https://example.test/b.png',
     'https://example.test/c.png', 'https://example.test/d.png',
@@ -76,7 +114,7 @@ test('each workflow carries its pictures under the name MuAPI actually requires'
     for (const [workflow, field] of Object.entries(IMAGE_FIELD)) {
         const allowed = (WORKFLOWS[workflow] || {}).images || 0;
         if (!allowed) continue;                        // nothing to carry
-        const req = buildVideoRequest({
+        const attempt = buildOrRefusal({
             prompt: 'a car turns into the lot',
             workflow,
             reference_images: PICTURES.slice(0, Math.min(allowed, PICTURES.length)),
@@ -84,7 +122,11 @@ test('each workflow carries its pictures under the name MuAPI actually requires'
                 ? { source_video: 'https://example.test/clip.mp4' } : {}),
             duration_s: 5,
         });
-        const body = req.body || {};
+        // video-edit is skipped above by declaring no images; routing through
+        // the same helper means a refused workflow that later declares some
+        // does not throw here instead of being reported.
+        if (attempt.refused) continue;
+        const body = attempt.built.body || {};
 
         if (!(field in body)) {
             wrong.push(`${workflow}: sends ${JSON.stringify(Object.keys(body).filter(k => /image|frame|reference/i.test(k)))} `
@@ -113,13 +155,17 @@ test('no request carries a picture field its own workflow does not accept', () =
     const stray = [];
     for (const [workflow, field] of Object.entries(IMAGE_FIELD)) {
         const allowed = (WORKFLOWS[workflow] || {}).images || 0;
-        const req = buildVideoRequest({
+        const attempt = buildOrRefusal({
             prompt: 'x', workflow,
             reference_images: PICTURES.slice(0, Math.max(1, Math.min(allowed, 4))),
             ...(workflow === 'video-edit' || workflow === 'video-extend'
                 ? { source_video: 'https://example.test/clip.mp4' } : {}),
             duration_s: 5,
         });
+        // Refused workflows are held to their refusal by the test above; there
+        // is no request here to check a field name against.
+        if (attempt.refused) continue;
+        const req = attempt.built;
         for (const key of Object.keys(req.body || {})) {
             if (!known.has(key)) continue;
             if (key !== field) stray.push(`${workflow}: also sends "${key}", which it does not accept`);

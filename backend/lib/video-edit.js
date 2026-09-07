@@ -285,13 +285,37 @@ async function runBackgroundEdit(input) {
  */
 async function backgroundGenerator(request) {
     const gen = request || {};
-    let provider;
-    try {
-        const { resolve } = require('./providers');
-        const { providerConfigOf } = require('./provider-config');
-        provider = resolve('video', providerConfigOf(gen.projectId));
-    } catch (err) {
-        return { ok: false, reason: `no video provider could be resolved: ${err.message}` };
+    let provider = gen.provider || null;
+    if (!provider) {
+        try {
+            const { resolve } = require('./providers');
+            const { providerConfigOf } = require('./provider-config');
+            provider = resolve('video', providerConfigOf(gen.projectId));
+        } catch (err) {
+            return { ok: false, reason: `no video provider could be resolved: ${err.message}` };
+        }
+    }
+
+    /*
+     * THE PROVIDER MUST BE ABLE TO EDIT FOOTAGE, and most cannot.
+     *
+     * `resolve('video', ...)` answers with whatever the project pinned for
+     * VIDEO, which is a different question from "can this edit a clip".
+     * Measured on Seedance: `videoUri` is read by nothing, its own workflow
+     * chooser sees no source and falls to TEXT-TO-VIDEO — so the clip vanishes
+     * and an unrelated one is generated from the prompt and reported as the
+     * finished edit. A paid result that is not the shot, presented as the shot.
+     *
+     * Adapters DECLARE their video-to-video models; one that declares none
+     * cannot do this, which is the conservative direction.
+     */
+    const canEdit = Array.isArray(provider.videoToVideoModels) && provider.videoToVideoModels.length;
+    if (!canEdit) {
+        return { ok: false, reason:
+            `${provider.id || 'that provider'} has no video-to-video model, so it cannot edit `
+            + 'footage — handed a source clip it would ignore it and generate a NEW one from the '
+            + 'prompt, and report success. Pin Runway for video (it serves aleph2) or pass a '
+            + 'provider that declares videoToVideoModels.' };
     }
 
     let result;

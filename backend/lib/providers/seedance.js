@@ -159,10 +159,52 @@ function workflowFor(p, images) {
     return 'text-to-video';
 }
 
+/*
+ * WHY AN EDIT IS TURNED AWAY HERE.
+ *
+ * RBF-001 probed `video-edit` for real money and recorded four things the
+ * vendor documents nowhere — see docs/plans/rbf-001-video-edit-probe.md:
+ *
+ *   1. `images_list` entries are STYLE REFERENCES composited into the scene,
+ *      present simultaneously and for the whole clip. They are not a start and
+ *      an end frame, so an edit cannot be steered by keyframes at all.
+ *   2. `duration` is IGNORED: 4s was asked for and 9.7s came back — the
+ *      source's own length.
+ *   3. Billing follows the SOURCE length, not the duration requested.
+ *   4. A FAILED job still billed. Actual spend was $3.205 against a $0.68
+ *      estimate: 4.7x, and $1.658 of it bought nothing at all.
+ *
+ * ICP-012 registered `aleph2` on Runway, which is a real video-to-video model
+ * with documented keyframes. Beside it this tier reads as the same thing for a
+ * fifth of the price, and it is not the same thing. So an EDIT is refused and
+ * pointed there, rather than left as a cheaper-looking road to a measured trap.
+ *
+ * `video-extend` is untouched: extending a clip genuinely takes a source and is
+ * not what RBF-001 measured. And the UPSCALE still uses this endpoint on
+ * purpose — buildPostRequest reaches it directly at the 4k tier without coming
+ * through here, because a finishing pass is not an edit.
+ */
+const VIDEO_EDIT_REFUSAL =
+    'seedance: video-edit is not offered as an EDIT. RBF-001 measured it for real money '
+    + '(docs/plans/rbf-001-video-edit-probe.md): images_list entries are STYLE REFERENCES '
+    + 'composited into the scene rather than keyframes, `duration` is ignored, billing follows '
+    + 'the SOURCE length rather than the duration asked for, and a FAILED job is still charged — '
+    + '$3.205 actual against a $0.68 estimate. Use Runway `aleph2`, which is a real '
+    + 'video-to-video model with documented keyframes: POST /film/shots/:id/video/background/'
+    + 'generate, or the video_background_replace tool. This endpoint is still used for the '
+    + 'UPSCALE, which is not an edit.';
+
 function buildVideoRequest(payload) {
     const p = payload || {};
     const images = collectImages(p);
     const workflow = workflowFor(p, images);
+    /*
+     * Covers BOTH ways in: the implicit route (a source clip attached to a
+     * plain video generation, which used to select this silently) and an
+     * explicit `workflow: 'video-edit'`. Closing one and leaving the other
+     * moves the trap rather than removing it.
+     */
+    if (workflow === 'video-edit') throw new Error(VIDEO_EDIT_REFUSAL);
     const resolution = resolutionFor(p);
 
     let duration = Number(p.duration_s !== undefined ? p.duration_s
@@ -361,7 +403,14 @@ function buildPostRequest(payload) {
             + 'restoration and no compositing. Do this one in the NLE.');
     }
 
-    const source = p.source_video || p.video_url || p.input_video || p.init_video;
+    /*
+     * `input_url` IS THE ONE THE ORCHESTRATOR SENDS. capability-payloads' post()
+     * emits it and this list did not contain it, so the orchestrated finishing
+     * pass could never reach Seedance — the whole reason this provider was
+     * added for `post` — and the refusal named four fields the caller does not
+     * produce, which reads as a missing clip rather than a field-name mismatch.
+     */
+    const source = p.source_video || p.video_url || p.input_url || p.input_video || p.init_video;
     if (!source) {
         /*
          * Refused, never sent. Without a clip the video-edit workflow has
@@ -386,6 +435,10 @@ function buildPostRequest(payload) {
     if (!Number.isFinite(duration) || duration <= 0) duration = 5;
     const clamped = Math.min(MAX_DURATION, Math.max(MIN_DURATION, Math.round(duration)));
 
+    // What the provider will actually bill for, when anybody has measured it.
+    const sourceSeconds = Number(p.source_seconds !== undefined ? p.source_seconds
+        : (p.source_duration_ms || 0) / 1000);
+
     const body = {
         prompt: String(p.prompt || '').trim(),
         video_url: source,
@@ -400,7 +453,27 @@ function buildPostRequest(payload) {
         workflow: 'video-edit',
         resolution,
         usd_per_second: RESOLUTIONS[resolution].usdPerSecond,
-        estimated_usd: Number((RESOLUTIONS[resolution].usdPerSecond * clamped).toFixed(2)),
+        /*
+         * PRICED FROM THE SOURCE, or not priced at all.
+         *
+         * RBF-001 finding 3: this endpoint ignores `duration` and bills the
+         * clip handed in. The estimate multiplied a DEFAULTED five seconds by
+         * the 4k rate and returned $8.50 for every clip there has ever been —
+         * a confident number that is not the price, which is the same defect
+         * ICP-013 fixed on aleph2 one provider over.
+         *
+         * An unmeasured source is refused rather than guessed: a default length
+         * is wrong by however much the real clip differs and nobody would know
+         * it was invented.
+         */
+        estimated_usd: Number.isFinite(sourceSeconds) && sourceSeconds > 0
+            ? Number((RESOLUTIONS[resolution].usdPerSecond * sourceSeconds).toFixed(2))
+            : null,
+        source_seconds: Number.isFinite(sourceSeconds) && sourceSeconds > 0 ? sourceSeconds : null,
+        estimate_unknown_why: Number.isFinite(sourceSeconds) && sourceSeconds > 0 ? null
+            : 'This endpoint bills the SOURCE clip, not the duration requested (RBF-001), and the '
+              + 'source has not been measured. Pass source_seconds — lib/ffmpeg.js inspectMedia '
+              + 'reads it — or the only honest answer is that the price is unknown.',
     };
 }
 

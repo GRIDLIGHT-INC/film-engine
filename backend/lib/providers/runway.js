@@ -1023,6 +1023,21 @@ const adapter = {
      * gen4_image, which Runway refuses for video, while the actual video models
      * this adapter already validates against were on no menu at all.
      */
+    /*
+     * WHICH MODELS CAN EDIT FOOTAGE, derived from the registry rather than
+     * listed — a second list is how the adapter comes to claim a capability the
+     * model table no longer has.
+     *
+     * Declared at all because a caller resolving "a video provider" for an EDIT
+     * has no other way to ask. Without it a background replacement handed to a
+     * text-to-video-only provider is accepted, the source clip is read by
+     * nothing, and an unrelated clip is generated from the prompt and reported
+     * as the finished shot. An adapter that declares none cannot edit — the
+     * conservative direction, the same asymmetry `referenceMode` and
+     * `sizeControl` already follow.
+     */
+    videoToVideoModels: Object.freeze(Object.entries(RUNWAY_VIDEO_MODELS)
+        .filter(([, m]) => m.endpoint === 'video_to_video').map(([id]) => id)),
     modelsByCapability: Object.freeze({
         image: Object.freeze(Object.fromEntries([...KNOWN_IMAGE_MODELS].map(id => [id, {}]))),
         video: Object.freeze(Object.fromEntries(Object.entries(RUNWAY_VIDEO_MODELS)

@@ -318,6 +318,18 @@ const RATE_BOOK = {
      * Anything cheaper as the default would under-report the one line a
      * director most needs to see before committing to it: finishing 30 seconds
      * at 4K is $51.
+     *
+     * A SECOND HERE IS A SECOND OF SOURCE, not of output, and RBF-001 measured
+     * that for real money (docs/plans/rbf-001-video-edit-probe.md): this
+     * endpoint IGNORES the requested duration and bills the clip handed in —
+     * 4s was asked for and 9.7s came back and was charged. A FAILED job is
+     * billed too: $1.658 of the probe's $3.205 bought nothing. So an estimate
+     * built from a requested duration is not the price, and the adapter
+     * refuses to quote an unmeasured source rather than guess one.
+     *
+     * The same probe is why `video-edit` is NOT offered as an edit: its
+     * `images_list` entries are style references rather than keyframes. Use
+     * Runway `aleph2`. These rows price the UPSCALE, which is a different act.
      */
     'seedance:post': {
         unit: 'second', native_unit: 'second', native_per_unit: 1,
@@ -331,7 +343,10 @@ const RATE_BOOK = {
         source: 'https://muapi.ai/',
         checked: '2026-08-25',
         note: 'The upscale is the video-edit workflow at a larger tier, billed per second at that '
-            + "tier's rate. Defaulted at 4K ($1.70/s), which is what a finishing pass is for.",
+            + "tier's rate. Defaulted at 4K ($1.70/s), which is what a finishing pass is for. "
+            + 'The second is a second of SOURCE, not of output: RBF-001 measured that this endpoint '
+            + 'ignores the requested duration and bills the clip handed in, and that a failed job '
+            + 'is charged.',
     },
 
     'openai:image': {

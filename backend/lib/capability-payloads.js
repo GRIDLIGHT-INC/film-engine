@@ -740,6 +740,16 @@ const CAPABILITY_BUILDERS = {
             input_url: assetUrl(ctx.videoAsset, 'video', projectId),
             output_format: 'mp4',
             stream: false,
+            /*
+             * THE SOURCE'S OWN LENGTH, carried because some post providers bill
+             * it rather than the duration asked for. RBF-001 measured exactly
+             * that on Seedance's video-edit tier: `duration` is ignored and the
+             * clip handed in is what is charged. Without this the adapter has
+             * nothing to price with and correctly refuses to quote — which is
+             * honest and useless, since the number is sitting on the asset row.
+             */
+            ...(Number(ctx.videoAsset.duration_ms) > 0
+                ? { source_seconds: Number(ctx.videoAsset.duration_ms) / 1000 } : {}),
         };
 
         if (jobType === 'upscale') {
