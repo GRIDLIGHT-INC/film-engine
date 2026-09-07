@@ -15743,6 +15743,7 @@ THREE.GLTFLoader = GLTFLoader;
         const object = PREVIS.objects[index];
         try {
             const data = await importImageAsPng(file);
+            checkUploadSize(file, `/shots/${shotId}/previs/image/import`);
             const imported = await api(`/shots/${shotId}/previs/image/import`, {
                 method: 'POST', body: JSON.stringify({ name: file.name, data }),
             });
@@ -28574,6 +28575,47 @@ ${fountainText.slice(0, 50000)}`;
                 </label>`;
     }
 
+    /*
+     * MIRRORED from backend/lib/body-limit.js. The page cannot require a node
+     * module (build.target: single-html), so the rule exists twice and
+     * upload-size-guard.test.js holds the two equal over real URLs — the same
+     * arrangement screenplay-pagination.js already uses, and for the same
+     * reason: two rules that disagree is how a fix survives in the tests and
+     * not on the screen.
+     */
+    const UPLOAD_BODY_LIMITS = { json: 10 * 1048576, file: 150 * 1048576, bundle: 500 * 1048576 };
+
+    /** The BODY ceiling this URL is allowed, matching what the server enforces. */
+    function uploadLimitFor(url) {
+        const parts = String(url || '').split('?')[0].split('/').filter(Boolean);
+        if (parts[0] === 'projects' && parts[1] === 'import') return UPLOAD_BODY_LIMITS.bundle;
+        const last = parts[parts.length - 1];
+        const carriesFile = parts.length > 1 && (last === 'import' || last === 'media');
+        return carriesFile ? UPLOAD_BODY_LIMITS.file : UPLOAD_BODY_LIMITS.json;
+    }
+
+    /*
+     * Refuse an oversize file HERE, before it is sent.
+     *
+     * The server answers 413 correctly, but reaching it means pushing the whole
+     * file — on a phone, over mobile data — to be told no, and what comes back
+     * reads as "Backend offline". Checking first turns a apparent outage into a
+     * sentence naming the size and the limit.
+     *
+     * The file ceiling is three quarters of the body ceiling because uploads
+     * travel base64-encoded, which is a third larger than the bytes.
+     */
+    function checkUploadSize(file, url) {
+        if (!file || typeof file.size !== 'number') return;
+        const bodyMax = uploadLimitFor(url);
+        const fileMax = Math.floor(bodyMax * 3 / 4);
+        if (file.size <= fileMax) return;
+        const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)}MB`;
+        throw new Error(`${file.name || 'That file'} is ${mb(file.size)}. The limit for this `
+            + `upload is about ${mb(fileMax)} — uploads travel base64-encoded, which is a third `
+            + 'larger than the file itself.');
+    }
+
     function captureFor(accept) {
         const a = String(accept || '');
         if (/image\/|video\//.test(a)) return 'environment';   // rear camera
@@ -28618,6 +28660,7 @@ ${fountainText.slice(0, 50000)}`;
                 r.onerror = () => reject(new Error('That file could not be read.'));
                 r.readAsDataURL(file);
             });
+            checkUploadSize(file, url);
             const res = await api(url, {
                 method: 'POST',
                 body: JSON.stringify({ data, name: file.name, ...(extra || {}) }),
@@ -28796,10 +28839,9 @@ ${fountainText.slice(0, 50000)}`;
         if (label && label.firstChild) label.firstChild.textContent = 'Uploading… ';
         setStatus(`Uploading ${file.name} (${(file.size / 1048576).toFixed(1)}MB)…`, true);
         try {
-            if (file.size > 112 * 1048576) {
-                throw new Error(`That file is ${(file.size / 1048576).toFixed(0)}MB. The limit is about `
-                    + '112MB — uploads travel base64-encoded, which is a third larger than the file.');
-            }
+            // Was a second copy of the ceiling, hardcoded at 112MB. One rule,
+            // mirrored from the server and held equal to it by test.
+            checkUploadSize(file, url);
             const data = await new Promise((resolve, reject) => {
                 const r = new FileReader();
                 r.onload = () => resolve(r.result);
@@ -30461,6 +30503,7 @@ ${fountainText.slice(0, 50000)}`;
                     r.onerror = () => reject(new Error('could not read that file'));
                     r.readAsDataURL(f);
                 });
+                checkUploadSize(f, `/style-book/${entryId}/media`);
                 await api(`/style-book/${entryId}/media`, {
                     method: 'POST',
                     body: JSON.stringify({
@@ -33008,6 +33051,7 @@ ${fountainText.slice(0, 50000)}`;
                 for (let i = 0; i < bytes.length; i += CHUNK) {
                     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
                 }
+                checkUploadSize(file, '/projects/' + state.currentProject.id + '/text-to-screenplay/extract');
                 const res = await api('/projects/' + state.currentProject.id + '/text-to-screenplay/extract', {
                     method: 'POST',
                     body: JSON.stringify({ filename: file.name, data_base64: btoa(binary) }),
@@ -33770,6 +33814,7 @@ ${fountainText.slice(0, 50000)}`;
                 reader.readAsDataURL(file);
             });
             const normalized = String(data).replace(/^data:[^;]*;base64,/, 'data:model/gltf-binary;base64,');
+            checkUploadSize(file, `/projects/${projectId}/models/import`);
             const imported = await api(`/projects/${projectId}/models/import`, {
                 method: 'POST', body: JSON.stringify({ name: file.name, data: normalized }),
             });
@@ -35379,6 +35424,7 @@ ${fountainText.slice(0, 50000)}`;
         setStatus('Importing storyboard frame…');
         try {
             const data = await importImageAsPng(file);
+            checkUploadSize(file, `/shots/${shotId}/storyboard/import`);
             const result = await api(`/shots/${shotId}/storyboard/import`, {
                 method: 'POST', body: JSON.stringify({ name: file.name, data }),
             });
@@ -39124,6 +39170,7 @@ ${fountainText.slice(0, 50000)}`;
             for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
             const base64 = btoa(binary);
             if (statusEl) statusEl.textContent = 'Uploading and importing...';
+            checkUploadSize(file, '/projects/import');
             const result = await api('/projects/import', {
                 method: 'POST',
                 body: { bundle: base64 },

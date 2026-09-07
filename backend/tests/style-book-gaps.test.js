@@ -223,8 +223,19 @@ test('deleting one visual takes its file and leaves the entry', async () => {
 test('a style-book visual is not held to the 10MB default', () => {
     const limits = require('../lib/body-limit');
     const serverSrc = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
-    assert.match(serverSrc, /bodyLimit\.bodyLimitFor\(parts\)/,
+    /*
+     * The INTENT is that server.js does not decide the ceiling itself. Matching
+     * one call NAME made this fail the day the rule improved: the bundle branch
+     * that used to live here as `isBundleImport ? BUNDLE : bodyLimitFor(parts)`
+     * moved into the module that owns it, and the call became limitForPath.
+     * That is more shared, not less. Bound to the intent instead — strictly
+     * stronger, because it also catches server.js recomputing a ceiling inline,
+     * which the name match never could.
+     */
+    assert.match(serverSrc, /bodyLimit\.[A-Za-z]+\(parts\)/,
         'server.js must size bodies through the shared rule, not a private branch');
+    assert.doesNotMatch(serverSrc, /BUNDLE_LIMIT\s*:/,
+        'server.js is choosing between ceilings itself again — that belongs in lib/body-limit.js');
     const TEN = 10 * 1024 * 1024;
     // A frame grab is the normal case here, and a 4K PNG base64-encodes well
     // past 10MB. Refused, it arrives as a destroyed connection, which api()

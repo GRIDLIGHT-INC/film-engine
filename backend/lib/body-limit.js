@@ -35,4 +35,22 @@ function bodyLimitFor(parts) {
     return carriesFile(parts) ? FILE_LIMIT : JSON_LIMIT;
 }
 
-module.exports = { bodyLimitFor, carriesFile, FILE_CARRYING_SEGMENTS, JSON_LIMIT, FILE_LIMIT, BUNDLE_LIMIT };
+/**
+ * The whole rule, bundle branch included.
+ *
+ * `server.js` composed this inline as `isBundleImport ? BUNDLE : bodyLimitFor`,
+ * which made the real ceiling a two-part expression living outside the module
+ * that owns it — and left the page with nothing single to mirror. A client
+ * ceiling that disagrees with the server's is worse than none: it refuses a
+ * file the server would have taken.
+ */
+function limitForPath(parts) {
+    const list = Array.isArray(parts) ? parts : [];
+    const isBundleImport = list[1] === 'projects' && list[2] === 'import';
+    return isBundleImport ? BUNDLE_LIMIT : bodyLimitFor(list);
+}
+
+module.exports = {
+    bodyLimitFor, limitForPath, carriesFile,
+    FILE_CARRYING_SEGMENTS, JSON_LIMIT, FILE_LIMIT, BUNDLE_LIMIT,
+};

@@ -322,7 +322,7 @@ const server = http.createServer(async (req, res) => {
 
     // Parse body for POST/PUT (larger limit for bundle import)
     if (req.method === 'POST' || req.method === 'PUT') {
-        const isBundleImport = parts[1] === 'projects' && parts[2] === 'import';
+
         /*
          * Any /import endpoint carries a file, so any /import endpoint gets the
          * large body.
@@ -334,7 +334,7 @@ const server = http.createServer(async (req, res) => {
          * rather than a message. Derived from the URL shape instead, so a new
          * import target inherits it with nothing to remember.
          */
-        const maxSize = isBundleImport ? bodyLimit.BUNDLE_LIMIT : bodyLimit.bodyLimitFor(parts);
+        const maxSize = bodyLimit.limitForPath(parts);
         try {
             req.body = await readBody(req, maxSize, res);
         } catch (err) {
