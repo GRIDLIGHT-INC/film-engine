@@ -198,6 +198,25 @@ const MEDIA_IMPORTS = Object.freeze({
     ...mediaImportTargets(),
 });
 
+/**
+ * Bytes and their type, from EITHER form a caller may send.
+ *
+ * A data URI is what a browser produces from a FileReader; raw bytes are what a
+ * native client or a `curl --data-binary` sends, and they cost a third less to
+ * transport because nothing is base64-encoded. Accepting both here rather than
+ * at each route is what stops one import path learning the cheaper form and the
+ * other five not.
+ */
+function bytesFrom(input) {
+    const i = input || {};
+    if (i.bytes) {
+        const bytes = Buffer.isBuffer(i.bytes) ? i.bytes : Buffer.from(i.bytes);
+        if (!bytes.length) throw new Error('invalid import: empty file');
+        return { mime: String(i.mime || 'application/octet-stream').split(';')[0].trim(), bytes };
+    }
+    return decodeDataUri(i.data);
+}
+
 function decodeDataUri(data) {
     const match = String(data || '').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/);
     if (!match) throw new Error('invalid import data: expected a base64 data URI');
@@ -703,7 +722,7 @@ function importMedia(target, input) {
     // Footage and sound, landing where the orchestrator would have written it.
     if (spec.capability) return importCapabilityMedia(spec, target, input || {});
     const owner = ownerFor(target, input || {});
-    const { mime, bytes } = decodeDataUri(input && input.data);
+    const { mime, bytes } = bytesFrom(input);
     // Multi-kind targets resolve from the bytes; single-kind ones return their
     // own kind, so nothing that predates this changed.
     const kind = resolveImportKind(spec, bytes, input && input.name);
@@ -769,4 +788,4 @@ function importMedia(target, input) {
     };
 }
 
-module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, validateBytes, resolveImportKind, measureDurationMs };
+module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, bytesFrom, validateBytes, resolveImportKind, measureDurationMs };

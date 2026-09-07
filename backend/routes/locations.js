@@ -463,10 +463,30 @@ function importSubjectPlateRoute(req, res, kind, subjectId) {
 function importWorldCaptureRoute(req, res, locationId) {
     const loc = db.prepare('SELECT id, project_id FROM film_locations WHERE id = ?').get(locationId);
     if (!loc) return badReq(res, 'Location not found', 404);
-    if (!req.body || !req.body.data) return badReq(res, 'no capture supplied');
+    const raw = req.body && req.body.__raw;
+    if (!raw && !(req.body && req.body.data)) return badReq(res, 'no capture supplied');
     try {
+        /*
+         * Refuse against the ceiling that actually binds THIS medium, before
+         * anything is written. Marble caps a video at 100MB while the transport
+         * allows more, so a clip accepted here and rejected there is a paid
+         * round trip to learn something knowable now.
+         */
+        const policy = require('../lib/capture-policy');
+        const bytes = raw
+            ? raw.length
+            : Math.floor((String(req.body.data).split(',')[1] || '').length * 3 / 4);
+        const kind = raw
+            ? (/^video\//i.test(req.body.__mime || '') ? 'video' : 'image')
+            : (/^data:video\//i.test(String(req.body.data)) ? 'video' : 'image');
+        const verdict = policy.checkCapture({ kind, bytes });
+        if (!verdict.ok) return badReq(res, verdict.why, 413);
+
         const imported = require('../lib/media-imports').importMedia('world-capture', {
-            projectId: loc.project_id, locationId, data: req.body.data,
+            projectId: loc.project_id, locationId,
+            // Either form: raw bytes cost a third less to transport, because
+            // nothing is base64-encoded.
+            ...(raw ? { bytes: raw, mime: req.body.__mime } : { data: req.body.data }),
             name: req.body.name || 'capture',
         });
         res.writeHead(201, { 'Content-Type': 'application/json' });

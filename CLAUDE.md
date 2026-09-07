@@ -118,6 +118,7 @@ film-engine/
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── orientation-plans.js   # One current plan scan; prior scans move to recoverable storage
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
+│   │   ├── capture-policy.js      # What a capture may be, from the ceilings that actually bind it
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
@@ -281,6 +282,7 @@ film-engine/
 │       ├── marble-contract.test.js   # A field name asserted in a comment is one nobody can re-check
 │       ├── world-capture-import.test.js # A capture is three media under one target, and the bytes say which
 │       ├── is-pano.test.js          # The input Marble calls most accurate, and nothing could ask for it
+│       ├── capture-policy.test.js  # Three ceilings, and the one that actually decides
 │       ├── redo-between-frames-epic.test.js # Every task well formed, every claim still true
 │       ├── epic-scoping-copy.test.js # A scoped epic that is not the epic is worse than no copy
 │       ├── rbf-001-video-edit-probe.test.js # A paid answer nobody can re-read will be paid for twice
@@ -4265,6 +4267,7 @@ node --test backend/tests/upload-size-guard.test.js
 node --test backend/tests/marble-contract.test.js
 node --test backend/tests/world-capture-import.test.js
 node --test backend/tests/is-pano.test.js
+node --test backend/tests/capture-policy.test.js
 node --test backend/tests/redo-between-frames-epic.test.js
 node --test backend/tests/epic-scoping-copy.test.js
 node --test backend/tests/rbf-001-video-edit-probe.test.js

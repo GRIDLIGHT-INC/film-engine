@@ -210,6 +210,23 @@ const bodyLimit = require('./lib/body-limit');
 
 function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
     return new Promise((resolve, reject) => {
+        /*
+         * RAW BYTES, when the caller says the body IS a file.
+         *
+         * Everything else accumulates into a string, which is why every upload
+         * until now had to be base64-encoded — and base64 is four thirds of the
+         * bytes, so a 150MB ceiling only ever admitted 112MB of file. A phone
+         * sending a clip pays that inflation in bytes over mobile data and in
+         * memory at both ends, for nothing.
+         *
+         * Narrow on purpose: only an explicit media content-type takes this
+         * path. A body with no content-type, or a form encoding, still parses
+         * as JSON exactly as it did — widening the condition is how an ordinary
+         * POST starts arriving as a Buffer that no route understands.
+         */
+        const contentType = String(req.headers['content-type'] || '').split(';')[0].trim();
+        const isRaw = /^(image|video|audio|model)\/|^application\/octet-stream$/i.test(contentType);
+        const chunks = [];
         let body = '';
         let size = 0;
         let oversize = false;
@@ -243,9 +260,17 @@ function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
                 reject(new Error(`Request body too large (limit ${limitMb}MB)`));
                 return;
             }
-            body += chunk;
+            if (isRaw) chunks.push(chunk);
+            else body += chunk;
         });
         req.on('end', () => {
+            if (isRaw) {
+                // Handed on as bytes with the type the caller declared. No
+                // decode, no re-encode, and the full body ceiling is usable
+                // because nothing inflated.
+                resolve({ __raw: Buffer.concat(chunks), __mime: contentType });
+                return;
+            }
             if (!body) { resolve({}); return; }
             try { resolve(stripDangerousKeys(JSON.parse(body))); }
             catch (e) { reject(new Error('Invalid JSON')); }
