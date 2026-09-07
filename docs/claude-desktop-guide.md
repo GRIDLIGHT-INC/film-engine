@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**264 tools, 68 families.** Everything the app can do, you can ask for in a
+**265 tools, 68 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -277,6 +277,19 @@ Then `video_preview` shows exactly what a clip would cost before you buy one.
 photograph of what was actually shot. It is a record for people to compare
 against, **not** a generation reference: no prompt reads it. Use `plate_upload`
 for a picture that should condition future frames.
+
+`world_capture_upload` attaches a **capture of the real place** to a location:
+the environment itself, shot rather than imagined. One tool takes all three
+media a capture arrives as — a 360 panorama, a short orbit clip, or a LiDAR
+scan — and **which one it is comes from the bytes, not the filename**, because
+a phone names a clip `IMG_0431.MOV` and a still `IMG_0430.HEIC`. The response
+reports **capture_kind** so you know which medium was recognised.
+
+This is what a world is reconstructed **from**, and it is deliberately not a
+plate: a plate is one picture this engine generated, a capture is evidence of
+somewhere that exists. World Labs' own documentation calls a panorama the most
+accurate spatial representation, which is why it is the default medium. Use
+`plate_upload` if you want a reference picture instead.
 
 **How good the frame needs to be is a choice, and it has a tool.** `quality_get`
 reads the project's image quality tier and tells you what each tier would

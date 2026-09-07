@@ -246,14 +246,22 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-world-import-target',
-        why: 'a phone capture has nowhere registered to land',
+        /*
+         * Was `no-world-import-target`, pinning the ABSENCE of the thing ICP-005
+         * builds — the fourth claim of that shape in this epic. It now pins what
+         * the task delivered: one target accepting all three media a capture
+         * arrives as, because three separate targets would mean three routes and
+         * three controls to keep in step.
+         */
+        id: 'world-import-target-registered',
+        why: 'ICP-005 registered it; a capture with nowhere to land reaches no world',
         holds() {
-            const { MEDIA_IMPORTS } = require(path.join(REPO, 'backend/lib/media-imports.js'));
-            const ids = Array.isArray(MEDIA_IMPORTS)
-                ? MEDIA_IMPORTS : Object.keys(MEDIA_IMPORTS);
-            const world = ids.filter((k) => /world|capture|scan|pano/i.test(k));
-            return world.length === 0 || `a world target now exists: ${world.join(', ')}`;
+            const { MEDIA_IMPORTS } = require(path.join(REPO, 'backend/lib/media-imports'));
+            const spec = MEDIA_IMPORTS['world-capture'];
+            if (!spec) return 'world-capture has left MEDIA_IMPORTS';
+            const missing = ['image', 'video', 'model'].filter((k) => !(spec.kinds || []).includes(k));
+            return missing.length === 0
+                || `the capture target no longer accepts: ${missing.join(', ')}`;
         },
     },
     {

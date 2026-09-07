@@ -997,6 +997,31 @@ const PRODUCTION_TOOLS = [
         required: ['marketing_id'],
     },
     {
+        name: 'world_capture_upload',
+        handler: handleLocations, method: 'POST',
+        path: a => `/film/locations/${a.location_id}/capture/import`,
+        body: a => ({ data: a.capture, name: a.name }),
+        description:
+            'Attach a CAPTURE of a real location \u2014 the environment itself, shot rather than '
+            + 'imagined. FREE \u2014 nothing is generated. One target takes all three media a '
+            + 'capture arrives as, and WHICH ONE IS DECIDED FROM THE BYTES, not the filename: a '
+            + '360 panorama (PNG or JPEG \u2014 World Labs call a panorama the most accurate '
+            + 'spatial representation), a short orbit clip (MP4 or MOV), or a LiDAR scan (GLB). '
+            + 'This is what a world is reconstructed FROM, and it is deliberately not a plate: a '
+            + 'plate is one picture this engine generated, a capture is evidence of somewhere '
+            + 'that exists. Use plate_upload for a reference picture instead. The response '
+            + 'reports capture_kind so you know which medium was recognised.',
+        schema: {
+            location_id: { type: 'string', description: 'The location this capture is of.' },
+            capture: {
+                type: 'string',
+                description: 'A data URI: image/png, image/jpeg, video/mp4, video/quicktime, or model/gltf-binary.',
+            },
+            name: { type: 'string', description: 'What to call it on disk. Optional.' },
+        },
+        required: ['location_id', 'capture'],
+    },
+    {
         name: 'continuity_upload',
         handler: handleContinuity, method: 'POST',
         path: a => `/film/continuity/${a.ref_id}/import`,

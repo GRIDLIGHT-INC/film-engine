@@ -146,6 +146,9 @@ test('every registered director import persists, registers, serves and has a UI 
         // The two surfaces whose entire content is a picture and which could
         // previously only be pointed at by a path on the server's own disk.
         'continuity-ref', 'marketing-asset',
+        // The environment itself, shot rather than imagined: one target for the
+        // panorama, the orbit clip and the scan, because they are one act.
+        'world-capture',
         ...Object.values(MEDIA_KINDS).filter(k => k.media !== 'image').map(k => `${k.capability}-media`),
     ].sort();
     assert.deepStrictEqual(entries.map(([id]) => id).sort(), expected);
@@ -230,7 +233,8 @@ test('every registered import rejects invalid media before writing an asset', ()
         assert.throws(() => importMedia(id, {
             ...owner, ...ownerArgsFor(MEDIA_IMPORTS[id], owner),
             name: '../escape.bin', data: 'data:application/octet-stream;base64,bm90LXRoZS1mb3JtYXQ=',
-        }), /invalid|unsupported|not a PNG|not a video|not an audio|signature/i, `${id}: invalid bytes accepted`);
+        }), /invalid|unsupported|not a PNG|not a video|not an audio|not a recognised|signature/i,
+            `${id}: invalid bytes accepted`);
         const after = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?').get(owner.projectId).n;
         assert.strictEqual(after, before, `${id}: invalid import left an asset row`);
     }
@@ -366,6 +370,11 @@ test('every registered import is reachable through its production route', async 
         'orientation-plan': {
             handler: require('../routes/locations').handleLocations,
             url: o => `/film/locations/${o.locationId}/orientation-plan/import`, mime: 'image/png', bytes: PNG, name: 'floor-plan.png',
+        },
+        'world-capture': {
+            handler: require('../routes/locations').handleLocations,
+            url: o => `/film/locations/${o.locationId}/capture/import`,
+            mime: 'image/png', bytes: PNG, name: 'harbour-pano.png',
         },
         'mood-board-image': {
             handler: require('../routes/mood-board').handleMoodBoard,

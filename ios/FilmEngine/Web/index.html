@@ -26773,6 +26773,7 @@ ${fountainText.slice(0, 50000)}`;
                        extra: {}, after: 'renderSubjectSheet', title: 'Upload an LLM-generated orientation plan image'
                    })}
                    ${l.orientation_plan_image_url ? `<button class="btn btn-secondary btn-sm" onclick="ssDeletePlanImage()">Remove image</button>` : ''}
+                   ${captureUploadControl(SS.id, { after: 'renderSubjectSheet' })}
                  </div>`)}
 
             ${ssSection('ls-variants', 'Time of day variants',
@@ -28621,6 +28622,33 @@ ${fountainText.slice(0, 50000)}`;
         if (/image\/|video\//.test(a)) return 'environment';   // rear camera
         if (/audio\//.test(a)) return '';                       // a mic has no facing
         return null;
+    }
+
+    /*
+     * A WORLD CAPTURE is not a plate, so it does not go through uploadControl.
+     *
+     * uploadControl accepts PNG and JPEG because a plate is a picture. A
+     * capture is whichever of three media the director stood in the room and
+     * shot — a 360 panorama, a short orbit clip, or a LiDAR scan — and the
+     * server decides which from the bytes, not from the name the phone gave it.
+     * Offering all three from one control is what keeps that one act one act.
+     *
+     * The shoot affordance comes from the shared helper, so the accept type
+     * decides the capture device exactly as it does everywhere else.
+     */
+    function captureUploadControl(locationId, opts) {
+        const o = opts || {};
+        const accept = 'image/png,image/jpeg,video/mp4,video/quicktime,.png,.jpg,.jpeg,.mp4,.mov,.glb';
+        const url = `/locations/${locationId}/capture/import`;
+        const onchange = `uploadReferenceImage(event, 'world-capture', '${url}', {}, '${o.after || ''}')`;
+        return `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;"
+                       title="${esc(o.title || 'A panorama, a short orbit clip, or a LiDAR scan of the real place')}"
+                       onclick="event.stopPropagation();">${esc(o.label || 'Add capture')}
+                    <input type="file" data-import-target="world-capture"
+                           accept="${accept}" style="display:none"
+                           onclick="event.stopPropagation();"
+                           onchange="${onchange}">
+                </label>${shootControl(accept, 'data-import-target="world-capture"', onchange, o)}`;
     }
 
     function uploadControl(target, url, opts) {

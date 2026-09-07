@@ -58,6 +58,7 @@ function mediaImportTargets() {
 const MEDIA_IMPORTS = Object.freeze({
     'storyboard-image': Object.freeze({
         kind: 'image', shotScoped: true, subdir: 'storyboards', mimes: ['image/png'],
+        assetType: 'storyboard', metaKind: 'storyboard_import',
         /*
          * PNG only, and this is the reason rather than an oversight: the live
          * frame lives at a FIXED path, `{project}/{shot_code}.png`, derived
@@ -74,11 +75,48 @@ const MEDIA_IMPORTS = Object.freeze({
     // reference_image is already catalogued and served from refsheets by Previs.
     'previs-image': Object.freeze({
         kind: 'image', shotScoped: true, subdir: 'refsheets', mimes: ['image/png'],
+        assetType: 'reference_image', metaKind: 'previs_image',
         pngOnly: 'stands in the previs stage beside storyboard frames, which are PNG',
     }),
     // Previs's geometry parser and textured viewer both consume GLB. Advertising
     // formats they cannot stage would turn a successful upload into a broken picker.
-    'three-d-model': Object.freeze({ kind: 'model', shotScoped: false, subdir: '3d', mimes: ['model/gltf-binary', 'application/octet-stream'] }),
+    'three-d-model': Object.freeze({ kind: 'model', shotScoped: false, subdir: '3d', mimes: ['model/gltf-binary', 'application/octet-stream'], assetType: 'other', metaKind: 'model_3d' }),
+
+    /*
+     * A WORLD CAPTURE: the environment itself, shot rather than imagined.
+     *
+     * Three media under one target because they are ONE ACT by the director —
+     * stand in the room, capture it, attach it to the location — and Marble
+     * takes all three: a 360 panorama (its own docs call this the most accurate
+     * spatial representation), a short orbit clip, or a LiDAR scan as a GLB.
+     * Three separate targets would mean three routes and three controls to keep
+     * in step, and this registry exists because that drifts.
+     *
+     * The kind comes from the BYTES. A phone names a clip IMG_0431.MOV and a
+     * still IMG_0430.HEIC, and storing a clip as an image is a file that never
+     * decodes again.
+     *
+     * Each kind lands in a subdir that is ALREADY SERVED rather than a new one:
+     * a world input nothing can fetch is an upload that succeeded and reaches
+     * no provider.
+     */
+    'world-capture': Object.freeze({
+        /*
+         * `kind` is the DEFAULT medium and `kinds` is what is accepted. Seventeen
+         * consumers read `spec.kind` as a scalar and `spec.subdir` as a string;
+         * making those polymorphic broke sixteen tests for no gain. A capture's
+         * default is the panorama — Marble's own docs call it the most accurate
+         * spatial representation — and the override map carries the other two.
+         */
+        kind: 'image',
+        kinds: ['image', 'video', 'model'],
+        shotScoped: false,
+        subdir: 'refsheets',
+        subdirByKind: Object.freeze({ video: 'video', model: '3d' }),
+        mimes: Object.freeze([...IMAGE_MIMES, ...VIDEO_MIMES, 'model/gltf-binary', 'application/octet-stream']),
+        assetType: 'other',
+        metaKind: 'world_capture',
+    }),
 
     /*
      * REFERENCE PLATES, from outside.
@@ -107,7 +145,7 @@ const MEDIA_IMPORTS = Object.freeze({
     'character-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'character', mimes: IMAGE_MIMES }),
     'location-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'location', mimes: IMAGE_MIMES }),
     'prop-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'prop', mimes: IMAGE_MIMES }),
-    'orientation-plan': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', mimes: IMAGE_MIMES }),
+    'orientation-plan': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', mimes: IMAGE_MIMES, assetType: ORIENTATION_ASSET_TYPE, metaKind: 'orientation_plan' }),
     // The look has no subject table by design (KIND_SOURCE calls it `project`),
     // so a board image is stored and linked by the mood-board row instead.
     'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
@@ -166,14 +204,46 @@ function decodeDataUri(data) {
     return { mime: match[1].toLowerCase(), bytes: Buffer.from(match[2].replace(/\s/g, ''), 'base64') };
 }
 
-function validateBytes(spec, mime, bytes) {
+/**
+ * Which medium these BYTES are, bounded by what the target declares.
+ *
+ * Every entry but one has a single `kind`, and for those this returns it
+ * unchanged — seventeen entries predate multi-kind imports and none of them had
+ * to be edited. A world capture is the exception: a director shoots a panorama,
+ * an orbit clip or a LiDAR scan in one act, onto one location, and which of the
+ * three it is has to come from the file itself. A phone hands over IMG_0431.MOV
+ * and IMG_0430.HEIC; trusting either name is how a clip gets stored as an image
+ * and never decodes again.
+ */
+function resolveImportKind(spec, bytes, name) {
+    const allowed = spec.kinds || [spec.kind];
+    if (allowed.length === 1) return allowed[0];
+    const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+    let seen = null;
+    if (b.length > 8 && b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) seen = 'image';
+    else if (b.length > 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) seen = 'image';
+    else if (b.length > 12 && b.subarray(4, 8).toString('latin1') === 'ftyp') seen = 'video';
+    else if (b.length > 4 && b.subarray(0, 4).toString('latin1') === 'glTF') seen = 'model';
+    if (!seen) {
+        throw new Error(`${name || 'That file'} is not a recognised panorama, clip or scan. `
+            + 'A capture must be a PNG or JPEG panorama, an MP4/MOV clip, or a GLB scan.');
+    }
+    if (!allowed.includes(seen)) {
+        throw new Error(`a ${seen} is not accepted here; this import takes ${allowed.join(', ')}`);
+    }
+    return seen;
+}
+
+function validateBytes(spec, mime, bytes, kind) {
     if (!spec.mimes.includes(mime)) throw new Error(`unsupported import type ${mime}`);
+    // A multi-kind entry validates against the kind these bytes actually are.
+    const k = kind || spec.kind;
     if (!bytes.length) throw new Error('invalid import: empty file');
-    const isPng = spec.kind === 'image'
+    const isPng = k === 'image'
         && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
-    const isJpeg = spec.kind === 'image'
+    const isJpeg = k === 'image'
         && bytes.length > 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
-    if (spec.kind === 'image' && !isPng && !isJpeg) {
+    if (k === 'image' && !isPng && !isJpeg) {
         throw new Error('This file is not a PNG or a JPEG. Export it as one and try again.');
     }
     /*
@@ -232,7 +302,7 @@ function validateBytes(spec, mime, bytes) {
      * these inconsistently and sometimes not at all, which is why the mime list
      * allows octet-stream and this is what actually decides.
      */
-    if (spec.kind === 'video' || spec.kind === 'audio') {
+    if (k === 'video' || k === 'audio') {
         const ascii = (from, len) => bytes.toString('ascii', from, from + len);
         const isMp4 = bytes.length > 12 && ascii(4, 4) === 'ftyp';
         const isMatroska = bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45
@@ -244,7 +314,7 @@ function validateBytes(spec, mime, bytes) {
         const isFlac = bytes.length > 4 && ascii(0, 4) === 'fLaC';
         const isOgg = bytes.length > 4 && ascii(0, 4) === 'OggS';
 
-        if (spec.kind === 'video') {
+        if (k === 'video') {
             // An .mp4 container carries audio-only files too, but every one we
             // could receive here is meant to be a picture; a bare WAV or MP3 is
             // refused outright because attaching one as a clip is silent
@@ -278,7 +348,7 @@ function validateBytes(spec, mime, bytes) {
             }
         }
     }
-    if (spec.kind === 'model') {
+    if (k === 'model') {
         if (bytes.length < 12 || bytes.toString('ascii', 0, 4) !== 'glTF' || bytes.readUInt32LE(4) !== 2
             || bytes.readUInt32LE(8) !== bytes.length) throw new Error('invalid GLB signature or length');
         // Validate with the same parser Previs uses. A header-only GLB or a
@@ -634,31 +704,47 @@ function importMedia(target, input) {
     if (spec.capability) return importCapabilityMedia(spec, target, input || {});
     const owner = ownerFor(target, input || {});
     const { mime, bytes } = decodeDataUri(input && input.data);
-    validateBytes(spec, mime, bytes);
+    // Multi-kind targets resolve from the bytes; single-kind ones return their
+    // own kind, so nothing that predates this changed.
+    const kind = resolveImportKind(spec, bytes, input && input.name);
+    validateBytes(spec, mime, bytes, kind);
 
     const imageFormat = /^image\/jpe?g$/i.test(mime) ? 'jpg' : 'png';
-    const storedFormat = spec.kind === 'model' ? 'glb' : spec.kind === 'image' ? imageFormat : spec.kind;
+    const videoFormat = (/^video\/(mp4|quicktime|webm|x-matroska)$/i.exec(mime) || [, 'mp4'])[1]
+        .replace('quicktime', 'mov').replace('x-matroska', 'mkv');
+    const storedFormat = kind === 'model' ? 'glb' : kind === 'image' ? imageFormat : videoFormat;
+    // A per-kind subdir, or the single one — every value already has a serving
+    // route, because a world input nothing can fetch reaches no provider.
+    const subdir = (spec.subdirByKind && spec.subdirByKind[kind]) || spec.subdir;
     let filename;
     if (target === 'storyboard-image') filename = `${owner.shotCode}.png`;
     else filename = `${safeStem(input.name)}_${generateId().slice(0, 8)}.${storedFormat}`;
 
-    const prospective = path.join(require('./file-storage').DATA_DIR, spec.subdir, owner.projectId, filename);
+    const prospective = path.join(require('./file-storage').DATA_DIR, subdir, owner.projectId, filename);
     if (target === 'storyboard-image') archiveCurrentStoryboard(owner.projectId, owner.shotId, owner.shotCode, prospective);
-    const filePath = saveFile(owner.projectId, spec.subdir, filename, bytes);
+    const filePath = saveFile(owner.projectId, subdir, filename, bytes);
 
     const prior = target === 'storyboard-image'
         ? db.prepare("SELECT MAX(version) AS version FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'").get(owner.shotId)
         : null;
     const version = prior && prior.version ? prior.version + 1 : 1;
     const assetId = generateId();
-    const assetType = target === 'storyboard-image' ? 'storyboard'
-        : target === 'previs-image' ? 'reference_image'
-        : target === 'orientation-plan' ? ORIENTATION_ASSET_TYPE : 'other';
-    const metadata = target === 'three-d-model'
-        ? { kind: 'model_3d', subject_kind: 'imported', subject_name: safeStem(input.name), imported: true }
-        : target === 'orientation-plan'
-            ? { kind: 'orientation_plan', location_id: input.locationId, imported: true }
-        : { kind: target === 'previs-image' ? 'previs_image' : 'storyboard_import', imported: true };
+    /*
+     * DECLARED, not compared. This was a chain of `target === '...'` ternaries,
+     * and adding a fourth medium to it is how a registry becomes decorative —
+     * the entry would carry the truth and the call site would keep deciding.
+     */
+    const assetType = spec.assetType || 'other';
+    const metadata = {
+        kind: spec.metaKind,
+        imported: true,
+        // Only what this target actually owns. A location id on an entry that
+        // has no location is a column nobody can interpret later.
+        ...(input.locationId ? { location_id: input.locationId } : {}),
+        ...(spec.metaKind === 'model_3d' ? { subject_kind: 'imported', subject_name: safeStem(input.name) } : {}),
+        // A capture is three media, so the record has to say which arrived.
+        ...(spec.kinds ? { capture_kind: kind } : {}),
+    };
     db.prepare(`INSERT INTO film_assets
         (id, project_id, shot_id, location_id, asset_type, file_path, file_name, format, mime_type, size_bytes, version, metadata)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -683,4 +769,4 @@ function importMedia(target, input) {
     };
 }
 
-module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, validateBytes, measureDurationMs };
+module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, validateBytes, resolveImportKind, measureDurationMs };

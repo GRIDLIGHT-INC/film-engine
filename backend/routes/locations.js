@@ -448,6 +448,34 @@ function importSubjectPlateRoute(req, res, kind, subjectId) {
     }
 }
 
+/**
+ * Attach a CAPTURE of the real place: a panorama, an orbit clip, or a scan.
+ *
+ * One route for three media, because it is one act by the director. Which of
+ * the three arrived is decided by the bytes inside importMedia, and reported
+ * back as `capture_kind` — a phone names a clip IMG_0431.MOV and honouring that
+ * name is how a video gets filed as an image and never decodes again.
+ *
+ * A capture is the input a world is reconstructed FROM. It is deliberately not
+ * a plate: a plate is one photograph this engine generated, and a capture is
+ * evidence of somewhere that actually exists.
+ */
+function importWorldCaptureRoute(req, res, locationId) {
+    const loc = db.prepare('SELECT id, project_id FROM film_locations WHERE id = ?').get(locationId);
+    if (!loc) return badReq(res, 'Location not found', 404);
+    if (!req.body || !req.body.data) return badReq(res, 'no capture supplied');
+    try {
+        const imported = require('../lib/media-imports').importMedia('world-capture', {
+            projectId: loc.project_id, locationId, data: req.body.data,
+            name: req.body.name || 'capture',
+        });
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ kind: 'world_capture', ...imported }));
+    } catch (err) {
+        badReq(res, err.message, /not found/i.test(err.message) ? 404 : 400);
+    }
+}
+
 /** Upload the drawn/LLM-authored floor plan beside, never instead of, the compass data. */
 function importOrientationPlanRoute(req, res, locationId) {
     const loc = db.prepare('SELECT id, project_id FROM film_locations WHERE id = ?').get(locationId);
@@ -820,6 +848,9 @@ function handleLocations(req, res, urlParts, query) {
         if (!UUID_RE.test(locId)) return badReq(res, 'Invalid location ID');
         if (urlParts[3] === 'orientation-plan' && urlParts[4] === 'import' && req.method === 'POST') {
             return importOrientationPlanRoute(req, res, locId);
+        }
+        if (urlParts[3] === 'capture' && urlParts[4] === 'import' && req.method === 'POST') {
+            return importWorldCaptureRoute(req, res, locId);
         }
         if (urlParts[3] === 'orientation-plan' && !urlParts[4] && req.method === 'DELETE') {
             const removed = require('../lib/orientation-plans').dropOrientationPlan(locId);

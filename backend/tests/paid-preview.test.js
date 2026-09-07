@@ -349,6 +349,7 @@ test('every import target is reachable from an agent', () => {
         'three-d-model': 'model_upload',
         'continuity-ref': 'continuity_upload',
         'marketing-asset': 'marketing_upload',
+        'world-capture': 'world_capture_upload',
         /*
          * Reserved with codex in the confer, before the tool exists -- so this
          * suite states the contract the implementation owes rather than being
