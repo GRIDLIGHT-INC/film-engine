@@ -78,7 +78,7 @@ function isRefusal(error) {
  * place. Gridlight is included when reachable-by-configuration, since it needs
  * no key by design.
  */
-function imageProviderChain(projectConfig) {
+function imageProviderChain(projectConfig, opts) {
     const preferred = providers.resolveGenerator('image', projectConfig || {});
     /*
      * Carried so a failure can say WHERE the provider came from.
@@ -112,7 +112,63 @@ function imageProviderChain(projectConfig) {
         chain.push(providers.metered(adapter, projectConfig || {}));
         seen.add(adapter.id);
     }
-    return chain;
+
+    /*
+     * A LOCATION PLATE NEEDS A PROVIDER THAT CAN BE TOLD A SIZE.
+     *
+     * Reaching the 2048 floor is a provider choice, not a setting: a
+     * `ratio-only` adapter turns a width and height into an aspect ratio and
+     * picks the pixels itself, so asking harder achieves nothing. When a floor
+     * is required, capable providers lead.
+     *
+     * STABLE, and only when a floor is asked for. Reordering every image
+     * request would silently move a whole production's frames to another
+     * vendor, which is the "spend that goes somewhere nobody chose" defect this
+     * codebase has already paid for once.
+     *
+     * And a demotion is REPORTED. If the project pinned a provider that cannot
+     * serve the floor, the plate is generated somewhere the director did not
+     * choose — defensible, and it has to be said, or a bill arrives from a
+     * company nobody signed up with.
+     */
+    const needsPixels = opts && Number(opts.needsPixels) > 0 ? Number(opts.needsPixels) : 0;
+    if (!needsPixels) return chain;
+    return orderForFloor(chain, needsPixels);
+}
+
+/**
+ * Put the providers that can serve a floor at the front, and say if that moved
+ * anything.
+ *
+ * PURE, and separate from imageProviderChain, so the ordering can be exercised
+ * over a known set of adapters. Testing it through the live chain makes the
+ * check depend on which credentials happen to be present in the shell — and a
+ * check that only runs when there happens to be data is a check that does not
+ * run. On this machine that chain is EMPTY, so every assertion about ordering
+ * would have passed over nothing.
+ */
+function orderForFloor(chain, needsPixels) {
+    const { canReachFloor, capableProviders } = require('./reference-plates');
+    const able = chain.filter(a => canReachFloor(a, needsPixels));
+    const rest = chain.filter(a => !canReachFloor(a, needsPixels));
+    const ordered = able.concat(rest);
+    ordered.resolution = chain.resolution;
+
+    const wasFirst = chain[0] && chain[0].id;
+    const nowFirst = ordered[0] && ordered[0].id;
+    const moved = wasFirst && nowFirst && wasFirst !== nowFirst;
+    ordered.floor = {
+        needed_pixels: needsPixels,
+        capable: capableProviders(needsPixels),
+        moved: moved ? { from: wasFirst, to: nowFirst } : null,
+        why: moved
+            ? `${wasFirst} cannot be told an image size, or cannot reach `
+              + `${needsPixels.toLocaleString()} pixels, so this plate is generated on ${nowFirst} `
+              + 'instead. A location plate is re-shot from by every shot in the scene, so it is the '
+              + 'one plate where the size has to be real.'
+            : null,
+    };
+    return ordered;
 }
 
 /**
@@ -244,6 +300,7 @@ async function generateImageWithFallback(payloadOrFactory, projectConfig, opts) 
 }
 
 module.exports = {
+    orderForFloor,
     runImageFallbackChain,
     imageProviderChain,
     generateImageWithFallback,

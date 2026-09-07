@@ -478,6 +478,95 @@ function sizeIsHonoured(adapter) {
     return !!adapter && adapter.sizeControl && adapter.sizeControl !== 'ratio-only';
 }
 
+/**
+ * Can this provider actually serve a plate of `floorPixels`?
+ *
+ * TWO conditions, and treating it as one is the trap. Enough pixels is
+ * necessary and not sufficient: a `ratio-only` adapter turns a width and height
+ * into an aspect ratio and chooses the pixels itself, so the number reaches
+ * nothing however large its ceiling. gridlight declares exactly the floor and
+ * is ratio-only — judged on area alone it would be called capable, and the
+ * plate would come back at whatever it decided.
+ */
+/** Why the floor was missed, and who could serve it instead. */
+function floorReason(adapter, floorPixels) {
+    const base = adapter && adapter.sizeControlReason
+        ? 'This provider cannot be told a size \u2014 a width and height can only become an '
+          + `aspect ratio, so it chooses the pixels. ${adapter.sizeControlReason}`
+        : 'This provider cannot be told a size; a width and height can only become an '
+          + 'aspect ratio, so the provider chooses the pixels.';
+    const able = capableProviders(floorPixels);
+    return able.length
+        ? `${base} Providers that can serve this plate: ${able.join(', ')}.`
+        : `${base} No registered provider can serve this plate at that size.`;
+}
+
+/**
+ * The pixels a location plate needs at this project's aspect.
+ *
+ * Asked of the sizing code itself — what would an ideal provider be sent? —
+ * rather than re-deriving the aspect here. A second computation of the same
+ * number is how the floor the chooser enforces comes to differ from the floor
+ * the report measures against.
+ */
+function locationFloorPixels(project) {
+    const perfect = { sizeControl: 'exact', maxImagePixels: Number.MAX_SAFE_INTEGER };
+    const s = plateImageSize(project || {}, perfect.maxImagePixels, 'location', perfect);
+    return s ? s.width * s.height : LOCATION_MIN_EDGE * LOCATION_MIN_EDGE;
+}
+
+/**
+ * Which provider generates THIS plate.
+ *
+ * For every kind but location, the project's own choice, unchanged. A location
+ * plate is the one reference re-shot from by every shot in the scene, so it
+ * declares a floor — and reaching that floor is a PROVIDER choice, not a
+ * setting: a ratio-only adapter turns a size into an aspect ratio and picks the
+ * pixels itself.
+ *
+ * A demotion is returned, never swallowed. Generating somewhere the director
+ * did not choose is defensible and has to be said.
+ */
+function plateProviderFor(kind, projectConfig, project) {
+    const { resolve } = require('./providers');
+    const chosen = resolve('image', projectConfig || {});
+    if (kind !== 'location') return { provider: chosen, floor: null };
+
+    const need = locationFloorPixels(project);
+    if (canReachFloor(chosen, need)) {
+        return { provider: chosen, floor: { needed_pixels: need, moved: null, capable: capableProviders(need) } };
+    }
+    const { imageProviderChain } = require('./image-fallback');
+    const chain = imageProviderChain(projectConfig || {}, { needsPixels: need });
+    const lead = chain[0];
+    // Nothing credentialed can serve it: keep the project's choice and let the
+    // size report say the floor was missed. Silently generating nothing would
+    // be worse than a plate that is honestly below the floor.
+    if (!lead || !canReachFloor(lead, need)) {
+        return { provider: chosen, floor: chain.floor || { needed_pixels: need, moved: null, capable: capableProviders(need) } };
+    }
+    return { provider: lead, floor: chain.floor };
+}
+
+function canReachFloor(adapter, floorPixels) {
+    if (!adapter) return false;
+    if (!sizeIsHonoured(adapter)) return false;
+    return Number(adapter.maxImagePixels || 0) >= Number(floorPixels || 0);
+}
+
+/**
+ * Which registered providers could serve it — the remedy, not just the problem.
+ *
+ * A refusal that explains why the floor was missed and names nothing to do
+ * about it sends the reader to the provider list to work it out themselves.
+ */
+function capableProviders(floorPixels) {
+    const providers = require('./providers');
+    return providers.list()
+        .filter(a => (a.capabilities || []).includes('image') && canReachFloor(a, floorPixels))
+        .map(a => a.id);
+}
+
 function plateImageSize(project, maxPixels, kind, adapter) {
     const p = project || {};
     const { imageBudget } = require('./capability-payloads');
@@ -547,11 +636,7 @@ function plateImageSize(project, maxPixels, kind, adapter) {
         if (!honoured) {
             return {
                 ...wanted, clamped: false, honoured: false, below_floor: true,
-                floor_reason: adapter && adapter.sizeControlReason
-                    ? `This provider cannot be told a size \u2014 a width and height can only become an `
-                      + `aspect ratio, so it chooses the pixels. ${adapter.sizeControlReason}`
-                    : 'This provider cannot be told a size; a width and height can only become an '
-                      + 'aspect ratio, so the provider chooses the pixels.',
+                floor_reason: floorReason(adapter, wanted.width * wanted.height),
             };
         }
         return { ...wanted, clamped: false, honoured: true, below_floor: false, floor_reason: null };
@@ -580,12 +665,17 @@ function plateImageSize(project, maxPixels, kind, adapter) {
          * ceiling would suggest a smaller ask might work. It would not.
          */
         floor_reason: !honoured
-            ? `This provider cannot be told a size \u2014 a width and height can only become an aspect `
-              + `ratio, so it chooses the pixels and returns about ${got.width}x${got.height}. `
-              + `${(adapter && adapter.sizeControlReason) || ''}`.trim()
+            ? floorReason(adapter, asked)
+            /*
+             * DERIVED, not "BFL and Google". That was typed, and a typed list
+             * of vendors is wrong the day one is added, removed or loses its
+             * credential — while still reading as authoritative advice.
+             */
             : `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
               + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
-              + 'long edge a location wants. BFL and Google can serve it; Runway and OpenAI cannot.',
+              + `long edge a location wants. ${capableProviders(asked).length
+                  ? `Providers that can serve this plate: ${capableProviders(asked).join(', ')}.`
+                  : 'No registered provider can serve this plate at that size.'}`,
     };
 }
 
@@ -951,7 +1041,8 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 }
 
 module.exports = {
-    LOCATION_MIN_EDGE, sizeIsHonoured,
+    LOCATION_MIN_EDGE, sizeIsHonoured, canReachFloor, capableProviders, floorReason,
+    locationFloorPixels, plateProviderFor,
     COMPASS_VIEWS, compassView, orientationEdge, planCompassSweep, plateImageSize,
     buildPlateRefinePrompt, REFINE_NEGATIVE,
     plateFileName, PLATE_KINDS, buildPlatePrompt, generatePlate, styleReferencesFor, NEGATIVE };

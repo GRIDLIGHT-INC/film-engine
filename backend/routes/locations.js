@@ -78,8 +78,18 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
 
     const { imageOverride, promptOverride } = require('../lib/generation-override');
     const tierOverride = imageOverride(req.body || {});
-    const provider = resolve('image',
-        spendContext(project, null, null, tierOverride) || parseProjectConfig(subject.project_id));
+    /*
+     * A location plate declares a 2048 floor, and reaching it is a PROVIDER
+     * choice: a ratio-only adapter turns a size into an aspect ratio and picks
+     * the pixels itself, so asking harder achieves nothing. Every other kind
+     * keeps the project's own choice untouched.
+     */
+    const { plateProviderFor } = require('../lib/reference-plates');
+    const chosenFor = plateProviderFor(kind,
+        spendContext(project, null, null, tierOverride) || parseProjectConfig(subject.project_id),
+        project);
+    const provider = chosenFor.provider;
+    const floorNote = chosenFor.floor;
     const result = await generatePlate({
         promptOverride: promptOverride(req.body || {}),
         tierOverride,
@@ -104,7 +114,12 @@ async function generateSubjectPlate(req, res, kind, subjectId) {
         return res.end(JSON.stringify({ error: 'Plate generation failed', details: result.error, kind, [`${kind}_id`]: subjectId }));
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ kind, [`${kind}_id`]: subjectId, name: subject.name, ...result }));
+    // A demotion is reported, never swallowed: generating somewhere the
+    // director did not choose is defensible and has to be said.
+    res.end(JSON.stringify({
+        kind, [`${kind}_id`]: subjectId, name: subject.name, ...result,
+        ...(floorNote && floorNote.moved ? { provider_moved: floorNote } : {}),
+    }));
 }
 
 
