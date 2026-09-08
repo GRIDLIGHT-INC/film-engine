@@ -162,3 +162,123 @@ test('every file in the scoping directory follows the naming convention', () => 
             `${f} breaks the kebab-case convention its siblings follow`);
     }
 });
+
+/**
+ * A TASK RECORDED AS DONE MUST POINT AT THE CODE THAT DID IT.
+ *
+ * The task file is where the durable reasoning goes — the tracker holds status,
+ * the file holds why. Reasoning with no pointer to an implementation is half a
+ * record: a later reader has to search commit messages to reconnect them, and
+ * the connection is the whole value.
+ *
+ * Found at the end of the plate-camera epic. Eleven task files carried full
+ * reasoning and exactly ONE carried its commit hash — I wrote it into the first
+ * and stopped. That is the shape every hand-maintained convention fails in: it
+ * survives as long as somebody remembers it.
+ *
+ * WHY THIS DOES NOT POLICE EVERY EPIC IN THE DIRECTORY. Measured when written:
+ * 39 completed tasks across four epics, and 28 record no commit. Three of those
+ * epics predate this convention and one of them was not even implemented in
+ * this repository, so `git cat-file` here could not vouch for it either way.
+ * Failing the suite on other people's history would get this check deleted, and
+ * the protection would go with it.
+ *
+ * So the epics NOT yet held are NAMED with their counts, on the precedent
+ * `manual-edit.test.js` set with NOT_BUILT: a gap written down is work, and a
+ * gap silently excluded is one nobody finds again. A count that drifts fails —
+ * which is what forces an entry to be removed when it is fixed rather than left
+ * to rot.
+ */
+
+/** Epics this check holds to full traceability. */
+const TRACED_EPICS = ['Plate Camera Controls'];
+
+/**
+ * Known-untraced epics, with the number of completed tasks that name no commit.
+ * Wrong counts FAIL: an entry that no longer describes reality makes the whole
+ * list a story.
+ */
+const UNTRACED_EPICS = Object.freeze({
+    'Redo the video between two chosen frames': 10,
+    'iOS Capture and Previz Finalization': 9,
+    'Connections, Skills and Automations — make the three surfaces real': 9,
+});
+
+const TASKS_DIR = '/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks';
+
+/** Completed task files, grouped by the epic they name. */
+function completedByEpic() {
+    const out = new Map();
+    for (const f of fs.readdirSync(TASKS_DIR).filter(x => /^[A-Z]+-\d+\.md$/.test(x))) {
+        const body = fs.readFileSync(path.join(TASKS_DIR, f), 'utf8');
+        if (!/^- \[x\] DONE\b/m.test(body)) continue;          // in progress owes nothing
+        const epic = (body.match(/^- \*\*Epic:\*\* (.+)$/m) || [null, '(none)'])[1].trim();
+        if (!out.has(epic)) out.set(epic, []);
+        out.get(epic).push({ file: f, body });
+    }
+    return out;
+}
+
+/** Completed tasks in an epic that name no resolvable commit. */
+function untraced(entries) {
+    const { execFileSync } = require('child_process');
+    const REPO = path.join(__dirname, '..', '..');
+    return entries.map(({ file, body }) => {
+        const hash = (body.match(/\bcommit ([0-9a-f]{7,40})\b/) || [])[1];
+        if (!hash) return `${file}: marked DONE and names no commit`;
+        try {
+            // A recorded hash that does not RESOLVE is worse than none: it
+            // reads as a working pointer.
+            execFileSync('git', ['cat-file', '-e', `${hash}^{commit}`], { cwd: REPO, stdio: 'pipe' });
+            return null;
+        } catch (_) { return `${file}: names commit ${hash}, which is not in this repository`; }
+    }).filter(Boolean);
+}
+
+test('EVERY completed task in a traced epic points at a commit that exists', (t) => {
+    if (!fs.existsSync(TASKS_DIR)) {
+        // Named, not silent: a skip that looks like a pass is coverage that is
+        // not there.
+        t.skip(`no task directory at ${TASKS_DIR} — this check runs on the authoring machine`);
+        return;
+    }
+    const groups = completedByEpic();
+    const bad = [];
+    for (const epic of TRACED_EPICS) {
+        const entries = groups.get(epic);
+        assert.ok(entries && entries.length >= 5,
+            `${epic}: ${entries ? entries.length : 0} completed tasks found — the scan is broken, `
+            + 'and one that finds too few reports an untraceable epic as traceable');
+        bad.push(...untraced(entries).map(x => `${epic} / ${x}`));
+    }
+    assert.deepStrictEqual(bad, [],
+        'these completed tasks cannot be traced to code:\n  ' + bad.join('\n  '));
+});
+
+test('the untraced epics are named accurately, so the list cannot rot', (t) => {
+    /*
+     * A count that drifts fails. Fix one of these and this test tells you to
+     * update the entry — or to move the epic into TRACED_EPICS, which is the
+     * point. Silently excluding them would hide 28 records nobody would find
+     * again.
+     */
+    if (!fs.existsSync(TASKS_DIR)) { t.skip('task directory is on the authoring machine'); return; }
+    const groups = completedByEpic();
+    const wrong = [];
+    for (const [epic, expected] of Object.entries(UNTRACED_EPICS)) {
+        const entries = groups.get(epic);
+        if (!entries) { wrong.push(`${epic}: no completed tasks found; the entry is stale`); continue; }
+        const n = untraced(entries).length;
+        if (n !== expected) {
+            wrong.push(`${epic}: ${n} untraced, the list says ${expected}`
+                + (n === 0 ? ' — it is fixed; move it to TRACED_EPICS' : ''));
+        }
+    }
+    assert.deepStrictEqual(wrong, [], wrong.join('\n  '));
+});
+
+test('no epic is both traced and excused', () => {
+    const overlap = TRACED_EPICS.filter(e => UNTRACED_EPICS[e] !== undefined);
+    assert.deepStrictEqual(overlap, [],
+        `these epics are held to traceability and excused from it: ${overlap.join(', ')}`);
+});
