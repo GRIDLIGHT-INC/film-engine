@@ -286,6 +286,7 @@ film-engine/
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── ios-previz-brief.test.js  # ...and so is a brief whose facts drifted
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
+│       ├── plate-camera-epic.test.js # A gap pinned as permanent makes an epic fail for succeeding
 │       ├── capture-affordance.test.js # Shooting is not uploading, and arming the upload would cost the library
 │       ├── upload-size-guard.test.js  # An oversize upload must say so, not look like a dead server
 │       ├── marble-contract.test.js   # A field name asserted in a comment is one nobody can re-check
@@ -4282,6 +4283,7 @@ node --test backend/tests/data-paths.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js
+node --test backend/tests/plate-camera-epic.test.js
 node --test backend/tests/capture-affordance.test.js
 node --test backend/tests/upload-size-guard.test.js
 node --test backend/tests/marble-contract.test.js
