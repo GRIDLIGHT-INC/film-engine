@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 669 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 792 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -67,6 +67,16 @@ to each lens's own format on a lens change — the ranges belong to
 telephoto, and passing it raises NSInvalidArgumentException. Clamping alone would
 make that view a stop darker, so the shortfall moves into the other term and any
 residual is reported in stops rather than delivered silently.
+
+**Built 2026-09-08 by PCC-003 (GRD-3654):** the white balance lock, taken and
+released WITH the exposure — a plate matching on brightness and not colour still
+disagrees. Gains are normalised to the MINIMUM channel, which is Apple's own
+documented rule ("R:2 G:2 B:4 will be normalized to R:1 G:1 B:2", to avoid
+brightness changes) and the 1.0...maxWhiteBalanceGain range applies AFTER it.
+`maxWhiteBalanceGain` belongs to the DEVICE, so the lens picker moves it and the
+lock is refitted on every change; a cast the new lens cannot express is reported
+in stops rather than delivered as a quietly warmer plate. The held colour shows
+as a temperature, since device gains are meaningless to a person.
 
 ## Target State
 

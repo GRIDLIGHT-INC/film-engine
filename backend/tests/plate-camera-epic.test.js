@@ -186,16 +186,29 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-wb-focus-or-footage-apis',
-        kind: 'gap',
-        closes: 'PCC-003, PCC-004, and Phase B for the footage pair',
-        why: 'the remaining manual controls; SPLIT OUT of no-manual-control-apis when PCC-002 '
-            + 'closed the exposure half, so each half now says something true',
+        id: 'white-balance-lock-built',
+        kind: 'present',
+        why: 'RESHAPED from `no-wb-focus-or-footage-apis` when PCC-003 landed (GRD-3654). It '
+            + 'locks and releases WITH the exposure, which is the epic\'s own reasoning: a plate '
+            + 'that matches on brightness and not colour still disagrees',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const present = ['setFocusModeLocked', 'setWhiteBalanceModeLocked',
-                             'activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
-                .filter(s => cam.includes(s));
+            const missing = ['setWhiteBalanceModeLocked', 'WhiteBalanceLock',
+                             'LockingWhiteBalanceWithCustomDeviceGainsSupported']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0 || `the white balance lock has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'no-focus-or-footage-apis',
+        kind: 'gap',
+        closes: 'PCC-004 (focus), and Phase B for the footage pair',
+        why: 'what is STILL absent, split again as PCC-003 closed the white-balance third — so '
+            + 'the claim keeps naming only work that has not happened',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const present = ['setFocusModeLocked', 'activeColorSpace',
+                             'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(s => cam.includes(s));
             return present.length === 0
                 || `the camera now uses ${present.join(', ')} — reshape this claim to pin what was built`;
         },

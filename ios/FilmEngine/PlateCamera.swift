@@ -204,6 +204,75 @@ struct ExposureLock: Equatable {
     }
 }
 
+/// A metered white balance, held across a turnaround.
+///
+/// A plate that matches on brightness and not colour still disagrees, so this
+/// locks and releases WITH the exposure rather than beside it.
+///
+/// The rules here are Apple's and they are unusual (AVCaptureDevice.h:1795):
+/// gains are normalised to the MINIMUM channel — "R:2 G:2 B:4 will be
+/// normalized to R:1 G:1 B:2" — explicitly "to avoid brightness changes", and
+/// the 1.0...maxWhiteBalanceGain range is checked AFTER that normalisation. A
+/// violation throws NSRangeException, so an unfitted gain crashes the camera
+/// rather than tinting a plate.
+///
+/// `maxWhiteBalanceGain` belongs to the DEVICE, not the format, so PCC-001's
+/// picker moves it — the same interaction the exposure ranges have in PCC-002,
+/// with the same consequence.
+struct WhiteBalanceLock: Equatable {
+    let red: Float
+    let green: Float
+    let blue: Float
+
+    struct Fitted: Equatable {
+        let red: Float
+        let green: Float
+        let blue: Float
+        /// How far the delivered cast is from the requested one, in stops on
+        /// the worst channel. Zero when the device could express it. Reported
+        /// rather than swallowed: a quietly warmer plate looks like the lock
+        /// worked, and the mismatch surfaces after the frames are paid for.
+        let stopsOff: Double
+    }
+
+    /// Fit a metered cast to what a device can actually express.
+    ///
+    /// Normalising is not clamping and both are needed. Dividing by the minimum
+    /// channel preserves the RATIOS — which are the colour — and only changes
+    /// the scale, which is why Apple does it to avoid brightness changes.
+    /// Clamping after it changes the colour, so it happens only when the cast
+    /// is wider than the device can hold, and says so.
+    static func fit(red: Float, green: Float, blue: Float, maxGain: Float) -> Fitted {
+        // A channel at zero makes the normalisation a division by zero, and NaN
+        // propagates straight into setWhiteBalanceModeLocked. The same "0 means
+        // unknown" convention has already bitten videoFieldOfView in PCC-001
+        // and the exposure ranges in PCC-002.
+        let ceiling = maxGain.isFinite && maxGain >= 1 ? maxGain : 1
+        guard red.isFinite, green.isFinite, blue.isFinite,
+              red > 0, green > 0, blue > 0 else {
+            return Fitted(red: 1, green: 1, blue: 1, stopsOff: 0)   // neutral: no cast claimed
+        }
+
+        // Apple's rule, verbatim: normalise to the minimum channel.
+        let low = min(red, min(green, blue))
+        var r = red / low, g = green / low, b = blue / low
+
+        // Only now is the range meaningful. Clamping alters the cast, so the
+        // worst channel's shortfall is measured against what was asked for.
+        let wanted = (r, g, b)
+        r = min(r, ceiling); g = min(g, ceiling); b = min(b, ceiling)
+
+        let drift = max(abs(log2(Double(r / wanted.0))),
+                        max(abs(log2(Double(g / wanted.1))), abs(log2(Double(b / wanted.2)))))
+        return Fitted(red: r, green: g, blue: b, stopsOff: drift.isFinite ? drift : 0)
+    }
+
+    /// This lock, fitted to a device's own ceiling.
+    func fitted(maxGain: Float) -> Fitted {
+        WhiteBalanceLock.fit(red: red, green: green, blue: blue, maxGain: maxGain)
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -231,6 +300,11 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// which is what it did before PCC-002.
     @Published private(set) var exposure: ExposureLock?
     @Published private(set) var exposureWarning: String?
+
+    /// The colour being held, and how it reads. Gains are device-specific and
+    /// meaningless to a person, so the temperature is what is shown.
+    @Published private(set) var whiteBalance: WhiteBalanceLock?
+    @Published private(set) var whiteBalanceLabel: String?
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -304,6 +378,14 @@ final class PlateCameraModel: NSObject, ObservableObject {
                                 iso: device.iso)
         exposure = held
         apply(held, to: device)
+
+        // The colour goes with it. A plate that matches on brightness and not
+        // colour still disagrees, and two separate affordances would let a
+        // director hold one and believe the turnaround was held.
+        let gains = device.deviceWhiteBalanceGains
+        whiteBalance = WhiteBalanceLock(red: gains.redGain, green: gains.greenGain,
+                                        blue: gains.blueGain)
+        if let wb = whiteBalance { applyWhiteBalance(wb, to: device) }
     }
 
     /// Go back to metering each view on its own.
@@ -313,10 +395,44 @@ final class PlateCameraModel: NSObject, ObservableObject {
     func unlockExposure() {
         exposure = nil
         exposureWarning = nil
-        guard let device = lens?.device, device.isExposureModeSupported(.continuousAutoExposure),
+        whiteBalance = nil
+        whiteBalanceLabel = nil
+        guard let device = lens?.device, (try? device.lockForConfiguration()) != nil else { return }
+        defer { device.unlockForConfiguration() }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposureMode = .continuousAutoExposure
+        }
+        // Released together, or the colour stays pinned after the director has
+        // asked for auto — which reads as the release not working.
+        if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+            device.whiteBalanceMode = .continuousAutoWhiteBalance
+        }
+    }
+
+    /// Pin a held colour onto a device, refitted to ITS ceiling.
+    ///
+    /// `maxWhiteBalanceGain` is a property of the DEVICE, so the lens picker
+    /// moves it — and AVCaptureDevice.h:1795 throws NSRangeException on a gain
+    /// outside 1.0...maxWhiteBalanceGain after normalisation.
+    private func applyWhiteBalance(_ held: WhiteBalanceLock, to device: AVCaptureDevice) {
+        // AVCaptureDevice.h:1715 — where custom gains are unsupported, passing
+        // anything but AVCaptureWhiteBalanceGainsCurrent raises an exception.
+        guard device.isLockingWhiteBalanceWithCustomDeviceGainsSupported,
               (try? device.lockForConfiguration()) != nil else { return }
-        device.exposureMode = .continuousAutoExposure
-        device.unlockForConfiguration()
+        defer { device.unlockForConfiguration() }
+
+        let fit = held.fitted(maxGain: device.maxWhiteBalanceGain)
+        let gains = AVCaptureDevice.WhiteBalanceGains(redGain: fit.red, greenGain: fit.green,
+                                               blueGain: fit.blue)
+        // The temperature is read from the FITTED gains, never the requested
+        // ones: temperatureAndTintValues throws on an out-of-range input too.
+        let t = device.temperatureAndTintValues(for: gains)
+        whiteBalanceLabel = "\(Int(t.temperature.rounded()))K"
+        if abs(fit.stopsOff) >= 0.05 {
+            exposureWarning = String(format: "This lens cannot hold that colour — %.1f stops of cast.",
+                                     fit.stopsOff)
+        }
+        device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
     }
 
     /// Pin a held exposure onto a device, refitted to ITS format.
@@ -365,6 +481,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
             // refits them to the new format; without this the UI reads LOCK
             // while the next plate is metered automatically.
             if let held = exposure { apply(held, to: next.device) }
+            if let wb = whiteBalance { applyWhiteBalance(wb, to: next.device) }
         } else if let current = input, session.canAddInput(current) {
             session.addInput(current)            // put the working lens back
         }
@@ -504,7 +621,13 @@ struct PlateCameraView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: camera.exposure == nil ? "sun.max" : "lock.fill")
-                            Text(camera.exposure.map { "LOCK · \($0.label)" } ?? "Auto exposure")
+                            Text(camera.exposure.map { e in
+                                // The colour rides on the same chip: they lock
+                                // together, so showing them apart would imply
+                                // they can be held apart.
+                                "LOCK · \(e.label)"
+                                    + (camera.whiteBalanceLabel.map { " · \($0)" } ?? "")
+                            } ?? "Auto exposure & colour")
                                 .font(.system(.footnote, design: .monospaced))
                         }
                         .padding(.vertical, 7).padding(.horizontal, 12)
@@ -513,7 +636,7 @@ struct PlateCameraView: View {
                         .foregroundStyle(camera.exposure == nil ? .white : .black)
                     }
                     .accessibilityLabel(camera.exposure == nil
-                        ? "Lock exposure for the whole turnaround"
+                        ? "Lock exposure and colour for the whole turnaround"
                         : "Exposure locked at \(camera.exposure?.label ?? ""). Tap to release.")
 
                     // A lens that cannot reach the held exposure delivers a

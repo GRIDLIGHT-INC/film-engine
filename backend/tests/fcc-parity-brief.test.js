@@ -113,16 +113,30 @@ const CLAIMS = [
     {
         id: 'camera-has-no-remaining-manual-control',
         kind: 'gap',
-        closes: 'PCC-003 (white balance), PCC-004 (focus), and Phase B for the footage pair',
+        closes: 'PCC-004 (focus), and Phase B for the footage pair',
         why: 'the five manual-control APIs the brief calls absent that are STILL absent. Split '
             + 'from the original six when PCC-002 closed the exposure one, so this claim keeps '
             + 'saying something true instead of failing for succeeding',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const landed = ['setFocusModeLocked', 'setWhiteBalanceModeLocked', 'activeColorSpace',
+            // setWhiteBalanceModeLocked removed from this list by PCC-003 (GRD-3654):
+            // it is built, and is pinned by `wb-lock-landed` below.
+            const landed = ['setFocusModeLocked', 'activeColorSpace',
                             'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(x => cam.includes(x));
             return landed.length === 0
                 || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
+        },
+    },
+    {
+        id: 'wb-lock-landed',
+        kind: 'present',
+        why: 'RESHAPED from the white-balance sixth of the original manual-control claim when '
+            + 'PCC-003 landed. The brief ranked exposure/WB lock as the highest-value camera '
+            + 'feature for this product; both halves are now built',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            return cam.includes('setWhiteBalanceModeLocked')
+                || 'the white balance lock is gone; the brief\'s top recommendation is half unbuilt again';
         },
     },
     {
