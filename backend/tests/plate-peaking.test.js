@@ -327,16 +327,24 @@ test('the frame hook is consumed, and the subsample plan with it', () => {
      * `FocusPeaking.peaks(` and failed against a correct implementation, because
      * inside `extension FocusPeaking` the call is unqualified.
      */
-    assert.match(s, /FocusPeaking\.read\(/,
-        'the frame hook never reaches the detector');
-    const at = s.indexOf('static func read(');
-    assert.notStrictEqual(at, -1, 'FocusPeaking.read is gone; re-derive this check');
+    /*
+     * RE-POINTED BY PCC-009 (GRD-3660). The CoreVideo read moved from
+     * FocusPeaking.read to FrameAnalysis.luma when the exposure warning needed
+     * the same frame: onFrame holds ONE closure, so a second subscriber would
+     * have replaced peaking, and the plane copy is ~1.5MB a frame. Every defect
+     * this check was written to catch is still caught — the detector must still
+     * be called, and still with the plan's stride.
+     */
+    assert.match(s, /FrameAnalysis\.luma\(from:/,
+        'the frame hook never reads the luma plane');
+    const at = s.indexOf('camera.onFrame = {');
+    assert.notStrictEqual(at, -1, 'nothing subscribes to onFrame; re-derive this check');
     let d = 0, end = s.indexOf('{', at);
     for (let i = end; i < s.length; i++) {
         if (s[i] === '{') d++; else if (s[i] === '}' && --d === 0) { end = i; break; }
     }
     assert.match(s.slice(at, end), /\bpeaks\(luma:/,
-        'read() never calls the detector, so frames are copied and thrown away');
+        'the frame hook never calls the detector, so frames are copied and thrown away');
     assert.match(s.slice(at, end), /plan\.stride/,
-        'read() ignores the subsample plan, so it walks every pixel whatever PCC-007 decided');
+        'the hook ignores the subsample plan, so it walks every pixel whatever PCC-007 decided');
 });

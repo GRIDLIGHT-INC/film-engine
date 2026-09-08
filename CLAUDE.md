@@ -410,6 +410,7 @@ film-engine/
 │       ├── plate-capture-settings.test.js # Absent means absent; a bad field never costs an upload
 │       ├── plate-frames.test.js       # A stride of zero is not a wrong number, it is a hang
 │       ├── plate-peaking.test.js      # A defocused edge must NOT peak, or racking focus shows nothing
+│       ├── plate-clipping.test.js     # A warning that fires on every specular highlight is one nobody reads
 │       ├── storage-never-throws.test.js # An accessor that RAISES must not take every function below it
 │       ├── nothing-covers-the-page.test.js # A closed drawer's backdrop must not swallow every tap
 │       ├── fcc-parity-brief.test.js # A research brief whose facts are pinned to the code it describes
@@ -4408,6 +4409,7 @@ node --test backend/tests/plate-guides.test.js
 node --test backend/tests/plate-capture-settings.test.js
 node --test backend/tests/plate-frames.test.js
 node --test backend/tests/plate-peaking.test.js
+node --test backend/tests/plate-clipping.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js

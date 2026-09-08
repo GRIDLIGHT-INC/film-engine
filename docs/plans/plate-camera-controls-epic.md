@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 1507 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1618 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -129,6 +129,19 @@ its gradient is lower, and locking exposure (PCC-002) keeps that stable across a
 turnaround. Indexed by the plane's own `bytesPerRow`, never by width — rows are
 padded, and indexing by width walks progressively out of line down the frame and
 reports a diagonal smear of phantom edges that looks like a real detection.
+
+**Built 2026-09-08 by PCC-009 (GRD-3660):** the exposure warning, completing Phase
+2. Zebras over the clipped areas plus a worded warning, because zebras say WHERE
+and a director still has to decide whether it is too much. The warning is on the
+FRACTION clipped, not on any clipping at all: a highlight on an eye IS correct
+exposure, so a warning that fires on it is always on and nobody reads it. The clip
+level is tied to the FULL-RANGE format PCC-007 requests — 235 is white in video
+range and merely bright in full range, so a detector holding the wrong one either
+never fires or calls a bright wall blown out.
+
+It also merged the frame consumers: `onFrame` holds ONE closure, so a second
+subscriber would have silently replaced peaking, and the plane copy is ~1.5MB a
+frame. One read on `FrameAnalysis.luma`, both analyses.
 
 ## Target State
 

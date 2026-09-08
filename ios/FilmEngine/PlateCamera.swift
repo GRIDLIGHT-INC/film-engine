@@ -495,13 +495,19 @@ enum FrameAnalysis {
 /// crosses the same brightness range over more pixels, so its gradient is
 /// lower. Locking exposure (PCC-002) is what keeps that stable across a
 /// turnaround.
-extension FocusPeaking {
-    /// Read the luma plane out of a capture buffer and run the detector.
+extension FrameAnalysis {
+    /// The luma plane, copied out once for every analysis that wants it.
     ///
-    /// Separate from `peaks` so the arithmetic stays pure and testable without
-    /// a camera — a simulator produces no CVPixelBuffer at all.
-    static func read(_ buffer: CVPixelBuffer,
-                     plan: (stride: Int, width: Int, height: Int)) -> [(x: Int, y: Int)]? {
+    /// ONE READ, NOT ONE PER DETECTOR. `onFrame` holds a single closure, so a
+    /// second subscriber would silently REPLACE the first rather than run
+    /// beside it — and the copy is ~1.5MB per frame, so doing it twice is
+    /// ~90MB/s of memory traffic for nothing. Focus peaking and the exposure
+    /// warning both read what this returns.
+    ///
+    /// Separate from the detectors so the arithmetic stays pure and testable
+    /// without a camera: a simulator produces no CVPixelBuffer at all.
+    static func luma(from buffer: CVPixelBuffer)
+        -> (bytes: [UInt8], width: Int, height: Int, bytesPerRow: Int)? {
         /*
          * Locked for the read. CVPixelBufferGetBaseAddressOfPlane is valid only
          * between lock and unlock; outside it the address is undefined and
@@ -519,20 +525,19 @@ extension FocusPeaking {
          * resolution. Reading plane 1 gives colour edges at half the detail —
          * plausible on screen and wrong.
          *
-         * And the row stride is read PER PLANE. The buffer-wide bytesPerRow is
-         * a different number, and using it is the same padding bug wearing a
-         * different hat.
+         * The row stride is read PER PLANE. The buffer-wide bytesPerRow is a
+         * different number, and using it is the padding bug in another hat.
          */
         guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
         let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
         let w = CVPixelBufferGetWidthOfPlane(buffer, 0)
         let h = CVPixelBufferGetHeightOfPlane(buffer, 0)
-
-        let luma = [UInt8](UnsafeBufferPointer(
+        let bytes = [UInt8](UnsafeBufferPointer(
             start: base.assumingMemoryBound(to: UInt8.self), count: rowBytes * h))
-        return peaks(luma: luma, width: w, height: h, bytesPerRow: rowBytes, stride: plan.stride)
+        return (bytes, w, h, rowBytes)
     }
 }
+
 
 enum FocusPeaking {
     /// Gradient magnitude at which a pixel counts as in focus, on 8-bit luma.
@@ -580,6 +585,67 @@ enum FocusPeaking {
             y += step; sy += 1
         }
         return out
+    }
+}
+
+/// Where the picture has run out of headroom.
+///
+/// An overexposed plate cannot be recovered: the detail is not dark, it is
+/// absent, and every frame generated from that plate inherits the hole. Caught
+/// before the upload it costs one more shot; caught afterwards it costs the
+/// frames too.
+enum ExposureWarning {
+    /// At or one below the maximum an 8-bit FULL-RANGE luma can express.
+    ///
+    /// The format matters and getting it wrong is silent. PCC-007 requests
+    /// 420YpCbCr8BiPlanarFullRange, where luma runs 0...255. The VIDEO-range
+    /// variant runs 16...235, so a detector holding 255 against one of those
+    /// never fires at all, and one holding 235 against a full-range buffer
+    /// calls an ordinary bright wall blown out.
+    ///
+    /// 254 rather than 255 because a sensor can roll off by a hair and there is
+    /// no recoverable detail either way; 248 is genuinely bright and is not
+    /// clipped.
+    static let clipLevel: UInt8 = 254
+
+    /// The fraction of the frame above which this is worth saying out loud.
+    ///
+    /// SOME clipping is correct exposure — a highlight on an eye, a chrome
+    /// edge, a lamp in shot — so a warning that fires on any clipping at all is
+    /// a warning that is always on, and one nobody reads. Two per cent is well
+    /// clear of specular highlights and well below a blown face.
+    static let warnFraction = 0.02
+
+    /// The clipped points, and what fraction of what was SAMPLED they are.
+    ///
+    /// A fraction rather than a count: a quarter of the frame is a quarter
+    /// whatever the frame size, and a consumer comparing a raw count against a
+    /// threshold would warn on a big frame and stay silent on a small one for
+    /// the same picture. Divided by the SAMPLED total, not the full pixel
+    /// count, or striding would under-report by the square of the stride —
+    /// silently, and in the reassuring direction.
+    static func clipped(luma: [UInt8], width: Int, height: Int, bytesPerRow: Int,
+                        stride: Int) -> (points: [(x: Int, y: Int)], fraction: Double) {
+        let step = max(1, stride)
+        guard width > 0, height > 0, bytesPerRow >= width,
+              luma.count >= bytesPerRow * height else { return ([], 0) }
+
+        var points: [(x: Int, y: Int)] = []
+        var seen = 0
+        var sy = 0, y = 0
+        while y < height {
+            var sx = 0, x = 0
+            while x < width {
+                // Indexed by bytesPerRow, NEVER by width: rows are padded, and
+                // indexing by width reads the padding and walks progressively
+                // out of line down the frame.
+                if luma[y * bytesPerRow + x] >= clipLevel { points.append((x: sx, y: sy)) }
+                seen += 1
+                x += step; sx += 1
+            }
+            y += step; sy += 1
+        }
+        return (points, seen > 0 ? Double(points.count) / Double(seen) : 0)
     }
 }
 
@@ -1017,6 +1083,8 @@ final class GuideOverlay: UIView {
     var showGrid = true
     var showAspect = true
     var showPeaking = false
+    var showZebras = false
+    var clipped: [(x: Int, y: Int)] = []
     /// Sampled points that are in focus, in the strided grid the detector
     /// walked, plus that grid's size so they can be scaled onto the view.
     var peaks: [(x: Int, y: Int)] = []
@@ -1060,6 +1128,18 @@ final class GuideOverlay: UIView {
             ctx.setFillColor(UIColor.systemGreen.withAlphaComponent(0.85).cgColor)
             for p in peaks {
                 ctx.fill(CGRect(x: CGFloat(p.x) * sx, y: CGFloat(p.y) * sy,
+                                width: max(sx, 1.5), height: max(sy, 1.5)))
+            }
+        }
+
+        if showZebras, peakGrid.width > 0, peakGrid.height > 0 {
+            // Amber rather than the peaking green: they can be on together, and
+            // a director must be able to tell "sharp here" from "blown here".
+            let sx = rect.width / CGFloat(peakGrid.width)
+            let sy = rect.height / CGFloat(peakGrid.height)
+            ctx.setFillColor(UIColor.systemOrange.withAlphaComponent(0.8).cgColor)
+            for c in clipped {
+                ctx.fill(CGRect(x: CGFloat(c.x) * sx, y: CGFloat(c.y) * sy,
                                 width: max(sx, 1.5), height: max(sy, 1.5)))
             }
         }
@@ -1171,6 +1251,11 @@ struct PlateCameraView: View {
     // reasoning as the thirds grid.
     @State private var showPeaking = false
     @State private var peaks: [(x: Int, y: Int)] = []
+    // OFF by default, like peaking and the grid: zebras stripe the subject a
+    // director is judging.
+    @State private var showZebras = false
+    @State private var clipped: [(x: Int, y: Int)] = []
+    @State private var clippedFraction: Double = 0
     @State private var peakGrid: (width: Int, height: Int) = (0, 0)
     @Environment(\.dismiss) private var dismiss
 
@@ -1207,6 +1292,7 @@ struct PlateCameraView: View {
                         o.tilt = camera.tilt
                         o.showPeaking = showPeaking
                         o.peaks = peaks; o.peakGrid = peakGrid
+                        o.showZebras = showZebras; o.clipped = clipped
                     }) { camera.lockFocus(at: $0) }.ignoresSafeArea()
                 }
                 overlay
@@ -1217,11 +1303,23 @@ struct PlateCameraView: View {
             // Frames arrive on the camera's serial queue. The detection runs
             // THERE and only the result hops to main — analysing on main would
             // stutter every control, which is why PCC-007 gave it its own queue.
+            // ONE subscription, because onFrame holds ONE closure — a second
+            // assignment would silently replace this rather than add to it —
+            // and ONE plane read, shared by both analyses.
             camera.onFrame = { pixels, plan in
-                guard showPeaking else { return }
-                guard let found = FocusPeaking.read(pixels, plan: plan) else { return }
+                guard showPeaking || showZebras else { return }
+                guard let f = FrameAnalysis.luma(from: pixels) else { return }
+
+                let found = showPeaking
+                    ? FocusPeaking.peaks(luma: f.bytes, width: f.width, height: f.height,
+                                         bytesPerRow: f.bytesPerRow, stride: plan.stride)
+                    : []
+                let clip = ExposureWarning.clipped(luma: f.bytes, width: f.width, height: f.height,
+                                                   bytesPerRow: f.bytesPerRow, stride: plan.stride)
                 Task { @MainActor in
                     peaks = found
+                    clipped = clip.points
+                    clippedFraction = clip.fraction
                     peakGrid = (plan.width, plan.height)
                 }
             }
@@ -1262,6 +1360,7 @@ struct PlateCameraView: View {
                     guideToggle("grid", "grid", $showGrid)
                     guideToggle("aspect", "rectangle.ratio.16.to.9", $showAspect)
                     guideToggle("peaking", "camera.metering.spot", $showPeaking)
+                    guideToggle("zebras", "sun.max.trianglebadge.exclamationmark", $showZebras)
                 }
                 .padding(.bottom, 8)
                 // A roll that cannot be computed says so. Pointing the phone
@@ -1272,6 +1371,18 @@ struct PlateCameraView: View {
                         .font(.caption2).foregroundStyle(.white.opacity(0.6))
                         .padding(.bottom, 6)
                 }
+            }
+
+            // Zebras say WHERE the picture is blown; they do not say whether it
+            // is too much. A director looking at a striped face still has to
+            // decide, and the fraction is the fact that decides it.
+            if pending == nil, clippedFraction >= ExposureWarning.warnFraction {
+                Text(String(format: "%.0f%% of the frame is blown out",
+                            clippedFraction * 100))
+                    .font(.caption).foregroundStyle(.orange)
+                    .padding(.vertical, 5).padding(.horizontal, 11)
+                    .background(.black.opacity(0.5), in: Capsule())
+                    .padding(.bottom, 8)
             }
 
             // The focus lock. Separate from the exposure chip because it is
