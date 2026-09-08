@@ -102,12 +102,20 @@ carried as debt.
 
 ### Phase 1: Controls that need no new pipeline
 
+**PCC-001 leads, and that is a constraint rather than a preference.** Selecting a
+lens replaces the `AVCaptureDeviceInput`, and every lock in 002–004 is set on the
+`AVCaptureDevice` it replaces — so a lock taken before a lens change is silently
+dropped, and the next plate is metered automatically while the UI still shows LOCK.
+Building lens selection first means re-applying the locks is designed in; building
+it last means retro-fitting it into three finished controls and discovering the
+gap on a turnaround that has already been shot.
+
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
 | PCC-001 | Lens selection from what the device has | Discover `builtInUltraWideCamera` / `builtInWideAngleCamera` / `builtInTelephotoCamera` with `DiscoverySession`, offer only those present, label in millimetres from `focalLengthIn35mmFilm`. A device with one lens shows no picker rather than a broken one | M | None |
-| PCC-002 | Lock exposure across the turnaround | `setExposureModeCustom(duration:iso:)` metered once at session start and held for every view; a visible LOCK affordance, releasable per view for a subject that genuinely needs re-metering | M | None |
-| PCC-003 | Lock white balance across the turnaround | `setWhiteBalanceModeLocked(with:)`, shown as a readable temperature. Locked and released together with exposure by default, because a plate that matches on brightness and not colour still disagrees | M | PCC-002 |
-| PCC-004 | Tap to focus, then lock | `setFocusModeLocked(lensPosition:)` with a tap target; the lock survives the walk so four views share a focal plane | S | None |
+| PCC-002 | Lock exposure across the turnaround | `setExposureModeCustom(duration:iso:)` metered once at session start and held for every view; a visible LOCK affordance, releasable per view for a subject that genuinely needs re-metering | M | PCC-001 |
+| PCC-003 | Lock white balance across the turnaround | `setWhiteBalanceModeLocked(with:)`, shown as a readable temperature. Locked and released together with exposure by default, because a plate that matches on brightness and not colour still disagrees | M | PCC-001, PCC-002 |
+| PCC-004 | Tap to focus, then lock | `setFocusModeLocked(lensPosition:)` with a tap target; the lock survives the walk so four views share a focal plane | S | PCC-001 |
 | PCC-005 | Level, grid and aspect guide | Tilt/roll from `CMMotionManager`, thirds grid, and the project's delivery aspect drawn as a guide — the page already knows the aspect and can send it | M | None |
 | PCC-006 | Record what each plate was shot at | Carry lens, ISO, shutter and white balance with the upload and store them on the asset, so a plate that looks wrong can be diagnosed rather than re-shot blind | M | PCC-001, PCC-002, PCC-003 |
 
