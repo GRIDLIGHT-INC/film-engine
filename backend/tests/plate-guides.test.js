@@ -364,3 +364,99 @@ test('withBase carries EVERY field of the request', () => {
     assert.deepStrictEqual(dropped, [],
         `withBase drops these fields, so they never reach the camera: ${dropped.join(', ')}`);
 });
+
+/* ── PCC-012 preparation: the level must name the RIGHT reason ──────────── */
+
+/**
+ * WHY THE LEVEL IS UNAVAILABLE IS TWO DIFFERENT ANSWERS, AND THEY WERE ONE.
+ *
+ * Found while preparing GRD-3663, the on-device proof. PCC-005 established that
+ * a confident wrong level is worse than no level — and then shipped a message
+ * that is confidently wrong about its own cause: with no motion hardware at
+ * all, `tilt` never leaves its initial `(0, 0, false)` and the overlay tells the
+ * director "the phone is pointing straight up or down". It is not. Nothing is
+ * reading the phone at all.
+ *
+ * On a simulator that is merely useless. On a real device where motion is
+ * unavailable for any reason, it sends a director to tilt a phone that was
+ * never the problem — and it would have been the first thing PCC-012 found,
+ * after somebody had already driven to a location.
+ *
+ * TWO STATES, TWO SENTENCES: nothing is reading the phone, versus the phone is
+ * pointing somewhere roll cannot be read from.
+ */
+
+test('the level distinguishes NO SENSOR from POINTING STRAIGHT DOWN', () => {
+    const s = code();
+
+    // The model must record that motion is unavailable, not merely fail to start.
+    assert.match(s, /levelUnavailable|motionUnavailable|hasMotion/,
+        'the model never records that there is no motion sensor, so the view cannot tell that '
+        + 'case from a phone pointing straight down — and PCC-005 already established that a '
+        + 'confidently wrong level is worse than none');
+
+    const at = s.indexOf('func startLevel()');
+    assert.notStrictEqual(at, -1, 'startLevel is gone; re-derive this check');
+    let d = 0, end = s.indexOf('{', at);
+    for (let i = end; i < s.length; i++) {
+        if (s[i] === '{') d++; else if (s[i] === '}' && --d === 0) { end = i; break; }
+    }
+    const body = s.slice(at, end);
+    assert.match(body, /isDeviceMotionAvailable/, 'availability is not checked');
+    /*
+     * The FLAG must be assigned, in any form. The first version demanded an
+     * assignment to a literal true/false and failed against
+     * `levelUnavailable = !motion.isDeviceMotionAvailable` — the test being
+     * wrong about the shape rather than the code being wrong about the
+     * behaviour.
+     */
+    assert.match(body, /levelUnavailable\s*=/,
+        'startLevel checks availability and records nothing, so the guard reaches no one and the '
+        + 'view cannot tell "no sensor" from "pointing straight down"');
+});
+
+test('EVERY unavailable state has its OWN sentence on screen', () => {
+    /*
+     * Set-based over the two causes. One message for both is the defect: a
+     * director reading "the phone is pointing straight up or down" while
+     * holding it level tilts it about and concludes the app is broken.
+     */
+    const s = code();
+    const overlay = s.slice(s.indexOf('private var overlay: some View'), s.indexOf('private func take'));
+    const CAUSES = [
+        { id: 'no sensor', match: /no motion sensor|cannot read.*(motion|tilt)|motion is unavailable/i,
+          why: 'nothing is reading the phone; tilting it changes nothing' },
+        { id: 'pointing vertically', match: /straight up or down/i,
+          why: 'the sensor works and roll is genuinely undefined at that angle' },
+    ];
+    const missing = CAUSES.filter(c => !c.match.test(overlay)).map(c => `${c.id} — ${c.why}`);
+    assert.deepStrictEqual(missing, [],
+        'these causes have no sentence of their own:\n  ' + missing.join('\n  '));
+});
+
+test('the app declares the motion permission it relies on', () => {
+    /*
+     * `NSMotionUsageDescription` is cheap to declare and expensive to omit: if
+     * iOS requires it and it is absent, device-motion updates simply never
+     * arrive, and the failure is INDISTINGUISHABLE from having no sensor —
+     * which is the message above. Declared because the app genuinely reads
+     * motion data, not because a prompt has been observed.
+     */
+    const plist = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'Info.plist'), 'utf8');
+    /*
+     * The exact KEY element. A bare substring match is satisfied by
+     * `NSMotionUsageDescriptionX`, which iOS ignores entirely — the same
+     * substring failure PCC-011 hit one task earlier with
+     * setWhiteBalanceModeLockedX.
+     */
+    assert.match(plist, /<key>NSMotionUsageDescription<\/key>/,
+        'the app reads Core Motion for the level and declares no motion usage description; if iOS '
+        + 'requires it and it is absent, device-motion updates never arrive and the failure is '
+        + 'indistinguishable from having no sensor');
+    const at = plist.indexOf('NSMotionUsageDescription');
+    const value = plist.slice(at, at + 400).match(/<string>([^<]+)<\/string>/);
+    assert.ok(value && value[1].length > 25,
+        'the motion usage description is missing or is not a sentence a person would read in a '
+        + 'permission prompt');
+});

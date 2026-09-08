@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 1618 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1640 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -152,6 +152,18 @@ reciprocal: 200K apart at tungsten is visible and the same 200K at 8000K is not,
 no kelvin tolerance can serve both. A view with no recorded settings is reported as
 UNCOMPARABLE and a turnaround with nothing recorded answers "cannot tell" rather
 than "these agree" — the reassuring answer being the misleading one.
+
+**PCC-012 (GRD-3663) is BLOCKED on a person with the phone**, and that is the
+honest state rather than a failure. Every task here shipped with the same line:
+not verified on the phone. A simulator has no camera, no motion hardware and
+delivers no frames. What was done in preparation: the app is verified to build
+for real arm64 hardware (never checked before — every prior build was
+simulator); `NSMotionUsageDescription` is declared, because if iOS requires it
+and it is absent the level silently never works; and a defect PCC-012 would have
+found was fixed first — with no motion sensor the overlay told a director the
+phone was pointing straight up or down, which is confidently wrong about its own
+cause and exactly what PCC-005 was written to avoid. The evidence checklist is
+`docs/plans/plate-camera-on-device-proof.md`.
 
 ## Target State
 

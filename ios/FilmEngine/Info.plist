@@ -50,6 +50,8 @@
     <string>Save a frame or a clip from your film to your photo library.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Choose a photograph to use as a reference plate for a character, location or prop.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>Film Engine reads the phone's tilt to show a level while you photograph a reference plate, so a crooked plate is caught before every shot in the scene is built from it.</string>
     <key>NSCameraUsageDescription</key>
     <string>Photograph a location or a prop to use as a reference plate.</string>
     <key>NSMicrophoneUsageDescription</key>

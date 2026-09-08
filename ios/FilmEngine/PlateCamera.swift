@@ -696,11 +696,26 @@ final class PlateCameraModel: NSObject, ObservableObject {
     @Published private(set) var tilt: (rollDegrees: Double, pitchDegrees: Double,
                                        rollIsMeaningful: Bool) = (0, 0, false)
 
+    /*
+     * Whether anything is reading the phone AT ALL — which is a different
+     * answer from "roll is undefined at this angle", and they were one message.
+     *
+     * With no motion hardware `tilt` never leaves (0, 0, false), and the
+     * overlay told the director the phone was pointing straight up or down. It
+     * is not; nothing is reading it. PCC-005 established that a confidently
+     * wrong level is worse than none, and then shipped a message that was
+     * confidently wrong about its own cause.
+     */
+    @Published private(set) var levelUnavailable = true
+
     private let motion = CMMotionManager()
 
     /// Start reporting how the phone is held. Silent where there is no motion
     /// hardware — a simulator — rather than showing a level stuck at zero.
     func startLevel() {
+        // Recorded, not merely checked: a guard whose answer reaches nobody
+        // leaves the view unable to tell this case from a vertical phone.
+        levelUnavailable = !motion.isDeviceMotionAvailable
         guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
         motion.deviceMotionUpdateInterval = 1.0 / 30
         motion.startDeviceMotionUpdates(to: .main) { [weak self] m, _ in
@@ -1366,7 +1381,14 @@ struct PlateCameraView: View {
                 // A roll that cannot be computed says so. Pointing the phone
                 // straight down at a prop is an ordinary shot, and a level
                 // reading "0° — level" there would be a confident lie.
-                if showLevel && !camera.tilt.rollIsMeaningful {
+                // Two causes, two sentences. "Pointing straight up or down"
+                // told a director holding the phone level to tilt it about,
+                // when nothing was reading the phone at all.
+                if showLevel && camera.levelUnavailable {
+                    Text("No motion sensor on this device — the level cannot be read")
+                        .font(.caption2).foregroundStyle(.white.opacity(0.6))
+                        .padding(.bottom, 6)
+                } else if showLevel && !camera.tilt.rollIsMeaningful {
                     Text("Level unavailable — the phone is pointing straight up or down")
                         .font(.caption2).foregroundStyle(.white.opacity(0.6))
                         .padding(.bottom, 6)
