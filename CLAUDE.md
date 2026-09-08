@@ -401,6 +401,7 @@ film-engine/
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
 │       ├── page-handlers.test.js       # A button wired to nothing, and a modal shown with a class the CSS ignores
 │       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
+│       ├── plate-lens.test.js          # The API the ticket named does not exist; the maths is executed, not read
 │       ├── storage-never-throws.test.js # An accessor that RAISES must not take every function below it
 │       ├── nothing-covers-the-page.test.js # A closed drawer's backdrop must not swallow every tap
 │       ├── fcc-parity-brief.test.js # A research brief whose facts are pinned to the code it describes
@@ -4391,6 +4392,7 @@ node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
 node --test backend/tests/page-handlers.test.js
 node --test backend/tests/ios-app.test.js
+node --test backend/tests/plate-lens.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js

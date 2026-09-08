@@ -116,18 +116,32 @@ const CLAIMS = [
         },
     },
     {
-        id: 'camera-is-photo-only-and-one-lens',
+        id: 'camera-is-photo-only',
         kind: 'gap',
-        closes: 'explicit lens selection and footage capture',
-        why: 'two of the brief\'s cheapest recommendations rest on these being absent',
+        closes: 'footage capture — Phase B, gated on the transport decision',
+        why: 'the brief\'s footage recommendations rest on there being no AVAssetWriter path; the '
+            + 'LENS half of this claim was split off and closed by PCC-001 (GRD-3652), which is '
+            + 'why this now names only the half that is still true',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
             if (!/AVCapturePhotoOutput/.test(cam)) return 'the camera is no longer photo-based';
             if (!/sessionPreset = \.photo/.test(cam)) return 'the session preset has changed';
-            const lenses = ['builtInUltraWideCamera', 'builtInTelephotoCamera']
-                .filter(l => cam.includes(l));
-            return lenses.length === 0
-                || `the camera now offers ${lenses.join(', ')} — lens selection has landed, reshape this`;
+            const landed = ['AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(l => cam.includes(l));
+            return landed.length === 0
+                || `footage capture has landed (${landed.join(', ')}) — reshape this claim`;
+        },
+    },
+    {
+        id: 'lens-selection-landed',
+        kind: 'present',
+        why: 'RESHAPED from the lens half of `camera-is-photo-only-and-one-lens` when PCC-001 '
+            + 'landed. The brief recommended it as the cheapest item on the list; it is built, '
+            + 'and this records that rather than deleting the claim',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const missing = ['builtInUltraWideCamera', 'builtInTelephotoCamera', 'DiscoverySession']
+                .filter(l => !cam.includes(l));
+            return missing.length === 0 || `lens selection has lost: ${missing.join(', ')}`;
         },
     },
     {

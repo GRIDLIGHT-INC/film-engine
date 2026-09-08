@@ -49,11 +49,11 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 354 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 487 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
-| Lens | Hardcoded `builtInWideAngleCamera`. Ultra-wide and telephoto unreachable |
+| Lens | **Built 2026-09-08 by PCC-001 (GRD-3652).** All three rear cameras discovered with `DiscoverySession`, labelled in 35mm-equivalent millimetres derived from `videoFieldOfView`; the picker is hidden on a one-lens device. |
 | Framing aids | None. No level, no grid, no aspect guide |
 | Preview | `AVCaptureVideoPreviewLayer` — a layer, with no access to frames |
 | Manual-control APIs used | Zero occurrences of `setExposureModeCustom`, `setFocusModeLocked`, `setWhiteBalanceModeLocked`, `activeColorSpace`, `AVCaptureVideoDataOutput`, `AVAssetWriter` |

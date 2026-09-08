@@ -49,6 +49,79 @@ struct PlateCaptureResult: Encodable {
     var cancelled = false
 }
 
+// ── lenses ───────────────────────────────────────────────────────────────────
+
+/// A physical rear camera, and what to call it.
+///
+/// Only the three BUILT-IN cameras are offered. The 28mm and 35mm settings a
+/// phone also shows are digital crops of the main sensor rather than separate
+/// lenses, so they belong to zoom, not to this picker — offering them here
+/// would present a crop as though it were optics.
+struct PlateLens: Identifiable, Equatable {
+    let id: String                       // the device's uniqueID
+    let device: AVCaptureDevice
+    let label: String                    // "24mm", or the plain name if the angle is unknown
+
+    static func == (a: PlateLens, b: PlateLens) -> Bool { a.id == b.id }
+
+    /// The 35mm-equivalent focal length of a lens with this horizontal field of view.
+    ///
+    /// PCC-001 asked for `focalLengthIn35mmFilm`, and THAT SYMBOL DOES NOT EXIST
+    /// in AVFoundation — checked against iPhoneOS26.1.sdk. It is an EXIF key,
+    /// `kCGImagePropertyExifFocalLenIn35mmFilm` in ImageIO, written onto a
+    /// photograph that has already been taken. A picker is read BEFORE anything
+    /// is shot, so it cannot be labelled from it.
+    ///
+    /// `AVCaptureDeviceFormat.videoFieldOfView` is published before capture and
+    /// the geometry from there is exact: a 35mm frame is 36mm wide, so half of
+    /// it subtends atan(18/f).
+    ///
+    /// The guard is not defensive tidiness. That property is documented "if
+    /// field of view is unknown, a value of 0 is returned" — and tan(0) is 0,
+    /// so 18/0 is infinity, and `Int(Double.infinity)` TRAPS. Unguarded, this
+    /// does not mislabel a lens, it crashes the camera on exactly the device
+    /// whose format cannot report an angle.
+    static func equivalentFocalMM(fovDegrees: Float) -> Int? {
+        guard fovDegrees > 1, fovDegrees < 179 else { return nil }
+        let half = Double(fovDegrees) / 2 * .pi / 180
+        let mm = 18.0 / tan(half)
+        guard mm.isFinite, mm > 0, mm < 2000 else { return nil }
+        return Int(mm.rounded())
+    }
+
+    /// A plain name, for a lens whose format publishes no angle.
+    static func fallbackName(_ type: AVCaptureDevice.DeviceType) -> String {
+        switch type {
+        case .builtInUltraWideCamera: return "Ultra Wide"
+        case .builtInTelephotoCamera: return "Telephoto"
+        default:                      return "Wide"
+        }
+    }
+
+    init(device: AVCaptureDevice) {
+        self.id = device.uniqueID
+        self.device = device
+        if let mm = PlateLens.equivalentFocalMM(fovDegrees: device.activeFormat.videoFieldOfView) {
+            self.label = "\(mm)mm"
+        } else {
+            self.label = PlateLens.fallbackName(device.deviceType)
+        }
+    }
+
+    /// What this device actually has, widest first.
+    ///
+    /// Built from what DiscoverySession RETURNS, never from what was asked for:
+    /// a two-lens phone must offer two, and building the list from the request
+    /// would offer a telephoto that is not there and fail at selection.
+    static func discover() -> [PlateLens] {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInUltraWideCamera, .builtInWideAngleCamera, .builtInTelephotoCamera],
+            mediaType: .video,
+            position: .back
+        ).devices.map(PlateLens.init(device:))
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -67,8 +140,13 @@ final class PlateCameraModel: NSObject, ObservableObject {
     @Published private(set) var state: State = .idle
     @Published var lastShot: UIImage?
 
+    /// What this phone has, and which one is live. Empty until `configure()`.
+    @Published private(set) var lenses: [PlateLens] = []
+    @Published private(set) var lens: PlateLens?
+
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
+    private var input: AVCaptureDeviceInput?
     private var onCapture: ((UIImage?) -> Void)?
 
     func start() {
@@ -95,10 +173,15 @@ final class PlateCameraModel: NSObject, ObservableObject {
     private func fail(_ why: String) { state = .unavailable(why) }
 
     private func configure() {
-        // The rear camera: a reference plate is a photograph of a thing in the
+        // The rear cameras: a reference plate is a photograph of a thing in the
         // world, never of the person holding the phone.
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device) else {
+        lenses = PlateLens.discover()
+
+        // The wide is the default because it is the one every phone has and the
+        // one a plate is normally shot on — the ultra-wide barrel-distorts the
+        // edges of a subject, which then conditions every frame it appears in.
+        let start = lenses.first { $0.device.deviceType == .builtInWideAngleCamera } ?? lenses.first
+        guard let start, let first = try? AVCaptureDeviceInput(device: start.device) else {
             fail("This device has no rear camera — a simulator does not have one. "
                  + "Shoot on a real phone, or use Upload to send a picture you already have.")
             return
@@ -106,12 +189,37 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
         session.beginConfiguration()
         session.sessionPreset = .photo          // full sensor: a plate is cropped from later
-        if session.canAddInput(input) { session.addInput(input) }
+        if session.canAddInput(first) { session.addInput(first) }
         if session.canAddOutput(output) { session.addOutput(output) }
         session.commitConfiguration()
 
+        input = first
+        lens = start
         state = .ready
         Task.detached { [session] in session.startRunning() }
+    }
+
+    /// Change lens.
+    ///
+    /// The swap happens inside begin/commitConfiguration because a session
+    /// reconfigured outside one can be left with no input at all — a black
+    /// preview with a working shutter, which is the failure this whole file is
+    /// written against. If the new lens cannot be opened the old input goes
+    /// back, so a failed switch leaves a working camera rather than none.
+    func select(_ next: PlateLens) {
+        guard state == .ready, next != lens else { return }
+        guard let replacement = try? AVCaptureDeviceInput(device: next.device) else { return }
+
+        session.beginConfiguration()
+        if let current = input { session.removeInput(current) }
+        if session.canAddInput(replacement) {
+            session.addInput(replacement)
+            input = replacement
+            lens = next
+        } else if let current = input, session.canAddInput(current) {
+            session.addInput(current)            // put the working lens back
+        }
+        session.commitConfiguration()
     }
 
     func stop() {
@@ -235,6 +343,31 @@ struct PlateCameraView: View {
             }
 
             Spacer()
+
+            // The lens picker sits directly above the shutter, where a thumb
+            // already is, and ONLY when there is a choice to make: a phone with
+            // one rear camera gets no control rather than a control with one
+            // option, which reads as broken.
+            //
+            // It is hidden while a shot is pending review, because changing
+            // lens then would not re-take the picture being judged.
+            if pending == nil && camera.lenses.count > 1 {
+                HStack(spacing: 8) {
+                    ForEach(camera.lenses) { option in
+                        Button { camera.select(option) } label: {
+                            Text(option.label)
+                                .font(.system(.footnote, design: .monospaced))
+                                .padding(.vertical, 7).padding(.horizontal, 12)
+                                .background(option == camera.lens ? .white : .white.opacity(0.18),
+                                            in: Capsule())
+                                .foregroundStyle(option == camera.lens ? .black : .white)
+                        }
+                        .accessibilityLabel("\(option.label) lens")
+                        .accessibilityAddTraits(option == camera.lens ? [.isSelected] : [])
+                    }
+                }
+                .padding(.bottom, 18)
+            }
 
             if pending == nil {
                 HStack(spacing: 40) {

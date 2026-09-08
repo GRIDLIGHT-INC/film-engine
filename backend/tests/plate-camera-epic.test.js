@@ -188,17 +188,18 @@ const CLAIMS = [
         },
     },
     {
-        id: 'one-hardcoded-lens',
-        kind: 'gap',
-        closes: 'PCC-001',
-        why: 'PCC-001 exists because only the wide lens is reachable',
+        id: 'lens-selection-built',
+        kind: 'present',
+        why: 'RESHAPED from a `gap` when PCC-001 landed (GRD-3652), which is what a gap claim is '
+            + 'for — the epic now records what was built rather than what was missing, and this '
+            + 'must stay true. All three physical rear cameras are discovered, and the wide '
+            + 'remains the default because it is the one every phone has',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            if (!cam.includes('builtInWideAngleCamera')) return 'the wide lens is no longer the default';
-            const others = ['builtInUltraWideCamera', 'builtInTelephotoCamera', 'DiscoverySession']
-                .filter(s => cam.includes(s));
-            return others.length === 0
-                || `lens selection has landed (${others.join(', ')}) — reshape this claim`;
+            const missing = ['builtInUltraWideCamera', 'builtInWideAngleCamera',
+                             'builtInTelephotoCamera', 'DiscoverySession', 'func select(']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0 || `lens selection has lost: ${missing.join(', ')}`;
         },
     },
     {
