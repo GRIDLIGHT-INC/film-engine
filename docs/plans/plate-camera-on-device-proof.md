@@ -24,10 +24,18 @@ is unproven is whether the phone behaves as the SDK documents.
 
 ## Before you start
 
-- **Device:** iPhone 15 Pro Max (the constraint the epic is scoped to).
-- The app builds for real hardware: `xcodebuild -sdk iphoneos -configuration
-  Release CODE_SIGNING_ALLOWED=NO build` → **BUILD SUCCEEDED**. Signing needs an
-  Apple ID in Xcode; `ios/README.md` carries those steps.
+**The app is already on the phone.** As of 2026-09-08 it is built, signed and
+INSTALLED on the paired iPhone 17 Pro (iOS 26.6.1, `00008150-000908DC1188401C`)
+as `ai.gridlight.filmengine`. Signing resolved automatically — the README's old
+claim that no Apple ID was configured is out of date and has been corrected.
+
+What could not be done from here: **launching it.** `devicectl` refuses with
+*"Unable to launch … because the device was not, or could not be, unlocked"*.
+That is the honest boundary — the app is on the phone, launching it needs the
+phone unlocked, and shooting a turnaround needs a person holding it.
+
+- **Device:** any real phone. The epic was scoped around a 15 Pro Max and a 17
+  Pro is what is paired; Phase A works on either.
 - The Mac must be running the engine and reachable on the same network.
 
 ## What to shoot

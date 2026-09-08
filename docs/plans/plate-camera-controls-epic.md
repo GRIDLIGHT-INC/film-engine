@@ -23,9 +23,9 @@ turnaround describes one subject: **locked exposure and white balance held acros
 the whole walk**, **explicit lens choice**, **manual focus with peaking**, and
 **level and framing guides**. It is deliberately the plate half only. The research
 brief's Phase B — Apple Log, ProRes, footage capture and the transport work they
-depend on — is out of scope by decision, and the four iPhone 17 Pro features
-(ProRes RAW, Apple Log 2, open gate, genlock) are struck from parity rather than
-carried as debt.
+depend on — is out of scope by decision, and the four features that require an
+iPhone 17 Pro (ProRes RAW, Apple Log 2, open gate, genlock) are struck from parity
+by the user's direction rather than carried as debt.
 
 ## Business Goals
 
@@ -183,18 +183,30 @@ cause and exactly what PCC-005 was written to avoid. The evidence checklist is
 
 - **Plates only.** No footage capture, no Log, no ProRes, no transport work. Settled
   by the user, not an open question.
-- **The four top-tier features are struck, not deferred.** ProRes RAW, Apple Log 2,
-  open gate and genlock need an iPhone 17 Pro, and genlock additionally needs a
-  Blackmagic ProDock. They are out of "parity" for this product; a later reader must
-  not read them as unfinished work.
+- **The four top-tier features are struck, not deferred — BY THE USER'S DIRECTION.**
+  ProRes RAW, Apple Log 2, open gate and genlock require an iPhone 17 Pro, and
+  genlock additionally requires a Blackmagic ProDock. They are out of "parity" for
+  this product because the user said "Phase A only — plates … strike the four iPhone
+  17 Pro features from scope", and a later reader must not read them as unfinished
+  work.
+
+  *The hardware was a supporting fact and it has already gone stale.* When this was
+  written (2026-09-08, morning) the only device was an iPhone 15 Pro Max, so the four
+  features were also impossible. By the afternoon of 2026-09-08 an **iPhone 17
+  Pro (iOS 26.6.1)** was paired to this Mac, which makes them possible. The DECISION is unchanged,
+  because it was never the hardware's — but a scope note reading "we cannot" invites
+  a later reader who CAN to reopen it, and one reading "we chose not to" does not.
+  That is why the attribution matters more than the model number.
 - **A plate is not log.** A reference plate should look like what the model must
   reproduce. Log or a flat profile would actively harm it, so this epic deliberately
   ships none of the colour-science features FCC is known for.
 - **One surface.** The page keeps deciding the subject, the views and the route;
   native only shoots. A control that let the app choose what it is photographing
   would be the second surface the iOS design exists to avoid.
-- **The device is an iPhone 15 Pro Max.** Everything here works on it. Anything that
-  would not is out of scope by the constraint above.
+- **The devices seen so far (as of 2026-09-08): an iPhone 15 Pro Max, and an iPhone
+  17 Pro running iOS 26.6.1 paired to this Mac.** Everything in Phase A works on
+  either. The scope boundary is the user's direction above, NOT which handset is on
+  the desk — drawing it around one phone is what made this line stale within a day.
 - **No simulator verification of capture.** A simulator has no camera. Every task
   must degrade with a stated reason rather than a black screen, and the acceptance
   evidence for the camera itself needs the real phone.
@@ -238,7 +250,7 @@ gap on a turnaround that has already been shot.
 |------|-------|-------------|------|--------------|
 | PCC-010 | Flag a turnaround whose views disagree | With PCC-006's provenance stored, report when views of one subject were shot at materially different settings. A warning, never a refusal — a director may have had a reason | M | PCC-006 |
 | PCC-011 | Reshape the two `gap` claims | `fcc-parity-brief.test.js` pins the camera's absent APIs as gaps naming this epic. Reshape both to pin what was BUILT. Pinning a gap as permanent makes the epic fail for succeeding | S | PCC-002, PCC-004 |
-| PCC-012 | Prove it on the real phone | Shoot a turnaround on the iPhone 15 Pro Max with every control exercised; record the device, iOS version and the four plates. A simulator cannot do this | M | PCC-001..PCC-009 |
+| PCC-012 | Prove it on the real phone | Shoot a turnaround on a real phone with every control exercised; record the device, iOS version and the four plates. A simulator cannot do this | M | PCC-001..PCC-009 |
 
 ## Open Questions
 

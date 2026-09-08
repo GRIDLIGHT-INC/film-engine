@@ -342,3 +342,74 @@ test('the epic plans for the constraints that will actually bite', () => {
     assert.match(c, /simulator/i,
         'the epic does not acknowledge that a simulator has no camera, which is how it must be tested');
 });
+
+/* ── PCC-012: a scope decision must not rest on a fact that can change ──── */
+
+/**
+ * THE STRIKE IS THE USER'S DECISION, NOT THE HARDWARE'S.
+ *
+ * Found while preparing GRD-3663: a physical iPhone is now paired to this Mac
+ * and it is a **17 Pro**, not the 15 Pro Max this epic stated as its device.
+ * The four struck features — ProRes RAW, Apple Log 2, open gate, genlock — are
+ * exactly the ones that need a 17 Pro, so the epic's stated REASON for striking
+ * them went stale inside a single day.
+ *
+ * The DECISION is unchanged and is not this test's business: the user said
+ * "Phase A only — plates … strike the four iPhone 17 Pro features from scope."
+ * That stands whatever hardware is in the room. What this catches is the epic
+ * justifying it by a FACT THAT CAN CHANGE — a scope note reading "we cannot"
+ * invites a later reader who CAN to reopen it; "we chose not to" does not.
+ *
+ * BOTH CHECKS BELOW ARE BOUND TO THE SPECIFIC BULLET. The first versions
+ * searched the whole Constraints section, and every mutation survived: other
+ * bullets say "Settled by the user", so one attributed line blessed every
+ * unattributed one. That is the mention-for-use family in document form, and
+ * it is the twentieth instance in this session.
+ */
+
+/** The bullet beginning with this bold lead, up to the next bullet. */
+function bullet(lead) {
+    const c = section('Constraints');
+    const at = c.indexOf(`- **${lead}`);
+    assert.notStrictEqual(at, -1, `Constraints has no bullet starting "${lead}"`);
+    const next = c.indexOf('\n- **', at + 5);
+    return c.slice(at, next === -1 ? c.length : next);
+}
+
+test('the STRIKE bullet itself attributes the decision to the user', () => {
+    const b = bullet('The four top-tier features are struck');
+    assert.match(b, /by the user|user's direction/i,
+        'the strike bullet does not attribute itself to the user. A scope note resting on which '
+        + 'phone is in the room invites reopening the moment a different phone arrives — which '
+        + 'has already happened once, inside a day');
+});
+
+test('the DEVICE bullet does not draw the scope boundary around a handset', () => {
+    const b = bullet('The devices seen so far');
+    assert.ok(!/out of scope by the constraint above/.test(b),
+        'the device bullet still draws the scope boundary around a specific handset');
+    assert.match(b, /20\d\d-\d\d-\d\d/,
+        'the device bullet states hardware with no date; a reader cannot tell a current fact from '
+        + 'one that was true when written');
+    assert.match(b, /user's direction|by the user/i,
+        'the device bullet does not say the boundary is the direction rather than the device');
+});
+
+test('EVERY hardware mention is dated, attributed, or framed as a REQUIREMENT', () => {
+    /*
+     * Per SENTENCE, not per paragraph. A window of surrounding characters let
+     * one dated sentence bless every mention near it — proven by mutation,
+     * which is the only reason this is written this way.
+     *
+     * A test cannot see what phone is on the desk, and one that tried would
+     * pass only on this Mac. What it CAN require is that a hardware claim says
+     * when it was true, who decided from it, or that it is what a FEATURE
+     * needs rather than what this project owns.
+     */
+    const sentences = doc().split(/(?<=[.!?])\s+|\n\n/);
+    const bare = sentences.filter(x => /iPhone \d+ Pro/.test(x))
+        .filter(x => !/20\d\d-\d\d-\d\d|by the user|user's direction|need an|needs an|require/i.test(x));
+    assert.deepStrictEqual(bare.map(x => x.trim().slice(0, 90)), [],
+        'these sentences state hardware flat — no date, no attribution, not framed as what a '
+        + 'feature requires:\n  ' + bare.map(x => x.trim().slice(0, 90)).join('\n  '));
+});
