@@ -4653,8 +4653,21 @@ body.fe-status .main { bottom:calc(var(--fe-gap) + 26px); }
     transform:translateX(-110%); transition:transform .2s ease;
   }
   body.fe-drawer .fe-panel { transform:translateX(0); }
-  .fe-scrim { display:block; position:fixed; inset:0; z-index:350;
-    background:rgba(0,0,0,.55); }
+  /*
+   * THE BACKDROP IS GATED ON THE SAME STATE AS THE PANEL.
+   *
+   * It was declared `display:block` for every phone viewport, gated on
+   * nothing, while the panel beside it was gated on `body.fe-drawer`. So the
+   * drawer slid away correctly and its backdrop stayed: a full-screen layer at
+   * z-index 350 with `pointer-events: auto`, over `.main` AND over the burger
+   * that opens the drawer. Every tap landed on it.
+   *
+   * It is invisible as a bug because the app is dark themed — 55% black over a
+   * dark UI reads as "dark", not as a sheet of glass over everything — so it
+   * surfaced as "I can't tap anything", which sends you to JavaScript.
+   */
+  .fe-scrim { position:fixed; inset:0; z-index:350; background:rgba(0,0,0,.55); }
+  body.fe-drawer .fe-scrim { display:block; }
   .fe-burger { display:flex; }
 
   /* The phase track is MOVED here by applyShellMode(), not re-rendered:
