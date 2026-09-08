@@ -129,11 +129,23 @@ struct WebAppView: UIViewRepresentable {
          */
         config.userContentController.add(context.coordinator, name: PlateCameraBridge.name)
 
-        // Tell the web app where the engine is BEFORE it boots. Its own
-        // `defaultApiBase()` returns '' off a non-http origin precisely so this
-        // can be the answer rather than a broken "file://localhost:3100".
+        /*
+         * Tell the web app where the engine is BEFORE it boots, by TWO routes.
+         *
+         * The global cannot fail and is what the page reads first. The stored
+         * copy is set as well, so opening the same page in a browser later
+         * still remembers — but it is the fallback, not the channel.
+         *
+         * That ordering is a fix rather than a nicety. localStorage does not
+         * return null when it is unavailable, it THROWS, and a custom WKWebView
+         * scheme can be exactly the kind of origin it refuses. When the page
+         * read the address from storage at the top of its script, that throw
+         * killed every function defined below it: the shell painted, no request
+         * was ever made, and nothing on the page responded to a tap.
+         */
         let inject = WKUserScript(
-            source: "try { localStorage.setItem('film_api_url', '\(serverURL)'); } catch (e) {}",
+            source: "window.__filmEngineApiBase = '\(serverURL)';"
+                  + "try { localStorage.setItem('film_api_url', '\(serverURL)'); } catch (e) {}",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true)
         config.userContentController.addUserScript(inject)

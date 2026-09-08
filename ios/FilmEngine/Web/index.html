@@ -12763,8 +12763,42 @@ THREE.GLTFLoader = GLTFLoader;
         return l.protocol + '//' + (l.hostname || 'localhost') + ':3100';
     }
 
+    /* ── WEB STORAGE THAT CANNOT TAKE THE PAGE DOWN ─────────────────────────
+     *
+     * localStorage does not merely return null when it is unavailable — the
+     * ACCESSOR THROWS. A private window, a browser set to block site data, and
+     * an opaque or restricted origin all raise `SecurityError: The operation is
+     * insecure.` on the first touch.
+     *
+     * `let API_BASE = localStorage.getItem(...)` sat at the top level of this
+     * script, unguarded, so a throw there killed EVERYTHING BELOW IT: no
+     * function after this line was ever defined, so no request was made and
+     * every onclick in the markup named something that did not exist. The app
+     * painted its shell and responded to nothing — indistinguishable from a
+     * dead server, which is where it sent everybody looking.
+     *
+     * A helper rather than a try at each site, because a try can be forgotten
+     * and a helper cannot: seven sites were bare when this was written.
+     */
+    const feStore = (() => {
+        const ok = (fn, fallback) => { try { return fn(); } catch (_) { return fallback; } };
+        return {
+            get: (k) => ok(() => localStorage.getItem(k), null),
+            set: (k, v) => ok(() => { localStorage.setItem(k, v); return true; }, false),
+            remove: (k) => ok(() => { localStorage.removeItem(k); return true; }, false),
+        };
+    })();
+
     const DEFAULT_API_BASE = defaultApiBase(location);
-    let API_BASE = localStorage.getItem('film_api_url') || DEFAULT_API_BASE;
+    /*
+     * THE GLOBAL IS READ FIRST, and that ordering is the fix rather than a
+     * nicety. The iOS app knows the engine's address and sets it two ways: a
+     * plain global, which cannot fail, and the stored copy, so a later visit
+     * in a browser still remembers. Reading only storage means a device that
+     * cannot store has no address at all.
+     */
+    let API_BASE = (typeof window !== 'undefined' && window.__filmEngineApiBase)
+        || feStore.get('film_api_url') || DEFAULT_API_BASE;
     const API = () => API_BASE + '/film';
 
     const state = {
@@ -13457,20 +13491,20 @@ THREE.GLTFLoader = GLTFLoader;
     function getOnboardingState() {
         if (!state.currentProject) return { dismissed: true, index: 0 };
         try {
-            const stored = JSON.parse(localStorage.getItem(onboardingStorageKey(state.currentProject.id)) || '{}');
+            const stored = JSON.parse(feStore.get(onboardingStorageKey(state.currentProject.id)) || '{}');
             return {
                 dismissed: stored.dismissed === true,
                 index: Number.isInteger(stored.index) ? Math.max(0, stored.index) : 0,
             };
         } catch (_) {
-            return { dismissed: localStorage.getItem(onboardingStorageKey(state.currentProject.id)) === '1', index: 0 };
+            return { dismissed: feStore.get(onboardingStorageKey(state.currentProject.id)) === '1', index: 0 };
         }
     }
 
     function setOnboardingState(update) {
         if (!state.currentProject) return;
         const current = getOnboardingState();
-        localStorage.setItem(onboardingStorageKey(state.currentProject.id), JSON.stringify({ ...current, ...update }));
+        feStore.set(onboardingStorageKey(state.currentProject.id), JSON.stringify({ ...current, ...update }));
     }
 
     function startProjectOnboarding(options = {}) {
@@ -24555,7 +24589,7 @@ THREE.GLTFLoader = GLTFLoader;
     function loadAIChatHistory() {
         if (!state.currentProject) return;
         const key = `aiChat_${state.currentProject.id}`;
-        const saved = localStorage.getItem(key);
+        const saved = feStore.get(key);
         if (saved) {
             try {
                 state.aiChat = JSON.parse(saved);
@@ -24571,7 +24605,7 @@ THREE.GLTFLoader = GLTFLoader;
     function saveAIChatHistory() {
         if (!state.currentProject) return;
         const key = `aiChat_${state.currentProject.id}`;
-        localStorage.setItem(key, JSON.stringify(state.aiChat || []));
+        feStore.set(key, JSON.stringify(state.aiChat || []));
     }
 
     function renderAIChatMessages() {
@@ -31176,7 +31210,7 @@ ${fountainText.slice(0, 50000)}`;
         const url = document.getElementById('settingsApiUrl').value.trim().replace(/\/+$/, '');
         if (url) {
             API_BASE = url;
-            localStorage.setItem('film_api_url', url);
+            feStore.set('film_api_url', url);
             setStatus('API URL saved: ' + url);
             checkHealth();
         }
@@ -31184,7 +31218,7 @@ ${fountainText.slice(0, 50000)}`;
 
     function resetSettings() {
         API_BASE = DEFAULT_API_BASE;
-        localStorage.removeItem('film_api_url');
+        feStore.remove('film_api_url');
         document.getElementById('settingsApiUrl').value = DEFAULT_API_BASE;
         setStatus('Settings reset');
         checkHealth();

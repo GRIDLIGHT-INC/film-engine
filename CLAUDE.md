@@ -400,6 +400,7 @@ film-engine/
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
 │       ├── page-handlers.test.js       # A button wired to nothing, and a modal shown with a class the CSS ignores
 │       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
+│       ├── storage-never-throws.test.js # An accessor that RAISES must not take every function below it
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -4386,6 +4387,7 @@ node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
 node --test backend/tests/page-handlers.test.js
 node --test backend/tests/ios-app.test.js
+node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

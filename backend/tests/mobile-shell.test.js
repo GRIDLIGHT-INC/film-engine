@@ -205,8 +205,25 @@ test('the API base follows the host the page was served from', () => {
         'a non-http origin has no host to derive an API base from');
     assert.ok(/const DEFAULT_API_BASE\s*=\s*defaultApiBase\(/.test(HTML),
         'DEFAULT_API_BASE must come from that function, not a second copy of the rule');
-    assert.ok(/localStorage\.getItem\('film_api_url'\)\s*\|\|/.test(HTML),
-        'the explicit override must still win over the default');
+    /*
+     * THE ORDER, not the mechanism. This asserted the literal
+     * `localStorage.getItem('film_api_url') ||` and so broke when the read was
+     * routed through a helper that cannot throw — reporting a fix as a
+     * regression. What must stay true is the PRECEDENCE, and there are now
+     * three sources: a native shell injects a global that cannot fail, the
+     * stored override is the fallback, and the derived default is last.
+     */
+    const CODE = HTML.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    const at = CODE.indexOf('let API_BASE');
+    assert.ok(at > -1, 'API_BASE is gone; re-derive this test');
+    const decl = CODE.slice(at, CODE.indexOf(';', at) + 1);
+    const order = ['__filmEngineApiBase', 'film_api_url', 'DEFAULT_API_BASE']
+        .map(k => decl.indexOf(k));
+    assert.ok(order.every(i => i > -1),
+        `API_BASE no longer consults all three sources: ${decl}`);
+    assert.deepStrictEqual([...order].sort((a, b) => a - b), order,
+        'the sources are consulted in the wrong order — an injected address must beat a stored '
+        + `one, and both must beat the derived default: ${decl}`);
 });
 
 test('the page server binds loopback unless told otherwise, and says what it did', () => {
