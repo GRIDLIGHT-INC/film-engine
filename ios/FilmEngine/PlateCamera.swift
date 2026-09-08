@@ -482,6 +482,107 @@ enum FrameAnalysis {
     }
 }
 
+/// Where the picture is SHARP.
+///
+/// Apple ships no peaking API; every implementation computes it per frame. This
+/// reads the luma plane PCC-007 delivers and marks pixels whose local gradient
+/// is steep enough to be in focus.
+///
+/// THE THRESHOLD IS ABSOLUTE, AND THAT IS THE WHOLE FEATURE. A relative one —
+/// peak the top N% of gradients — always finds a top N%, so the overlay would
+/// look the same in focus and out of it, and racking focus would change
+/// nothing. Sharpness is an absolute property of the picture: a defocused edge
+/// crosses the same brightness range over more pixels, so its gradient is
+/// lower. Locking exposure (PCC-002) is what keeps that stable across a
+/// turnaround.
+extension FocusPeaking {
+    /// Read the luma plane out of a capture buffer and run the detector.
+    ///
+    /// Separate from `peaks` so the arithmetic stays pure and testable without
+    /// a camera — a simulator produces no CVPixelBuffer at all.
+    static func read(_ buffer: CVPixelBuffer,
+                     plan: (stride: Int, width: Int, height: Int)) -> [(x: Int, y: Int)]? {
+        /*
+         * Locked for the read. CVPixelBufferGetBaseAddressOfPlane is valid only
+         * between lock and unlock; outside it the address is undefined and
+         * works right up until the frame is recycled underneath.
+         *
+         * .readOnly because a write lock on a capture buffer forces a copy of
+         * every frame.
+         */
+        guard CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+
+        /*
+         * PLANE 0 IS LUMA. The format is 420YpCbCr8BiPlanarFullRange: plane 0
+         * is full-resolution brightness, plane 1 is interleaved CbCr at half
+         * resolution. Reading plane 1 gives colour edges at half the detail —
+         * plausible on screen and wrong.
+         *
+         * And the row stride is read PER PLANE. The buffer-wide bytesPerRow is
+         * a different number, and using it is the same padding bug wearing a
+         * different hat.
+         */
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
+        let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let w = CVPixelBufferGetWidthOfPlane(buffer, 0)
+        let h = CVPixelBufferGetHeightOfPlane(buffer, 0)
+
+        let luma = [UInt8](UnsafeBufferPointer(
+            start: base.assumingMemoryBound(to: UInt8.self), count: rowBytes * h))
+        return peaks(luma: luma, width: w, height: h, bytesPerRow: rowBytes, stride: plan.stride)
+    }
+}
+
+enum FocusPeaking {
+    /// Gradient magnitude at which a pixel counts as in focus, on 8-bit luma.
+    ///
+    /// A hard edge on a real subject runs to 200+; a defocused one on the same
+    /// subject is single digits per pixel. 24 sits well clear of sensor noise
+    /// and well below anything genuinely sharp.
+    static let threshold = 24
+
+    /// The sampled points that are in focus, in STRIDED coordinates.
+    ///
+    /// Returned in the sampled grid rather than in source pixels because that
+    /// is what the overlay scales from — and because returning source
+    /// coordinates would invite a consumer to re-derive the stride and get a
+    /// different answer.
+    static func peaks(luma: [UInt8], width: Int, height: Int, bytesPerRow: Int,
+                      stride: Int, threshold: Int = threshold) -> [(x: Int, y: Int)] {
+        let step = max(1, stride)
+        // A row stride shorter than the width is a malformed geometry, and
+        // reading it is not a wrong answer but a crash.
+        guard width > 0, height > 0, bytesPerRow >= width,
+              luma.count >= bytesPerRow * height else { return [] }
+
+        var out: [(x: Int, y: Int)] = []
+        var sy = 0
+        var y = step
+        while y < height - step {
+            var sx = 0
+            var x = step
+            while x < width - step {
+                /*
+                 * INDEXED BY bytesPerRow, NEVER BY WIDTH. CVPixelBuffer rows are
+                 * padded to an alignment, so a plane's row stride is wider than
+                 * its picture. Using width reads into the padding and then walks
+                 * progressively further out of line down the frame — a diagonal
+                 * smear of phantom edges that looks like a real detection.
+                 */
+                let here = y * bytesPerRow + x
+                let dx = Int(luma[here + step]) - Int(luma[here - step])
+                let dy = Int(luma[(y + step) * bytesPerRow + x])
+                       - Int(luma[(y - step) * bytesPerRow + x])
+                if abs(dx) + abs(dy) >= threshold { out.append((x: sx, y: sy)) }
+                x += step; sx += 1
+            }
+            y += step; sy += 1
+        }
+        return out
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -915,6 +1016,11 @@ final class GuideOverlay: UIView {
     var showLevel = true
     var showGrid = true
     var showAspect = true
+    var showPeaking = false
+    /// Sampled points that are in focus, in the strided grid the detector
+    /// walked, plus that grid's size so they can be scaled onto the view.
+    var peaks: [(x: Int, y: Int)] = []
+    var peakGrid: (width: Int, height: Int) = (0, 0)
     var aspect: Double? = nil
     var tilt: (rollDegrees: Double, pitchDegrees: Double, rollIsMeaningful: Bool) = (0, 0, false)
     /// Supplied by the preview, because only it can convert capture space.
@@ -943,6 +1049,19 @@ final class GuideOverlay: UIView {
             ctx.setStrokeColor(UIColor.systemYellow.withAlphaComponent(0.9).cgColor)
             ctx.setLineWidth(2)
             ctx.stroke(onScreen)
+        }
+
+        if showPeaking, peakGrid.width > 0, peakGrid.height > 0 {
+            // Scaled from the SAMPLED grid, which is what the detector returns
+            // — never from source pixels, which would mean re-deriving the
+            // stride here and getting a different answer from the detector.
+            let sx = rect.width / CGFloat(peakGrid.width)
+            let sy = rect.height / CGFloat(peakGrid.height)
+            ctx.setFillColor(UIColor.systemGreen.withAlphaComponent(0.85).cgColor)
+            for p in peaks {
+                ctx.fill(CGRect(x: CGFloat(p.x) * sx, y: CGFloat(p.y) * sy,
+                                width: max(sx, 1.5), height: max(sy, 1.5)))
+            }
         }
 
         if showLevel {
@@ -1047,6 +1166,12 @@ struct PlateCameraView: View {
     @State private var showLevel = true
     @State private var showGrid = false
     @State private var showAspect = true
+    // OFF by default. Peaking is an aid while focusing, not part of the plate,
+    // and a shimmer over the subject you are judging is noise — the same
+    // reasoning as the thirds grid.
+    @State private var showPeaking = false
+    @State private var peaks: [(x: Int, y: Int)] = []
+    @State private var peakGrid: (width: Int, height: Int) = (0, 0)
     @Environment(\.dismiss) private var dismiss
 
     private var view: PlateCaptureRequest.PlateView? {
@@ -1080,13 +1205,28 @@ struct PlateCameraView: View {
                         o.showLevel = showLevel; o.showGrid = showGrid
                         o.showAspect = showAspect; o.aspect = request.aspect
                         o.tilt = camera.tilt
+                        o.showPeaking = showPeaking
+                        o.peaks = peaks; o.peakGrid = peakGrid
                     }) { camera.lockFocus(at: $0) }.ignoresSafeArea()
                 }
                 overlay
             }
         }
-        .onAppear { camera.start(); camera.startLevel() }
-        .onDisappear { camera.stop(); camera.stopLevel() }
+        .onAppear {
+            camera.start(); camera.startLevel()
+            // Frames arrive on the camera's serial queue. The detection runs
+            // THERE and only the result hops to main — analysing on main would
+            // stutter every control, which is why PCC-007 gave it its own queue.
+            camera.onFrame = { pixels, plan in
+                guard showPeaking else { return }
+                guard let found = FocusPeaking.read(pixels, plan: plan) else { return }
+                Task { @MainActor in
+                    peaks = found
+                    peakGrid = (plan.width, plan.height)
+                }
+            }
+        }
+        .onDisappear { camera.onFrame = nil; camera.stop(); camera.stopLevel() }
     }
 
     private var overlay: some View {
@@ -1121,6 +1261,7 @@ struct PlateCameraView: View {
                     guideToggle("level", "level.fill", $showLevel)
                     guideToggle("grid", "grid", $showGrid)
                     guideToggle("aspect", "rectangle.ratio.16.to.9", $showAspect)
+                    guideToggle("peaking", "camera.metering.spot", $showPeaking)
                 }
                 .padding(.bottom, 8)
                 // A roll that cannot be computed says so. Pointing the phone

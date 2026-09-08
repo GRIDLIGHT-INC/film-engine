@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 1366 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1507 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -119,6 +119,16 @@ work: a 12.2-megapixel frame at thirty a second is not slow but impossible, and 
 stride computed as zero is not a wrong number — it is a non-terminating loop with
 the camera open. This is frames for MONITORING; nothing is written anywhere, so
 footage capture stays struck.
+
+**Built 2026-09-08 by PCC-008 (GRD-3659):** focus peaking, over the luma plane
+PCC-007 delivers. The THRESHOLD IS ABSOLUTE and that is the whole feature: a
+relative one — peak the top N% of gradients — always finds a top N%, so the
+overlay would look identical in focus and out of it and racking focus would show
+nothing. A defocused edge crosses the same brightness range over more pixels, so
+its gradient is lower, and locking exposure (PCC-002) keeps that stable across a
+turnaround. Indexed by the plane's own `bytesPerRow`, never by width — rows are
+padded, and indexing by width walks progressively out of line down the frame and
+reports a diagonal smear of phantom edges that looks like a real detection.
 
 ## Target State
 
