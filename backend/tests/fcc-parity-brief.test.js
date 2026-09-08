@@ -113,7 +113,7 @@ const CLAIMS = [
     {
         id: 'camera-has-no-remaining-manual-control',
         kind: 'gap',
-        closes: 'PCC-004 (focus), and Phase B for the footage pair',
+        closes: 'Phase B for the footage pair — the three manual controls are all built',
         why: 'the five manual-control APIs the brief calls absent that are STILL absent. Split '
             + 'from the original six when PCC-002 closed the exposure one, so this claim keeps '
             + 'saying something true instead of failing for succeeding',
@@ -121,8 +121,10 @@ const CLAIMS = [
             const cam = code('ios/FilmEngine/PlateCamera.swift');
             // setWhiteBalanceModeLocked removed from this list by PCC-003 (GRD-3654):
             // it is built, and is pinned by `wb-lock-landed` below.
-            const landed = ['setFocusModeLocked', 'activeColorSpace',
-                            'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(x => cam.includes(x));
+            // setFocusModeLocked removed by PCC-004 (GRD-3655): built, and pinned
+            // by `focus-lock-landed` below. Only the footage pair remains.
+            const landed = ['activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
+                .filter(x => cam.includes(x));
             return landed.length === 0
                 || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
         },
@@ -137,6 +139,18 @@ const CLAIMS = [
             const cam = code('ios/FilmEngine/PlateCamera.swift');
             return cam.includes('setWhiteBalanceModeLocked')
                 || 'the white balance lock is gone; the brief\'s top recommendation is half unbuilt again';
+        },
+    },
+    {
+        id: 'focus-lock-landed',
+        kind: 'present',
+        why: 'RESHAPED from the focus sixth of the original manual-control claim when PCC-004 '
+            + 'landed. The brief called manual focus with peaking a cheap high-value item; the '
+            + 'focus half is built and peaking is PCC-008',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            return cam.includes('setFocusModeLocked')
+                || 'the focus lock is gone; a brief recommendation is unbuilt again';
         },
     },
     {

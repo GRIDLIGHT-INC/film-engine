@@ -273,6 +273,38 @@ struct WhiteBalanceLock: Equatable {
     }
 }
 
+/// Where the director tapped, held for the turnaround.
+///
+/// THIS BREAKS THE PATTERN OF THE TWO LOCKS BEFORE IT, deliberately. An
+/// exposure and a white balance mean the same thing on any lens, so PCC-002 and
+/// PCC-003 carry the VALUE across a lens change and refit it. A lens position
+/// does not: AVCaptureDevice.h:1265 says it "does not correspond to an exact
+/// physical distance, nor does it represent a consistent focus distance from
+/// device to device". So 0.6 on the wide is a different distance from 0.6 on
+/// the telephoto, and re-applying the number after a lens change focuses
+/// somewhere nobody chose.
+///
+/// What IS meaningful across lenses is the POINT — the same part of the frame.
+/// So the point is what is stored and carried, and the position is re-derived
+/// by focusing again on the new lens.
+struct FocusLock: Equatable {
+    /// Normalised into the device's own space: (0,0) top left, (1,1) bottom
+    /// right, per :1155.
+    let x: Double
+    let y: Double
+
+    /// Fit a converted tap into the range the device documents.
+    ///
+    /// `captureDevicePointConverted` can land a hair outside at the very edge,
+    /// and setFocusPointOfInterest throws where the point is unsupported. A
+    /// non-finite tap answers the CENTRE — the documented default — rather than
+    /// propagating NaN into the device.
+    static func point(x: Double, y: Double) -> FocusLock {
+        guard x.isFinite, y.isFinite else { return FocusLock(x: 0.5, y: 0.5) }
+        return FocusLock(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -305,6 +337,10 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// meaningless to a person, so the temperature is what is shown.
     @Published private(set) var whiteBalance: WhiteBalanceLock?
     @Published private(set) var whiteBalanceLabel: String?
+
+    /// Where focus is held, if it is. Stored as a POINT rather than a lens
+    /// position, because only the point survives a lens change meaningfully.
+    @Published private(set) var focus: FocusLock?
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -459,6 +495,57 @@ final class PlateCameraModel: NSObject, ObservableObject {
                                      iso: fit.iso, completionHandler: nil)
     }
 
+    /// Focus on what the director tapped, then hold it for the walk.
+    ///
+    /// The order is the documented one and it is not optional: :1155 says
+    /// "setting focusPointOfInterest alone does not initiate a focus
+    /// operation. After setting focusPointOfInterest, call -setFocusMode: to
+    /// apply the new point of interest." Setting only the point draws a focus
+    /// square and focuses nothing.
+    func lockFocus(at point: FocusLock) {
+        guard let device = lens?.device, state == .ready else { return }
+        focus = point
+        applyFocus(point, to: device)
+    }
+
+    /// Back to autofocus. A view genuinely can need re-focusing — a prop held
+    /// closer than the last one — and a lock with no way out strands the walk.
+    func unlockFocus() {
+        focus = nil
+        guard let device = lens?.device,
+              device.isFocusModeSupported(.continuousAutoFocus),
+              (try? device.lockForConfiguration()) != nil else { return }
+        device.focusMode = .continuousAutoFocus
+        device.unlockForConfiguration()
+    }
+
+    /// Point the device at a spot and hold focus there.
+    ///
+    /// Re-focusing rather than re-applying a number is what makes this correct
+    /// across a lens change; see FocusLock's own note.
+    private func applyFocus(_ at: FocusLock, to device: AVCaptureDevice) {
+        guard (try? device.lockForConfiguration()) != nil else { return }
+        defer { device.unlockForConfiguration() }
+
+        if device.isFocusPointOfInterestSupported {
+            device.focusPointOfInterest = CGPoint(x: at.x, y: at.y)
+        }
+        // The mode is what actually starts the operation.
+        if device.isFocusModeSupported(.autoFocus) {
+            device.focusMode = .autoFocus
+        }
+        // Then pin it wherever that lands. AVCaptureLensPositionCurrent is used
+        // rather than a stored number because :1125 says a custom position
+        // throws where isLockingFocusWithCustomLensPositionSupported is false,
+        // and because a number carried from another lens is meaningless anyway.
+        if device.isLockingFocusWithCustomLensPositionSupported {
+            device.setFocusModeLocked(lensPosition: AVCaptureDevice.currentLensPosition,
+                                      completionHandler: nil)
+        } else if device.isFocusModeSupported(.locked) {
+            device.focusMode = .locked
+        }
+    }
+
     /// Change lens.
     ///
     /// The swap happens inside begin/commitConfiguration because a session
@@ -482,6 +569,10 @@ final class PlateCameraModel: NSObject, ObservableObject {
             // while the next plate is metered automatically.
             if let held = exposure { apply(held, to: next.device) }
             if let wb = whiteBalance { applyWhiteBalance(wb, to: next.device) }
+            // The POINT is re-focused on the new lens. The lens position is
+            // deliberately NOT carried: :1265 says it is not a consistent
+            // distance across devices, so the number would focus elsewhere.
+            if let at = focus { applyFocus(at, to: next.device) }
         } else if let current = input, session.canAddInput(current) {
             session.addInput(current)            // put the working lens back
         }
@@ -519,14 +610,40 @@ extension PlateCameraModel: AVCapturePhotoCaptureDelegate {
 /// The live preview.
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    /// Where the director tapped, already in the device's own space.
+    ///
+    /// The conversion is the PREVIEW LAYER's: `captureDevicePointConverted`
+    /// knows the videoGravity (.resizeAspectFill CROPS the picture) and the
+    /// orientation. Hand-rolling that transform is a second implementation of
+    /// Apple's, and when it disagrees it does so silently — by focusing a
+    /// little way from where the finger went.
+    var onTap: ((FocusLock) -> Void)? = nil
 
     func makeUIView(context: Context) -> PreviewView {
         let v = PreviewView()
         v.layer.session = session
         v.layer.videoGravity = .resizeAspectFill
+        if onTap != nil {
+            let tap = UITapGestureRecognizer(target: context.coordinator,
+                                             action: #selector(Coordinator.tapped(_:)))
+            v.addGestureRecognizer(tap)
+        }
+        context.coordinator.onTap = onTap
         return v
     }
-    func updateUIView(_ view: PreviewView, context: Context) { }
+    func updateUIView(_ view: PreviewView, context: Context) { context.coordinator.onTap = onTap }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject {
+        var onTap: ((FocusLock) -> Void)?
+
+        @objc func tapped(_ g: UITapGestureRecognizer) {
+            guard let view = g.view as? PreviewView, let onTap else { return }
+            let p = view.layer.captureDevicePointConverted(fromLayerPoint: g.location(in: view))
+            onTap(FocusLock.point(x: p.x, y: p.y))
+        }
+    }
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
@@ -577,7 +694,7 @@ struct PlateCameraView: View {
                 if let pending {
                     Image(uiImage: pending).resizable().scaledToFit().ignoresSafeArea()
                 } else {
-                    CameraPreview(session: camera.session).ignoresSafeArea()
+                    CameraPreview(session: camera.session) { camera.lockFocus(at: $0) }.ignoresSafeArea()
                 }
                 overlay
             }
@@ -609,6 +726,26 @@ struct PlateCameraView: View {
             }
 
             Spacer()
+
+            // The focus lock. Separate from the exposure chip because it is
+            // taken by TAPPING the subject rather than by pressing a control,
+            // and because a director releases them independently: a view can
+            // need re-focusing while the light has not changed.
+            if pending == nil, camera.focus != nil {
+                Button { camera.unlockFocus() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "viewfinder")
+                        Text("FOCUS HELD").font(.system(.caption, design: .monospaced))
+                    }
+                    .padding(.vertical, 6).padding(.horizontal, 11)
+                    .background(.yellow, in: Capsule()).foregroundStyle(.black)
+                }
+                .accessibilityLabel("Focus locked. Tap to return to autofocus.")
+                .padding(.bottom, 8)
+            } else if pending == nil {
+                Text("Tap the subject to focus")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.7)).padding(.bottom, 8)
+            }
 
             // The exposure lock, and what it is holding. Shown above the lens
             // picker because it applies to the whole turnaround while the lens

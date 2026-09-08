@@ -266,8 +266,16 @@ test('the held colour is shown as a temperature, not as raw gains', () => {
      * label from the chip, because the accessibility string still mentions it —
      * a value announced to VoiceOver and invisible to everyone else.
      */
-    const rendered = overlay.slice(overlay.indexOf('Text(camera.exposure'),
-                                   overlay.indexOf('.accessibilityLabel'));
+    /*
+     * Both bounds relative to the exposure chip. The end bound was originally
+     * `overlay.indexOf('.accessibilityLabel')` — the FIRST one in the overlay —
+     * and PCC-004 added a focus chip ABOVE this one, so that index moved before
+     * the start and the slice became empty. An empty slice fails, which is the
+     * safe direction, but the check was measuring the wrong region either way.
+     */
+    const chip = overlay.indexOf('Text(camera.exposure');
+    assert.notStrictEqual(chip, -1, 'the exposure chip is gone; re-derive this check');
+    const rendered = overlay.slice(chip, overlay.indexOf('.accessibilityLabel', chip));
     assert.match(rendered, /whiteBalanceLabel/,
         'the chip never renders the held white balance; a colour lock nobody can see is one a '
         + 'director cannot check before shooting four views with it');

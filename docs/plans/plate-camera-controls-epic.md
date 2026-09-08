@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 792 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 929 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -77,6 +77,16 @@ brightness changes) and the 1.0...maxWhiteBalanceGain range applies AFTER it.
 lock is refitted on every change; a cast the new lens cannot express is reported
 in stops rather than delivered as a quietly warmer plate. The held colour shows
 as a temperature, since device gains are meaningless to a person.
+
+**Built 2026-09-08 by PCC-004 (GRD-3655):** tap to focus, then lock — completing
+Phase 1's three manual controls. This one breaks the pattern of the two before it
+deliberately: an exposure and a colour mean the same on any lens, but
+AVCaptureDevice.h:1265 says a lens position "does not represent a consistent focus
+distance from device to device", so the POINT is carried across a lens change and
+the position is re-derived by focusing again. The tap is converted by the preview
+layer's own `captureDevicePointConverted`, which knows the gravity and the
+orientation; and setting the point is followed by setting the MODE, because :1155
+says the point alone starts no focus operation.
 
 ## Target State
 

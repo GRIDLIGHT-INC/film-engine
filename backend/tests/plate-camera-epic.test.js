@@ -200,17 +200,37 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-focus-or-footage-apis',
-        kind: 'gap',
-        closes: 'PCC-004 (focus), and Phase B for the footage pair',
-        why: 'what is STILL absent, split again as PCC-003 closed the white-balance third — so '
-            + 'the claim keeps naming only work that has not happened',
+        id: 'focus-lock-built',
+        kind: 'present',
+        why: 'RESHAPED from `no-focus-or-footage-apis` when PCC-004 landed (GRD-3655). With this '
+            + 'the three manual controls of Phase 1 are all built, so nothing is left of the '
+            + 'original manual-control gap except the footage pair',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const present = ['setFocusModeLocked', 'activeColorSpace',
-                             'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(s => cam.includes(s));
+            const missing = ['setFocusModeLocked', 'FocusLock', 'focusPointOfInterest',
+                             'captureDevicePointConverted'].filter(s => !cam.includes(s));
+            return missing.length === 0 || `the focus lock has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'no-footage-apis',
+        kind: 'gap',
+        /*
+         * No task closes this, and that is CORRECT: footage capture is Phase B,
+         * struck from this epic by the user's direction. The claim is kept as a
+         * tripwire — if an AVAssetWriter path ever appears, the scope changed
+         * and somebody should say so deliberately.
+         */
+        outOfScope: 'Phase B — footage capture, struck from this epic by the user\'s direction',
+        why: 'all that remains of the original manual-control claim after PCC-002, PCC-003 and '
+            + 'PCC-004 each closed a third. Phase B is out of scope by the user\'s direction, so '
+            + 'this stays a gap deliberately rather than being scheduled',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const present = ['activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
+                .filter(s => cam.includes(s));
             return present.length === 0
-                || `the camera now uses ${present.join(', ')} — reshape this claim to pin what was built`;
+                || `footage capture has landed (${present.join(', ')}) — reshape this claim`;
         },
     },
     {
@@ -274,6 +294,22 @@ test('every claim states why, and every gap names the task that closes it', () =
     for (const c of CLAIMS) {
         assert.ok(c.why && c.why.length > 40, `${c.id}: states no real reason`);
         if (c.kind === 'gap') {
+            /*
+             * A gap must name the task that closes it, so the claim gets
+             * RESHAPED when the work lands rather than failing for succeeding.
+             *
+             * The one exception is a gap that nothing in this epic will ever
+             * close, because the work was struck from scope. That has to be
+             * DECLARED, and it has to give a reason — otherwise "out of scope"
+             * becomes the cheap way to keep a stale gap alive for ever.
+             */
+            if (c.outOfScope) {
+                assert.ok(c.outOfScope.length > 30,
+                    `${c.id} claims to be out of scope and gives no real reason`);
+                assert.ok(!/PCC-\d{3}/.test(c.closes || ''),
+                    `${c.id} is both out of scope and closed by a task; it cannot be both`);
+                continue;
+            }
             assert.ok(/PCC-\d{3}/.test(c.closes || ''),
                 `${c.id} is a gap and names no task that closes it — a gap pinned as permanent makes `
                 + 'the epic fail for succeeding');
