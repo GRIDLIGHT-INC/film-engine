@@ -120,6 +120,7 @@ film-engine/
 │   │   ├── media-kinds.js         # Where a generated media file goes, said once
 │   │   ├── capture-policy.js      # What a capture may be, from the ceilings that actually bind it
 │   │   ├── capture-settings.js    # What a plate was shot at — a bad field is dropped, never the photograph
+│   │   ├── plate-consistency.js   # Exposure is ISO x shutter; colour is mired, not kelvin
 │   │   ├── capture-to-world.js    # A capture nobody can generate from is a file, not an input
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
@@ -411,6 +412,7 @@ film-engine/
 │       ├── plate-frames.test.js       # A stride of zero is not a wrong number, it is a hang
 │       ├── plate-peaking.test.js      # A defocused edge must NOT peak, or racking focus shows nothing
 │       ├── plate-clipping.test.js     # A warning that fires on every specular highlight is one nobody reads
+│       ├── plate-consistency.test.js  # A turnaround with nothing recorded must not claim to agree
 │       ├── storage-never-throws.test.js # An accessor that RAISES must not take every function below it
 │       ├── nothing-covers-the-page.test.js # A closed drawer's backdrop must not swallow every tap
 │       ├── fcc-parity-brief.test.js # A research brief whose facts are pinned to the code it describes
@@ -4410,6 +4412,7 @@ node --test backend/tests/plate-capture-settings.test.js
 node --test backend/tests/plate-frames.test.js
 node --test backend/tests/plate-peaking.test.js
 node --test backend/tests/plate-clipping.test.js
+node --test backend/tests/plate-consistency.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js

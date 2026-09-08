@@ -4107,6 +4107,24 @@ const BATCH_TOOLS = [
         },
     },
     {
+        name: 'plate_consistency',
+        description:
+            'Whether a character\u2019s turnaround was shot at the SAME settings across its views. Free. '
+            + 'Four views that disagree produce a character who changes brightness or colour between the '
+            + 'plates, and every frame generated from them inherits that. Exposure is compared as ISO x '
+            + 'shutter, so 1/60 at ISO 400 and 1/120 at ISO 800 correctly agree; colour is compared in '
+            + 'mired, because 200K apart at tungsten is visible and the same 200K at 8000K is not. A view '
+            + 'with no recorded settings is reported as UNCOMPARABLE, never as agreeing \u2014 every plate '
+            + 'shot before the camera recorded them carries none. Read this after shooting a turnaround '
+            + 'and before generating from it.',
+        schema: { character_id: { type: 'string' } },
+        required: ['character_id'],
+        async run(a) {
+            return callRoute('GET', `/film/characters/${a.character_id}/refsheet/consistency`,
+                {}, handleCharacters);
+        },
+    },
+    {
         name: 'plate_view_list',
         description:
             'The views a location has been photographed from, and whether each picture is really on disk. '

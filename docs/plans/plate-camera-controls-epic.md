@@ -143,6 +143,16 @@ It also merged the frame consumers: `onFrame` holds ONE closure, so a second
 subscriber would have silently replaced peaking, and the plane copy is ~1.5MB a
 frame. One read on `FrameAnalysis.luma`, both analyses.
 
+**Built 2026-09-08 by PCC-010 (GRD-3661):** a turnaround whose views disagree is
+flagged, which is where PCC-006's recording earns its place. Exposure is compared
+as ISO x SHUTTER, so 1/60 at ISO 400 and 1/120 at ISO 800 correctly agree —
+comparing the fields separately would flag an identical pair and send a director to
+re-shoot a correct turnaround. Colour is compared in MIRED, because the scale is
+reciprocal: 200K apart at tungsten is visible and the same 200K at 8000K is not, so
+no kelvin tolerance can serve both. A view with no recorded settings is reported as
+UNCOMPARABLE and a turnaround with nothing recorded answers "cannot tell" rather
+than "these agree" — the reassuring answer being the misleading one.
+
 ## Target State
 
 | Component | Target State |

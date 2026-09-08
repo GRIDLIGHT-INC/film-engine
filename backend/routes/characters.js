@@ -89,6 +89,13 @@ function handleCharacters(req, res, urlParts, query) {
             if (urlParts[4] === 'views' && !urlParts[5] && req.method === 'GET') {
                 return listRefsheetViews(res, charId);
             }
+            /*
+             * Does this turnaround hold together? PCC-006 records what each
+             * plate was shot at; this is where that recording earns its place.
+             */
+            if (urlParts[4] === 'consistency' && req.method === 'GET') {
+                return refsheetConsistency(res, charId);
+            }
             if (urlParts[4] === 'views' && urlParts[5] && req.method === 'DELETE') {
                 return deleteRefsheetView(res, charId, decodeURIComponent(urlParts[5]));
             }
@@ -984,6 +991,49 @@ function getRefSheetStatus(req, res, charId) {
  * order a person reads a turnaround in, and because the front is the one that
  * matters: it is what conditions every frame the character appears in.
  */
+/**
+ * Whether a subject's views were shot at the same settings.
+ *
+ * Reads the `capture` block PCC-006 stores on each plate. A view with none is
+ * reported as UNCOMPARABLE rather than agreeing — every plate shot before that
+ * task has none, and "these agree" over an empty set is the most misleading
+ * answer available because it is the reassuring one.
+ */
+function refsheetConsistency(res, charId) {
+    const { compareViews } = require('../lib/plate-consistency');
+
+    const ch = db.prepare('SELECT id, project_id, name FROM film_characters WHERE id = ?').get(charId);
+    if (!ch) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Character not found' }));
+    }
+
+    const rows = db.prepare(
+        `SELECT metadata, created_at FROM film_assets
+          WHERE project_id = ? AND character_id = ?
+            AND asset_type IN ('character_sheet', 'reference_image')
+       ORDER BY created_at ASC`).all(ch.project_id, charId);
+
+    const views = rows.map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.metadata || '{}'); } catch (_) { meta = {}; }
+        return { view: String(meta.view || 'front').trim() || 'front', capture: meta.capture || null };
+    });
+
+    const report = compareViews(views);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+        character_id: ch.id, character: ch.name, views: views.length, ...report,
+        note: report.agree === null
+            ? 'Nothing could be compared. Plates shot before the camera recorded its settings '
+              + 'carry none, and that is not the same as agreeing.'
+            : (report.agree
+                ? 'These views were shot at the same settings.'
+                : 'These views disagree; a character who changes between plates changes in every '
+                  + 'frame generated from them.'),
+    }));
+}
+
 function listRefsheetViews(res, charId) {
     const fs = require('fs');
     const path = require('path');
