@@ -173,33 +173,31 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-manual-control-apis',
-        kind: 'gap',
-        closes: 'PCC-002, PCC-003, PCC-004',
-        why: 'the epic\'s whole premise is that these six are absent; when the tasks land this must '
-            + 'be RESHAPED to pin what was built rather than deleted',
+        id: 'exposure-lock-built',
+        kind: 'present',
+        why: 'RESHAPED from `no-manual-control-apis` when PCC-002 landed (GRD-3653). The exposure '
+            + 'half is built and must stay so; the focus and white-balance halves are still gaps '
+            + 'and are tracked separately below',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const present = ['setExposureModeCustom', 'setFocusModeLocked',
-                             'setWhiteBalanceModeLocked', 'activeColorSpace',
-                             'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(s => cam.includes(s));
-            return present.length === 0
-                || `the camera now uses ${present.join(', ')} — reshape this claim to pin what was built`;
+            const missing = ['setExposureModeCustom', 'isExposureModeSupported', 'ExposureLock']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0 || `the exposure lock has lost: ${missing.join(', ')}`;
         },
     },
     {
-        id: 'lens-selection-built',
-        kind: 'present',
-        why: 'RESHAPED from a `gap` when PCC-001 landed (GRD-3652), which is what a gap claim is '
-            + 'for — the epic now records what was built rather than what was missing, and this '
-            + 'must stay true. All three physical rear cameras are discovered, and the wide '
-            + 'remains the default because it is the one every phone has',
+        id: 'no-wb-focus-or-footage-apis',
+        kind: 'gap',
+        closes: 'PCC-003, PCC-004, and Phase B for the footage pair',
+        why: 'the remaining manual controls; SPLIT OUT of no-manual-control-apis when PCC-002 '
+            + 'closed the exposure half, so each half now says something true',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const missing = ['builtInUltraWideCamera', 'builtInWideAngleCamera',
-                             'builtInTelephotoCamera', 'DiscoverySession', 'func select(']
-                .filter(s => !cam.includes(s));
-            return missing.length === 0 || `lens selection has lost: ${missing.join(', ')}`;
+            const present = ['setFocusModeLocked', 'setWhiteBalanceModeLocked',
+                             'activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
+                .filter(s => cam.includes(s));
+            return present.length === 0
+                || `the camera now uses ${present.join(', ')} — reshape this claim to pin what was built`;
         },
     },
     {

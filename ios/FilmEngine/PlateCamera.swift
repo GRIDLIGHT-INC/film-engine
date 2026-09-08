@@ -122,6 +122,88 @@ struct PlateLens: Identifiable, Equatable {
     }
 }
 
+// ── exposure ─────────────────────────────────────────────────────────────────
+
+/// A metered exposure, held across a turnaround.
+///
+/// Four views shot on autoexposure disagree about brightness, and the front
+/// plate conditions every frame its subject appears in — so the exposure is
+/// metered once and held.
+///
+/// The arithmetic here exists because of PCC-001. `minISO`, `maxISO`,
+/// `minExposureDuration` and `maxExposureDuration` belong to
+/// `AVCaptureDeviceFormat`, so they CHANGE WITH THE LENS, and AVCaptureDevice
+/// documents that only values inside that range are supported — passing one
+/// outside raises NSInvalidArgumentException. So changing lens while locked
+/// does not merely mismatch a plate, it can crash the camera.
+struct ExposureLock: Equatable {
+    let seconds: Double
+    let iso: Float
+
+    /// The result of fitting an exposure to a format that may not accept it.
+    struct Fitted: Equatable {
+        let seconds: Double
+        let iso: Float
+        /// How far off the requested brightness this ended up, in stops. Zero
+        /// when the format had room. Reported rather than swallowed: a silently
+        /// darker plate looks like the lock worked, and the mismatch is found
+        /// after the frames have been generated and paid for.
+        let stopsOff: Double
+    }
+
+    /// Fit an exposure to what a format actually supports.
+    ///
+    /// CLAMPING ALONE WOULD BE THE WRONG FIX. Clamping ISO 400 down to a
+    /// telephoto's max of 200 makes that view a stop darker — the views then
+    /// disagree about brightness, which is the exact failure this lock exists
+    /// to prevent. Exposure is duration x ISO, so whatever one term loses is
+    /// moved into the other and the brightness is preserved. Only when BOTH are
+    /// pinned is it impossible, and then the residual is reported.
+    ///
+    /// Motion blur is the price of lengthening the duration, and it is the
+    /// right trade here: a plate is a static subject, and a brightness mismatch
+    /// across a turnaround is visible in every frame generated from it.
+    static func fit(seconds: Double, iso: Float,
+                    minSeconds: Double, maxSeconds: Double,
+                    minISO: Float, maxISO: Float) -> Fitted {
+        // A format reporting zeroes or an inverted range is not hypothetical —
+        // "0 means unknown" is the same convention that bit videoFieldOfView in
+        // PCC-001. Answer something usable rather than dividing by it.
+        let loS = min(minSeconds, maxSeconds), hiS = max(minSeconds, maxSeconds)
+        let loI = min(minISO, maxISO), hiI = max(minISO, maxISO)
+        guard loS > 0, hiS > 0, loI > 0, hiI > 0,
+              seconds > 0, iso > 0, seconds.isFinite, iso.isFinite else {
+            return Fitted(seconds: max(loS, 0), iso: max(loI, 0), stopsOff: 0)
+        }
+
+        let wanted = seconds * Double(iso)          // the brightness to hold
+
+        // Clamp the duration first, then buy back the difference with ISO —
+        // and if ISO cannot cover it, spend what is left back on duration.
+        var s = min(max(seconds, loS), hiS)
+        var i = Float(min(max(wanted / s, Double(loI)), Double(hiI)))
+        s = min(max(wanted / Double(i), loS), hiS)
+
+        let got = s * Double(i)
+        return Fitted(seconds: s, iso: i, stopsOff: log2(got / wanted))
+    }
+
+    /// This lock, fitted to a format's own limits.
+    func fitted(minSeconds: Double, maxSeconds: Double,
+                minISO: Float, maxISO: Float) -> Fitted {
+        ExposureLock.fit(seconds: seconds, iso: iso,
+                         minSeconds: minSeconds, maxSeconds: maxSeconds,
+                         minISO: minISO, maxISO: maxISO)
+    }
+
+    /// "1/60s · ISO 400" — the values, so a wrong lock can be spotted on sight.
+    var label: String {
+        let shutter = seconds >= 1 ? String(format: "%.1fs", seconds)
+                                   : "1/\(Int((1 / seconds).rounded()))s"
+        return "\(shutter) · ISO \(Int(iso.rounded()))"
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -143,6 +225,12 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// What this phone has, and which one is live. Empty until `configure()`.
     @Published private(set) var lenses: [PlateLens] = []
     @Published private(set) var lens: PlateLens?
+
+    /// The exposure being held, if any, and what it cost to fit it to the
+    /// current lens. Nil means the camera is metering each view on its own,
+    /// which is what it did before PCC-002.
+    @Published private(set) var exposure: ExposureLock?
+    @Published private(set) var exposureWarning: String?
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -199,6 +287,62 @@ final class PlateCameraModel: NSObject, ObservableObject {
         Task.detached { [session] in session.startRunning() }
     }
 
+    /// Meter what the camera is seeing now, and hold it for the whole walk.
+    ///
+    /// `exposureDuration` and `ISO` are READ-ONLY on AVCaptureDevice — settable
+    /// only through `setExposureModeCustom`, which is why there is no other
+    /// path here.
+    func lockExposure() {
+        guard let device = lens?.device, state == .ready else { return }
+        guard device.isExposureModeSupported(.custom) else {
+            exposureWarning = "This lens cannot hold a fixed exposure."
+            return
+        }
+        // Read what auto has settled on, then pin exactly that: the point is to
+        // keep what the director is already looking at, not to impose a guess.
+        let held = ExposureLock(seconds: CMTimeGetSeconds(device.exposureDuration),
+                                iso: device.iso)
+        exposure = held
+        apply(held, to: device)
+    }
+
+    /// Go back to metering each view on its own.
+    ///
+    /// A subject genuinely can need re-metering — a dark back against a bright
+    /// wall — and a lock with no way out would strand the whole session.
+    func unlockExposure() {
+        exposure = nil
+        exposureWarning = nil
+        guard let device = lens?.device, device.isExposureModeSupported(.continuousAutoExposure),
+              (try? device.lockForConfiguration()) != nil else { return }
+        device.exposureMode = .continuousAutoExposure
+        device.unlockForConfiguration()
+    }
+
+    /// Pin a held exposure onto a device, refitted to ITS format.
+    ///
+    /// The refit is the whole reason PCC-001 had to land first: the ranges
+    /// belong to the format, so an exposure metered on the wide can be illegal
+    /// on the telephoto, and passing it raises NSInvalidArgumentException.
+    private func apply(_ held: ExposureLock, to device: AVCaptureDevice) {
+        guard device.isExposureModeSupported(.custom),
+              (try? device.lockForConfiguration()) != nil else { return }
+        defer { device.unlockForConfiguration() }
+
+        let f = device.activeFormat
+        let fit = held.fitted(minSeconds: CMTimeGetSeconds(f.minExposureDuration),
+                              maxSeconds: CMTimeGetSeconds(f.maxExposureDuration),
+                              minISO: f.minISO, maxISO: f.maxISO)
+
+        // Naming the shortfall is the point: a plate that is quietly a stop
+        // darker looks like the lock worked.
+        exposureWarning = abs(fit.stopsOff) < 0.05 ? nil
+            : String(format: "This lens cannot reach that exposure — %.1f stops off.", fit.stopsOff)
+
+        device.setExposureModeCustom(duration: CMTime(seconds: fit.seconds, preferredTimescale: 1_000_000),
+                                     iso: fit.iso, completionHandler: nil)
+    }
+
     /// Change lens.
     ///
     /// The swap happens inside begin/commitConfiguration because a session
@@ -216,6 +360,11 @@ final class PlateCameraModel: NSObject, ObservableObject {
             session.addInput(replacement)
             input = replacement
             lens = next
+            // A lock lives on the DEVICE, so the new lens has none — and the
+            // held values may be outside its format's range. Re-applying
+            // refits them to the new format; without this the UI reads LOCK
+            // while the next plate is metered automatically.
+            if let held = exposure { apply(held, to: next.device) }
         } else if let current = input, session.canAddInput(current) {
             session.addInput(current)            // put the working lens back
         }
@@ -343,6 +492,39 @@ struct PlateCameraView: View {
             }
 
             Spacer()
+
+            // The exposure lock, and what it is holding. Shown above the lens
+            // picker because it applies to the whole turnaround while the lens
+            // applies to this shot — and because an invisible lock is
+            // indistinguishable from none, so a director re-meters by habit.
+            if pending == nil {
+                VStack(spacing: 4) {
+                    Button {
+                        camera.exposure == nil ? camera.lockExposure() : camera.unlockExposure()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: camera.exposure == nil ? "sun.max" : "lock.fill")
+                            Text(camera.exposure.map { "LOCK · \($0.label)" } ?? "Auto exposure")
+                                .font(.system(.footnote, design: .monospaced))
+                        }
+                        .padding(.vertical, 7).padding(.horizontal, 12)
+                        .background(camera.exposure == nil ? .white.opacity(0.18) : .yellow,
+                                    in: Capsule())
+                        .foregroundStyle(camera.exposure == nil ? .white : .black)
+                    }
+                    .accessibilityLabel(camera.exposure == nil
+                        ? "Lock exposure for the whole turnaround"
+                        : "Exposure locked at \(camera.exposure?.label ?? ""). Tap to release.")
+
+                    // A lens that cannot reach the held exposure delivers a
+                    // quietly darker plate, which looks like the lock worked.
+                    if let warning = camera.exposureWarning {
+                        Text(warning).font(.caption2).foregroundStyle(.orange)
+                            .multilineTextAlignment(.center).padding(.horizontal, 24)
+                    }
+                }
+                .padding(.bottom, 10)
+            }
 
             // The lens picker sits directly above the shutter, where a thumb
             // already is, and ONLY when there is a choice to make: a phone with

@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 487 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 669 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -59,6 +59,14 @@ carried as debt.
 | Manual-control APIs used | Zero occurrences of `setExposureModeCustom`, `setFocusModeLocked`, `setWhiteBalanceModeLocked`, `activeColorSpace`, `AVCaptureVideoDataOutput`, `AVAssetWriter` |
 | Session walk | Works: views from the page, upload per view, failures named per view, Skip and Retake |
 | Fidelity claims | `fcc-parity-brief.test.js` holds two `gap` claims that this epic closes |
+
+**Built 2026-09-08 by PCC-002 (GRD-3653):** the exposure lock. Metered once and
+held for the whole turnaround, releasable per view. `ExposureLock.fit` refits it
+to each lens's own format on a lens change — the ranges belong to
+`AVCaptureDeviceFormat`, so an exposure metered on the wide can be ILLEGAL on the
+telephoto, and passing it raises NSInvalidArgumentException. Clamping alone would
+make that view a stop darker, so the shortfall moves into the other term and any
+residual is reported in stops rather than delivered silently.
 
 ## Target State
 

@@ -99,20 +99,30 @@ const CLAIMS = [
         },
     },
     {
-        id: 'camera-has-no-manual-control',
-        kind: 'gap',
-        closes: 'the plate half of the epic',
-        why: 'the brief calls PlateCamera a starting point rather than a base; when manual '
-            + 'control lands this must be RESHAPED to pin what was built, not deleted',
+        id: 'exposure-lock-landed',
+        kind: 'present',
+        why: 'RESHAPED from the exposure sixth of `camera-has-no-manual-control` when PCC-002 '
+            + 'landed (GRD-3653). The brief ranked exposure/WB lock as the highest-value camera '
+            + 'feature for THIS product; the exposure half is built and must stay built',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const absent = ['setExposureModeCustom', 'setFocusModeLocked',
-                            'setWhiteBalanceModeLocked', 'activeColorSpace',
-                            'AVCaptureVideoDataOutput', 'AVAssetWriter']
-                .filter(sym => !cam.includes(sym));
-            return absent.length === 6
-                || `the camera now uses ${6 - absent.length} of the six APIs the brief calls absent — `
-                 + 'reshape this claim to pin what was built';
+            return cam.includes('setExposureModeCustom')
+                || 'the exposure lock is gone; the brief\'s top recommendation is unbuilt again';
+        },
+    },
+    {
+        id: 'camera-has-no-remaining-manual-control',
+        kind: 'gap',
+        closes: 'PCC-003 (white balance), PCC-004 (focus), and Phase B for the footage pair',
+        why: 'the five manual-control APIs the brief calls absent that are STILL absent. Split '
+            + 'from the original six when PCC-002 closed the exposure one, so this claim keeps '
+            + 'saying something true instead of failing for succeeding',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const landed = ['setFocusModeLocked', 'setWhiteBalanceModeLocked', 'activeColorSpace',
+                            'AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(x => cam.includes(x));
+            return landed.length === 0
+                || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
         },
     },
     {
