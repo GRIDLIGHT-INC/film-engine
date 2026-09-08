@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 1142 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1229 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -97,6 +97,16 @@ the preview is `.resizeAspectFill` and crops. The level reports
 plate shot, and there the horizontal component of gravity vanishes and roll has no
 value — `atan2(0, 0)` is 0, so a naive reading says "level" at exactly the moment
 it knows nothing.
+
+**Built 2026-09-08 by PCC-006 (GRD-3657):** what each plate was shot at — lens,
+ISO, shutter and white balance — travelling with the upload and stored on the
+asset, so a plate that comes back wrong can be diagnosed rather than re-shot
+blind. Read from the captured frame's own EXIF rather than from the locks, so a
+plate shot on auto records what the sensor actually did; this is the one place
+`focalLengthIn35mmFilm` IS the right source, since by then the shutter has fired.
+A malformed field is dropped and the photograph is kept — the photograph is the
+thing that cannot be retaken — and absent stays absent, so an existing plate
+never acquires invented settings.
 
 ## Target State
 

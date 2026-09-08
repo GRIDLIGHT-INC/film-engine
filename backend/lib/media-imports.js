@@ -473,6 +473,7 @@ function importSubjectPlate(spec, target, input) {
     validateBytes(spec, mime, bytes);
 
     const view = String(input.view || '').trim();
+    const capture = require('./capture-settings').captureSettings(input.capture);
     const kindForName = spec.subjectKind === 'character' ? 'character' : spec.subjectKind;
     /*
      * A character sheet is named per VIEW (front/side/back) by its own route,
@@ -532,12 +533,28 @@ function importSubjectPlate(spec, target, input) {
                 imported: true,           // so it never looks generated
                 style_applied: false,     // the film's look was not applied to it
                 ...(view ? { view } : {}),
+                /*
+                 * What it was shot at, where the camera reported it. Spread so
+                 * ABSENT STAYS ABSENT: an empty `capture` key would claim the
+                 * settings were recorded and were none, which is a different
+                 * and false statement from "not recorded" — and it is what
+                 * every plate uploaded from the photo library would carry.
+                 *
+                 * captureSettings never throws and never refuses the whole
+                 * upload: a malformed field is dropped and the photograph is
+                 * kept, because the photograph is the thing that cannot be
+                 * retaken.
+                 */
+                ...(capture ? { capture } : {}),
             }));
 
     return {
         target, asset_id: assetId, project_id: owner.projectId,
         subject_id: owner.subject.id, subject: owner.subject.name,
         view: view || null, file_name: fileName, file_path: filePath, version: 1,
+        // Reported so a caller can see WHICH settings survived. Silent dropping
+        // is how a director believes a field was recorded when it was not.
+        capture: capture || null,
         // NOT busted: this url is resolved back to a path on disk by the
         // import contract, and a query string makes that lookup fail. An
         // import lands under a new name anyway, so there is no stale copy.

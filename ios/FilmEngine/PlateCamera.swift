@@ -379,6 +379,58 @@ enum PlateGuides {
     }
 }
 
+/// What a frame was actually shot at.
+///
+/// Read from the captured photo's EXIF rather than from the locks, because a
+/// plate shot on full auto is still worth diagnosing — and because the locks
+/// say what was ASKED for while EXIF says what the sensor did.
+///
+/// This closes a loop from PCC-001. `focalLengthIn35mmFilm` is exactly the EXIF
+/// key that could NOT label the lens picker, because it is written after the
+/// shutter. Here the shot has happened, so it is the right source — and it is
+/// the true 35mm equivalent for that frame rather than one derived from the
+/// format's field of view.
+struct CaptureSettings {
+    var lens: String?
+    var iso: Double?
+    var shutterSeconds: Double?
+    var whiteBalanceK: Double?
+
+    /// The body the engine's `capture` block expects. Absent fields are OMITTED
+    /// rather than sent as null: the route treats an absent field as "not
+    /// recorded", and a null would be a value it has to decide how to read.
+    var json: [String: Any] {
+        var out: [String: Any] = [:]
+        if let lens { out["lens"] = lens }
+        if let iso { out["iso"] = iso }
+        if let shutterSeconds { out["shutter_s"] = shutterSeconds }
+        if let whiteBalanceK { out["white_balance_k"] = whiteBalanceK }
+        return out
+    }
+
+    /// Read what the sensor actually did, from the frame's own metadata.
+    static func from(photo: AVCapturePhoto, fallbackLens: String?, whiteBalanceK: Double?)
+        -> CaptureSettings {
+        var s = CaptureSettings()
+        s.lens = fallbackLens
+        s.whiteBalanceK = whiteBalanceK
+
+        let exif = photo.metadata[kCGImagePropertyExifDictionary as String] as? [String: Any]
+        if let mm = exif?[kCGImagePropertyExifFocalLenIn35mmFilm as String] as? Double, mm > 0 {
+            // The frame's own answer beats the picker's label.
+            s.lens = "\(Int(mm.rounded()))mm"
+        }
+        if let isos = exif?[kCGImagePropertyExifISOSpeedRatings as String] as? [Double],
+           let first = isos.first {
+            s.iso = first
+        }
+        if let t = exif?[kCGImagePropertyExifExposureTime as String] as? Double, t > 0 {
+            s.shutterSeconds = t
+        }
+        return s
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -396,6 +448,8 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published var lastShot: UIImage?
+    /// What the frame currently under review was shot at.
+    @Published private(set) var lastSettings: CaptureSettings?
 
     /// What this phone has, and which one is live. Empty until `configure()`.
     @Published private(set) var lenses: [PlateLens] = []
@@ -411,6 +465,9 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// meaningless to a person, so the temperature is what is shown.
     @Published private(set) var whiteBalance: WhiteBalanceLock?
     @Published private(set) var whiteBalanceLabel: String?
+    /// The same temperature as a number, for the record kept with the plate.
+    /// The label is for reading; a stored "5600K" would have to be re-parsed.
+    private(set) var whiteBalanceKelvin: Double?
 
     /// Where focus is held, if it is. Stored as a POINT rather than a lens
     /// position, because only the point survives a lens change meaningfully.
@@ -527,6 +584,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
         exposureWarning = nil
         whiteBalance = nil
         whiteBalanceLabel = nil
+        whiteBalanceKelvin = nil
         guard let device = lens?.device, (try? device.lockForConfiguration()) != nil else { return }
         defer { device.unlockForConfiguration() }
         if device.isExposureModeSupported(.continuousAutoExposure) {
@@ -558,6 +616,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
         // ones: temperatureAndTintValues throws on an out-of-range input too.
         let t = device.temperatureAndTintValues(for: gains)
         whiteBalanceLabel = "\(Int(t.temperature.rounded()))K"
+        whiteBalanceKelvin = Double(t.temperature)
         if abs(fit.stopsOff) >= 0.05 {
             exposureWarning = String(format: "This lens cannot hold that colour — %.1f stops of cast.",
                                      fit.stopsOff)
@@ -694,6 +753,12 @@ extension PlateCameraModel: AVCapturePhotoCaptureDelegate {
         let image = photo.fileDataRepresentation().flatMap(UIImage.init(data:))
         Task { @MainActor in
             self.lastShot = image
+            // Read from THIS frame, so a plate shot on auto records what the
+            // sensor actually did rather than what the locks were holding.
+            self.lastSettings = CaptureSettings.from(
+                photo: photo,
+                fallbackLens: self.lens?.label,
+                whiteBalanceK: self.whiteBalanceKelvin)
             let cb = self.onCapture
             self.onCapture = nil
             cb?(image)
@@ -834,6 +899,9 @@ struct PlateCameraView: View {
     @StateObject private var camera = PlateCameraModel()
     @State private var index = 0
     @State private var pending: UIImage?
+    // Captured WITH the frame. Reading the camera at upload time would
+    // record whatever it has settled on since, which is a different shot.
+    @State private var shotAt: CaptureSettings?
     @State private var busy = false
     @State private var result = PlateCaptureResult()
     @State private var problem: String?
@@ -1027,7 +1095,7 @@ struct PlateCameraView: View {
                 .foregroundStyle(.white).padding(.bottom, 34)
             } else {
                 HStack(spacing: 28) {
-                    Button("Retake") { pending = nil; problem = nil }
+                    Button("Retake") { pending = nil; shotAt = nil; problem = nil }
                     Button(busy ? "Uploading…" : (index + 1 < request.views.count ? "Use & next" : "Use & finish")) {
                         upload()
                     }
@@ -1056,6 +1124,10 @@ struct PlateCameraView: View {
         camera.shoot { image in
             guard let image else { problem = "That shot did not come back. Try again."; return }
             pending = image
+            // Taken WITH the frame. Read at upload time it would describe
+            // whatever the camera has settled on since, which is a different
+            // shot — and a retake would carry the previous frame's settings.
+            shotAt = camera.lastSettings
         }
     }
 
@@ -1071,7 +1143,8 @@ struct PlateCameraView: View {
         problem = nil
         Task {
             do {
-                try await PlateUploader.send(image: image, view: view.key, request: request)
+                try await PlateUploader.send(image: image, view: view.key, request: request,
+                                             settings: shotAt)
                 result.uploaded.append(view.key)
                 busy = false
                 advance()
@@ -1111,7 +1184,8 @@ enum PlateUploader {
     /// The SAME route and the SAME body the web page posts. JPEG at 0.9 because
     /// a plate is a photograph, and a 12-megapixel PNG is tens of megabytes
     /// travelling base64 — a third larger again — over a phone's network.
-    static func send(image: UIImage, view: String, request: PlateCaptureRequest) async throws {
+    static func send(image: UIImage, view: String, request: PlateCaptureRequest,
+                     settings: CaptureSettings? = nil) async throws {
         guard let data = image.jpegData(compressionQuality: 0.9) else { throw Failure.encode }
         let base = request.apiBase.hasSuffix("/") ? String(request.apiBase.dropLast()) : request.apiBase
         guard let url = URL(string: "\(base)/film\(request.url)") else { throw Failure.badURL }
@@ -1120,11 +1194,24 @@ enum PlateUploader {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 120
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
+        // `payload`, not `body`: the response is destructured into `body` a few
+        // lines down, in the same scope.
+        var payload: [String: Any] = [
             "data": "data:image/jpeg;base64,\(data.base64EncodedString())",
             "view": view,
             "name": "\(view).jpg",
-        ])
+        ]
+        /*
+         * What it was shot at, so a plate that comes back wrong can be
+         * diagnosed rather than re-shot blind. OMITTED when there is nothing to
+         * say: the route reads an absent block as "not recorded", and an empty
+         * one would claim the settings were recorded and were none.
+         *
+         * A malformed field is dropped by the route and never costs the upload
+         * — the photograph is the thing that cannot be retaken.
+         */
+        if let json = settings?.json, !json.isEmpty { payload["capture"] = json }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (body, response): (Data, URLResponse)
         do { (body, response) = try await URLSession.shared.data(for: req) }
