@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import CoreMotion
 import UIKit
 
 /// SHOOT A REFERENCE PLATE, GUIDED, IN ONE SESSION.
@@ -34,6 +35,10 @@ struct PlateCaptureRequest: Decodable {
     let subject: String
     /// The views to walk, in order. One entry is an ordinary single plate.
     let views: [PlateView]
+    /// The project's delivery aspect, as a number. The page already knows it and
+    /// already parses it in one place; the camera is told rather than guessing,
+    /// so a 9:16 deliverable guides 9:16. Absent means "no guide".
+    let aspect: Double?
 
     struct PlateView: Decodable, Identifiable {
         let key: String      // what the engine stores: "front", "side-left", …
@@ -305,6 +310,75 @@ struct FocusLock: Equatable {
     }
 }
 
+// ── guides ───────────────────────────────────────────────────────────────────
+
+/// The arithmetic behind the level and the aspect guide.
+///
+/// Pure by construction: it takes numbers and returns numbers, so it can be
+/// exercised off-device — a simulator has no camera and no motion.
+enum PlateGuides {
+
+    /// Where a delivery aspect sits inside the sensor, as a normalised rect.
+    ///
+    /// Returned in capture space (0...1 of the sensor) rather than in screen
+    /// points, because the preview is `.resizeAspectFill` and therefore CROPS —
+    /// only `layerRectConverted(fromMetadataOutputRect:)` knows how. Placing it
+    /// by hand draws the guide in the wrong place, silently.
+    ///
+    /// Letterbox and pillarbox are one computation with the comparison
+    /// reversed, which is why this is worth its own function: an inverted
+    /// version still draws a tidy centred rectangle, it just marks the wrong
+    /// crop, and a director frames to it.
+    static func deliveryRect(delivery: Double, sensor: Double) -> (x: Double, y: Double,
+                                                                  width: Double, height: Double) {
+        // A project with no aspect recorded, or a malformed one, guides the
+        // WHOLE frame. A zero-area guide is invisible and reads as the feature
+        // being broken; a NaN rect is undefined behaviour in CoreGraphics.
+        guard delivery.isFinite, sensor.isFinite, delivery > 0, sensor > 0 else {
+            return (0, 0, 1, 1)
+        }
+        if abs(delivery - sensor) < 1e-9 { return (0, 0, 1, 1) }
+
+        if delivery > sensor {
+            // Wider than the sensor: full width, and height given back.
+            let h = sensor / delivery
+            return (0, (1 - h) / 2, 1, h)
+        }
+        // Narrower: full height, and width given back.
+        let w = delivery / sensor
+        return ((1 - w) / 2, 0, w, 1)
+    }
+
+    /// How the phone is being held, from the gravity vector.
+    ///
+    /// iOS device coordinates: x right, y up, z out of the screen. Gravity
+    /// points DOWN, so an upright phone reads (0, -1, 0).
+    ///
+    /// `rollIsMeaningful` is the field that matters and it is not defensive
+    /// tidiness. Roll is the rotation about the camera's axis, read from the
+    /// HORIZONTAL component of gravity — and when the phone points straight
+    /// down at a table, which is an ordinary way to photograph a prop, that
+    /// component vanishes and roll has no value at all. `atan2(0, 0)` is 0 in
+    /// Swift, so a naive reading says "0 degrees, level" with total confidence
+    /// at exactly the moment it knows nothing. A confident wrong level is worse
+    /// than no level: a director trusts it and shoots crooked.
+    static func level(gx: Double, gy: Double, gz: Double)
+        -> (rollDegrees: Double, pitchDegrees: Double, rollIsMeaningful: Bool) {
+        guard gx.isFinite, gy.isFinite, gz.isFinite else { return (0, 0, false) }
+
+        let horizontal = (gx * gx + gy * gy).squareRoot()
+        let pitch = horizontal == 0 && gz == 0 ? 0
+                                              : atan2(gz, horizontal) * 180 / .pi
+
+        // Below about six degrees of horizontal gravity the roll is noise; the
+        // threshold is named rather than magic, and the answer is "we cannot
+        // tell" rather than a number.
+        let meaningful = horizontal > 0.1
+        let roll = meaningful ? atan2(gx, -gy) * 180 / .pi : 0
+        return (roll, pitch, meaningful)
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -341,6 +415,26 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// Where focus is held, if it is. Stored as a POINT rather than a lens
     /// position, because only the point survives a lens change meaningfully.
     @Published private(set) var focus: FocusLock?
+
+    /// How the phone is being held. `rollIsMeaningful` is false where the
+    /// phone points straight up or down and roll has no value.
+    @Published private(set) var tilt: (rollDegrees: Double, pitchDegrees: Double,
+                                       rollIsMeaningful: Bool) = (0, 0, false)
+
+    private let motion = CMMotionManager()
+
+    /// Start reporting how the phone is held. Silent where there is no motion
+    /// hardware — a simulator — rather than showing a level stuck at zero.
+    func startLevel() {
+        guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
+        motion.deviceMotionUpdateInterval = 1.0 / 30
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] m, _ in
+            guard let self, let g = m?.gravity else { return }
+            self.tilt = PlateGuides.level(gx: g.x, gy: g.y, gz: g.z)
+        }
+    }
+
+    func stopLevel() { motion.stopDeviceMotionUpdates() }
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
@@ -608,8 +702,68 @@ extension PlateCameraModel: AVCapturePhotoCaptureDelegate {
 }
 
 /// The live preview.
+/// The three guides, drawn over the preview.
+///
+/// A UIView rather than SwiftUI shapes because the aspect rect must be placed
+/// by `layerRectConverted(fromMetadataOutputRect:)` — the preview is
+/// `.resizeAspectFill` and therefore CROPS, and only the layer knows how. This
+/// is the same lesson as PCC-004's tap conversion: use Apple's transform, or
+/// draw in the wrong place silently.
+final class GuideOverlay: UIView {
+    var showLevel = true
+    var showGrid = true
+    var showAspect = true
+    var aspect: Double? = nil
+    var tilt: (rollDegrees: Double, pitchDegrees: Double, rollIsMeaningful: Bool) = (0, 0, false)
+    /// Supplied by the preview, because only it can convert capture space.
+    var convert: ((CGRect) -> CGRect)? = nil
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        ctx.setLineWidth(1)
+
+        if showGrid {
+            ctx.setStrokeColor(UIColor.white.withAlphaComponent(0.35).cgColor)
+            for i in 1...2 {
+                let x = rect.width * CGFloat(i) / 3, y = rect.height * CGFloat(i) / 3
+                ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: rect.height))
+                ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: rect.width, y: y))
+            }
+            ctx.strokePath()
+        }
+
+        if showAspect, let a = aspect {
+            // The sensor is 4:3 at .photo — the preset the session is
+            // configured with. Stated here rather than assumed elsewhere.
+            let r = PlateGuides.deliveryRect(delivery: a, sensor: 4.0 / 3.0)
+            let capture = CGRect(x: r.x, y: r.y, width: r.width, height: r.height)
+            let onScreen = convert?(capture) ?? rect
+            ctx.setStrokeColor(UIColor.systemYellow.withAlphaComponent(0.9).cgColor)
+            ctx.setLineWidth(2)
+            ctx.stroke(onScreen)
+        }
+
+        if showLevel {
+            // A roll that means nothing is drawn differently and labelled,
+            // never drawn as a confident horizon.
+            let c = CGPoint(x: rect.midX, y: rect.midY)
+            let live = tilt.rollIsMeaningful
+            ctx.setStrokeColor((live && abs(tilt.rollDegrees) < 1
+                                ? UIColor.systemGreen : UIColor.white.withAlphaComponent(live ? 0.85 : 0.3)).cgColor)
+            ctx.setLineWidth(2)
+            let angle = live ? CGFloat(tilt.rollDegrees * .pi / 180) : 0
+            let half: CGFloat = 44
+            ctx.move(to: CGPoint(x: c.x - cos(angle) * half, y: c.y - sin(angle) * half))
+            ctx.addLine(to: CGPoint(x: c.x + cos(angle) * half, y: c.y + sin(angle) * half))
+            ctx.strokePath()
+        }
+    }
+}
+
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    /// The guides to draw over the picture, and what they need.
+    var guides: ((GuideOverlay) -> Void)? = nil
     /// Where the director tapped, already in the device's own space.
     ///
     /// The conversion is the PREVIEW LAYER's: `captureDevicePointConverted`
@@ -629,14 +783,32 @@ struct CameraPreview: UIViewRepresentable {
             v.addGestureRecognizer(tap)
         }
         context.coordinator.onTap = onTap
+
+        let overlay = GuideOverlay(frame: v.bounds)
+        overlay.backgroundColor = .clear
+        overlay.isUserInteractionEnabled = false
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // The converter belongs to the LAYER: it is the only thing that knows
+        // how .resizeAspectFill crops the picture onto this view.
+        overlay.convert = { [weak v] r in
+            guard let v else { return .zero }
+            return v.layer.layerRectConverted(fromMetadataOutputRect: r)
+        }
+        v.addSubview(overlay)
+        context.coordinator.overlay = overlay
+        guides?(overlay)
         return v
     }
-    func updateUIView(_ view: PreviewView, context: Context) { context.coordinator.onTap = onTap }
+    func updateUIView(_ view: PreviewView, context: Context) {
+        context.coordinator.onTap = onTap
+        if let o = context.coordinator.overlay { guides?(o); o.setNeedsDisplay() }
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject {
         var onTap: ((FocusLock) -> Void)?
+        weak var overlay: GuideOverlay?
 
         @objc func tapped(_ g: UITapGestureRecognizer) {
             guard let view = g.view as? PreviewView, let onTap else { return }
@@ -665,6 +837,11 @@ struct PlateCameraView: View {
     @State private var busy = false
     @State private var result = PlateCaptureResult()
     @State private var problem: String?
+    // Three switches, not one. A director who wants the level should not have
+    // to accept a grid over the subject they are judging.
+    @State private var showLevel = true
+    @State private var showGrid = false
+    @State private var showAspect = true
     @Environment(\.dismiss) private var dismiss
 
     private var view: PlateCaptureRequest.PlateView? {
@@ -694,13 +871,17 @@ struct PlateCameraView: View {
                 if let pending {
                     Image(uiImage: pending).resizable().scaledToFit().ignoresSafeArea()
                 } else {
-                    CameraPreview(session: camera.session) { camera.lockFocus(at: $0) }.ignoresSafeArea()
+                    CameraPreview(session: camera.session, guides: { o in
+                        o.showLevel = showLevel; o.showGrid = showGrid
+                        o.showAspect = showAspect; o.aspect = request.aspect
+                        o.tilt = camera.tilt
+                    }) { camera.lockFocus(at: $0) }.ignoresSafeArea()
                 }
                 overlay
             }
         }
-        .onAppear { camera.start() }
-        .onDisappear { camera.stop() }
+        .onAppear { camera.start(); camera.startLevel() }
+        .onDisappear { camera.stop(); camera.stopLevel() }
     }
 
     private var overlay: some View {
@@ -726,6 +907,26 @@ struct PlateCameraView: View {
             }
 
             Spacer()
+
+            // The guides. Off is a real choice for each: a grid over a subject
+            // you are judging is noise, and an aspect guide on a plate that
+            // will not be cropped is a line for nothing.
+            if pending == nil {
+                HStack(spacing: 8) {
+                    guideToggle("level", "level.fill", $showLevel)
+                    guideToggle("grid", "grid", $showGrid)
+                    guideToggle("aspect", "rectangle.ratio.16.to.9", $showAspect)
+                }
+                .padding(.bottom, 8)
+                // A roll that cannot be computed says so. Pointing the phone
+                // straight down at a prop is an ordinary shot, and a level
+                // reading "0° — level" there would be a confident lie.
+                if showLevel && !camera.tilt.rollIsMeaningful {
+                    Text("Level unavailable — the phone is pointing straight up or down")
+                        .font(.caption2).foregroundStyle(.white.opacity(0.6))
+                        .padding(.bottom, 6)
+                }
+            }
 
             // The focus lock. Separate from the exposure chip because it is
             // taken by TAPPING the subject rather than by pressing a control,
@@ -836,6 +1037,18 @@ struct PlateCameraView: View {
                 .foregroundStyle(.white).padding(.bottom, 34)
             }
         }
+    }
+
+    /// One switch, built once — three literals is how they come to disagree.
+    private func guideToggle(_ name: String, _ icon: String, _ on: Binding<Bool>) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            Image(systemName: icon)
+                .font(.footnote)
+                .padding(7)
+                .background(on.wrappedValue ? .white : .white.opacity(0.18), in: Circle())
+                .foregroundStyle(on.wrappedValue ? .black : .white)
+        }
+        .accessibilityLabel("\(name) guide, \(on.wrappedValue ? "on" : "off")")
     }
 
     private func take() {

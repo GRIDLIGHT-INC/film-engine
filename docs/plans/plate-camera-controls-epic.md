@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 929 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1142 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -87,6 +87,16 @@ the position is re-derived by focusing again. The tap is converted by the previe
 layer's own `captureDevicePointConverted`, which knows the gravity and the
 orientation; and setting the point is followed by setting the MODE, because :1155
 says the point alone starts no focus operation.
+
+**Built 2026-09-08 by PCC-005 (GRD-3656):** level, thirds grid and delivery-aspect
+guide, each with its own switch. The aspect comes from the PROJECT — the page
+reuses its existing `previsAspect()` and sends it — so a 9:16 deliverable guides
+9:16. The rect is placed by `layerRectConverted(fromMetadataOutputRect:)`, because
+the preview is `.resizeAspectFill` and crops. The level reports
+`rollIsMeaningful`: pointing the phone straight down at a prop is an ordinary
+plate shot, and there the horizontal component of gravity vanishes and roll has no
+value — `atan2(0, 0)` is 0, so a naive reading says "level" at exactly the moment
+it knows nothing.
 
 ## Target State
 

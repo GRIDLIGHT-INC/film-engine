@@ -29446,6 +29446,13 @@ ${fountainText.slice(0, 50000)}`;
         bridge.postMessage(JSON.stringify({
             url, apiBase: '', subject: subject || 'this subject',
             views: plateViewsFor(target),
+            /*
+             * The delivery aspect, so the camera can guide the shape the plate
+             * will actually be cropped to — a 9:16 deliverable guides 9:16.
+             * previsAspect() is REUSED rather than the ratio parsed again here:
+             * two readings of one project setting is how they come to disagree.
+             */
+            aspect: previsAspect(),
         }));
     }
 

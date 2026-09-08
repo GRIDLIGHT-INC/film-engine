@@ -126,7 +126,7 @@ why idea 5 is not a small change to the existing camera.
 **Monitoring** — `AVCaptureVideoDataOutput` → Core Image or Metal → `MTKView`. Every
 tool (peaking, zebras, false colour, histogram, waveform) is computed by us.
 
-**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 929 lines:
+**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 1142 lines:
 `AVCapturePhotoOutput`, `sessionPreset = .photo`, one hardcoded wide lens, flash off.
 Zero occurrences of `setExposureModeCustom`, `setFocusModeLocked`,
 `setWhiteBalanceModeLocked`, `activeColorSpace`, `AVCaptureVideoDataOutput` or
