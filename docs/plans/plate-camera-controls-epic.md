@@ -49,7 +49,7 @@ carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 1229 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
+| `ios/FilmEngine/PlateCamera.swift` | 1366 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo`, flash off |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |
@@ -107,6 +107,18 @@ plate shot on auto records what the sensor actually did; this is the one place
 A malformed field is dropped and the photograph is kept — the photograph is the
 thing that cannot be retaken — and absent stays absent, so an existing plate
 never acquires invented settings.
+
+**Built 2026-09-08 by PCC-007 (GRD-3658):** a frame-accessible preview, opening
+Phase 2. The preview LAYER is kept and an `AVCaptureVideoDataOutput` added
+alongside it — replacing it with an MTKView would delete
+`captureDevicePointConverted` and `layerRectConverted`, the two transforms
+PCC-004 and PCC-005 deliberately refused to hand-roll across six call sites.
+Frames arrive on a serial queue that is not main, late ones are discarded, and
+the pixel format is stated rather than inherited. `FrameAnalysis.plan` bounds the
+work: a 12.2-megapixel frame at thirty a second is not slow but impossible, and a
+stride computed as zero is not a wrong number — it is a non-terminating loop with
+the camera open. This is frames for MONITORING; nothing is written anywhere, so
+footage capture stays struck.
 
 ## Target State
 

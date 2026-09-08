@@ -431,6 +431,57 @@ struct CaptureSettings {
     }
 }
 
+/// How much of a frame the monitoring tools actually read.
+///
+/// At `sessionPreset = .photo` a frame is 4032x3024 — 12.2 million pixels.
+/// Reading every one of them thirty times a second is not slow, it is
+/// impossible, so peaking and the exposure warning walk a STRIDE.
+///
+/// A stride of zero is not a wrong number. `stride(from: 0, to: w, by: 0)` does
+/// not terminate: the app freezes with the camera open, and the only symptom is
+/// that the shutter stops responding. Every path here returns at least 1.
+enum FrameAnalysis {
+    /// The sampling budget in pixels. 65_536 is a 256x256-equivalent, which is
+    /// ample for finding edges and clipped highlights and is ~190x less work
+    /// than the full frame.
+    static let budget = 65_536
+
+    /// Stride to walk, and the dimensions that stride actually yields.
+    ///
+    /// Both are returned because a consumer allocates against them — PCC-008
+    /// and PCC-009 are both consumers, and dimensions that disagree with the
+    /// stride size every buffer wrongly.
+    static func plan(width: Int, height: Int, budget: Int = budget)
+        -> (stride: Int, width: Int, height: Int) {
+        guard width > 0, height > 0 else { return (1, 0, 0) }
+
+        // A caller asking for a budget of nothing gets the smallest sample
+        // rather than a division by zero.
+        let cap = max(budget, 1)
+        let pixels = width * height
+
+        /*
+         * No early return for an already-small frame, and that is deliberate.
+         *
+         * One was written and then deleted: for any frame under the budget the
+         * general path already yields stride 1 and the full dimensions —
+         * pixels/cap <= 1, so the square root is <= 1 and rounds up to exactly
+         * 1, and the loop below runs zero times. The branch could not change an
+         * outcome for any input, and unexercised code that looks like a
+         * safeguard is worse than none: it reads as covering a case nobody
+         * checked. Proven by mutation — deleting it changed no answer.
+         */
+        var s = Int((Double(pixels) / Double(cap)).squareRoot().rounded(.up))
+        s = max(1, min(s, max(width, height)))
+        // The square root rounds to a stride that can still be a hair over.
+        // Bounded by the longest edge, where the sample is one pixel.
+        while s < max(width, height),
+              ((width + s - 1) / s) * ((height + s - 1) / s) > cap { s += 1 }
+
+        return (s, (width + s - 1) / s, (height + s - 1) / s)
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -495,8 +546,56 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
+    /*
+     * Frames for the monitoring tools, ALONGSIDE the preview layer rather than
+     * instead of it.
+     *
+     * Replacing the layer with an MTKView is the obvious reading of "frame
+     * access" and it would delete `captureDevicePointConverted` and
+     * `layerRectConverted` — the two transforms PCC-004 and PCC-005
+     * deliberately refused to hand-roll, across six call sites. The layer keeps
+     * displaying; this only hands frames to the analysis.
+     */
+    private let frames = AVCaptureVideoDataOutput()
+    /*
+     * SERIAL, and not main. AVCaptureVideoDataOutput.h:56 — "A serial dispatch
+     * queue must be used to guarantee that video frames will be delivered in
+     * order", and a nil queue throws NSInvalidArgumentException. Not main
+     * because :52 says a blocked queue drops frames, and analysing a
+     * multi-megapixel frame on main stutters every control on screen.
+     */
+    private let frameQueue = DispatchQueue(label: "film-engine.plate.frames")
     private var input: AVCaptureDeviceInput?
     private var onCapture: ((UIImage?) -> Void)?
+
+    /*
+     * What the monitoring tools read. Called on `frameQueue`, never on main —
+     * a consumer that needs the main actor hops there itself, so one slow
+     * consumer cannot stall the delivery of every later frame.
+     *
+     * PCC-008 (focus peaking) and PCC-009 (the exposure warning) are the
+     * consumers this exists for. A data output whose frames reach nothing is
+     * the same write-only preview in a more expensive form.
+     */
+    typealias FrameConsumer = (CVPixelBuffer, (stride: Int, width: Int, height: Int)) -> Void
+
+    /*
+     * Behind a lock, NOT `nonisolated(unsafe)`.
+     *
+     * That marker is the compiler saying it cannot prove the access is safe and
+     * the author replying that it is. Here the reply would be false: this is
+     * written on the main actor (the view sets it, stop() clears it) and read
+     * on the frame queue thirty times a second, so releasing the closure while
+     * the other thread loads it can crash — rarely, under load, which is the
+     * worst shape of bug to find.
+     */
+    private let frameLock = NSLock()
+    nonisolated(unsafe) private var _onFrame: FrameConsumer?
+
+    nonisolated var onFrame: FrameConsumer? {
+        get { frameLock.lock(); defer { frameLock.unlock() }; return _onFrame }
+        set { frameLock.lock(); defer { frameLock.unlock() }; _onFrame = newValue }
+    }
 
     func start() {
         guard state == .idle else { return }
@@ -540,6 +639,24 @@ final class PlateCameraModel: NSObject, ObservableObject {
         session.sessionPreset = .photo          // full sensor: a plate is cropped from later
         if session.canAddInput(first) { session.addInput(first) }
         if session.canAddOutput(output) { session.addOutput(output) }
+
+        /*
+         * Stated rather than inherited: without it the device hands over
+         * whatever plane layout it prefers, which differs by hardware, and the
+         * analysis would read a layout it was not written for and produce a
+         * plausible wrong answer rather than an error.
+         *
+         * Late frames are DISCARDED. For monitoring the newest frame is the
+         * only one worth having — a stale one is a lie about what the camera is
+         * pointing at — and :52 warns that retaining them grows memory until
+         * the app is killed.
+         */
+        frames.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String:
+                                    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        frames.alwaysDiscardsLateVideoFrames = true
+        frames.setSampleBufferDelegate(self, queue: frameQueue)
+        if session.canAddOutput(frames) { session.addOutput(frames) }
+
         session.commitConfiguration()
 
         input = first
@@ -733,6 +850,11 @@ final class PlateCameraModel: NSObject, ObservableObject {
     }
 
     func stop() {
+        // Detach FIRST. A delegate left attached holds a strong reference and
+        // keeps the queue awake after the sheet is dismissed — the camera
+        // indicator stays lit and frames keep arriving for nobody.
+        frames.setSampleBufferDelegate(nil, queue: nil)
+        onFrame = nil
         guard session.isRunning else { return }
         Task.detached { [session] in session.stopRunning() }
     }
@@ -743,6 +865,21 @@ final class PlateCameraModel: NSObject, ObservableObject {
         let settings = AVCapturePhotoSettings()
         settings.flashMode = .off               // a flash on a reference plate is a lighting decision
         output.capturePhoto(with: settings, delegate: self)
+    }
+}
+
+extension PlateCameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(_ output: AVCaptureOutput,
+                                   didOutput sampleBuffer: CMSampleBuffer,
+                                   from connection: AVCaptureConnection) {
+        guard let consumer = onFrame,
+              let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // The subsample is planned HERE, once, rather than by each consumer:
+        // two consumers computing it separately is how they come to walk the
+        // same frame at different strides and disagree about where an edge is.
+        let plan = FrameAnalysis.plan(width: CVPixelBufferGetWidth(pixels),
+                                      height: CVPixelBufferGetHeight(pixels))
+        consumer(pixels, plan)
     }
 }
 

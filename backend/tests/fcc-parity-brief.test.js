@@ -123,8 +123,10 @@ const CLAIMS = [
             // it is built, and is pinned by `wb-lock-landed` below.
             // setFocusModeLocked removed by PCC-004 (GRD-3655): built, and pinned
             // by `focus-lock-landed` below. Only the footage pair remains.
-            const landed = ['activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
-                .filter(x => cam.includes(x));
+            // AVCaptureVideoDataOutput removed by PCC-007 (GRD-3658): frames are
+            // read for MONITORING and written nowhere. Footage capture means
+            // AVAssetWriter or a log colour space, both still absent.
+            const landed = ['activeColorSpace', 'AVAssetWriter'].filter(x => cam.includes(x));
             return landed.length === 0
                 || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
         },
@@ -164,7 +166,8 @@ const CLAIMS = [
             const cam = code('ios/FilmEngine/PlateCamera.swift');
             if (!/AVCapturePhotoOutput/.test(cam)) return 'the camera is no longer photo-based';
             if (!/sessionPreset = \.photo/.test(cam)) return 'the session preset has changed';
-            const landed = ['AVCaptureVideoDataOutput', 'AVAssetWriter'].filter(l => cam.includes(l));
+            // See PCC-007: a data output for monitoring is not footage capture.
+            const landed = ['AVAssetWriter'].filter(l => cam.includes(l));
             return landed.length === 0
                 || `footage capture has landed (${landed.join(', ')}) — reshape this claim`;
         },

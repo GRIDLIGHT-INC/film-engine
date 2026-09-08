@@ -227,8 +227,15 @@ const CLAIMS = [
             + 'this stays a gap deliberately rather than being scheduled',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const present = ['activeColorSpace', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
-                .filter(s => cam.includes(s));
+            /*
+             * AVCaptureVideoDataOutput was REMOVED from this list by PCC-007
+             * (GRD-3658). It is present now, for MONITORING — peaking and the
+             * exposure warning are computed from those frames and never written
+             * anywhere. What would actually mean footage capture is writing
+             * frames to a file (AVAssetWriter) or a log colour space; those are
+             * still absent, and Phase B is still struck.
+             */
+            const present = ['activeColorSpace', 'AVAssetWriter'].filter(s => cam.includes(s));
             return present.length === 0
                 || `footage capture has landed (${present.join(', ')}) — reshape this claim`;
         },

@@ -408,6 +408,7 @@ film-engine/
 │       ├── plate-focus.test.js        # The point survives a lens change; the lens position must not
 │       ├── plate-guides.test.js       # A level that is confidently wrong where it is most used
 │       ├── plate-capture-settings.test.js # Absent means absent; a bad field never costs an upload
+│       ├── plate-frames.test.js       # A stride of zero is not a wrong number, it is a hang
 │       ├── storage-never-throws.test.js # An accessor that RAISES must not take every function below it
 │       ├── nothing-covers-the-page.test.js # A closed drawer's backdrop must not swallow every tap
 │       ├── fcc-parity-brief.test.js # A research brief whose facts are pinned to the code it describes
@@ -4404,6 +4405,7 @@ node --test backend/tests/plate-white-balance.test.js
 node --test backend/tests/plate-focus.test.js
 node --test backend/tests/plate-guides.test.js
 node --test backend/tests/plate-capture-settings.test.js
+node --test backend/tests/plate-frames.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js
