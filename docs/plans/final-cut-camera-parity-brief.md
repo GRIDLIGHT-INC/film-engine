@@ -126,11 +126,34 @@ why idea 5 is not a small change to the existing camera.
 **Monitoring** — `AVCaptureVideoDataOutput` → Core Image or Metal → `MTKView`. Every
 tool (peaking, zebras, false colour, histogram, waveform) is computed by us.
 
-**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 1618 lines:
-`AVCapturePhotoOutput`, `sessionPreset = .photo`, one hardcoded wide lens, flash off.
-Zero occurrences of `setExposureModeCustom`, `setFocusModeLocked`,
-`setWhiteBalanceModeLocked`, `activeColorSpace`, `AVCaptureVideoDataOutput` or
-`AVAssetWriter`. It is a starting point, not a base to extend.
+**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 1618 lines.
+Still `AVCapturePhotoOutput` at `sessionPreset = .photo`, because a plate is a
+PHOTOGRAPH cropped from the full sensor later. Everything else in the original
+assessment has moved.
+
+*This table was the brief's weakest paragraph and is now its most checked one.*
+When it was written it read "zero occurrences of" all six APIs below and
+concluded the camera was a starting point rather than a base. Four of the six
+are built. Nothing caught that for four tasks — the fidelity test pinned the
+line count and each individual feature, and the sentence carrying the brief's
+summary JUDGEMENT was pinned by nothing. A gap pinned as permanent makes an epic
+fail for succeeding; prose claiming absence after the work landed makes a brief
+LIE about succeeding, and that is worse, because nothing fails and a later
+reader plans against it. `fcc-parity-brief.test.js` now reads every row here
+against the source.
+
+| API | Status |
+|-----|--------|
+| `setExposureModeCustom` | built 2026-09-08 by PCC-002 — metered once, held across the turnaround, refitted on a lens change |
+| `setWhiteBalanceModeLocked` | built 2026-09-08 by PCC-003 — locked and released WITH exposure; gains normalised to the minimum channel |
+| `setFocusModeLocked` | built 2026-09-08 by PCC-004 — tap to focus then hold; the POINT survives a lens change, the lens position cannot |
+| `AVCaptureVideoDataOutput` | built 2026-09-08 by PCC-007 — frames for MONITORING only, alongside the preview layer rather than replacing it |
+| `activeColorSpace` | absent — Apple Log is Phase B, and a plate is not log: a reference plate should look like what the model must reproduce |
+| `AVAssetWriter` | absent — footage capture is Phase B, struck from this epic by the user's direction |
+
+The two remaining absences are deliberate and are the same decision twice: this
+epic ships plates, not footage. Reading either as unfinished work would be
+reading a struck scope as a backlog.
 
 ## Open Questions
 

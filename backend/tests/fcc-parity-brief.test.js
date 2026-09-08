@@ -113,7 +113,17 @@ const CLAIMS = [
     {
         id: 'camera-has-no-remaining-manual-control',
         kind: 'gap',
-        closes: 'Phase B for the footage pair — the three manual controls are all built',
+        /*
+         * DECLARED out of scope by PCC-011 (GRD-3662). It closed on "Phase B",
+         * which names no task and never will: footage capture is struck from
+         * this epic by the user's direction. Left as a bare `closes` it was a
+         * gap pinned as permanent — the exact thing this epic's fidelity tests
+         * exist to prevent, one level up. It is kept as a TRIPWIRE: if a log
+         * colour space or an asset writer appears, the scope changed and
+         * somebody should say so deliberately.
+         */
+        outOfScope: 'Phase B — footage capture and Log, struck from this epic by the user\'s '
+            + 'direction; no PCC task will ever close it',
         why: 'the five manual-control APIs the brief calls absent that are STILL absent. Split '
             + 'from the original six when PCC-002 closed the exposure one, so this claim keeps '
             + 'saying something true instead of failing for succeeding',
@@ -158,7 +168,9 @@ const CLAIMS = [
     {
         id: 'camera-is-photo-only',
         kind: 'gap',
-        closes: 'footage capture — Phase B, gated on the transport decision',
+        // Same declaration, same reason: see camera-has-no-remaining-manual-control.
+        outOfScope: 'Phase B — footage capture, gated on the transport decision and struck from '
+            + 'this epic; a plate is a photograph, not a frame grab',
         why: 'the brief\'s footage recommendations rest on there being no AVAssetWriter path; the '
             + 'LENS half of this claim was split off and closed by PCC-001 (GRD-3652), which is '
             + 'why this now names only the half that is still true',
@@ -225,6 +237,19 @@ test('every claim says why it is worth pinning, and every gap says what closes i
         assert.ok(c.why && c.why.length > 40, `${c.id}: states no real reason`);
         assert.ok(['present', 'gap'].includes(c.kind), `${c.id}: unknown claim kind`);
         if (c.kind === 'gap') {
+            /*
+             * `outOfScope` added by PCC-011 (GRD-3662), matching the escape
+             * plate-camera-epic.test.js already has. A gap whose work was
+             * STRUCK from scope can never name a task that closes it, and
+             * without a declared exception the two guards in this file
+             * contradict each other — one demanding a closer, the other
+             * accepting a declaration.
+             */
+            if (c.outOfScope) {
+                assert.ok(c.outOfScope.length > 30,
+                    `${c.id} claims to be out of scope and gives no real reason`);
+                continue;
+            }
             assert.ok(c.closes && c.closes.length > 10,
                 `${c.id} is a gap and does not name what closes it — a gap pinned as permanent `
                 + 'makes the epic fail for succeeding');
@@ -253,4 +278,103 @@ test('the device tier is named, because four features are unreachable here', () 
     }
     assert.match(d, /17 Pro/, 'the brief does not say which hardware those need');
     assert.match(d, /15 Pro Max/, 'the brief does not say what device this project actually has');
+});
+
+/* ── PCC-011: the brief must describe the camera that EXISTS ────────────── */
+
+/**
+ * THE BRIEF'S PROSE IS A CLAIM ABOUT THE CODE, AND IT WENT STALE.
+ *
+ * The research brief enumerated six AVFoundation APIs the camera did not use
+ * and concluded "it is a starting point, not a base to extend". Four of those
+ * six are now built. Nothing caught that: the CLAIMS registry pinned the line
+ * count and the individual features, and the sentence that reads as the brief's
+ * summary judgement was pinned by nothing at all.
+ *
+ * That is the same defect the epic guards from the other side. A gap pinned as
+ * permanent makes an epic fail for SUCCEEDING; prose claiming absence after the
+ * work landed makes a brief lie about succeeding — and the second is worse,
+ * because nothing fails and a later reader plans against it.
+ *
+ * So the brief now carries a STATUS TABLE, one row per API, and this reads it
+ * against the source. The denominator is the table itself, so a seventh API
+ * added to the brief is checked with nothing to remember.
+ */
+
+const API_STATUS_RE = /^\|\s*`([A-Za-z]+)`\s*\|\s*(built|absent)\b([^|]*)\|/gm;
+
+test('EVERY API the brief tabulates has the status the code actually has', () => {
+    const brief = doc();
+    const cam = code('ios/FilmEngine/PlateCamera.swift');
+    const rows = [...brief.matchAll(API_STATUS_RE)]
+        .map(m => ({ api: m[1], status: m[2], note: m[3].trim() }));
+
+    assert.ok(rows.length >= 6,
+        `only ${rows.length} API rows parsed from the brief; it enumerated six and the scan is `
+        + 'broken — one that finds too few reports the brief as accurate by reading almost none of it');
+
+    const wrong = rows.map(r => {
+        /*
+         * WORD-BOUNDARY, not includes(). `setWhiteBalanceModeLockedX` contains
+         * `setWhiteBalanceModeLocked`, so a renamed-away API still satisfied a
+         * substring test — the mention-for-use family in its narrowest form.
+         */
+        const present = new RegExp(`\\b${r.api}\\b`).test(cam);
+        if (r.status === 'built' && !present) return `${r.api}: the brief says BUILT and it is absent`;
+        if (r.status === 'absent' && present) {
+            return `${r.api}: the brief says ABSENT and the camera uses it — reshape the row, `
+                + 'because prose claiming absence after the work landed is a brief lying about '
+                + 'its own epic succeeding';
+        }
+        return null;
+    }).filter(Boolean);
+    assert.deepStrictEqual(wrong, [], wrong.join('\n  '));
+});
+
+test('EVERY built API names the task that built it', () => {
+    /*
+     * "Built" with no attribution is a claim nobody can chase. The task id is
+     * what lets a later reader find the reasoning rather than re-deriving it.
+     */
+    const rows = [...doc().matchAll(API_STATUS_RE)]
+        .map(m => ({ api: m[1], status: m[2], note: m[3].trim() }));
+    const bare = rows.filter(r => r.status === 'built' && !/PCC-\d{3}/.test(r.note))
+        .map(r => r.api);
+    assert.deepStrictEqual(bare, [], `built and unattributed: ${bare.join(', ')}`);
+});
+
+test('the brief no longer calls the camera a starting point', () => {
+    /*
+     * The sentence that carried the brief's judgement. It was true when
+     * written and is the single most misleading line in the document now —
+     * a reader scanning for a summary finds it and plans four tasks that exist.
+     */
+    const brief = doc();
+    assert.ok(!/starting point, not a base to extend/.test(brief),
+        'the brief still calls the camera "a starting point, not a base to extend" — four of the '
+        + 'six APIs it names as absent are built');
+    assert.ok(!/Zero occurrences of/.test(brief),
+        'the brief still claims zero occurrences of the manual-control APIs');
+});
+
+test('EVERY gap in this file names what closes it, or is declared out of scope', () => {
+    /*
+     * The discipline plate-camera-epic.test.js has and this file did not.
+     * Both remaining gaps here close on "Phase B", which is STRUCK from the
+     * epic by the user's direction — so no task will ever close them, and
+     * without a declared exception they are gaps pinned as permanent: the exact
+     * thing PCC-011 exists to prevent, one level up.
+     */
+    const gaps = CLAIMS.filter(c => c.kind === 'gap');
+    assert.ok(gaps.length >= 1, 'no gaps left to police; re-derive this check');
+    for (const g of gaps) {
+        if (g.outOfScope) {
+            assert.ok(g.outOfScope.length > 30,
+                `${g.id} claims to be out of scope and gives no real reason`);
+            continue;
+        }
+        assert.match(g.closes || '', /PCC-\d{3}/,
+            `${g.id} is a gap, names no task that closes it, and is not declared out of scope — `
+            + 'a gap nothing will ever close makes this file fail for succeeding');
+    }
 });
