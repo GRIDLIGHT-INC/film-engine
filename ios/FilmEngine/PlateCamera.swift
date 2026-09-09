@@ -678,15 +678,65 @@ struct RecordingMode: Equatable {
      */
     enum ColorSpace: String { case rec709, apple_log }
 
+    /*
+     * How a take leaves the phone.
+     *
+     * A format is not usable because it can be RECORDED — it is usable because
+     * the file can then go somewhere. Mirrored from `capture-policy.js`
+     * TRANSPORTS and held equal by test, like the rates and the colour spaces:
+     * two answers to "can I shoot this" is a camera offering what the upload
+     * will refuse.
+     */
+    enum Transport: String, CaseIterable {
+        case upload, external
+
+        /// Declared before it exists, deliberately — FCC-009 builds `external`,
+        /// and FCC-007's ProRes must be refusable against it before then.
+        var isAvailable: Bool { self == .upload }
+
+        var label: String {
+            switch self {
+            case .upload: return "uploaded to the Mac"
+            case .external: return "recorded straight to an external USB-C drive"
+            }
+        }
+
+        var remedy: String {
+            switch self {
+            case .upload: return ""
+            case .external:
+                return "recording to external USB-C storage is not built yet — until it is, "
+                    + "there is nowhere to put a file this size"
+            }
+        }
+    }
+
     let id: String
     let width: Int
     let height: Int
     let fps: Int
     let bitsPerSecond: Int
     let colorSpace: ColorSpace
+    let transports: [Transport]
 
     /// What a second of this mode costs on disk and, later, in transport.
     var bytesPerSecond: Int { bitsPerSecond / 8 }
+
+    /// What a director is actually choosing between. Two formats are equal
+    /// buttons until this number is on them.
+    var megabytesPerMinute: Int {
+        Int((Double(bytesPerSecond) * 60 / 1_048_576).rounded())
+    }
+
+    /// The first declared transport that exists. Order is the format's own
+    /// preference; availability is the world's answer.
+    var transport: Transport? { transports.first { $0.isAvailable } }
+
+    /// What a picker shows. The id is for the machine; this is for a person.
+    var label: String {
+        "\(width)x\(height) at \(fps)fps"
+            + (colorSpace == .apple_log ? ", Apple Log" : "")
+    }
 
     /// Whether this mode produces footage worth grading.
     var isGradeable: Bool { colorSpace == .apple_log }
@@ -698,11 +748,11 @@ struct RecordingMode: Equatable {
      */
     static let all: [RecordingMode] = [
         RecordingMode(id: "1080p30", width: 1920, height: 1080, fps: 30,
-                      bitsPerSecond: 6_291_456, colorSpace: .rec709),      // ~45 MB/min
+                      bitsPerSecond: 6_291_456, colorSpace: .rec709, transports: [.upload]),      // ~45 MB/min
         RecordingMode(id: "4k30", width: 3840, height: 2160, fps: 30,
-                      bitsPerSecond: 18_874_368, colorSpace: .rec709),     // ~135 MB/min
+                      bitsPerSecond: 18_874_368, colorSpace: .rec709, transports: [.upload]),     // ~135 MB/min
         RecordingMode(id: "4k60", width: 3840, height: 2160, fps: 60,
-                      bitsPerSecond: 55_924_056, colorSpace: .rec709),     // ~400 MB/min
+                      bitsPerSecond: 55_924_056, colorSpace: .rec709, transports: [.upload]),     // ~400 MB/min
         /*
          * The gradeable one. Half as much again as 4K30 Rec.709 — 200 MB/min
          * against 135 — which is why it is a mode of its own rather than a flag:
@@ -715,7 +765,7 @@ struct RecordingMode: Equatable {
          * confidently wrong is worse than one that is absent.
          */
         RecordingMode(id: "4k30-log", width: 3840, height: 2160, fps: 30,
-                      bitsPerSecond: 27_962_024, colorSpace: .apple_log),  // ~200 MB/min
+                      bitsPerSecond: 27_962_024, colorSpace: .apple_log, transports: [.upload]),  // ~200 MB/min
     ]
 
     /*
@@ -784,6 +834,29 @@ enum RecordingBudget {
     /// Is the end of the clip close enough to say so?
     static func isEndInSight(_ mode: RecordingMode, elapsed: Int) -> Bool {
         remaining(mode, elapsed: elapsed) <= warnSeconds(mode)
+    }
+
+    /*
+     * Whether a format can be shot at all, and if not, what would fix it.
+     *
+     * ON THE BUDGET RATHER THAN THE MODE, because it is a budget question: it
+     * depends on the ceiling, which is not a property of the format. Keeping
+     * `RecordingMode` free of it also keeps that table a pure statement of what
+     * a format IS — which is what lets the tests compile and RUN it on its own.
+     */
+    static func isOffered(_ mode: RecordingMode) -> Bool {
+        mode.transport != nil && maxSeconds(mode) >= 1
+    }
+
+    /// Told no, and told what would make it yes. A refusal with no way forward
+    /// is a dead end; the whole value of refusing is naming the remedy.
+    static func refusal(_ mode: RecordingMode) -> String? {
+        if isOffered(mode) { return nil }
+        if mode.transport == nil, let blocked = mode.transports.first {
+            return "\(mode.label) travels only by \(blocked.label), and \(blocked.remedy)."
+        }
+        return "\(mode.label) costs \(mode.megabytesPerMinute)MB a minute, which does not fit "
+            + "one second under the \(ceilingBytes / 1_048_576)MB ceiling."
     }
 
     /*
@@ -1125,6 +1198,19 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// Whether a take is running, and what it is being recorded at.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingMode: RecordingMode?
+    /*
+     * The format a director chose, and the one every take actually uses.
+     *
+     * FCC-002 recorded at `RecordingBudget.recommended` and left a note saying
+     * FCC-006 would make it a choice. A picker whose selection does not reach
+     * `startRecording` is a control that changes a label and nothing else.
+     *
+     * It starts at the recommendation — the longest take rather than the
+     * highest resolution — so a director who never opens the picker gets the
+     * same behaviour as before.
+     */
+    @Published var selectedMode: RecordingMode = RecordingBudget.recommended
+
     /// Why this take is not being recorded in a gradeable colour space.
     ///
     /// Nil when it is, or when a Rec.709 mode was chosen deliberately. A log
@@ -1811,6 +1897,82 @@ extension PlateCameraModel: AVCapturePhotoCaptureDelegate {
     }
 }
 
+/// What a director is choosing between, and what each choice costs.
+///
+/// THE COST IS THE POINT, NOT THE LIST. "4K60" and "4K30 Apple Log" are two
+/// equal-looking buttons until the durations are on them: 14 seconds against
+/// 30, on the same phone, against the same ceiling. So every row carries its
+/// price — MB a minute, how long a take may be, and how the file will travel.
+///
+/// A REFUSED FORMAT IS SHOWN, NOT HIDDEN. Dropping it would make a format that
+/// needs a drive indistinguishable from one that was never built, and the
+/// director would never learn that a drive is what closes it.
+///
+/// DERIVED from `RecordingMode.all`, never a typed list: a typed list is only
+/// as complete as the afternoon it was written, and the format added next is
+/// the one nobody can reach.
+struct FormatPicker: View {
+    @ObservedObject var camera: PlateCameraModel
+    @State private var open = false
+
+    private func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button { open.toggle() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.down.right")
+                    Text(camera.selectedMode.label)
+                        .font(.system(.footnote, design: .monospaced))
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption2)
+                }
+                .padding(.vertical, 7).padding(.horizontal, 12)
+                .background(.white.opacity(0.18), in: Capsule())
+                .foregroundStyle(.white)
+            }
+            .accessibilityLabel("Recording format, \(camera.selectedMode.label). Tap to change.")
+            .disabled(camera.isRecording)
+
+            if open && !camera.isRecording {
+                VStack(spacing: 4) {
+                    ForEach(RecordingMode.all, id: \.id) { mode in
+                        Button { if RecordingBudget.isOffered(mode) { camera.selectedMode = mode; open = false } } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(mode.label)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(RecordingBudget.isOffered(mode) ? .white : .white.opacity(0.45))
+                                // The price, on every row. Without it two
+                                // formats are indistinguishable buttons.
+                                Text(RecordingBudget.isOffered(mode)
+                                     ? "\(mode.megabytesPerMinute)MB/min · "
+                                        + "\(clock(RecordingBudget.maxSeconds(mode))) max · "
+                                        + (mode.transport?.label ?? "")
+                                     : (RecordingBudget.refusal(mode) ?? "unavailable"))
+                                    .font(.caption2)
+                                    .foregroundStyle(RecordingBudget.isOffered(mode) ? .white.opacity(0.7) : .orange)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6).padding(.horizontal, 12)
+                            .background(mode.id == camera.selectedMode.id
+                                        ? .white.opacity(0.22) : .white.opacity(0.08),
+                                        in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .disabled(!RecordingBudget.isOffered(mode))
+                        .accessibilityLabel(RecordingBudget.isOffered(mode)
+                            ? "\(mode.label), \(mode.megabytesPerMinute) megabytes a minute, "
+                                + "\(RecordingBudget.maxSeconds(mode)) seconds maximum"
+                            : "\(mode.label), unavailable. \(RecordingBudget.refusal(mode) ?? "")")
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+}
+
 /// Start, stop, elapsed, and how much of the budget is left.
 ///
 /// The REMAINING figure is the one this exists for. A director shooting 4K60
@@ -2332,7 +2494,8 @@ struct PlateCameraView: View {
              * the take, which is the whole task.
              */
             if pending == nil {
-                RecordingTransport(camera: camera, mode: RecordingBudget.recommended)
+                FormatPicker(camera: camera).padding(.bottom, 8)
+                RecordingTransport(camera: camera, mode: camera.selectedMode)
                     .padding(.bottom, 14)
             }
 
