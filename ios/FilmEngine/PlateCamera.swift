@@ -1453,6 +1453,17 @@ final class PlateCameraModel: NSObject, ObservableObject {
     @Published var selectedMode: RecordingMode = RecordingBudget.recommended
 
     /*
+     * The drive a take will be written to, and why there is none.
+     *
+     * "Discovering it afterwards costs the take": a drive that turns out to be
+     * unusable four seconds into a ProRes recording has not produced a shorter
+     * take, it has produced a corrupt one. So both are held BEFORE anything is
+     * opened, and the picker shows the reason on the rows that need a drive.
+     */
+    @Published private(set) var externalDrive: String?
+    @Published private(set) var driveProblem: String?
+
+    /*
      * Which advanced formats this PHONE cannot record, and why.
      *
      * Filled by asking the device at configure time, never by reading a model
@@ -1690,6 +1701,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
          * the moment the director presses record.
          */
         probeCapabilities(on: start.device)
+        probeExternalStorage()
         state = .ready
         Task.detached { [session] in session.startRunning() }
     }
@@ -1907,6 +1919,76 @@ final class PlateCameraModel: NSObject, ObservableObject {
         capabilityProblem = problems
     }
 
+    /*
+     * THE PRE-FLIGHT, and every part of it runs before a writer is opened.
+     *
+     * Four of the five questions are the OS's own — `AVExternalStorageDevice`
+     * answers supply, permission, presence and suitability, and
+     * `isNotRecommendedForCaptureUse` IS the speed-and-format verdict this task
+     * asks for. Timing a throwaway write ourselves would be slower, less
+     * accurate than the system's answer, and wear on a drive somebody paid for.
+     *
+     * The fifth is the one the OS cannot answer, because it depends on what is
+     * about to be shot: a drive with a megabyte free is connected, suitable and
+     * useless. That is computed against the chosen format's own rate.
+     *
+     * Returns the refusal, or nil when the drive is good.
+     */
+    @available(iOS 17.0, *)
+    private func drive(for mode: RecordingMode) -> (device: AVExternalStorageDevice?, why: String?) {
+        guard AVExternalStorageDeviceDiscoverySession.isSupported else {
+            return (nil, "This phone cannot record to external storage. The formats that need a "
+                    + "drive are unavailable on it.")
+        }
+        guard AVExternalStorageDevice.authorizationStatus == .authorized else {
+            return (nil, "Film Engine has not been allowed to use external storage, so no drive "
+                    + "can be seen. Settings → Film Engine.")
+        }
+        guard let found = AVExternalStorageDeviceDiscoverySession.shared?
+                .externalStorageDevices.first(where: { $0.isConnected }) else {
+            return (nil, "No external drive is attached. Plug in a USB-C drive to record this "
+                    + "format.")
+        }
+        guard !found.isNotRecommendedForCaptureUse else {
+            return (found, "This drive is not fast enough to record to, or is not formatted for "
+                    + "it. A USB-3 drive formatted exFAT is what these formats need.")
+        }
+        // Room for a usable take, measured in the format's own seconds.
+        guard found.freeSize / mode.bytesPerSecond >= 1 else {
+            return (found, "There is not enough room on the drive for a usable take in this "
+                    + "format.")
+        }
+        return (found, nil)
+    }
+
+    /*
+     * Ask once, when the camera comes up, so the picker can grey the rows that
+     * need a drive with the reason rather than with silence. Permission is
+     * requested here for the same reason the microphone's is: without it the
+     * discovery session lists NOTHING, which is indistinguishable from nothing
+     * being plugged in — and a director is sent to check a cable that is fine.
+     */
+    private func probeExternalStorage() {
+        guard #available(iOS 17.0, *) else {
+            driveProblem = "External storage recording needs iOS 17."
+            return
+        }
+        if AVExternalStorageDevice.authorizationStatus == .notDetermined {
+            AVExternalStorageDevice.requestAccess { [weak self] _ in
+                Task { @MainActor in self?.refreshDrive() }
+            }
+            return
+        }
+        refreshDrive()
+    }
+
+    @available(iOS 17.0, *)
+    private func refreshDrive() {
+        let (found, why) = drive(for: selectedMode)
+        externalDrive = found?.displayName
+        driveProblem = why
+    }
+
     /// Put every held lock back on a device.
     ///
     /// A lock lives on the DEVICE, and the SESSION chooses that device's
@@ -2078,9 +2160,45 @@ final class PlateCameraModel: NSObject, ObservableObject {
             reapplyLocks(to: device)
         }
 
-        let url = FileManager.default.temporaryDirectory
+        /*
+         * WHERE THE TAKE GOES, decided before the writer is opened.
+         *
+         * A format that travels by drive is written STRAIGHT TO IT. ProRes at
+         * 4K30 is 116MB a second, so recording to the phone and copying
+         * afterwards needs the space twice over and takes as long again — and
+         * the whole reason for a drive is that the phone cannot hold it.
+         *
+         * The pre-flight runs HERE, before `sink.begin`: discovering a drive is
+         * unusable four seconds in has not produced a shorter take, it has
+         * produced a corrupt one, and the moment is gone.
+         */
+        var url = FileManager.default.temporaryDirectory
             .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id)."
                                     + mode.codec.fileExtension)
+        if mode.transports.contains(.external) {
+            guard #available(iOS 17.0, *) else {
+                recordingProblem = "External storage recording needs iOS 17."
+                restorePreset()
+                return
+            }
+            let (found, why) = drive(for: mode)
+            driveProblem = why
+            externalDrive = found?.displayName
+            if let why {
+                recordingProblem = why
+                restorePreset()
+                return
+            }
+            guard let found,
+                  let onDrive = (try? found.nextAvailableURLs(
+                      withPathExtensions: [mode.codec.fileExtension]))?.first else {
+                recordingProblem = "The drive would not give the take a name to be written under."
+                restorePreset()
+                return
+            }
+            url = onDrive
+        }
+
         if let why = sink.begin(mode: mode, to: url, sound: recordsAudio) {
             restorePreset()
             recordingProblem = why
@@ -2292,7 +2410,11 @@ struct FormatPicker: View {
                                 // formats are indistinguishable buttons.
                                 // The hardware reason wins: "this phone cannot record it" is
                                 // more useful than "it needs a drive" when both are true.
+                                // Hardware first, then the drive, then the cost:
+                                // "this phone cannot" beats "plug in a drive",
+                                // and both beat a row that is greyed in silence.
                                 Text(camera.capabilityProblem[mode.id]
+                                     ?? (mode.transports == [.external] ? camera.driveProblem : nil)
                                      ?? (RecordingBudget.isOffered(mode)
                                          ? "\(mode.megabytesPerMinute)MB/min · "
                                             + "\(clock(RecordingBudget.maxSeconds(mode))) max · "
@@ -2308,7 +2430,8 @@ struct FormatPicker: View {
                                         ? .white.opacity(0.22) : .white.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 8))
                         }
-                        .disabled(!RecordingBudget.isOffered(mode) || camera.capabilityProblem[mode.id] != nil)
+                        .disabled(!RecordingBudget.isOffered(mode) || camera.capabilityProblem[mode.id] != nil
+                                  || (mode.transports == [.external] && camera.driveProblem != nil))
                         .accessibilityLabel(RecordingBudget.isOffered(mode)
                             ? "\(mode.label), \(mode.megabytesPerMinute) megabytes a minute, "
                                 + "\(RecordingBudget.maxSeconds(mode)) seconds maximum"

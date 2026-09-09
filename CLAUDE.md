@@ -426,6 +426,7 @@ film-engine/
 │       ├── fcc-format-picker.test.js # Every format states its cost, and one with no transport is refused
 │       ├── fcc-prores.test.js        # ProRes exists, is priced, and is refused until there is a drive
 │       ├── fcc-hardware-tier.test.js # Ask the phone what it can do; a model string is the wrong gate
+│       ├── fcc-external-storage.test.js # The drive is checked before the take, because after costs it
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -4436,6 +4437,7 @@ node --test backend/tests/fcc-log.test.js
 node --test backend/tests/fcc-format-picker.test.js
 node --test backend/tests/fcc-prores.test.js
 node --test backend/tests/fcc-hardware-tier.test.js
+node --test backend/tests/fcc-external-storage.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

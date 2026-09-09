@@ -311,16 +311,87 @@ const TRANSPORTS = Object.freeze({
     }),
     external: Object.freeze({
         /*
-         * Declared before it exists, deliberately. FCC-007 adds ProRes and the
-         * epic says it "must not be offered without FCC-009"; without an absent
-         * transport to refuse against, that rule has nothing to hang on and the
-         * first format needing it ships offered.
+         * Declared before it existed by FCC-006, so ProRes could be refused
+         * with a remedy rather than offered or hidden. FCC-009 made the remedy
+         * true.
+         *
+         * ITS AVAILABILITY IS A RUNTIME FACT. Whether a drive is plugged in is
+         * a property of this moment, not of the policy, so a constant either
+         * offers ProRes with no drive attached or refuses it with one. The
+         * phone answers; this only says that the phone is who to ask.
          */
         label: 'recorded straight to an external USB-C drive',
+        device_reported: true,
         available: false,
-        remedy: 'recording to external USB-C storage is not built yet (FCC-009) — until it is, '
-            + 'there is nowhere to put a file this size',
-        source: 'FCC-009 in docs/plans/fcc-parity-epic.md',
+        /*
+         * The ceiling is the DRIVE, and that matters by four orders of
+         * magnitude: ProRes 422 HQ at 4K30 fits zero seconds under the 100MB
+         * upload cap and about ninety on a terabyte.
+         */
+        ceiling_is: 'the free space the drive reports',
+        remedy: 'no external drive is attached — plug in a USB-C drive the camera can record to, '
+            + 'and this format becomes available',
+        source: 'AVExternalStorageDevice, ios(17.0), probed from the installed SDK',
+    }),
+});
+
+/**
+ * What is asked of a drive BEFORE the writer opens.
+ *
+ * "Discovering it afterwards costs the take." A drive that turns out to be too
+ * slow four seconds into a ProRes take has not produced a shorter take — it has
+ * produced a corrupt one, and the moment is gone.
+ *
+ * FOUR OF THE FIVE ARE THE OS'S OWN ANSWERS, probed out of
+ * AVExternalStorageDevice.h (ios 17.0). `isNotRecommendedForCaptureUse` in
+ * particular IS the speed-and-format verdict this task asks for: hand-rolling a
+ * write benchmark would be slower, less accurate than the system's own answer,
+ * and wear on a drive somebody paid for. The fifth is the one the OS cannot
+ * know — whether there is room for THIS take — and is computed here.
+ */
+const DRIVE_CHECKS = Object.freeze({
+    supported: Object.freeze({
+        label: 'this phone can record to external storage',
+        asks: 'whether the discovery session is supported on this hardware at all',
+        symbol: 'AVExternalStorageDeviceDiscoverySession',
+        refusal: 'This phone cannot record to external storage. The formats that need a drive '
+            + 'are unavailable on it.',
+    }),
+    permitted: Object.freeze({
+        label: 'permission to use it',
+        /*
+         * The trap the microphone already had: without permission the session
+         * lists nothing, which is indistinguishable from nothing being plugged
+         * in — and the director is sent to check a cable that is fine.
+         */
+        asks: 'the authorisation status, and asks for access once if nobody has been asked',
+        symbol: 'authorizationStatus',
+        refusal: 'Film Engine has not been allowed to use external storage, so no drive can be '
+            + 'seen. Settings → Film Engine.',
+    }),
+    connected: Object.freeze({
+        label: 'a drive is attached',
+        asks: 'whether the discovered drive is still connected',
+        symbol: 'isConnected',
+        refusal: 'No external drive is attached. Plug in a USB-C drive to record this format.',
+    }),
+    suitable: Object.freeze({
+        label: 'it is fast enough and formatted for capture',
+        asks: "the system's own verdict on whether this drive should be recorded to",
+        symbol: 'isNotRecommendedForCaptureUse',
+        refusal: 'This drive is not fast enough to record to, or is not formatted for it. A '
+            + 'USB-3 drive formatted exFAT is what these formats need.',
+    }),
+    room: Object.freeze({
+        label: 'there is room for the take',
+        /*
+         * The one the OS cannot answer, because it depends on what is about to
+         * be shot. A drive with a megabyte free is connected, suitable and
+         * useless.
+         */
+        asks: 'the free space it reports, against what a second of the chosen format costs',
+        symbol: 'freeSize',
+        refusal: 'There is not enough room on the drive for a usable take in this format.',
     }),
 });
 
@@ -396,21 +467,43 @@ function checkCapture(input) {
  * `extra` exists so the refusal rules can be exercised without adding a format
  * to the shipped registry to test them — which is how a probe becomes a mode.
  */
-function formatChoices(extra = []) {
+function formatChoices(extra = [], device = null) {
+    /*
+     * `device` is what the PHONE reports right now: which transports actually
+     * exist, and for a drive how much room it has. Null means the static answer
+     * — nothing plugged in — which is what every server-side caller sees and
+     * what the app shows before a drive is attached.
+     */
+    const present = device && device.transports
+        ? device.transports
+        : Object.entries(TRANSPORTS).filter(([, t]) => t.available).map(([id]) => id);
+
     const entries = [
         ...Object.entries(MODES).map(([id, m]) => ({ id, ...m })),
         ...extra,
     ];
     return entries.map((m) => {
         const perSecond = m.bytes_per_second;
-        const maxSeconds = Math.floor(bindingBytes() / perSecond);
         const declared = m.transports || [];
 
         /*
          * The first DECLARED transport that is actually available. Order is the
          * format's own preference; availability is the world's answer.
          */
-        const usable = declared.find((t) => TRANSPORTS[t] && TRANSPORTS[t].available);
+        const usable = declared.find((t) => TRANSPORTS[t] && present.includes(t));
+
+        /*
+         * THE CEILING IS THE TRANSPORT'S, and on a drive that is a different
+         * number by four orders of magnitude: ProRes 422 HQ at 4K30 fits zero
+         * seconds under the 100MB upload cap and about ninety on a terabyte.
+         * Pricing an external format against the upload ceiling would offer
+         * five formats that all read "0s max" — which looks broken rather than
+         * available, and is the half of this task that is easy to miss.
+         */
+        const ceiling = usable === 'external' && device
+            ? (device.external_free_bytes || 0)
+            : bindingBytes();
+        const maxSeconds = Math.floor(ceiling / perSecond);
         const choice = {
             id: m.id,
             label: m.label,
@@ -453,6 +546,6 @@ function formatChoices(extra = []) {
 }
 
 module.exports = {
-    CEILINGS, MODES, CODECS, CAPABILITIES, TRANSPORTS, bindingBytes, maxSecondsFor, recommended, checkCapture,
+    CEILINGS, MODES, CODECS, CAPABILITIES, TRANSPORTS, DRIVE_CHECKS, bindingBytes, maxSecondsFor, recommended, checkCapture,
     formatChoices,
 };
