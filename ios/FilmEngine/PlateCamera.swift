@@ -676,7 +676,47 @@ struct RecordingMode: Equatable {
      * gradeable format that fits the existing upload pipe: ProRes is roughly
      * seven gigabytes a minute and is inseparable from external storage.
      */
-    enum ColorSpace: String { case rec709, apple_log }
+    enum ColorSpace: String { case rec709, apple_log, apple_log2 }
+
+    /*
+     * What a phone has to REPORT before a format can use it.
+     *
+     * A model string is the wrong gate and fails in both directions: it has
+     * never heard of the phone that shipped this morning — exactly the one with
+     * the feature — and goes stale again when Apple brings a capability to
+     * older hardware. Each case names the iOS it needs; the PROBE lives in an
+     * extension outside this struct, because it touches AVFoundation and this
+     * table must stay pure enough for the tests to compile and run it alone.
+     */
+    enum Capability: String, CaseIterable {
+        case apple_log2, prores_raw, open_gate
+
+        /// Every one is an iOS 26 symbol against a deployment target of 16.
+        var minIOS: Int { 26 }
+
+        var label: String {
+            switch self {
+            case .apple_log2: return "Apple Log 2"
+            case .prores_raw: return "ProRes RAW"
+            case .open_gate: return "open gate"
+            }
+        }
+
+        /// What a phone without it is told, rather than failing silently.
+        var degrade: String {
+            switch self {
+            case .apple_log2:
+                return "This camera cannot record Apple Log 2 — the take records the log format "
+                    + "it can, and can still be graded."
+            case .prores_raw:
+                return "This camera cannot record ProRes RAW — the take records ProRes 422, "
+                    + "which is the closest format it has."
+            case .open_gate:
+                return "This camera has no open-gate format — the take records the ordinary "
+                    + "16:9 crop of the sensor."
+            }
+        }
+    }
 
     /*
      * What the writer encodes, and what can carry it.
@@ -686,7 +726,7 @@ struct RecordingMode: Equatable {
      * already lost the take. FCC-001 chose `.mov` with exactly this in mind.
      */
     enum Codec: String {
-        case hevc, prores422, prores422hq
+        case hevc, prores422, prores422hq, prores_raw
 
         var fileExtension: String { "mov" }
 
@@ -695,6 +735,7 @@ struct RecordingMode: Equatable {
             case .hevc: return "HEVC"
             case .prores422: return "ProRes 422"
             case .prores422hq: return "ProRes 422 HQ"
+            case .prores_raw: return "ProRes RAW"
             }
         }
     }
@@ -740,6 +781,9 @@ struct RecordingMode: Equatable {
     let colorSpace: ColorSpace
     let codec: Codec
     let transports: [Transport]
+    /// What the phone must report before this format can be recorded. Empty for
+    /// everything the camera could already do.
+    var requires: [Capability] = []
 
     /// What a second of this mode costs on disk and, later, in transport.
     var bytesPerSecond: Int { bitsPerSecond / 8 }
@@ -762,7 +806,7 @@ struct RecordingMode: Equatable {
     }
 
     /// Whether this mode produces footage worth grading.
-    var isGradeable: Bool { colorSpace == .apple_log }
+    var isGradeable: Bool { colorSpace == .apple_log || colorSpace == .apple_log2 }
 
     /*
      * Apple's published iPhone figures, as MB per minute of HEVC, converted the
@@ -817,6 +861,23 @@ struct RecordingMode: Equatable {
         RecordingMode(id: "1080p30-prores422", width: 1920, height: 1080, fps: 30,
                       bitsPerSecond: 162_623_080, colorSpace: .rec709,
                       codec: .prores422, transports: [.external]),           // ~1.14 GiB/min
+        /*
+         * THE HARDWARE TIER. Each declares the capability the phone must report
+         * before it can be offered, so a 15 Pro Max is TOLD rather than failing
+         * at the moment the director presses record.
+         *
+         * Open gate has no entry: its raster is a property of the sensor, so it
+         * is built from the format the device reports — see `openGate(on:)`.
+         */
+        RecordingMode(id: "4k30-log2", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 27_962_024, colorSpace: .apple_log2,
+                      codec: .hevc, transports: [.upload],
+                      requires: [.apple_log2]),                              // ~200 MB/min
+        RecordingMode(id: "4k30-prores_raw", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 650_492_320, colorSpace: .rec709,
+                      codec: .prores_raw, transports: [.external],
+                      requires: [.prores_raw]),                              // ~4.55 GiB/min
+
         RecordingMode(id: "4k30-prores422", width: 3840, height: 2160, fps: 30,
                       bitsPerSecond: 650_492_320, colorSpace: .rec709,
                       codec: .prores422, transports: [.external]),           // ~4.55 GiB/min
@@ -1155,6 +1216,17 @@ extension RecordingMode {
         case .hevc: return AVVideoCodecType.hevc
         case .prores422: return AVVideoCodecType.proRes422
         case .prores422hq: return AVVideoCodecType.proRes422HQ
+        case .prores_raw:
+            /*
+             * iOS 26 and newer hardware. The fallback is not a guess: it is
+             * exactly what `Capability.prores_raw.degrade` tells the director —
+             * "the take records ProRes 422, which is the closest format it
+             * has." The capability gate stops this mode being selectable on a
+             * phone without it, so reaching here means the OS is older than the
+             * symbol, and degrading beats refusing to build.
+             */
+            if #available(iOS 26.0, *) { return AVVideoCodecType.proResRAW }
+            return AVVideoCodecType.proRes422
         }
     }
 }
@@ -1162,6 +1234,84 @@ extension RecordingMode {
 extension RecordingMode.Codec {
     /// ProRes is a QuickTime codec; an mp4 cannot carry it.
     var fileType: AVFileType { .mov }
+}
+
+/*
+ * ASKING THE DEVICE, which is the whole acceptance of FCC-008.
+ *
+ * Kept out of `RecordingMode` because it touches AVFoundation and that table
+ * must stay pure enough for the tests to compile and run it alone — the same
+ * layering `avCodec` and `RecordingBudget` already follow.
+ *
+ * Every probe is a real API read out of the installed SDK rather than recalled,
+ * and every one asks what the hardware CAN DO. Nothing anywhere reads a model
+ * identifier: that gate has never heard of the phone that shipped this morning,
+ * which is exactly the one with the feature.
+ */
+extension RecordingMode.Capability {
+    func isAvailable(device: AVCaptureDevice, output: AVCaptureVideoDataOutput) -> Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        switch self {
+        case .apple_log2:
+            return device.activeFormat.supportedColorSpaces.contains(.appleLog2)
+        case .prores_raw:
+            /*
+             * The right question for an AVAssetWriter pipeline, and the SDK
+             * says so: this list is what may be used for AVVideoCodecKey with
+             * an asset writer, and passing anything absent from it raises.
+             */
+            return output.availableVideoCodecTypesForAssetWriter(writingTo: .mov)
+                .contains(.proResRAW)
+        case .open_gate:
+            return RecordingMode.openGateFormat(on: device) != nil
+        }
+    }
+}
+
+extension RecordingMode {
+    /*
+     * OPEN GATE IS A FORMAT, NOT A FLAG — there is no `isOpenGateSupported`
+     * anywhere in AVFoundation, which is why this walks the device's own list.
+     *
+     * It is the full sensor rather than the 16:9 crop, so it is the widest
+     * format whose aspect is NOT 16:9. Its raster is therefore READ from the
+     * device: nothing published gives a pixel count for it, and typing one
+     * would be an invented number for hardware nobody here has measured.
+     */
+    static func openGateFormat(on device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        device.formats
+            .filter { f in
+                let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+                guard d.width > 0, d.height > 0 else { return false }
+                let aspect = Double(d.width) / Double(d.height)
+                // 16:9 is 1.777…; the full sensor is nearer 4:3.
+                return abs(aspect - 16.0 / 9.0) > 0.05
+            }
+            .max { a, b in
+                let da = CMVideoFormatDescriptionGetDimensions(a.formatDescription)
+                let db = CMVideoFormatDescriptionGetDimensions(b.formatDescription)
+                return Int(da.width) * Int(da.height) < Int(db.width) * Int(db.height)
+            }
+    }
+
+    /// The open-gate mode this PHONE can record, built from what it reports.
+    /// Nil where the sensor offers no such format — never a typed fallback.
+    static func openGate(on device: AVCaptureDevice) -> RecordingMode? {
+        guard let f = openGateFormat(on: device) else { return nil }
+        let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+        let fps = Int(f.videoSupportedFrameRateRanges.first?.maxFrameRate ?? 30)
+        /*
+         * Priced from the pixels it actually reports, against 4K30 Apple Log —
+         * the anchored rate nearest in kind. Derived, like every other rate
+         * this epic could not find published.
+         */
+        let pixels = Double(d.width) * Double(d.height)
+        let ref = 3840.0 * 2160.0
+        let bits = Int(27_962_024.0 * (pixels / ref) * (Double(fps) / 30.0))
+        return RecordingMode(id: "opengate\(fps)", width: Int(d.width), height: Int(d.height),
+                             fps: fps, bitsPerSecond: bits, colorSpace: .rec709,
+                             codec: .hevc, transports: [.external], requires: [.open_gate])
+    }
 }
 
 // ── the camera ───────────────────────────────────────────────────────────────
@@ -1301,6 +1451,27 @@ final class PlateCameraModel: NSObject, ObservableObject {
      * same behaviour as before.
      */
     @Published var selectedMode: RecordingMode = RecordingBudget.recommended
+
+    /*
+     * Which advanced formats this PHONE cannot record, and why.
+     *
+     * Filled by asking the device at configure time, never by reading a model
+     * identifier. A 15 Pro Max is TOLD what it is not getting rather than
+     * meeting an exception at the moment the director presses record.
+     */
+    @Published private(set) var capabilityProblem: [String: String] = [:]
+
+    /*
+     * The colour space to put back when the take ends.
+     *
+     * The SDK is explicit: "Photo capture is not supported when AVCaptureDevice
+     * has selected AVCaptureColorSpace_AppleLog or AVCaptureColorSpace_AppleLog2
+     * as color space." FCC-005 set a log space and never restored it, so after
+     * one log take the plate shutter was dead for the rest of the session —
+     * nothing errored, stills simply stopped. That silently undid the guarantee
+     * FCC-001 exists for.
+     */
+    private var colorSpaceBeforeRecording: AVCaptureColorSpace?
 
     /// Why this take is not being recorded in a gradeable colour space.
     ///
@@ -1512,6 +1683,13 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
         input = first
         lens = start
+        /*
+         * ASK THE PHONE WHAT IT CAN DO, once, here — never a model string.
+         * A format the sensor cannot record is greyed in the picker with the
+         * reason, so a 15 Pro Max is told rather than meeting an exception at
+         * the moment the director presses record.
+         */
+        probeCapabilities(on: start.device)
         state = .ready
         Task.detached { [session] in session.startRunning() }
     }
@@ -1659,8 +1837,24 @@ final class PlateCameraModel: NSObject, ObservableObject {
             logUnavailable = "Apple Log needs iOS 17 — this take records Rec.709 and cannot be graded."
             return
         }
-        guard device.activeFormat.supportedColorSpaces.contains(.appleLog) else {
-            logUnavailable = "This camera cannot record Apple Log at \(mode.id) — "
+
+        /*
+         * Apple Log 2 is iOS 26 and newer hardware, so it DEGRADES to Apple Log
+         * rather than failing — which is the shape this whole task is about. A
+         * phone that cannot reach the requested space records the best one it
+         * has and says which.
+         */
+        var wanted = AVCaptureColorSpace.appleLog
+        if mode.colorSpace == .apple_log2 {
+            if #available(iOS 26.0, *),
+               device.activeFormat.supportedColorSpaces.contains(.appleLog2) {
+                wanted = .appleLog2
+            } else {
+                logUnavailable = RecordingMode.Capability.apple_log2.degrade
+            }
+        }
+        guard device.activeFormat.supportedColorSpaces.contains(wanted) else {
+            logUnavailable = "This camera cannot record a log colour space at \(mode.id) — "
                 + "the take records Rec.709 and cannot be graded."
             return
         }
@@ -1669,7 +1863,48 @@ final class PlateCameraModel: NSObject, ObservableObject {
             return
         }
         defer { device.unlockForConfiguration() }
-        device.activeColorSpace = .appleLog
+        // Remembered so it can be PUT BACK: photo capture is unsupported while
+        // a log space is selected, so leaving it kills the plate shutter.
+        colorSpaceBeforeRecording = device.activeColorSpace
+        device.activeColorSpace = wanted
+    }
+
+    /*
+     * Put the colour space back, or stills stay broken.
+     *
+     * Runs when the take ends, beside the preset restore and for the same
+     * reason — except the consequence here is worse than a clamped exposure:
+     * the SDK refuses photo capture entirely while a log space is selected, so
+     * without this the plate shutter is dead for the rest of the session and
+     * nothing anywhere says so.
+     */
+    private func restoreColorSpace() {
+        guard let before = colorSpaceBeforeRecording else { return }
+        colorSpaceBeforeRecording = nil
+        guard let device = lens?.device,
+              (try? device.lockForConfiguration()) != nil else { return }
+        defer { device.unlockForConfiguration() }
+        device.activeColorSpace = before
+    }
+
+    /*
+     * What this phone cannot record, and why — filled by asking the DEVICE.
+     *
+     * A capability the hardware lacks makes every format requiring it
+     * unavailable, and each carries its own sentence rather than disappearing.
+     * A format that silently vanishes is indistinguishable from one that was
+     * never built, which is the rule FCC-006 established for transports and
+     * this follows for hardware.
+     */
+    private func probeCapabilities(on device: AVCaptureDevice) {
+        var problems: [String: String] = [:]
+        for capability in RecordingMode.Capability.allCases
+        where !capability.isAvailable(device: device, output: frames) {
+            for mode in RecordingMode.all where mode.requires.contains(capability) {
+                problems[mode.id] = capability.degrade
+            }
+        }
+        capabilityProblem = problems
     }
 
     /// Put every held lock back on a device.
@@ -1804,6 +2039,16 @@ final class PlateCameraModel: NSObject, ObservableObject {
             return
         }
 
+        /*
+         * Refused BEFORE the session is touched. Starting a take the sensor
+         * cannot record would raise inside AVFoundation — the failing-rather-
+         * than-degrading outcome this task exists to remove.
+         */
+        if let why = capabilityProblem[mode.id] {
+            recordingProblem = why
+            return
+        }
+
         let wanted = preset(for: mode)
         guard session.canSetSessionPreset(wanted) else {
             recordingProblem = "This device cannot record \(mode.id)."
@@ -1902,6 +2147,9 @@ final class PlateCameraModel: NSObject, ObservableObject {
     }
 
     private func restorePreset() {
+        // The colour space first: it is what blocks the plate shutter, and it
+        // must go back whether or not the preset needs restoring.
+        restoreColorSpace()
         guard let before = presetBeforeRecording else { return }
         presetBeforeRecording = nil
         guard session.canSetSessionPreset(before) else { return }
@@ -2030,18 +2278,26 @@ struct FormatPicker: View {
             if open && !camera.isRecording {
                 VStack(spacing: 4) {
                     ForEach(RecordingMode.all, id: \.id) { mode in
-                        Button { if RecordingBudget.isOffered(mode) { camera.selectedMode = mode; open = false } } label: {
+                        Button {
+                            if RecordingBudget.isOffered(mode), camera.capabilityProblem[mode.id] == nil {
+                                camera.selectedMode = mode; open = false
+                            }
+                        } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(mode.label)
                                     .font(.system(.footnote, design: .monospaced))
-                                    .foregroundStyle(RecordingBudget.isOffered(mode) ? .white : .white.opacity(0.45))
+                                    .foregroundStyle(RecordingBudget.isOffered(mode) && camera.capabilityProblem[mode.id] == nil
+                                                     ? .white : .white.opacity(0.45))
                                 // The price, on every row. Without it two
                                 // formats are indistinguishable buttons.
-                                Text(RecordingBudget.isOffered(mode)
-                                     ? "\(mode.megabytesPerMinute)MB/min · "
-                                        + "\(clock(RecordingBudget.maxSeconds(mode))) max · "
-                                        + (mode.transport?.label ?? "")
-                                     : (RecordingBudget.refusal(mode) ?? "unavailable"))
+                                // The hardware reason wins: "this phone cannot record it" is
+                                // more useful than "it needs a drive" when both are true.
+                                Text(camera.capabilityProblem[mode.id]
+                                     ?? (RecordingBudget.isOffered(mode)
+                                         ? "\(mode.megabytesPerMinute)MB/min · "
+                                            + "\(clock(RecordingBudget.maxSeconds(mode))) max · "
+                                            + (mode.transport?.label ?? "")
+                                         : (RecordingBudget.refusal(mode) ?? "unavailable")))
                                     .font(.caption2)
                                     .foregroundStyle(RecordingBudget.isOffered(mode) ? .white.opacity(0.7) : .orange)
                                     .multilineTextAlignment(.leading)
@@ -2052,7 +2308,7 @@ struct FormatPicker: View {
                                         ? .white.opacity(0.22) : .white.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 8))
                         }
-                        .disabled(!RecordingBudget.isOffered(mode))
+                        .disabled(!RecordingBudget.isOffered(mode) || camera.capabilityProblem[mode.id] != nil)
                         .accessibilityLabel(RecordingBudget.isOffered(mode)
                             ? "\(mode.label), \(mode.megabytesPerMinute) megabytes a minute, "
                                 + "\(RecordingBudget.maxSeconds(mode)) seconds maximum"

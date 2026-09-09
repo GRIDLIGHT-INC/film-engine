@@ -425,6 +425,7 @@ film-engine/
 │       ├── fcc-log.test.js           # Apple Log costs half again as much, and the session overrides it silently
 │       ├── fcc-format-picker.test.js # Every format states its cost, and one with no transport is refused
 │       ├── fcc-prores.test.js        # ProRes exists, is priced, and is refused until there is a drive
+│       ├── fcc-hardware-tier.test.js # Ask the phone what it can do; a model string is the wrong gate
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -4434,6 +4435,7 @@ node --test backend/tests/fcc-locks.test.js
 node --test backend/tests/fcc-log.test.js
 node --test backend/tests/fcc-format-picker.test.js
 node --test backend/tests/fcc-prores.test.js
+node --test backend/tests/fcc-hardware-tier.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

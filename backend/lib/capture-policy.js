@@ -42,6 +42,61 @@ const CEILINGS = Object.freeze({
 });
 
 /**
+ * The advanced formats, and how the DEVICE is asked whether it has them.
+ *
+ * A MODEL STRING IS THE WRONG GATE and it fails in both directions: it has
+ * never heard of the phone that shipped this morning — which is exactly the one
+ * with the feature — and it goes stale again when Apple brings a capability to
+ * older hardware. Asking the device needs no maintenance and is right on both
+ * counts.
+ *
+ * Every symbol below was PROBED out of the installed SDK rather than recalled:
+ *   AVCaptureColorSpace_AppleLog2 .......... ios(26.0)
+ *   AVVideoCodecTypeAppleProResRAW ......... ios(26.0), NS_SWIFT_NAME(proResRAW)
+ *   availableVideoCodecTypesForAssetWriterWithOutputFileType: ... ios(11.0)
+ *
+ * Open gate has NO symbol anywhere in AVFoundation, and that is a finding
+ * rather than an omission: it is a FORMAT, not a flag, so the only honest gate
+ * is asking the device which formats it has — and its raster must be read from
+ * the one it reports rather than typed here, because nothing published gives a
+ * pixel count for it.
+ */
+const CAPABILITIES = Object.freeze({
+    apple_log2: Object.freeze({
+        label: 'Apple Log 2',
+        min_ios: '26.0',
+        probe: "the active format's own supportedColorSpaces list is asked whether it contains "
+            + 'appleLog2',
+        probe_symbol: 'supportedColorSpaces',
+        degrade: 'This camera cannot record Apple Log 2 — the take records the log format it can, '
+            + 'and can still be graded.',
+    }),
+    prores_raw: Object.freeze({
+        label: 'ProRes RAW',
+        min_ios: '26.0',
+        /*
+         * The right probe for an AVAssetWriter pipeline, and the SDK says so:
+         * this list is what may be used for AVVideoCodecKey with an asset
+         * writer, and passing anything absent from it raises.
+         */
+        probe: 'the video output is asked which codecs it can hand an asset writer for a '
+            + 'QuickTime movie, and whether proResRAW is among them',
+        probe_symbol: 'availableVideoCodecTypesForAssetWriter',
+        degrade: 'This camera cannot record ProRes RAW — the take records ProRes 422, which is '
+            + 'the closest format it has.',
+    }),
+    open_gate: Object.freeze({
+        label: 'open gate',
+        min_ios: '26.0',
+        probe: "the device's own format list is walked for the full-sensor one, because there is "
+            + 'no open-gate flag in AVFoundation to ask for',
+        probe_symbol: 'CMVideoFormatDescriptionGetDimensions',
+        degrade: 'This camera has no open-gate format — the take records the ordinary 16:9 crop '
+            + 'of the sensor.',
+    }),
+});
+
+/**
  * What the writer can encode, and what can carry it.
  *
  * The container is not decoration: ProRes cannot be written into an mp4, and a
@@ -64,6 +119,12 @@ const CODECS = Object.freeze({
         label: 'ProRes 422 HQ',
         container: 'mov',
         source: 'ProRes is a QuickTime codec — an mp4 cannot carry it',
+    }),
+    prores_raw: Object.freeze({
+        label: 'ProRes RAW',
+        container: 'mov',
+        source: 'AVVideoCodecTypeAppleProResRAW, ios(26.0), probed from the installed SDK; also '
+            + 'a QuickTime codec',
     }),
 });
 
@@ -176,6 +237,47 @@ const MODES = Object.freeze({
         source: "derived from the 422 HQ anchor by Apple's published ProRes target data-rate "
             + 'ratio, 147 against 220 Mbps at 1080p',
     }),
+    /*
+     * THE HARDWARE TIER — added by FCC-008 (GRD-3804), and each declares the
+     * capability it needs so a phone without it is told rather than failing.
+     *
+     * Neither rate is published. Apple states no iPhone figure for Apple Log 2
+     * or for ProRes RAW, so both are DERIVED from an anchored sibling and
+     * flagged — the rule FCC-007 had to strengthen after a mutation walked
+     * through a one-directional version of it.
+     *
+     * OPEN GATE HAS NO ENTRY HERE, deliberately. Its raster is a property of
+     * the sensor and nothing published gives a pixel count, so a fixed mode
+     * would be an invented number for hardware nobody here has measured. The
+     * camera builds it from the format the device reports, or does not offer
+     * it at all.
+     */
+    '4k30-log2': Object.freeze({
+        // The same HEVC encoder at the same target; only the transfer function
+        // differs, so the rate is Apple Log's.
+        bytes_per_second: Math.round(200 * 1048576 / 60),
+        color_space: 'apple_log2',
+        codec: 'hevc',
+        transports: Object.freeze(['upload']),
+        requires: Object.freeze(['apple_log2']),
+        inferred: true,
+        label: '4K at 30fps, Apple Log 2',
+        source: 'derived — the same rate as Apple Log at 4K30, because it is the same HEVC '
+            + 'encoder at the same target and only the transfer function differs',
+    }),
+    '4k30-prores_raw': Object.freeze({
+        // Apple describes ProRes RAW as comparable in size to ProRes 422.
+        bytes_per_second: Math.round(1.7 * 4 * (147 / 220) * 1024 * 1048576 / 60),
+        color_space: 'rec709',
+        codec: 'prores_raw',
+        transports: Object.freeze(['external']),
+        requires: Object.freeze(['prores_raw']),
+        inferred: true,
+        label: 'ProRes RAW, 4K at 30fps',
+        source: 'derived — the same rate as ProRes 422 at 4K30, which is the comparison Apple '
+            + 'itself draws for ProRes RAW file sizes',
+    }),
+
     '4k30-prores422': Object.freeze({
         bytes_per_second: Math.round(1.7 * 4 * (147 / 220) * 1024 * 1048576 / 60),
         color_space: 'rec709',
@@ -351,6 +453,6 @@ function formatChoices(extra = []) {
 }
 
 module.exports = {
-    CEILINGS, MODES, CODECS, TRANSPORTS, bindingBytes, maxSecondsFor, recommended, checkCapture,
+    CEILINGS, MODES, CODECS, CAPABILITIES, TRANSPORTS, bindingBytes, maxSecondsFor, recommended, checkCapture,
     formatChoices,
 };
