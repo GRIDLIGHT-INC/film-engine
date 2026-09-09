@@ -201,8 +201,29 @@ const TRACED_EPICS = ['Plate Camera Controls'];
 const UNTRACED_EPICS = Object.freeze({
     'Redo the video between two chosen frames': 10,
     'iOS Capture and Previz Finalization': 9,
-    'Connections, Skills and Automations — make the three surfaces real': 9,
 });
+
+/**
+ * Epics with no plan document in THIS repository are outside this check
+ * entirely — neither policed nor counted.
+ *
+ * `.claude/tasks` is shared across repositories, so it holds work this codebase
+ * did not do and cannot vouch for: `git cat-file` here would fail on a valid
+ * hash from another repo. Counting them was worse than useless — the count of
+ * "Connections, Skills and Automations" went 9 -> 10 -> 14 in a few hours while
+ * that epic was actively worked, so the suite went red on somebody else's
+ * progress. A check that fails on work it has no standing to judge is one
+ * people delete, and the real protection goes with it.
+ *
+ * Derived, not listed: an epic is ours if `docs/plans/` carries its title.
+ */
+function isOursToJudge(epic) {
+    const dir = path.join(__dirname, '..', '..', 'docs', 'plans');
+    return fs.readdirSync(dir).filter(f => f.endsWith('.md')).some(f => {
+        const first = fs.readFileSync(path.join(dir, f), 'utf8').split('\n')[0];
+        return first.trim() === `# Epic: ${epic}`;
+    });
+}
 
 const TASKS_DIR = '/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks';
 
@@ -265,6 +286,13 @@ test('the untraced epics are named accurately, so the list cannot rot', (t) => {
     if (!fs.existsSync(TASKS_DIR)) { t.skip('task directory is on the authoring machine'); return; }
     const groups = completedByEpic();
     const wrong = [];
+
+    // Nothing foreign may be listed: it would reintroduce the drift.
+    const foreign = Object.keys(UNTRACED_EPICS).filter(e => !isOursToJudge(e));
+    assert.deepStrictEqual(foreign, [],
+        `these epics have no plan document in this repository and must not be counted here: `
+        + foreign.join(', '));
+
     for (const [epic, expected] of Object.entries(UNTRACED_EPICS)) {
         const entries = groups.get(epic);
         if (!entries) { wrong.push(`${epic}: no completed tasks found; the entry is stale`); continue; }
