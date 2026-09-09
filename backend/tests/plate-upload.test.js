@@ -462,8 +462,26 @@ test('an oversize upload is refused in words, not by hanging up', () => {
     const tooLarge = fn.slice(fn.indexOf('maxSize'));
     assert.ok(/413/.test(tooLarge),
         'an oversize body is not answered with 413 — the client cannot tell it from a dead server');
-    assert.ok(/writeHead[\s\S]{0,200}413[\s\S]{0,400}destroy|413[\s\S]{0,400}end\(/.test(tooLarge),
-        'the response is not written before the connection is destroyed');
+    /*
+     * BOUND BY ORDER, never by a character count. This matched `413` followed
+     * by `destroy` within 400 characters, and FCC-010 added a branch between
+     * them — so it began reporting a working refusal as broken. That is the
+     * fifth bounded window this codebase has paid for, and its signal is always
+     * the same: the test says the FEATURE is broken while the feature
+     * demonstrably works.
+     *
+     * The property was never distance. It is that the 413 is WRITTEN before the
+     * socket is destroyed, because a destroyed request reaches the browser as a
+     * network error and api() reports that as "Backend offline".
+     */
+    const head = tooLarge.indexOf('writeHead(413');
+    const ended = tooLarge.indexOf('res.end(', head);
+    const destroyed = tooLarge.indexOf('destroy', head);
+    assert.ok(head !== -1, 'nothing writes a 413');
+    assert.ok(ended > head, 'the 413 is opened and never sent');
+    assert.ok(destroyed === -1 || destroyed > ended,
+        'the connection is destroyed before the refusal is written, so the client sees a network '
+        + 'error rather than a reason');
     assert.ok(/MB|limit|too large/i.test(tooLarge),
         'the refusal never states the size limit, so nobody knows what would fit');
 });

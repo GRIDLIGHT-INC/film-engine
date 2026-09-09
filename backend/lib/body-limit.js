@@ -23,6 +23,19 @@
 const FILE_CARRYING_SEGMENTS = Object.freeze(['import', 'media']);
 
 const JSON_LIMIT = 10 * 1024 * 1024;
+/*
+ * One PIECE of a resumable transfer, not a whole file.
+ *
+ * A chunk path ends in a session id, so it matched neither `import` nor `media`
+ * and fell into the JSON default. Ten megabytes happens to be a sensible chunk
+ * — but by accident, and this module's whole doctrine is that a ceiling is
+ * derived from the shape rather than fallen into.
+ *
+ * Deliberately far below FILE_LIMIT: a chunk is meant to be small, so that
+ * losing one to a dropped connection costs seconds rather than minutes. A
+ * 150MB piece would defeat the granularity the transfer exists for.
+ */
+const CHUNK_LIMIT = 16 * 1024 * 1024;
 const FILE_LIMIT = 150 * 1024 * 1024;   // base64-encoded Meshy GLBs can be large
 const BUNDLE_LIMIT = 500 * 1024 * 1024;
 
@@ -47,10 +60,14 @@ function bodyLimitFor(parts) {
 function limitForPath(parts) {
     const list = Array.isArray(parts) ? parts : [];
     const isBundleImport = list[1] === 'projects' && list[2] === 'import';
-    return isBundleImport ? BUNDLE_LIMIT : bodyLimitFor(list);
+    if (isBundleImport) return BUNDLE_LIMIT;
+    // A piece of a resumable transfer, which is neither a JSON body nor a
+    // whole file. Named by shape like everything else here.
+    if (list[1] === 'uploads' && list[2]) return CHUNK_LIMIT;
+    return bodyLimitFor(list);
 }
 
 module.exports = {
     bodyLimitFor, limitForPath, carriesFile,
-    FILE_CARRYING_SEGMENTS, JSON_LIMIT, FILE_LIMIT, BUNDLE_LIMIT,
+    FILE_CARRYING_SEGMENTS, JSON_LIMIT, FILE_LIMIT, BUNDLE_LIMIT, CHUNK_LIMIT,
 };

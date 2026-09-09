@@ -87,6 +87,7 @@ const { handleStyleBook } = require('./routes/style-book');
 const { handleDeliverables } = require('./routes/deliverables');
 const { handleBrands } = require('./routes/brands');
 const { handleMediaImport } = require('./routes/media-import');
+const { handleUploads } = require('./routes/uploads');
 const { handleSequences } = require('./routes/sequences');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
@@ -247,7 +248,24 @@ function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
                 const limitMb = Math.floor(maxSize / (1024 * 1024));
                 if (!res.headersSent) {
                     res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
-                    res.end(JSON.stringify({
+                    /*
+                     * WHICH SENTENCE depends on how the body travels.
+                     *
+                     * The base64 explanation is true of a JSON body and FALSE
+                     * of a raw one, and FCC-010 made raw the path for large
+                     * media. Telling a director their 20MB chunk is really 15MB
+                     * of file sends them to re-encode something that was never
+                     * encoded — a confidently wrong diagnosis, which is worse
+                     * than a vague one.
+                     */
+                    res.end(JSON.stringify(isRaw ? {
+                        error: `That is more than this request may carry. The limit is ${limitMb}MB, `
+                            + 'and the bytes travel as-is — send the file as a resumable upload in '
+                            + 'pieces rather than in one request.',
+                        limit_mb: limitMb,
+                        max_file_mb: limitMb,
+                        raw: true,
+                    } : {
                         error: `That file is too large. The limit is ${limitMb}MB of upload, which is `
                             + `about ${Math.floor(limitMb * 0.75)}MB of actual file — uploads travel `
                             + 'base64-encoded, which is a third larger than the file itself.',
@@ -498,6 +516,17 @@ const server = http.createServer(async (req, res) => {
             || (parts[1] === 'music-cues' && parts[2] && parts[3] === 'audio')
             || (['shots', 'scenes'].includes(parts[1]) && parts[2] && parts[3] === 'media')) {
             const handled = await handleMediaImport(req, res, parts, query);
+            if (handled !== false) return handled;
+        }
+
+        /*
+         * Resumable transfers, registered BEFORE any project catch-all — the
+         * /film/locations/:id trap this codebase already paid for once: a
+         * handler that exists and is never reached looks exactly like a missing
+         * feature.
+         */
+        if (parts[1] === 'uploads') {
+            const handled = await handleUploads(req, res, parts);
             if (handled !== false) return handled;
         }
 
