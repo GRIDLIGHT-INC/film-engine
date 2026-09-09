@@ -57,7 +57,29 @@ function extract(header) {
     assert.notStrictEqual(at, -1,
         `PlateCamera.swift declares no '${header}'. If it was renamed this test cannot see the `
         + 'arithmetic it exists to check, and would pass by finding nothing');
-    const open = s.indexOf('{', at);
+    /*
+     * Skip the SIGNATURE before looking for the body.
+     *
+     * `func stopRecording(_ done: @escaping (URL?) -> Void = { _ in })` carries
+     * a brace in its default value, and taking the first `{` extracted that
+     * closure instead of the function — which silently turned every assertion
+     * about the body into an assertion about `{ _ in }`, and reported a working
+     * guard as missing. A declaration with no parameter list (a struct, an
+     * enum) has no signature to skip.
+     */
+    const paren = s.indexOf('(', at);
+    const brace = s.indexOf('{', at);
+    let open;
+    if (paren !== -1 && (brace === -1 || paren < brace)) {
+        let p = 0, j = paren;
+        for (; j < s.length; j++) {
+            if (s[j] === '(') p++;
+            else if (s[j] === ')' && --p === 0) break;
+        }
+        open = s.indexOf('{', j);
+    } else {
+        open = brace;
+    }
     let depth = 0, i = open;
     for (; i < s.length; i++) {
         if (s[i] === '{') depth++;

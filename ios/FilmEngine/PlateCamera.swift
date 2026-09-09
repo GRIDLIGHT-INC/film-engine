@@ -699,6 +699,78 @@ struct RecordingMode: Equatable {
     static func mode(_ id: String) -> RecordingMode? { all.first { $0.id == id } }
 }
 
+/// How long a take may be, and how much of it is left.
+///
+/// **The number this exists for is fourteen seconds.** The binding ceiling is
+/// 100MB and 4K60 costs about 400MB a minute, so a 4K60 take breaches it in 14
+/// seconds — shorter than most useful shots, and until now discovered at
+/// UPLOAD, after the take was shot. 4K30 gets 44 seconds; 1080p30 gets 133.
+/// Those differ by an order of magnitude, which is why a director has to be
+/// told which one they are working against rather than left to guess.
+///
+/// MIRRORED FROM `backend/lib/capture-policy.js`, deliberately. Swift cannot
+/// require a node module, so the budget exists twice — the same arrangement
+/// `screenplay-pagination.js` and `shot-motion.js` already have with the page.
+/// `fcc-transport.test.js` compiles this and holds every number equal to the
+/// server's, because two budgets that disagree are worse than one that is
+/// wrong: the app would promise one duration and then refuse a different one.
+enum RecordingBudget {
+    /*
+     * The SMALLEST of capture-policy's three ceilings, which is currently
+     * Marble's own cap on a video. Budgeting against either of the larger two
+     * would promise up to 50% more recording time than the clip can carry, and
+     * every take made on that promise is refused after it was shot. The test
+     * takes the minimum over the registry rather than naming this one, so a
+     * change to which ceiling binds is caught here rather than on location.
+     */
+    static let ceilingBytes = 104_857_600
+
+    /// The longest take this mode allows. Floor, not round: a take that fits
+    /// "on average" is a take that does not fit.
+    static func maxSeconds(_ mode: RecordingMode) -> Int {
+        ceilingBytes / mode.bytesPerSecond
+    }
+
+    /// What is left, once `elapsed` seconds have been recorded.
+    ///
+    /// CLAMPED AT ZERO. "-12s remaining" is not a duration, and on 4K60 — the
+    /// mode where the ceiling actually bites — it is what a director would be
+    /// looking at within a quarter of a minute.
+    static func remaining(_ mode: RecordingMode, elapsed: Int) -> Int {
+        max(0, maxSeconds(mode) - elapsed)
+    }
+
+    /*
+     * The threshold SCALES with the mode, and it has to.
+     *
+     * A fixed ten seconds is lit for most of 4K60's fourteen-second budget —
+     * which is noise, and noise is what makes a real warning unreadable — while
+     * being a rounding error on 1080p30's hundred and thirty-three. The last
+     * tenth, floored at three seconds so a short budget still gets a warning
+     * somebody can act on.
+     */
+    static func warnSeconds(_ mode: RecordingMode) -> Int {
+        max(3, maxSeconds(mode) / 10)
+    }
+
+    /// Is the end of the clip close enough to say so?
+    static func isEndInSight(_ mode: RecordingMode, elapsed: Int) -> Bool {
+        remaining(mode, elapsed: elapsed) <= warnSeconds(mode)
+    }
+
+    /*
+     * What to shoot when nobody has chosen. The LONGEST take rather than the
+     * highest resolution, which is the same judgement `capture-policy.js`
+     * `recommended()` makes and for the same reason: a world is reconstructed
+     * from coverage, so two minutes of 1080p is worth more than fourteen
+     * seconds of 4K60. FCC-006 makes this a choice; until then it is the
+     * default, chosen rather than hardcoded.
+     */
+    static var recommended: RecordingMode {
+        RecordingMode.all.max { maxSeconds($0) < maxSeconds($1) } ?? RecordingMode.all[0]
+    }
+}
+
 /// The writer, and everything that must happen on the frame queue.
 ///
 /// A separate object rather than fields on the model, for the reason the frame
@@ -947,6 +1019,26 @@ final class PlateCameraModel: NSObject, ObservableObject {
     @Published private(set) var recordingMode: RecordingMode?
     /// Why the last take could not start or finish. Nil when it went fine.
     @Published private(set) var recordingProblem: String?
+
+    /// How long the take has been running. Whole seconds: a transport counting
+    /// tenths is a stopwatch, and what a director needs is the shot length.
+    @Published private(set) var elapsedSeconds = 0
+    /// The file the last take produced, auto-stopped or not. Held on the model
+    /// rather than only handed to a callback, because a take the BUDGET ended
+    /// has no caller waiting for it and must not be dropped on the floor.
+    @Published private(set) var lastTake: URL?
+
+    /// What is left of the budget, or nil when nothing is recording.
+    var secondsRemaining: Int? {
+        recordingMode.map { RecordingBudget.remaining($0, elapsed: elapsedSeconds) }
+    }
+
+    /// Whether the end is close enough to say so.
+    var endInSight: Bool {
+        recordingMode.map { RecordingBudget.isEndInSight($0, elapsed: elapsedSeconds) } ?? false
+    }
+
+    private var ticker: Task<Void, Never>?
 
     /*
      * Restored when the take ends. Recording at 4K needs a 4K preset, and a
@@ -1304,21 +1396,61 @@ final class PlateCameraModel: NSObject, ObservableObject {
         }
         recordingProblem = nil
         recordingMode = mode
+        elapsedSeconds = 0
+        lastTake = nil
         isRecording = true
+        startTicking()
     }
 
     /// Stop the take and hand over the file.
-    func stopRecording(_ done: @escaping (URL?) -> Void) {
+    ///
+    /// The completion is OPTIONAL because the budget stops takes too, and that
+    /// caller is a timer with nothing to hand the file to — `lastTake` is where
+    /// the file goes either way.
+    func stopRecording(_ done: @escaping (URL?) -> Void = { _ in }) {
         guard isRecording else { done(nil); return }
         isRecording = false
+        ticker?.cancel()
+        ticker = nil
         sink.finish { [weak self] url, problem in
             Task { @MainActor in
                 guard let self else { return }
                 self.restorePreset()
                 self.recordingMode = nil
                 self.recordingProblem = problem
+                self.lastTake = url
                 done(url)
             }
+        }
+    }
+
+    private func startTicking() {
+        ticker?.cancel()
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                await self?.tick()
+            }
+        }
+    }
+
+    /*
+     * One second of the take, and the place the ceiling is ENFORCED.
+     *
+     * A countdown that reaches zero and keeps recording is advice nobody
+     * applied: every second past it grows a file that already cannot be
+     * uploaded. Showing the number and then letting the take run through it is
+     * the same failure as never showing it, with more steps — so the budget
+     * ends the take, and `lastTake` keeps what was shot up to that point.
+     */
+    private func tick() {
+        guard isRecording, let mode = recordingMode else { return }
+        elapsedSeconds += 1
+        if RecordingBudget.remaining(mode, elapsed: elapsedSeconds) == 0 {
+            recordingProblem = "The take reached the \(RecordingBudget.maxSeconds(mode))s limit "
+                + "for \(mode.id) and was stopped, so the clip can still be uploaded."
+            stopRecording()
         }
     }
 
@@ -1384,6 +1516,74 @@ extension PlateCameraModel: AVCapturePhotoCaptureDelegate {
             self.onCapture = nil
             cb?(image)
         }
+    }
+}
+
+/// Start, stop, elapsed, and how much of the budget is left.
+///
+/// The REMAINING figure is the one this exists for. A director shooting 4K60
+/// has fourteen seconds before the clip can no longer be uploaded, and until
+/// this row existed the only way to find that out was to shoot the take and be
+/// refused afterwards. Elapsed alone would not do it: a stopwatch reading 0:12
+/// says nothing unless you also know the budget is 0:14.
+///
+/// A separate control from the shutter, deliberately. FCC-001 kept the photo
+/// output alive so stills were not traded for footage; replacing the shutter
+/// here would complete that trade in the interface instead of in the session.
+struct RecordingTransport: View {
+    @ObservedObject var camera: PlateCameraModel
+    let mode: RecordingMode
+
+    /// mm:ss. A take is read in minutes and seconds, not in seconds.
+    private func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 14) {
+                Button {
+                    camera.isRecording ? camera.stopRecording() : camera.startRecording(mode.id)
+                } label: {
+                    ZStack {
+                        Circle().strokeBorder(.white.opacity(0.9), lineWidth: 3)
+                            .frame(width: 52, height: 52)
+                        // A circle becomes a square while running: the shape
+                        // says which state you are in from across a room, where
+                        // a colour alone does not.
+                        RoundedRectangle(cornerRadius: camera.isRecording ? 4 : 19)
+                            .fill(.red)
+                            .frame(width: camera.isRecording ? 22 : 38,
+                                   height: camera.isRecording ? 22 : 38)
+                    }
+                }
+                .accessibilityLabel(camera.isRecording
+                    ? "Stop recording. \(camera.secondsRemaining ?? 0) seconds remaining."
+                    : "Record \(mode.id). \(RecordingBudget.maxSeconds(mode)) seconds available.")
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(camera.isRecording ? clock(camera.elapsedSeconds) : mode.id)
+                        .font(.system(.title3, design: .monospaced))
+                        .foregroundStyle(camera.isRecording ? .red : .white)
+
+                    // The budget, said BEFORE the take as well as during it —
+                    // "14s at 4k60" is a shot-planning fact, not a warning.
+                    Text(camera.isRecording
+                         ? "\(clock(camera.secondsRemaining ?? 0)) left"
+                         : "\(clock(RecordingBudget.maxSeconds(mode))) max · \(mode.id)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(camera.endInSight ? .orange : .white.opacity(0.7))
+                }
+            }
+
+            if let problem = camera.recordingProblem {
+                Text(problem)
+                    .font(.caption2).foregroundStyle(.orange)
+                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+            }
+        }
+        .padding(.vertical, 8).padding(.horizontal, 14)
+        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -1791,6 +1991,21 @@ struct PlateCameraView: View {
                     }
                 }
                 .padding(.bottom, 18)
+            }
+
+            /*
+             * The transport sits above the shutter, where the lens picker and
+             * the exposure chip already are, and is hidden while a still is
+             * being reviewed for the same reason they are: pressing record over
+             * a frozen frame would be acting on a camera nobody can see.
+             *
+             * The mode is `recommended` rather than chosen — FCC-006 builds the
+             * picker. What matters here is that the budget is VISIBLE before
+             * the take, which is the whole task.
+             */
+            if pending == nil {
+                RecordingTransport(camera: camera, mode: RecordingBudget.recommended)
+                    .padding(.bottom, 14)
             }
 
             if pending == nil {
