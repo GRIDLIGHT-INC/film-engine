@@ -111,39 +111,30 @@ const CLAIMS = [
         },
     },
     {
-        id: 'camera-has-no-remaining-manual-control',
-        kind: 'gap',
         /*
-         * DECLARED out of scope by PCC-011 (GRD-3662). It closed on "Phase B",
-         * which names no task and never will: footage capture is struck from
-         * this epic by the user's direction. Left as a bare `closes` it was a
-         * gap pinned as permanent — the exact thing this epic's fidelity tests
-         * exist to prevent, one level up. It is kept as a TRIPWIRE: if a log
-         * colour space or an asset writer appears, the scope changed and
-         * somebody should say so deliberately.
+         * THE LAST SPLIT OF THE ORIGINAL SIX, and the end of that claim.
+         *
+         * It began as "the six manual-control APIs the brief calls absent".
+         * PCC-002 closed exposure, PCC-003 white balance, PCC-004 focus,
+         * PCC-007 the data output, FCC-001 the asset writer, and FCC-005
+         * (GRD-3801) the log colour space — so there is no absence left for it
+         * to name. It was declared out of scope on "Phase B", which the
+         * direction on GRD-3796 reversed; the tripwire fired exactly as it
+         * asked somebody to make it. What replaces it pins the half that is
+         * easiest to lose again.
          */
-        outOfScope: 'Phase B — footage capture and Log, struck from this epic by the user\'s '
-            + 'direction; no PCC task will ever close it',
-        why: 'the five manual-control APIs the brief calls absent that are STILL absent. Split '
-            + 'from the original six when PCC-002 closed the exposure one, so this claim keeps '
-            + 'saying something true instead of failing for succeeding',
+        id: 'log-colour-space-landed',
+        kind: 'present',
+        why: 'RESHAPED from the last of `camera-has-no-remaining-manual-control` when FCC-005 '
+            + 'landed. The brief recommends a gradeable format; assigning .appleLog is only half '
+            + 'of it, because the session configures the device for wide colour unless told not '
+            + 'to and silently puts Rec.709 back — a take that looks normal and cannot be graded',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            // setWhiteBalanceModeLocked removed from this list by PCC-003 (GRD-3654):
-            // it is built, and is pinned by `wb-lock-landed` below.
-            // setFocusModeLocked removed by PCC-004 (GRD-3655): built, and pinned
-            // by `focus-lock-landed` below. Only the footage pair remains.
-            // AVCaptureVideoDataOutput removed by PCC-007 (GRD-3658): frames are
-            // read for MONITORING and written nowhere.
-            // AVAssetWriter removed from this list by FCC-001 (GRD-3797): the
-            // TRIPWIRE FIRED. The direction on GRD-3796 reversed the Phase B
-            // exclusion and footage capture was built deliberately, which is
-            // exactly what this claim asked somebody to say out loud. It is
-            // pinned by `recording-landed` below. Only the log colour space is
-            // still absent, and FCC-005 closes it.
-            const landed = ['activeColorSpace'].filter(x => cam.includes(x));
-            return landed.length === 0
-                || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
+            const missing = ['activeColorSpace', 'automaticallyConfiguresCaptureDeviceForWideColor']
+                .filter(x => !cam.includes(x));
+            return missing.length === 0
+                || `the log colour space has lost: ${missing.join(', ')}`;
         },
     },
     {
@@ -379,8 +370,26 @@ test('EVERY gap in this file names what closes it, or is declared out of scope',
      * without a declared exception they are gaps pinned as permanent: the exact
      * thing PCC-011 exists to prevent, one level up.
      */
+    /*
+     * RE-DERIVED by FCC-005 (GRD-3801), which is what the guard here asked for.
+     *
+     * It used to refuse an empty set — correctly, because a rule policing
+     * nothing reads as coverage. There is now nothing to police: every API this
+     * brief recorded as absent has been built, the last of them being the log
+     * colour space, so `gaps` is legitimately empty rather than broken.
+     *
+     * The rule is KEPT rather than deleted, because the shape it enforces
+     * outlives the current set: a gap added to this file later must still name
+     * a task that closes it or declare itself out of scope, or it is a gap
+     * pinned as permanent — the thing that makes a document fail for its own
+     * epic succeeding. An empty set is asserted explicitly so that "no gaps"
+     * cannot quietly become "the scan is broken".
+     */
     const gaps = CLAIMS.filter(c => c.kind === 'gap');
-    assert.ok(gaps.length >= 1, 'no gaps left to police; re-derive this check');
+    const present = CLAIMS.filter(c => c.kind === 'present');
+    assert.ok(present.length >= 6,
+        `only ${present.length} present claims; the registry read is broken, and a file with no `
+        + 'claims of either kind polices nothing');
     for (const g of gaps) {
         if (g.outOfScope) {
             assert.ok(g.outOfScope.length > 30,

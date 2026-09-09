@@ -163,7 +163,15 @@ test('EVERY mode records at exactly the rate its budget is computed from', () =>
 test('EVERY mode carries the raster and frame rate its own id names', () => {
     const wrong = [];
     for (const m of swiftModes().modes) {
-        const spec = /^(\d+)(?:p|k)(\d+)$/.exec(m.id);
+        /*
+         * The id grammar gained a COLOUR-SPACE suffix in FCC-005 (GRD-3801):
+         * `4k30-log` records the same raster and rate as `4k30` at a different
+         * price, so the two must be tellable apart in a list. Widening the
+         * grammar rather than exempting the id — an exemption would stop
+         * checking that a log mode carries the raster it claims, which is the
+         * one thing this assertion is for.
+         */
+        const spec = /^(\d+)(?:p|k)(\d+)(?:-\w+)?$/.exec(m.id);
         assert.ok(spec, `mode id ${m.id} does not name a resolution and a rate`);
         const [, res, fps] = spec;
         if (m.fps !== +fps) wrong.push(`${m.id}: records at ${m.fps}fps`);

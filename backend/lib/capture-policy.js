@@ -51,18 +51,41 @@ const CEILINGS = Object.freeze({
 const MODES = Object.freeze({
     '1080p30': Object.freeze({
         bytes_per_second: Math.round(45 * 1048576 / 60),
+        color_space: 'rec709',
         label: '1080p at 30fps',
         source: "Apple's published iPhone figure, about 45MB per minute (HEVC, nominal)",
     }),
     '4k30': Object.freeze({
         bytes_per_second: Math.round(135 * 1048576 / 60),
+        color_space: 'rec709',
         label: '4K at 30fps',
         source: "Apple's published iPhone figure, about 135MB per minute (HEVC, nominal)",
     }),
     '4k60': Object.freeze({
         bytes_per_second: Math.round(400 * 1048576 / 60),
+        color_space: 'rec709',
         label: '4K at 60fps',
         source: "Apple's published iPhone figure, about 400MB per minute (HEVC, nominal)",
+    }),
+    /*
+     * The gradeable one, added by FCC-005 (GRD-3801).
+     *
+     * It is a SEPARATE mode rather than a flag on 4k30 because it costs half as
+     * much again: 200MB/min against 135. Pricing log at the Rec.709 rate would
+     * promise a 44-second take and deliver about 30 — the failure discovered at
+     * upload that this whole module exists to prevent.
+     *
+     * ONLY 4K30 is offered in log, and that is deliberate. It is the one rate
+     * the epic publishes a figure for; inventing rates for 1080p30 and 4K60 log
+     * would put numbers nobody measured in front of a director, and a duration
+     * that is confidently wrong is worse than one that is absent. A measured
+     * figure — or FCC-011, which extends this table to every format — adds them.
+     */
+    '4k30-log': Object.freeze({
+        bytes_per_second: Math.round(200 * 1048576 / 60),
+        color_space: 'apple_log',
+        label: '4K at 30fps, Apple Log',
+        source: 'the FCC epic\'s own figure for HEVC Apple Log at 4K30, about 200MB per minute',
     }),
 });
 

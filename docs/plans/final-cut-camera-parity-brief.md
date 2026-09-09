@@ -126,7 +126,7 @@ why idea 5 is not a small change to the existing camera.
 **Monitoring** — `AVCaptureVideoDataOutput` → Core Image or Metal → `MTKView`. Every
 tool (peaking, zebras, false colour, histogram, waveform) is computed by us.
 
-**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 2384 lines.
+**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 2485 lines.
 Still `AVCapturePhotoOutput` at `sessionPreset = .photo`, because a plate is a
 PHOTOGRAPH cropped from the full sensor later. Everything else in the original
 assessment has moved.
@@ -148,7 +148,7 @@ against the source.
 | `setWhiteBalanceModeLocked` | built 2026-09-08 by PCC-003 — locked and released WITH exposure; gains normalised to the minimum channel |
 | `setFocusModeLocked` | built 2026-09-08 by PCC-004 — tap to focus then hold; the POINT survives a lens change, the lens position cannot |
 | `AVCaptureVideoDataOutput` | built 2026-09-08 by PCC-007 — frames for MONITORING only, alongside the preview layer rather than replacing it |
-| `activeColorSpace` | absent — Apple Log is Phase B, and a plate is not log: a reference plate should look like what the model must reproduce |
+| `activeColorSpace` | built 2026-09-09 by FCC-005 — `.appleLog` on a gradeable mode, with `automaticallyConfiguresCaptureDeviceForWideColor = false` so the session cannot put Rec.709 back; gated on iOS 17 and on the format's own `supportedColorSpaces`, and a degrade is named rather than silent |
 | `AVAssetWriter` | built 2026-09-09 by FCC-001 — fed from the EXISTING data output, not a second movie output, so what is monitored is what is written; HEVC at the rate `capture-policy` prices, and the photo output stays active beside it |
 
 The two remaining absences are deliberate and are the same decision twice: this

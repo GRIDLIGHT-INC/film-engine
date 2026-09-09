@@ -213,38 +213,40 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-footage-apis',
-        kind: 'gap',
         /*
-         * No task closes this, and that is CORRECT: footage capture is Phase B,
-         * struck from this epic by the user's direction. The claim is kept as a
-         * tripwire — if an AVAssetWriter path ever appears, the scope changed
-         * and somebody should say so deliberately.
+         * THE TRIPWIRE HAS NOW FIRED TWICE, AND IT IS EMPTY.
+         *
+         * It was kept as a gap so that somebody would have to say out loud if
+         * footage capture ever appeared. FCC-001 (GRD-3797) took the asset
+         * writer out of its list and FCC-005 (GRD-3801) has taken the log
+         * colour space, because the direction on GRD-3796 reversed the Phase B
+         * exclusion this epic was written against. There is no absence left for
+         * it to name, so it becomes the record of what fired it — a gap pinned
+         * as permanent is what makes a document fail for succeeding.
          */
-        outOfScope: 'Phase B — footage capture, struck from this epic by the user\'s direction',
-        why: 'all that remains of the original manual-control claim after PCC-002, PCC-003 and '
-            + 'PCC-004 each closed a third. Phase B is out of scope by the user\'s direction, so '
-            + 'this stays a gap deliberately rather than being scheduled',
+        id: 'footage-formats-landed-elsewhere',
+        kind: 'present',
+        why: 'RESHAPED from the last of `no-footage-apis` when FCC-005 landed under GRD-3796. '
+            + 'Not a PCC task, and recorded here anyway: this epic\'s sizing rests on the camera '
+            + 'being stills-only in Rec.709, which stopped being true, so the claim that said so '
+            + 'has to name what replaced it or the epic keeps describing a camera that no longer '
+            + 'exists',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const missing = ['activeColorSpace', 'automaticallyConfiguresCaptureDeviceForWideColor']
+                .filter(s => !cam.includes(s));
+            if (missing.length) {
+                return `the log colour space FCC-005 built has lost: ${missing.join(', ')}`;
+            }
             /*
-             * AVCaptureVideoDataOutput was REMOVED from this list by PCC-007
-             * (GRD-3658). It is present now, for MONITORING — peaking and the
-             * exposure warning are computed from those frames and never written
-             * anywhere.
-             *
-             * AVAssetWriter was REMOVED from this list by FCC-001 (GRD-3797),
-             * and that is this tripwire working rather than failing. It asked
-             * that somebody say so deliberately if an asset-writer path ever
-             * appeared; the direction on GRD-3796 reversed the Phase B
-             * exclusion and the whole of that epic is footage capture. The
-             * writer is pinned by `footage-capture-landed-elsewhere` below, so
-             * this epic still notices if it disappears. A log colour space is
-             * still absent, and is FCC-005's to close — not PCC's.
+             * The half that matters TO THIS EPIC: the plate camera must still
+             * rest at the photo preset in Rec.709. Recording swaps the preset
+             * and the colour space for the take and swaps them back, so a
+             * camera left permanently in log would mean every reference plate
+             * had quietly become ungradeable footage stock.
              */
-            const present = ['activeColorSpace'].filter(s => cam.includes(s));
-            return present.length === 0
-                || `footage capture has landed (${present.join(', ')}) — reshape this claim`;
+            return /sessionPreset = \.photo/.test(cam)
+                || 'the session no longer rests at the photo preset — plates lost the full sensor';
         },
     },
     {

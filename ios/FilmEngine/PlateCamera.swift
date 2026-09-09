@@ -667,14 +667,29 @@ enum ExposureWarning {
 /// breaches the ceiling at half the duration the app promised — discovered at
 /// upload, which is the entire failure `capture-policy` exists to prevent.
 struct RecordingMode: Equatable {
+    /*
+     * What kind of picture comes out.
+     *
+     * `rec709` is display-referred with the grade baked in — right for a
+     * reference plate, wrong for footage that has to be graded alongside
+     * generated material. `appleLog` keeps the latitude, and is the only
+     * gradeable format that fits the existing upload pipe: ProRes is roughly
+     * seven gigabytes a minute and is inseparable from external storage.
+     */
+    enum ColorSpace: String { case rec709, apple_log }
+
     let id: String
     let width: Int
     let height: Int
     let fps: Int
     let bitsPerSecond: Int
+    let colorSpace: ColorSpace
 
     /// What a second of this mode costs on disk and, later, in transport.
     var bytesPerSecond: Int { bitsPerSecond / 8 }
+
+    /// Whether this mode produces footage worth grading.
+    var isGradeable: Bool { colorSpace == .apple_log }
 
     /*
      * Apple's published iPhone figures, as MB per minute of HEVC, converted the
@@ -683,11 +698,24 @@ struct RecordingMode: Equatable {
      */
     static let all: [RecordingMode] = [
         RecordingMode(id: "1080p30", width: 1920, height: 1080, fps: 30,
-                      bitsPerSecond: 6_291_456),      // ~45 MB/min
+                      bitsPerSecond: 6_291_456, colorSpace: .rec709),      // ~45 MB/min
         RecordingMode(id: "4k30", width: 3840, height: 2160, fps: 30,
-                      bitsPerSecond: 18_874_368),     // ~135 MB/min
+                      bitsPerSecond: 18_874_368, colorSpace: .rec709),     // ~135 MB/min
         RecordingMode(id: "4k60", width: 3840, height: 2160, fps: 60,
-                      bitsPerSecond: 55_924_056),     // ~400 MB/min
+                      bitsPerSecond: 55_924_056, colorSpace: .rec709),     // ~400 MB/min
+        /*
+         * The gradeable one. Half as much again as 4K30 Rec.709 — 200 MB/min
+         * against 135 — which is why it is a mode of its own rather than a flag:
+         * priced at the Rec.709 rate it would promise a 44-second take and
+         * deliver about 30.
+         *
+         * Log is offered at 4K30 ONLY, because that is the one rate the epic
+         * publishes. Inventing figures for 1080p30 and 4K60 log would put a
+         * number nobody measured in front of a director, and a duration that is
+         * confidently wrong is worse than one that is absent.
+         */
+        RecordingMode(id: "4k30-log", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 27_962_024, colorSpace: .apple_log),  // ~200 MB/min
     ]
 
     /*
@@ -1097,6 +1125,14 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// Whether a take is running, and what it is being recorded at.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingMode: RecordingMode?
+    /// Why this take is not being recorded in a gradeable colour space.
+    ///
+    /// Nil when it is, or when a Rec.709 mode was chosen deliberately. A log
+    /// take that quietly came back Rec.709 is ungradeable footage that plays
+    /// perfectly — indistinguishable from a good one until somebody tries to
+    /// grade it, by which point the shot is over.
+    @Published private(set) var logUnavailable: String?
+
     /// Whether this take will carry sound, and why not when it will not.
     /// A mute clip that looks exactly like a normal one is the defect FCC-003
     /// exists to close — so the reason is state, not a log line.
@@ -1243,6 +1279,17 @@ final class PlateCameraModel: NSObject, ObservableObject {
         }
 
         session.beginConfiguration()
+        /*
+         * THE FLAG THE WHOLE TASK TURNS ON, and it must be off BEFORE the
+         * session runs.
+         *
+         * Left alone, AVCaptureSession configures the device's colour space
+         * itself — so `activeColorSpace = .appleLog` is assigned and the session
+         * quietly puts it back. The take records Rec.709, looks completely
+         * normal, and is ungradeable. Nothing errors, which is why the task
+         * names this property rather than only the assignment.
+         */
+        session.automaticallyConfiguresCaptureDeviceForWideColor = false
         session.sessionPreset = .photo          // full sensor: a plate is cropped from later
         if session.canAddInput(first) { session.addInput(first) }
         if session.canAddOutput(output) { session.addOutput(output) }
@@ -1416,6 +1463,38 @@ final class PlateCameraModel: NSObject, ObservableObject {
         device.unlockForConfiguration()
     }
 
+    /// Put the mode's colour space on the device, or say why not.
+    ///
+    /// Called AFTER the preset has been committed, because which colour spaces
+    /// exist is a property of the FORMAT and the session chooses the format at
+    /// commit — asking the old one whether it supports Apple Log answers about
+    /// the format being left behind.
+    ///
+    /// Every refusal is NAMED. An older phone recording Rec.709 instead of log
+    /// is legitimate; doing it in silence hands back footage that plays
+    /// perfectly and cannot be graded, which nobody discovers until the shot is
+    /// over.
+    private func applyColorSpace(_ mode: RecordingMode, to device: AVCaptureDevice) {
+        logUnavailable = nil
+        guard mode.isGradeable else { return }   // Rec.709 was the choice, not a failure
+
+        guard #available(iOS 17.0, *) else {
+            logUnavailable = "Apple Log needs iOS 17 — this take records Rec.709 and cannot be graded."
+            return
+        }
+        guard device.activeFormat.supportedColorSpaces.contains(.appleLog) else {
+            logUnavailable = "This camera cannot record Apple Log at \(mode.id) — "
+                + "the take records Rec.709 and cannot be graded."
+            return
+        }
+        guard (try? device.lockForConfiguration()) != nil else {
+            logUnavailable = "The colour space could not be set — this take records Rec.709."
+            return
+        }
+        defer { device.unlockForConfiguration() }
+        device.activeColorSpace = .appleLog
+    }
+
     /// Put every held lock back on a device.
     ///
     /// A lock lives on the DEVICE, and the SESSION chooses that device's
@@ -1566,8 +1645,16 @@ final class PlateCameraModel: NSObject, ObservableObject {
          * would clamp against the format being LEFT BEHIND and then set a value
          * the new one refuses: 4K60 caps the frame duration at 1/60s, so an
          * exposure metered at 1/30 on the photo preset is illegal there.
+         *
+         * The colour space goes first, for the same reason and one more: the
+         * supported set belongs to the format the commit just chose, and
+         * changing it after the locks were restored would reconfigure the
+         * device underneath them.
          */
-        if let device = lens?.device { reapplyLocks(to: device) }
+        if let device = lens?.device {
+            applyColorSpace(mode, to: device)
+            reapplyLocks(to: device)
+        }
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id).mov")
@@ -1798,6 +1885,20 @@ struct RecordingTransport: View {
             }
 
             if !camera.recordsAudio, let why = camera.soundless {
+                Text(why)
+                    .font(.caption2).foregroundStyle(.orange)
+                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+            }
+
+            /*
+             * A LOG TAKE THAT CAME BACK Rec.709 SAYS SO.
+             *
+             * It plays perfectly and is ungradeable, so there is nothing to
+             * notice until somebody opens it in a grade — long after the shot.
+             * Shown where the record button is, like the microphone warning,
+             * rather than written to a log nobody reads.
+             */
+            if let why = camera.logUnavailable {
                 Text(why)
                     .font(.caption2).foregroundStyle(.orange)
                     .multilineTextAlignment(.center).padding(.horizontal, 24)

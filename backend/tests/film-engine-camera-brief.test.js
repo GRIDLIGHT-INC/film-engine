@@ -123,16 +123,19 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-log-colour-space-yet',
-        kind: 'gap',
-        closes: 'FCC-005 (GRD-3801), which sets activeColorSpace to .appleLog',
-        why: 'SPLIT from `no-video-recording-apis-yet` when FCC-001 landed. That claim covered '
-            + 'two absences and only one closed, so it is split rather than deleted — the brief '
-            + 'recommends a gradeable log format and that half is still genuinely unbuilt',
+        id: 'log-colour-space-landed',
+        kind: 'present',
+        why: 'RESHAPED when FCC-005 (GRD-3801) landed — the task this gap named as its closer. '
+            + 'The brief recommends a gradeable log format; it is built, and this pins the half '
+            + 'that is easy to lose: assigning .appleLog does nothing unless the session is also '
+            + 'told to stop configuring the device for wide colour, and without that the take '
+            + 'records Rec.709 while looking entirely normal',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            return !cam.includes('activeColorSpace')
-                || 'a log colour space has landed — reshape this claim to pin what was built';
+            const missing = ['activeColorSpace', 'automaticallyConfiguresCaptureDeviceForWideColor']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the log colour space has lost: ${missing.join(', ')}`;
         },
     },
     {

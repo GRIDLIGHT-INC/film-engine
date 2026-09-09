@@ -422,6 +422,7 @@ film-engine/
 │       ├── fcc-transport.test.js     # Fourteen seconds at 4K60, said before the take rather than at upload
 │       ├── fcc-audio.test.js         # A clip that lost its sound writes, plays, and says nothing
 │       ├── fcc-locks.test.js         # A preset swap releases every lock while the chip still reads LOCK
+│       ├── fcc-log.test.js           # Apple Log costs half again as much, and the session overrides it silently
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -4428,6 +4429,7 @@ node --test backend/tests/fcc-recording.test.js
 node --test backend/tests/fcc-transport.test.js
 node --test backend/tests/fcc-audio.test.js
 node --test backend/tests/fcc-locks.test.js
+node --test backend/tests/fcc-log.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

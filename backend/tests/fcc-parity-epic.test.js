@@ -270,17 +270,19 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-log-colour-space-yet',
-        kind: 'gap',
-        closes: 'FCC-005',
-        why: 'SPLIT from `no-recording-apis-yet` when FCC-001 closed the recording half. The '
-            + 'claim covered two absences and only one of them closed, so splitting keeps it '
-            + 'saying something true rather than failing for succeeding — Phase 2 still rests on '
-            + 'the log colour space being absent',
+        id: 'the-log-colour-space-is-built',
+        kind: 'present',
+        why: 'RESHAPED when FCC-005 landed, which is the task this gap named. Phase 2 rested on '
+            + 'the log colour space being absent and it no longer is, so the claim pins what was '
+            + 'built — including the session flag, because assigning .appleLog without it is '
+            + 'silently undone and the take records Rec.709',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            return !cam.includes('activeColorSpace')
-                || 'a log colour space has landed — reshape this claim to pin what was built';
+            const missing = ['activeColorSpace', 'automaticallyConfiguresCaptureDeviceForWideColor',
+                             'supportedColorSpaces']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the log colour space FCC-005 built has lost: ${missing.join(', ')}`;
         },
     },
     {
