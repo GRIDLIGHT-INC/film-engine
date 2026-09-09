@@ -29477,11 +29477,75 @@ ${fountainText.slice(0, 50000)}`;
         if (after && typeof window[after] === 'function') window[after]();
     };
 
-    function shootControl(accept, targetAttr, onchange, opts) {
+    /*
+     * WHICH TARGETS THE CONTROLLED CAMERA FILLS.
+     *
+     * MIRRORED from backend/lib/media-imports.js, where the rule is stated once
+     * and derived from the epic's own constraint — a target gets the camera if
+     * what it holds is PHOTOGRAPHED IN THE WORLD. The page cannot require a node
+     * module (build.target: single-html), so it exists twice and
+     * fcc-system-camera.test.js holds the two equal element by element — the
+     * same arrangement body-limit.js and screenplay-blocks.js already have, and
+     * for the same reason: two rules that disagree is how a fix survives in the
+     * tests and not on the screen.
+     *
+     * `video-media` is DELIBERATELY absent though footage is photographed. The
+     * controlled camera records a take and nothing delivers it yet (FCC-014), so
+     * that surface keeps the system camera, which does deliver a clip today.
+     */
+    /*
+     * SELF-CONTAINED, deliberately. Four separate test harnesses lift the
+     * control builders out of this page by extracting FUNCTIONS, and a helper
+     * that reads a module-level constant hands them a ReferenceError — which
+     * `nativeCamera()` then swallows in its own try/catch, so the harness is
+     * told there is no bridge and every "in the app" assertion quietly measures
+     * the browser arm instead. That happened while this was being written. A
+     * helper the harnesses can run on its own cannot fail that way.
+     */
+    function shootsWithCamera(target) {
+        return [
+            'storyboard-image', 'world-capture', 'character-plate', 'location-plate',
+            'prop-plate', 'mood-board-image', 'continuity-ref',
+        ].indexOf(String(target || '')) !== -1;
+    }
+
+    /*
+     * THE ONE FUNCTION THAT DECIDES WHICH CAMERA A SURFACE OPENS.
+     *
+     * It used to render `<input capture>` and nothing else — the SYSTEM camera:
+     * one photograph, no exposure or focus lock, no white balance held across a
+     * turnaround, no level, no peaking, no zebras, no format and no budget. The
+     * controlled camera nine tasks of this epic built was reachable only because
+     * `uploadControl` wrote its own bridge branch, so the plates got it and the
+     * world capture and every capability control silently did not.
+     *
+     * A branch written at a call site is a branch the next call site does not
+     * get. That is the shape this codebase has paid for as `Regen` versus
+     * `Generate All`, as the ambient bed that reached two surfaces of three, and
+     * as AUDIO_LANES laying out four elements in one exporter and three in the
+     * other. So the decision lives HERE, once, and a caller that cannot choose
+     * cannot get it wrong.
+     *
+     * It is asked about a TARGET rather than an accept string because an accept
+     * string cannot answer: a previs image and a location plate accept exactly
+     * the same bytes, and one is rendered from a staged camera while the other
+     * is a photograph of a real place.
+     */
+    function shootControl(target, url, accept, targetAttr, onchange, opts) {
+        const o = opts || {};
+        // The app's own camera, where there is one and this target photographs.
+        if (shootsWithCamera(target) && nativeCamera()) return plateShootButton(target, url, o);
+
+        /*
+         * A browser has no better camera to offer, so it keeps the one it has.
+         * Retiring the system camera means REPLACING it where a replacement
+         * exists — deleting it everywhere would take the affordance off every
+         * desktop and every phone browser.
+         */
         const capture = captureFor(accept);
         if (capture === null) return '';
         const audio = capture === '';
-        const label = (opts && opts.shootLabel) || (audio ? 'Record' : 'Shoot');
+        const label = o.shootLabel || (audio ? 'Record' : 'Shoot');
         const title = audio
             ? 'Record audio with this device'
             : 'Shoot it now with this device\u2019s camera';
@@ -29567,7 +29631,8 @@ ${fountainText.slice(0, 50000)}`;
                            accept="${accept}" style="display:none"
                            onclick="event.stopPropagation();"
                            onchange="${onchange}">
-                </label>${shootControl(accept, 'data-import-target="world-capture"', onchange, o)}`;
+                </label>${shootControl('world-capture', url, accept,
+                    'data-import-target="world-capture"', onchange, o)}`;
     }
 
     function uploadControl(target, url, opts) {
@@ -29579,13 +29644,12 @@ ${fountainText.slice(0, 50000)}`;
                            accept="image/png,image/jpeg,.png,.jpg,.jpeg" style="display:none"
                            onclick="event.stopPropagation();"
                            onchange="uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')">
-                </label>${nativeCamera()
-                    ? plateShootButton(target, url, o)
-                    : shootControl(
-                        'image/png,image/jpeg,.png,.jpg,.jpeg',
-                        `data-import-target="${target}"`,
-                        `uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')`,
-                        o)}`;
+                </label>${shootControl(
+                    target, url,
+                    'image/png,image/jpeg,.png,.jpg,.jpeg',
+                    `data-import-target="${target}"`,
+                    `uploadReferenceImage(event, '${target}', '${url}', ${JSON.stringify(o.extra || {}).replace(/"/g, '&quot;')}, '${o.after || ''}')`,
+                    o)}`;
     }
 
     /*
@@ -29686,7 +29750,7 @@ ${fountainText.slice(0, 50000)}`;
                            onclick="event.stopPropagation();"
                            onchange="uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}', '${scope === 'shot' ? ownerId : ''}')">
                 </label>${shootControl(
-                    accept,
+                    `${capability}-media`, url, accept,
                     `data-import-target="${capability}-media"`,
                     `uploadCapabilityMedia(event, '${capability}', '${url}', '${o.after || ''}', '${scope === 'shot' ? ownerId : ''}')`,
                     o)}`;

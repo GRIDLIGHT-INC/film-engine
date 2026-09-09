@@ -101,19 +101,35 @@ const CLAIMS = [
         },
     },
     {
-        id: 'system-camera-is-still-what-shootControl-renders',
-        kind: 'gap',
-        closes: 'the task that replaces shootControl with the controlled camera',
-        why: 'THE defect the brief is about. When it is fixed this must be RESHAPED to pin what '
-            + 'was built — a gap pinned as permanent makes the brief fail for succeeding',
+        id: 'controlled-camera-replaced-the-system-one',
+        kind: 'present',
+        why: 'RESHAPED from `system-camera-is-still-what-shootControl-renders` when FCC-012 '
+            + '(GRD-3808) landed. That claim pinned THE defect the brief is about — Shoot opened '
+            + 'the OS picker, one photograph with no locks, no format and no budget — and it was '
+            + 'written to be reshaped rather than deleted the day it closed, because a gap pinned '
+            + 'as permanent makes a document fail for succeeding. This records what was BUILT, so '
+            + 'anything that put the surfaces back on the system camera would be noticed.',
         holds() {
             const page = code('src/index.html');
             const at = page.indexOf('function shootControl');
             if (at === -1) return 'shootControl is gone — reshape this claim to pin what replaced it';
             const body = page.slice(at, page.indexOf('\n    }', at));
-            return /capture="\$\{capture\}"|capture=/.test(body)
-                || 'shootControl no longer renders a capture attribute — the system camera is out, '
-                 + 'reshape this claim';
+            /*
+             * BOTH arms, and the pair is the claim. The controlled camera is
+             * what the app opens; the `capture` input survives as the BROWSER
+             * fallback, because retiring the system camera means replacing it
+             * where a replacement exists rather than deleting it everywhere.
+             */
+            const missing = [];
+            if (!/plateShootButton\(/.test(body)) missing.push('it never reaches the controlled camera');
+            if (!/nativeCamera\(\)/.test(body)) missing.push('it does not ask whether the app has one');
+            if (!/capture=/.test(body)) missing.push('the browser lost its only camera');
+            if (!/shootsWithCamera\(/.test(body)) {
+                missing.push('it does not ask WHICH targets photograph the world, so the choice is '
+                    + 'back to guessing from an accept type');
+            }
+            return missing.length === 0
+                || `shootControl no longer replaces the system camera: ${missing.join('; ')}`;
         },
     },
     {

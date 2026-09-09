@@ -35,14 +35,69 @@ const AUDIO_MIMES = Object.freeze([
  * file having an opinion — an importer that disagreed would attach a scene bed
  * to a single shot and nothing would report it.
  */
+/**
+ * Why a capability's media is NOT photographed in the world.
+ *
+ * The epic's rule — "a target gets the camera if what it holds is PHOTOGRAPHED
+ * IN THE WORLD" — reaches these six through their capability rather than one by
+ * one. Sound has no picture at all; a lip-synced clip and a graded master are
+ * DERIVED from footage that was already shot, so pointing a lens at the world
+ * cannot produce either.
+ *
+ * A capability absent from here and not `video` THROWS at load, on the
+ * `flow-cost.js` precedent: an unanswered capability would silently inherit an
+ * answer, and the failure — a camera offered on something it cannot fill, or
+ * withheld from something it can — is invisible until somebody presses it.
+ */
+const NOT_PHOTOGRAPHED = Object.freeze({
+    voice: 'dialogue is a recording, not a picture — a camera cannot fill it',
+    music: 'a score is a recording, not a picture — a camera cannot fill it',
+    sfx: 'an effect is a recording, not a picture — a camera cannot fill it',
+    ambient: 'a bed is a recording, not a picture — a camera cannot fill it',
+    lipsync: 'a synced clip is GENERATED from a clip and its dialogue, so there is nothing in '
+        + 'the world to point a lens at',
+    post: 'a finished master is GENERATED — an upscale, a grade, a composite of footage already '
+        + 'shot',
+});
+
 function mediaImportTargets() {
     const { MEDIA_KINDS } = require('./media-kinds');
     const out = {};
     for (const [capability, spec] of Object.entries(MEDIA_KINDS)) {
         if (spec.media === 'image') continue;      // the storyboard frame, already imported
+        /*
+         * `video` is the one capability whose media a camera SHOOTS. Stated as
+         * an answered question rather than a default, so a capability added
+         * later cannot inherit one.
+         */
+        const photographed = capability === 'video';
+        /*
+         * FOOTAGE IS PHOTOGRAPHED AND THE CONTROLLED CAMERA CANNOT YET DELIVER
+         * IT. Recording works — FCC-001 built the writer and FCC-011 the budget
+         * — but a finished take is kept on the device as `lastTake` and nothing
+         * uploads it, which is FCC-014's whole task and the edge it depends on.
+         *
+         * So this surface KEEPS the system camera, which does deliver a clip
+         * today. Retiring it here would trade a working path for a better one
+         * that loses the take, and a Shoot that records and drops the file is
+         * the exact failure this codebase keeps paying for. Named rather than
+         * silently excluded: a gap written down is work.
+         */
+        const cameraPending = capability === 'video'
+            ? 'FCC-014 — the controlled camera records a take and nothing delivers it yet, so '
+                + 'the system camera stays until footage attaches to a shot'
+            : null;
+        if (!photographed && !NOT_PHOTOGRAPHED[capability]) {
+            throw new Error(`media-imports: ${capability} does not say whether its media is `
+                + 'photographed in the world, so the camera affordance would be decided by '
+                + 'accident');
+        }
         out[`${capability}-media`] = Object.freeze({
             kind: spec.media,                      // 'video' | 'audio'
             capability,
+            photographed,
+            ...(photographed ? {} : { photographed_why: NOT_PHOTOGRAPHED[capability] }),
+            ...(cameraPending ? { camera_pending: cameraPending } : {}),
             shotScoped: spec.scope === 'shot',
             sceneScoped: spec.scope === 'scene',
             subdir: spec.subdir,
@@ -55,8 +110,23 @@ function mediaImportTargets() {
     return out;
 }
 
+/**
+ * Does this target get the CONTROLLED camera?
+ *
+ * Two clauses, and both are necessary. What it holds must be photographed in
+ * the world — the epic's own rule — AND the controlled camera must be able to
+ * finish the act. A camera that opens, records, and cannot deliver the take is
+ * worse than the OS picker it replaced, so a target waiting on its delivery
+ * says which task closes it rather than being quietly dropped from the set.
+ */
+function shootsWithCamera(target) {
+    const spec = MEDIA_IMPORTS[target];
+    return !!(spec && spec.photographed && !spec.camera_pending);
+}
+
 const MEDIA_IMPORTS = Object.freeze({
     'storyboard-image': Object.freeze({
+        photographed: true,   // FCC-012: a board frame can be a photograph of the real place
         kind: 'image', shotScoped: true, subdir: 'storyboards', mimes: ['image/png'],
         assetType: 'storyboard', metaKind: 'storyboard_import',
         /*
@@ -74,13 +144,15 @@ const MEDIA_IMPORTS = Object.freeze({
     }),
     // reference_image is already catalogued and served from refsheets by Previs.
     'previs-image': Object.freeze({
+        photographed: false,
+        photographed_why: 'a previs image is RENDERED from a staged 3D camera, so there is nothing in the world to point a lens at',
         kind: 'image', shotScoped: true, subdir: 'refsheets', mimes: ['image/png'],
         assetType: 'reference_image', metaKind: 'previs_image',
         pngOnly: 'stands in the previs stage beside storyboard frames, which are PNG',
     }),
     // Previs's geometry parser and textured viewer both consume GLB. Advertising
     // formats they cannot stage would turn a successful upload into a broken picker.
-    'three-d-model': Object.freeze({ kind: 'model', shotScoped: false, subdir: '3d', mimes: ['model/gltf-binary', 'application/octet-stream'], assetType: 'other', metaKind: 'model_3d' }),
+    'three-d-model': Object.freeze({ photographed: false, photographed_why: 'a mesh is generated or scanned by a tool, not photographed — a camera cannot produce a .glb', kind: 'model', shotScoped: false, subdir: '3d', mimes: ['model/gltf-binary', 'application/octet-stream'], assetType: 'other', metaKind: 'model_3d' }),
 
     /*
      * A WORLD CAPTURE: the environment itself, shot rather than imagined.
@@ -101,6 +173,7 @@ const MEDIA_IMPORTS = Object.freeze({
      * no provider.
      */
     'world-capture': Object.freeze({
+        photographed: true,   // the whole point: a real room, stood in and shot
         /*
          * `kind` is the DEFAULT medium and `kinds` is what is accepted. Seventeen
          * consumers read `spec.kind` as a scalar and `spec.subdir` as a string;
@@ -142,13 +215,13 @@ const MEDIA_IMPORTS = Object.freeze({
      * Midjourney exports and phone photographs, and refusing those would make
      * the feature look broken for its most common case.
      */
-    'character-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'character', mimes: IMAGE_MIMES }),
-    'location-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'location', mimes: IMAGE_MIMES }),
-    'prop-plate': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'prop', mimes: IMAGE_MIMES }),
-    'orientation-plan': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', mimes: IMAGE_MIMES, assetType: ORIENTATION_ASSET_TYPE, metaKind: 'orientation_plan' }),
+    'character-plate': Object.freeze({ photographed: true, kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'character', mimes: IMAGE_MIMES }),
+    'location-plate': Object.freeze({ photographed: true, kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'location', mimes: IMAGE_MIMES }),
+    'prop-plate': Object.freeze({ photographed: true, kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: 'prop', mimes: IMAGE_MIMES }),
+    'orientation-plan': Object.freeze({ photographed: false, photographed_why: 'a floor plan is DRAWN or authored — photographing a room does not produce a plan of it', kind: 'image', shotScoped: false, subdir: 'refsheets', mimes: IMAGE_MIMES, assetType: ORIENTATION_ASSET_TYPE, metaKind: 'orientation_plan' }),
     // The look has no subject table by design (KIND_SOURCE calls it `project`),
     // so a board image is stored and linked by the mood-board row instead.
-    'mood-board-image': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
+    'mood-board-image': Object.freeze({ photographed: true, kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
      * THE TWO IMAGE SURFACES THAT COULD ONLY BE POINTED AT, NOT UPLOADED.
@@ -166,7 +239,7 @@ const MEDIA_IMPORTS = Object.freeze({
      * a hint telling you to call an image API yourself, which it has done since
      * the day it shipped.
      */
-    'continuity-ref': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
+    'continuity-ref': Object.freeze({ photographed: true, kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
      * A poster, key art or social card.
@@ -177,7 +250,7 @@ const MEDIA_IMPORTS = Object.freeze({
      * because an import target with no control behind it reports a feature as
      * complete when nothing can reach it. The page exists now.
      */
-    'marketing-asset': Object.freeze({ kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
+    'marketing-asset': Object.freeze({ photographed: false, photographed_why: 'a poster is AUTHORED artwork — type, layout and a key image composed together, not a frame off a lens', kind: 'image', shotScoped: false, subdir: 'refsheets', subjectKind: null, mimes: IMAGE_MIMES }),
 
     /*
      * FOOTAGE AND SOUND, from outside.
@@ -805,4 +878,5 @@ function importMedia(target, input) {
     };
 }
 
-module.exports = { MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, bytesFrom, validateBytes, resolveImportKind, measureDurationMs };
+module.exports = {
+    shootsWithCamera, MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, bytesFrom, validateBytes, resolveImportKind, measureDurationMs };

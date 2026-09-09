@@ -407,13 +407,33 @@ test('the camera is only offered where the app can actually provide it', () => {
      * In a browser there is no bridge and the file input must remain — a page
      * that offered a native button in Safari would have a Shoot control that
      * does nothing at all.
+     *
+     * THE CHOICE MOVED, and this assertion moved with it rather than being
+     * relaxed. It used to require the branch inside `uploadControl`, which is
+     * exactly where it should NOT be: written at that one call site, the plates
+     * got the controlled camera and the world capture and every capability
+     * control silently kept the OS picker (FCC-012). The rule is now the same
+     * rule, asked of the one function they all call — strictly stronger, since
+     * it also catches a surface that never reaches the decision at all.
      */
-    const at = UI.indexOf('function uploadControl(');
+    const at = UI.indexOf('function shootControl(');
+    assert.notStrictEqual(at, -1, 'the page has no shootControl to make the choice');
     const body = UI.slice(at, UI.indexOf('\n    }', at));
-    assert.match(body, /nativeCamera\(\)\s*\n?\s*\?/,
-        'uploadControl does not choose between the native session and the file input');
-    assert.match(body, /shootControl\(/,
+    assert.match(body, /nativeCamera\(\)/,
+        'shootControl does not ask whether the app has a camera, so every surface gets one arm');
+    assert.match(body, /plateShootButton\(/,
+        'shootControl never reaches the native session, so the controlled camera is unreachable');
+    assert.match(body, /captureFor\(/,
         'the file-input fallback is gone, so Shoot does nothing in a browser');
+
+    // And every builder that renders a shoot goes through it, or the surface it
+    // renders is the one left behind.
+    for (const name of ['uploadControl', 'mediaUploadControl', 'captureUploadControl']) {
+        const from = UI.indexOf(`function ${name}(`);
+        assert.notStrictEqual(from, -1, `${name} is gone`);
+        assert.match(UI.slice(from, UI.indexOf('\n    }', from)), /shootControl\(/,
+            `${name} does not call shootControl, so it decides the camera itself`);
+    }
 });
 
 test('a character turnaround walks the views the engine ranks', () => {
