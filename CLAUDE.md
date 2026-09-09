@@ -420,6 +420,7 @@ film-engine/
 │       ├── fcc-parity-epic.test.js    # An epic that refuses to re-split by medium, and labels its assumptions
 │       ├── fcc-recording.test.js     # The camera records at exactly the rate the budget was computed from
 │       ├── fcc-transport.test.js     # Fourteen seconds at 4K60, said before the take rather than at upload
+│       ├── fcc-audio.test.js         # A clip that lost its sound writes, plays, and says nothing
 │       ├── card-overflow.test.js        # A button drawn outside its own card
 │       ├── generator-costs.test.js     # Comparing what a generator costs, before using it
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
@@ -4424,6 +4425,7 @@ node --test backend/tests/film-engine-camera-brief.test.js
 node --test backend/tests/fcc-parity-epic.test.js
 node --test backend/tests/fcc-recording.test.js
 node --test backend/tests/fcc-transport.test.js
+node --test backend/tests/fcc-audio.test.js
 node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js

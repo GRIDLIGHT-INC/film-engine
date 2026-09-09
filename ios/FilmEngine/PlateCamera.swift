@@ -786,9 +786,22 @@ enum RecordingBudget {
 /// under load with nothing to show for it. The epic says the writer is fed from
 /// the output that already exists, and this is why.
 final class RecordingSink {
+    /*
+     * WHICH TRACK a buffer belongs to, as a named case rather than a flag.
+     *
+     * Both outputs deliver through the same delegate signature, so before this
+     * existed every buffer went to the one input the writer had — and the
+     * moment audio arrived, sound samples were handed to the picture track.
+     * That fails silently: the append is refused, the clip comes back mute, and
+     * the video track is perfectly healthy. `append(buf, true)` would read
+     * identically whichever way round it was passed; this cannot.
+     */
+    enum Track { case video, audio }
+
     private let lock = NSLock()
     private var writer: AVAssetWriter?
-    private var input: AVAssetWriterInput?
+    private var videoInput: AVAssetWriterInput?
+    private var audioInput: AVAssetWriterInput?
     private var started = false
     private var dropped = 0
 
@@ -801,7 +814,7 @@ final class RecordingSink {
     private(set) var written = 0
 
     /// Open a writer for `mode`. Returns why not, or nil on success.
-    func begin(mode: RecordingMode, to url: URL) -> String? {
+    func begin(mode: RecordingMode, to url: URL, sound: Bool) -> String? {
         lock.lock(); defer { lock.unlock() }
         guard writer == nil else { return "already recording" }
 
@@ -822,22 +835,48 @@ final class RecordingSink {
                 AVVideoExpectedSourceFrameRateKey: mode.fps,
             ],
         ]
-        let i = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         /*
          * AVAssetWriterInput.h: without this the input assumes it may make the
          * caller wait. The caller here is `frameQueue`, which also carries
          * focus peaking and the exposure warning — so the encoder would stall
          * the monitoring the director is watching while they record.
          */
-        i.expectsMediaDataInRealTime = true
-        guard w.canAdd(i) else { return "This device cannot record \(mode.id)." }
-        w.add(i)
+        videoInput.expectsMediaDataInRealTime = true
+        guard w.canAdd(videoInput) else { return "This device cannot record \(mode.id)." }
+        w.add(videoInput)
+
+        /*
+         * The sound, when there is any. AAC at 44.1kHz stereo is the ordinary
+         * choice for a .mov, and it is small enough beside HEVC that it does
+         * not move the duration `capture-policy` budgets: 128kbit/s is about
+         * 16KB a second against 1080p30's 786KB, roughly two per cent.
+         *
+         * `sound: false` builds NO audio input rather than an input nothing
+         * feeds. An empty track is worse than an absent one — it makes a
+         * deliberate MOS take look like a broken microphone.
+         */
+        var audioInput: AVAssetWriterInput?
+        if sound {
+            let a = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVNumberOfChannelsKey: 2,
+                AVSampleRateKey: 44_100,
+                AVEncoderBitRateKey: 128_000,
+            ])
+            a.expectsMediaDataInRealTime = true
+            guard w.canAdd(a) else { return "This device cannot record sound." }
+            w.add(a)
+            audioInput = a
+        }
+
         guard w.startWriting() else {
             return w.error.map { "Recording failed to start: \($0.localizedDescription)" }
                 ?? "Recording failed to start."
         }
         writer = w
-        input = i
+        self.videoInput = videoInput
+        self.audioInput = audioInput
         started = false
         written = 0
         dropped = 0
@@ -846,9 +885,10 @@ final class RecordingSink {
     }
 
     /// Feed one buffer. Called on the frame queue, never on main.
-    func append(_ sample: CMSampleBuffer) {
+    func append(_ sample: CMSampleBuffer, to track: Track) {
         lock.lock(); defer { lock.unlock() }
-        guard let writer, let input, writer.status == .writing else { return }
+        guard let writer, writer.status == .writing else { return }
+        guard let input = (track == .video ? videoInput : audioInput) else { return }
 
         /*
          * The session is anchored to the FIRST buffer's own timestamp.
@@ -860,7 +900,21 @@ final class RecordingSink {
          * that is almost entirely empty. It fails as a plausible file rather
          * than as an error.
          */
+        /*
+         * THE PICTURE ANCHORS THE CLIP, never the sound.
+         *
+         * Audio arrives on its own schedule and can precede the first frame, so
+         * starting on whichever buffer turns up first is a race decided by
+         * microphone warm-up — the same take begins on a frame or on 30ms of
+         * sound over a black picture depending on the run, and it is not
+         * reproducible. Anchoring on video means the handful of audio samples
+         * that arrive first fall outside the session; they are COUNTED as
+         * dropped below rather than vanishing, because "a few samples lost at
+         * the head" and "the microphone is not working" look identical in a
+         * waveform.
+         */
         if !started {
+            guard track == .video else { dropped += 1; return }
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sample))
             started = true
         }
@@ -876,18 +930,30 @@ final class RecordingSink {
     /// Close the file. `done` carries the finished URL, or nil and a reason.
     func finish(_ done: @escaping (URL?, String?) -> Void) {
         lock.lock()
-        guard let writer, let input else {
+        guard let writer, let videoInput else {
             lock.unlock()
             done(nil, "nothing was recording")
             return
         }
+        let audioInput = self.audioInput
         let out = url
         let lost = dropped
         self.writer = nil
-        self.input = nil
+        self.videoInput = nil
+        self.audioInput = nil
         lock.unlock()
 
-        input.markAsFinished()
+        /*
+         * EVERY track is marked finished, not just the picture.
+         *
+         * `finishWriting` does not wait for an input that was never told the
+         * media had ended, so leaving the audio input unmarked closes the file
+         * with its sound truncated — or absent — while the video track is
+         * perfectly healthy. That reads as a microphone fault and gets blamed
+         * on the phone.
+         */
+        videoInput.markAsFinished()
+        audioInput?.markAsFinished()
         // A file with no samples is not a clip. Saying so beats handing over
         // something that opens and shows nothing.
         guard started else {
@@ -1004,6 +1070,20 @@ final class PlateCameraModel: NSObject, ObservableObject {
      * multi-megapixel frame on main stutters every control on screen.
      */
     private let frameQueue = DispatchQueue(label: "film-engine.plate.frames")
+
+    /*
+     * The microphone, and a queue of its OWN.
+     *
+     * Sharing `frameQueue` would put every sound buffer behind the frame
+     * analysis — peaking and the exposure warning walk a multi-megapixel frame
+     * — and audio arrives roughly every 20ms and is dropped if nothing takes
+     * it in time. So sound would go missing in exactly the moments a director
+     * has the monitoring tools switched on, which is the hardest possible time
+     * to notice it. The writer serialises the two appends behind its own lock;
+     * the inputs are independent, so nothing needs one global order.
+     */
+    private let audio = AVCaptureAudioDataOutput()
+    private let audioQueue = DispatchQueue(label: "film-engine.plate.audio")
     private var input: AVCaptureDeviceInput?
     private var onCapture: ((UIImage?) -> Void)?
 
@@ -1017,6 +1097,12 @@ final class PlateCameraModel: NSObject, ObservableObject {
     /// Whether a take is running, and what it is being recorded at.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingMode: RecordingMode?
+    /// Whether this take will carry sound, and why not when it will not.
+    /// A mute clip that looks exactly like a normal one is the defect FCC-003
+    /// exists to close — so the reason is state, not a log line.
+    @Published private(set) var recordsAudio = false
+    @Published private(set) var soundless: String?
+
     /// Why the last take could not start or finish. Nil when it went fine.
     @Published private(set) var recordingProblem: String?
 
@@ -1083,12 +1169,12 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            configure()
+            askForSound()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 Task { @MainActor in
                     guard let self else { return }
-                    granted ? self.configure()
+                    granted ? self.askForSound()
                             : self.fail("Camera access was declined. Settings → Film Engine → Camera.")
                 }
             }
@@ -1096,6 +1182,46 @@ final class PlateCameraModel: NSObject, ObservableObject {
             fail("Camera access is off for Film Engine. Settings → Film Engine → Camera.")
         @unknown default:
             fail("The camera is unavailable on this device.")
+        }
+    }
+
+    /*
+     * The microphone is asked for SEPARATELY, and being refused is not a
+     * failure.
+     *
+     * MOS is a real thing a director chooses, so a declined microphone must not
+     * stop the camera — but it must not produce a mute file in silence either.
+     * That is the trap this whole task is about: iOS grants a microphone input
+     * to an unauthorised app and simply delivers no samples, so the take comes
+     * back with no sound, no error, and nothing to blame but the hardware.
+     * `soundless` is the sentence a director reads instead.
+     */
+    private func askForSound() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            recordsAudio = true
+            configure()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.recordsAudio = granted
+                    if !granted {
+                        self.soundless = "Microphone access was declined — takes will be silent. "
+                            + "Settings → Film Engine → Microphone."
+                    }
+                    self.configure()
+                }
+            }
+        case .denied, .restricted:
+            recordsAudio = false
+            soundless = "Microphone access is off for Film Engine — takes will be silent. "
+                + "Settings → Film Engine → Microphone."
+            configure()
+        @unknown default:
+            recordsAudio = false
+            soundless = "The microphone is unavailable on this device — takes will be silent."
+            configure()
         }
     }
 
@@ -1137,6 +1263,26 @@ final class PlateCameraModel: NSObject, ObservableObject {
         frames.alwaysDiscardsLateVideoFrames = true
         frames.setSampleBufferDelegate(self, queue: frameQueue)
         if session.canAddOutput(frames) { session.addOutput(frames) }
+
+        /*
+         * The microphone, only when it has actually been granted. Adding the
+         * input without permission is the silent failure: iOS accepts it and
+         * delivers nothing, so the session looks correctly configured and every
+         * take is mute.
+         */
+        if recordsAudio {
+            if let mic = AVCaptureDevice.default(for: .audio),
+               let micInput = try? AVCaptureDeviceInput(device: mic),
+               session.canAddInput(micInput) {
+                session.addInput(micInput)
+                audio.setSampleBufferDelegate(self, queue: audioQueue)
+                if session.canAddOutput(audio) { session.addOutput(audio) }
+            } else {
+                // Granted and still unusable — another app may hold it.
+                recordsAudio = false
+                soundless = "The microphone could not be opened — takes will be silent."
+            }
+        }
 
         session.commitConfiguration()
 
@@ -1389,7 +1535,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id).mov")
-        if let why = sink.begin(mode: mode, to: url) {
+        if let why = sink.begin(mode: mode, to: url, sound: recordsAudio) {
             restorePreset()
             recordingProblem = why
             return
@@ -1472,10 +1618,29 @@ final class PlateCameraModel: NSObject, ObservableObject {
     }
 }
 
-extension PlateCameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
+extension PlateCameraModel: AVCaptureVideoDataOutputSampleBufferDelegate,
+                            AVCaptureAudioDataOutputSampleBufferDelegate {
     nonisolated func captureOutput(_ output: AVCaptureOutput,
                                    didOutput sampleBuffer: CMSampleBuffer,
                                    from connection: AVCaptureConnection) {
+        /*
+         * ROUTED BY WHICH OUTPUT DELIVERED IT, before anything else happens.
+         *
+         * Both outputs call this one method with this one signature, so without
+         * the comparison every sound sample would be handed to the picture
+         * track — which refuses it, silently, leaving a mute clip with a
+         * perfectly healthy video track. That is the failure mode this whole
+         * task is about, and it is one line away at all times.
+         *
+         * Audio returns HERE. Everything below reads a pixel buffer, and an
+         * audio sample has none: the monitoring path would find nil and do
+         * nothing, which works today and would silently start analysing the
+         * wrong thing the moment somebody made that guard less strict.
+         */
+        if output === audio {
+            sink.append(sampleBuffer, to: .audio)
+            return
+        }
         /*
          * The recording is fed FIRST, and unconditionally.
          *
@@ -1486,7 +1651,7 @@ extension PlateCameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
          * the monitoring tools switched off: a file that opens, plays as
          * nothing, and blames the camera.
          */
-        sink.append(sampleBuffer)
+        sink.append(sampleBuffer, to: .video)
 
         guard let consumer = onFrame,
               let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -1574,6 +1739,28 @@ struct RecordingTransport: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(camera.endInSight ? .orange : .white.opacity(0.7))
                 }
+
+                /*
+                 * WHETHER THIS TAKE WILL HAVE SOUND, before it is shot.
+                 *
+                 * A mute clip is indistinguishable from a working one until
+                 * somebody plays it back, by which point the take is over. MOS
+                 * is a legitimate choice, so this states the fact rather than
+                 * refusing to record — but it states it where the record button
+                 * is, not in a log.
+                 */
+                if !camera.recordsAudio {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("This take will have no sound")
+                }
+            }
+
+            if !camera.recordsAudio, let why = camera.soundless {
+                Text(why)
+                    .font(.caption2).foregroundStyle(.orange)
+                    .multilineTextAlignment(.center).padding(.horizontal, 24)
             }
 
             if let problem = camera.recordingProblem {
