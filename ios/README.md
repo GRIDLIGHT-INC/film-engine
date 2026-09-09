@@ -56,7 +56,7 @@ cp src/index.html ios/FilmEngine/Web/index.html
 Everything buildable is built and verified: the project compiles, the app runs
 on a simulator against the live API, and every Info.plist key and build setting
 an upload requires is set (team `3AXRJ22S9P`, bundle id `ai.gridlight.filmengine`,
-version 1.0 build 2, icon, `ExportOptions.plist` with `app-store-connect`).
+version 1.0 build 3, icon, `ExportOptions.plist` with `app-store-connect`).
 
 **The archive and the export both work.** This section previously said Xcode had
 no signed-in Apple ID and that archiving failed with `No Accounts`. That is no
@@ -84,7 +84,7 @@ a development signature archives happily and is rejected at upload:
 | Profile | `iOS Team Store Provisioning Profile: ai.gridlight.filmengine` |
 | `beta-reports-active` | `true` — the TestFlight entitlement |
 | `get-task-allow` | `false` — correct for distribution, not development |
-| Architecture | arm64, version 1.0 build 1, symbols uploaded |
+| Architecture | arm64, version 1.0 build 3+ (Xcode bumps the App Store copy on export), symbols uploaded |
 | Web bundle inside | `Payload/FilmEngine.app/Web/index.html`, 2.5 MB |
 
 **The remaining step is the upload, and it needs credentials this machine does
