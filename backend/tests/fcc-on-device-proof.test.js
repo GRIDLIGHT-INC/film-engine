@@ -235,6 +235,69 @@ test('the sheet names what BLOCKS the shoot, precisely enough to act on', () => 
         'the sheet does not say a person is required, which is the actual blocker');
 });
 
+test('the sheet stops a person shooting the build that is ALREADY on the phone', () => {
+    /*
+     * THE TRAP THIS CLOSES. `plate-camera-on-device-proof.md` records that the
+     * app was built, signed and INSTALLED on this same phone on 2026-09-08 —
+     * which is BEFORE every task in this epic. So the phone already carries a
+     * Film Engine, and somebody who picks it up, opens the camera and starts
+     * shooting is testing the PCC-era camera: no recording, no format picker,
+     * no budget, no ProRes, no controlled-camera routing.
+     *
+     * They would then fill this sheet in, and the epic would be "proven"
+     * against code that predates it. That is the same failure the sheet's own
+     * not-yet-shot rule exists to prevent, arriving by a different door — and
+     * it is the one thing a locked phone makes MORE likely, because the
+     * install step is the one that will not have run.
+     *
+     * The check must be doable with no tooling, because the person holding the
+     * phone may not have a Mac in front of them.
+     */
+    const d = sheet();
+    assert.match(d, /already (installed|on the phone)|previous epic|older build|PCC/i,
+        'the sheet does not warn that an app from the previous epic is already installed, so '
+        + '"it is already there" reads as "it is current"');
+
+    /*
+     * And it must name something the OLD build cannot show. Derived by
+     * difference against the previous epic's own sheet: anything that document
+     * asks a person to exercise existed before this epic, so it cannot tell the
+     * two builds apart.
+     */
+    const pcc = fs.readFileSync(path.join(ROOT, 'docs', 'plans', 'plate-camera-on-device-proof.md'), 'utf8');
+    const onlyHere = ['budget', 'transport', 'ProRes', 'Apple Log']
+        .filter((t) => !new RegExp(t, 'i').test(pcc));
+    assert.ok(onlyHere.length >= 2,
+        `only ${onlyHere.length} term(s) distinguish the builds; the derivation is broken and this `
+        + 'check would pass over nothing');
+
+    const at = d.search(/^##[^\n]*(before you shoot|which build|check the build)/im);
+    assert.notStrictEqual(at, -1,
+        'the sheet gives no way to tell which build is on the phone, so the first thing a person '
+        + 'does may be to test the wrong camera');
+    /*
+     * Bounded by the SECTION — from its own heading to the next one — never by a
+     * character count. This file already records what a bounded window costs: it
+     * stops matching silently as the prose grows, and then reports the DOCUMENT
+     * as broken while the document is fine.
+     */
+    const next = d.slice(at + 3).search(/^## /m);
+    const check = next === -1 ? d.slice(at) : d.slice(at, at + 3 + next);
+    assert.ok(onlyHere.some((t) => new RegExp(t, 'i').test(check)),
+        'the build check names nothing the pre-FCC build lacks, so it cannot tell the two apart. '
+        + `Anything in the previous epic's sheet is useless here; these are not: ${onlyHere.join(', ')}`);
+
+    /*
+     * BEFORE the shoot list. A warning after the table is one nobody reads
+     * until they have already shot ten formats on the wrong build.
+     */
+    const table = d.indexOf('| Format | MB/min');
+    assert.notStrictEqual(table, -1, 'the shoot table is gone');
+    assert.ok(at < table,
+        'the build check sits AFTER the shoot list, so it is read once the session is already '
+        + 'spent');
+});
+
 test('the sheet lists the controls the epic built, so every one is exercised', () => {
     /*
      * "With every control exercised" — derived from the tasks the epic declares

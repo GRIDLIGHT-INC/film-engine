@@ -57,6 +57,37 @@ reachable on the same network. The app asks for the address on first launch and
 says whether it can reach it — a blank page is not an error message, so if it
 cannot, it will say why.
 
+## Before you shoot — which build is on the phone?
+
+**Open the app, press any Shoot button, and look at the camera before you do
+anything else:**
+
+| | |
+|---|---|
+| a **format picker** naming `4k30`, `4k30-log`, ProRes | FCC build ✅ |
+| a **record transport** — elapsed, remaining, a budget in seconds | FCC build ✅ |
+| a shutter and nothing else | **the old build** — stop, install, start again |
+
+**Because there is already a Film Engine on this device, and it predates this
+entire epic.** `plate-camera-on-device-proof.md` records it: *"As of 2026-09-08 it is
+built, signed and INSTALLED on the paired iPhone 17 Pro … as
+`ai.gridlight.filmengine`."* That is the PCC-era camera — it takes photographs
+and nothing else. Open it, shoot a turnaround, fill this sheet in, and the epic
+reads as proven against code that was written before any of it existed.
+
+That is the same failure the not-yet-shot rule at the top exists to prevent,
+arriving by a different door — and a locked phone makes it MORE likely, because
+the install is the step that will not have run.
+
+None of those three exist in the pre-FCC camera: it has no recording at all, so
+it has no transport, no budget and no format to choose between. Anything the
+previous epic's sheet asks you to exercise — exposure lock, white balance,
+focus, peaking, the level — is present in BOTH builds and cannot tell them
+apart. Only recording can.
+
+If it is the old build, run the install above. `xcodebuild … build` on a
+connected device replaces what is there; it does not add a second app.
+
 ## Every format — shoot each one
 
 Ten formats, derived from `capture-policy.js`. **Fill in the last three
