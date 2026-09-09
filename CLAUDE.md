@@ -433,6 +433,7 @@ film-engine/
 │       ├── fcc-previz-capture.test.js # A walkthrough is budgeted against Marble, not the upload
 │       ├── fcc-footage-to-shot.test.js # A take lands as video_raw, and every assembly picks it up
 │       ├── fcc-epic-record.test.js  # Every task the epic did is recorded, or the record has a hole
+│       ├── fcc-on-device-proof.test.js # The shoot list has no hole, and claims no shoot that has not happened
 │       ├── fcc-external-storage.test.js # The drive is checked before the take, because after costs it
 │       ├── fcc-resumable-upload.test.js # A transfer that survives losing the connection
 │       ├── card-overflow.test.js        # A button drawn outside its own card
@@ -4450,6 +4451,7 @@ node --test backend/tests/fcc-system-camera.test.js
 node --test backend/tests/fcc-previz-capture.test.js
 node --test backend/tests/fcc-footage-to-shot.test.js
 node --test backend/tests/fcc-epic-record.test.js
+node --test backend/tests/fcc-on-device-proof.test.js
 node --test backend/tests/fcc-external-storage.test.js
 node --test backend/tests/fcc-resumable-upload.test.js
 node --test backend/tests/card-overflow.test.js

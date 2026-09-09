@@ -12,9 +12,18 @@ app** — Apple opened Apple Log, ProRes and even genlock to `AVFoundation`, and
 monitoring tools were never Apple APIs at all, so shipping them is ordinary work
 rather than blocked work. The two things that genuinely block parity are not camera
 features: **the hardware tier** (ProRes RAW, Apple Log 2, open gate and genlock are
-iPhone 17 Pro only, and this project's device is a 15 Pro Max) and **the transport**
+iPhone 17 Pro only) and **the transport**
 — the body this engine accepts is **150 MB**, which admits **5 seconds** of ProRes
 422 HQ at 1080p30 and **1 second** at 4K30.
+
+**CORRECTED 2026-09-09 (FCC-016).** The hardware tier is no longer a blocker on
+this project's device. The brief was written when the only phone here was a 15
+Pro Max; the paired device is an **iPhone 17 Pro on iOS 26.6.1**, which reaches
+ProRes RAW, Apple Log 2 and open gate. Genlock stays the one exclusion, and it
+is a purchase (a Blackmagic ProDock) rather than a code change. So of the two
+things this brief called blocking, one has been built and the other was never
+about the hardware at all — see `fcc-camera-on-device-proof.md` for what is
+still unproven, which is everything that needs a person holding the phone.
 
 The conclusion that matters: capture parity is cheap and useless until the file can
 leave the phone. Fix the transport first, or build a camera whose output has

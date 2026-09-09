@@ -284,13 +284,28 @@ test('it recommends an ORDER, and the reason is the measurement', () => {
         'the ordering is not argued from the measurement, so it reads as preference');
 });
 
-test('the device tier is named, because four features are unreachable here', () => {
+test('the device tier is named, and the brief no longer calls it unreachable HERE', () => {
+    /*
+     * RESHAPED by FCC-016 (GRD-3812), and the reason is the point. This
+     * asserted that the brief says `15 Pro Max` — "the device this project
+     * actually has" — and by the time the epic reached its last task that was
+     * false: the paired phone is an iPhone 17 Pro on iOS 26.6.1. So the check
+     * was holding the document to a fact about the WORLD that had stopped being
+     * true, and the brief went on reporting ProRes RAW, Apple Log 2 and open
+     * gate as blocked when they are reachable.
+     *
+     * The features and the hardware they need are still pinned, because those
+     * are facts about Apple rather than about this desk. What is no longer
+     * pinned is a claim about which phone is in the building.
+     */
     const d = doc();
     for (const feature of ['ProRes RAW', 'Log 2', 'open gate', 'genlock']) {
         assert.ok(d.includes(feature), `the brief never mentions ${feature}`);
     }
     assert.match(d, /17 Pro/, 'the brief does not say which hardware those need');
-    assert.match(d, /15 Pro Max/, 'the brief does not say what device this project actually has');
+    assert.ok(!/this project's device is a 15 Pro Max/.test(d),
+        'the brief still names a 15 Pro Max as this project\'s device, so it reports four '
+        + 'features as blocked that the paired iPhone 17 Pro can reach');
 });
 
 /* ── PCC-011: the brief must describe the camera that EXISTS ────────────── */
