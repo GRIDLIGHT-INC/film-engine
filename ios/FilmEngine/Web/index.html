@@ -29447,6 +29447,14 @@ ${fountainText.slice(0, 50000)}`;
             url, apiBase: '', subject: subject || 'this subject',
             views: plateViewsFor(target),
             /*
+             * WHERE it is going, so the camera budgets a take against the
+             * ceiling that actually binds it. A walkthrough handed to Marble
+             * gets 133 seconds at 1080p30 where the same mode shot for the cut
+             * gets 200 — and a director who is shown the larger number
+             * discovers the smaller one at upload, after the walk.
+             */
+            destination: captureDestination(target),
+            /*
              * The delivery aspect, so the camera can guide the shape the plate
              * will actually be cropped to — a 9:16 deliverable guides 9:16.
              * previsAspect() is REUSED rather than the ratio parsed again here:
@@ -29502,6 +29510,25 @@ ${fountainText.slice(0, 50000)}`;
      * the browser arm instead. That happened while this was being written. A
      * helper the harnesses can run on its own cannot fail that way.
      */
+    /*
+     * WHERE a capture for this target is going, and therefore which ceiling
+     * binds it. MIRRORED from backend/lib/media-imports.js — the page cannot
+     * require a node module (build.target: single-html), so the rule exists
+     * twice and fcc-previz-capture.test.js holds the two equal over every
+     * target the registry declares.
+     *
+     * Self-contained for the reason `shootsWithCamera` is: four harnesses lift
+     * these builders out by extracting FUNCTIONS, and a helper that reads a
+     * module-level constant hands them a ReferenceError.
+     *
+     * `footage` is the default because it is what every target but one is, and
+     * inventing `world` by accident would silently shorten every take by a
+     * third — Marble caps a video at 100MB where the upload accepts 150.
+     */
+    function captureDestination(target) {
+        return String(target || '') === 'world-capture' ? 'world' : 'footage';
+    }
+
     function shootsWithCamera(target) {
         return [
             'storyboard-image', 'world-capture', 'character-plate', 'location-plate',

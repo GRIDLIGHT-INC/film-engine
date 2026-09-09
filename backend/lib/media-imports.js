@@ -111,6 +111,21 @@ function mediaImportTargets() {
 }
 
 /**
+ * WHERE a capture for this target is going, and therefore which ceiling binds
+ * it.
+ *
+ * The vocabulary is `capture-policy`'s own DESTINATIONS, so the two cannot
+ * drift: a target that resolved to a name the policy does not declare would be
+ * bound by nothing. `footage` is the default because it is what every target
+ * but one is — a take that reaches this engine and stops here — and inventing
+ * `world` by accident would silently shorten every take by a third.
+ */
+function captureDestination(target) {
+    const spec = MEDIA_IMPORTS[target];
+    return (spec && spec.destination) || 'footage';
+}
+
+/**
  * Does this target get the CONTROLLED camera?
  *
  * Two clauses, and both are necessary. What it holds must be photographed in
@@ -174,6 +189,14 @@ const MEDIA_IMPORTS = Object.freeze({
      */
     'world-capture': Object.freeze({
         photographed: true,   // the whole point: a real room, stood in and shot
+        /*
+         * WHERE THIS GOES, and therefore which ceiling binds it. The only
+         * target handed to a reconstruction service: World Labs caps a video at
+         * 100MB, so a walkthrough is budgeted against Marble rather than
+         * against the body this engine accepts. Everything else stops here and
+         * is bound by the transport — see `captureDestination`.
+         */
+        destination: 'world',
         /*
          * `kind` is the DEFAULT medium and `kinds` is what is accepted. Seventeen
          * consumers read `spec.kind` as a scalar and `spec.subdir` as a string;
@@ -879,4 +902,4 @@ function importMedia(target, input) {
 }
 
 module.exports = {
-    shootsWithCamera, MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, bytesFrom, validateBytes, resolveImportKind, measureDurationMs };
+    shootsWithCamera, captureDestination, MEDIA_IMPORTS, ORIENTATION_ASSET_TYPE, importMedia, decodeDataUri, bytesFrom, validateBytes, resolveImportKind, measureDurationMs };

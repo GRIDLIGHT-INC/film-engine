@@ -430,6 +430,7 @@ film-engine/
 │       ├── fcc-hardware-tier.test.js # Ask the phone what it can do; a model string is the wrong gate
 │       ├── fcc-budget.test.js      # A ceiling belongs to a route, not to the engine
 │       ├── fcc-system-camera.test.js # The controlled camera, wherever the world is photographed
+│       ├── fcc-previz-capture.test.js # A walkthrough is budgeted against Marble, not the upload
 │       ├── fcc-external-storage.test.js # The drive is checked before the take, because after costs it
 │       ├── fcc-resumable-upload.test.js # A transfer that survives losing the connection
 │       ├── card-overflow.test.js        # A button drawn outside its own card
@@ -4444,6 +4445,7 @@ node --test backend/tests/fcc-prores.test.js
 node --test backend/tests/fcc-hardware-tier.test.js
 node --test backend/tests/fcc-budget.test.js
 node --test backend/tests/fcc-system-camera.test.js
+node --test backend/tests/fcc-previz-capture.test.js
 node --test backend/tests/fcc-external-storage.test.js
 node --test backend/tests/fcc-resumable-upload.test.js
 node --test backend/tests/card-overflow.test.js

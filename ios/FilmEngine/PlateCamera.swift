@@ -39,6 +39,19 @@ struct PlateCaptureRequest: Decodable {
     /// already parses it in one place; the camera is told rather than guessing,
     /// so a 9:16 deliverable guides 9:16. Absent means "no guide".
     let aspect: Double?
+    /*
+     * WHERE the capture is going, in `capture-policy`'s own vocabulary:
+     * "world" for a walkthrough handed to Marble, "footage" for a take that
+     * goes into the cut. It decides which ceiling binds the budget — 100MB
+     * against 150 — which is 133 seconds against 200 at 1080p30.
+     *
+     * Absent means footage, because that is what every target but one is.
+     * Guessing the other way would silently shorten every take by a third.
+     */
+    let destination: String?
+
+    /// Is this session a walkthrough for a reconstruction?
+    var forWorld: Bool { destination == "world" }
 
     struct PlateView: Decodable, Identifiable {
         let key: String      // what the engine stores: "front", "side-left", …
@@ -1539,6 +1552,35 @@ final class PlateCameraModel: NSObject, ObservableObject {
     @Published private(set) var driveFreeBytes: Int?
 
     /*
+     * WHETHER THIS SESSION IS A WALKTHROUGH, and therefore which ceiling every
+     * budget question below is answered against.
+     *
+     * `RecordingBudget` has taken `forWorld:` since FCC-011 and nothing passed
+     * it — eight entry points declared and defaulted, so the camera quoted the
+     * upload's 200 seconds for a clip Marble caps at 133. Held on the model
+     * rather than threaded through each call, because a budget asked with it in
+     * four places and without it in a fifth is a camera that shows one number
+     * and enforces another.
+     */
+    @Published private(set) var forWorld = false
+
+    /*
+     * Told once, when the session opens, and the RECOMMENDATION is re-chosen
+     * with it.
+     *
+     * `selectedMode` is initialised to `recommended()` before any request
+     * exists, which is the upload's answer. A world is reconstructed from
+     * COVERAGE, so the longest usable clip is the right default — and "longest"
+     * is a different mode under a different ceiling. Leaving the stored default
+     * would open a walkthrough on a format chosen against a limit it does not
+     * meet.
+     */
+    func setDestination(world: Bool) {
+        forWorld = world
+        selectedMode = RecordingBudget.recommended(driveFreeBytes: driveFreeBytes, forWorld: world)
+    }
+
+    /*
      * Which advanced formats this PHONE cannot record, and why.
      *
      * Filled by asking the device at configure time, never by reading a model
@@ -1586,12 +1628,12 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
     /// What is left of the budget, or nil when nothing is recording.
     var secondsRemaining: Int? {
-        recordingMode.map { RecordingBudget.remaining($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) }
+        recordingMode.map { RecordingBudget.remaining($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes, forWorld: forWorld) }
     }
 
     /// Whether the end is close enough to say so.
     var endInSight: Bool {
-        recordingMode.map { RecordingBudget.isEndInSight($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) } ?? false
+        recordingMode.map { RecordingBudget.isEndInSight($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes, forWorld: forWorld) } ?? false
     }
 
     private var ticker: Task<Void, Never>?
@@ -2236,6 +2278,28 @@ final class PlateCameraModel: NSObject, ObservableObject {
          */
         if let device = lens?.device {
             applyColorSpace(mode, to: device)
+            /*
+             * A WALKTHROUGH HOLDS ITS EXPOSURE, and this is the one place it
+             * can be guaranteed.
+             *
+             * A walk past a window meters down and then back up on the far
+             * wall, so the SAME wall reaches the reconstruction at two
+             * brightnesses and Marble has to reconcile them. Locking is not a
+             * nicety for a world capture, it is the difference between coverage
+             * that solves and coverage that does not — and leaving it to be
+             * remembered means it is remembered on the takes that went well.
+             *
+             * Only for a world session. A plate session keeps the director's
+             * own choice, because re-metering a dark back against a bright wall
+             * is a real thing to want and `unlockExposure` exists for it.
+             *
+             * BEFORE `sink.begin`, or the first seconds of the walk are metered
+             * live — which is the half a reconstruction leans on hardest. A
+             * lens that cannot hold a fixed exposure sets `exposureWarning` and
+             * the take still runs: refusing would strand a director who has
+             * already walked to the location.
+             */
+            if forWorld && exposure == nil { lockExposure() }
             reapplyLocks(to: device)
         }
 
@@ -2337,9 +2401,9 @@ final class PlateCameraModel: NSObject, ObservableObject {
     private func tick() {
         guard isRecording, let mode = recordingMode else { return }
         elapsedSeconds += 1
-        if RecordingBudget.remaining(mode, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) == 0 {
+        if RecordingBudget.remaining(mode, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes, forWorld: forWorld) == 0 {
             recordingProblem = "The take reached the "
-                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: driveFreeBytes))s limit "
+                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld))s limit "
                 + "for \(mode.id) and was stopped, so the clip can still be uploaded."
             stopRecording()
         }
@@ -2478,14 +2542,14 @@ struct FormatPicker: View {
                 VStack(spacing: 4) {
                     ForEach(RecordingMode.all, id: \.id) { mode in
                         Button {
-                            if RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes), camera.capabilityProblem[mode.id] == nil {
+                            if RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld), camera.capabilityProblem[mode.id] == nil {
                                 camera.selectedMode = mode; open = false
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(mode.label)
                                     .font(.system(.footnote, design: .monospaced))
-                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) && camera.capabilityProblem[mode.id] == nil
+                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld) && camera.capabilityProblem[mode.id] == nil
                                                      ? .white : .white.opacity(0.45))
                                 // The price, on every row. Without it two
                                 // formats are indistinguishable buttons.
@@ -2496,13 +2560,13 @@ struct FormatPicker: View {
                                 // and both beat a row that is greyed in silence.
                                 Text(camera.capabilityProblem[mode.id]
                                      ?? (mode.transports == [.external] ? camera.driveProblem : nil)
-                                     ?? (RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes)
+                                     ?? (RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld)
                                          ? "\(mode.megabytesPerMinute)MB/min · "
-                                            + "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes))) max · "
+                                            + "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld))) max · "
                                             + (mode.transport?.label ?? "")
-                                         : (RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes) ?? "unavailable")))
+                                         : (RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld) ?? "unavailable")))
                                     .font(.caption2)
-                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) ? .white.opacity(0.7) : .orange)
+                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld) ? .white.opacity(0.7) : .orange)
                                     .multilineTextAlignment(.leading)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2511,12 +2575,12 @@ struct FormatPicker: View {
                                         ? .white.opacity(0.22) : .white.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 8))
                         }
-                        .disabled(!RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) || camera.capabilityProblem[mode.id] != nil
+                        .disabled(!RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld) || camera.capabilityProblem[mode.id] != nil
                                   || (mode.transports == [.external] && camera.driveProblem != nil))
-                        .accessibilityLabel(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes)
+                        .accessibilityLabel(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld)
                             ? "\(mode.label), \(mode.megabytesPerMinute) megabytes a minute, "
-                                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes)) seconds maximum"
-                            : "\(mode.label), unavailable. \(RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes) ?? "")")
+                                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld)) seconds maximum"
+                            : "\(mode.label), unavailable. \(RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld) ?? "")")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -2539,6 +2603,9 @@ struct FormatPicker: View {
 struct RecordingTransport: View {
     @ObservedObject var camera: PlateCameraModel
     let mode: RecordingMode
+    /// Where a finished take goes. Nil for a session that only shoots stills —
+    /// the take is still kept on the device, and `lastTake` holds it.
+    var onTake: ((URL) -> Void)?
 
     /// mm:ss. A take is read in minutes and seconds, not in seconds.
     private func clock(_ seconds: Int) -> String {
@@ -2549,7 +2616,16 @@ struct RecordingTransport: View {
         VStack(spacing: 6) {
             HStack(spacing: 14) {
                 Button {
-                    camera.isRecording ? camera.stopRecording() : camera.startRecording(mode.id)
+                    if camera.isRecording {
+                        /*
+                         * The take goes on to whoever asked for it. The
+                         * completion is the ONLY moment the file's URL exists,
+                         * so a stop that discards it loses the walk.
+                         */
+                        camera.stopRecording { url in if let url { onTake?(url) } }
+                    } else {
+                        camera.startRecording(mode.id)
+                    }
                 } label: {
                     ZStack {
                         Circle().strokeBorder(.white.opacity(0.9), lineWidth: 3)
@@ -2565,7 +2641,7 @@ struct RecordingTransport: View {
                 }
                 .accessibilityLabel(camera.isRecording
                     ? "Stop recording. \(camera.secondsRemaining ?? 0) seconds remaining."
-                    : "Record \(mode.id). \(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes)) seconds available.")
+                    : "Record \(mode.id). \(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld)) seconds available.")
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(camera.isRecording ? clock(camera.elapsedSeconds) : mode.id)
@@ -2576,7 +2652,7 @@ struct RecordingTransport: View {
                     // "14s at 4k60" is a shot-planning fact, not a warning.
                     Text(camera.isRecording
                          ? "\(clock(camera.secondsRemaining ?? 0)) left"
-                         : "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes))) max · \(mode.id)")
+                         : "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes, forWorld: camera.forWorld))) max · \(mode.id)")
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(camera.endInSight ? .orange : .white.opacity(0.7))
                 }
@@ -2858,6 +2934,14 @@ struct PlateCameraView: View {
             }
         }
         .onAppear {
+            /*
+             * WHICH CEILING BINDS THIS SESSION, before anything is shot. Set
+             * first, so the format picker and the transport quote Marble's
+             * number rather than the upload's from the moment they appear — a
+             * budget corrected after the director has read it is a budget they
+             * have already planned against.
+             */
+            camera.setDestination(world: request.forWorld)
             camera.start(); camera.startLevel()
             // Frames arrive on the camera's serial queue. The detection runs
             // THERE and only the result hops to main — analysing on main would
@@ -3047,7 +3131,8 @@ struct PlateCameraView: View {
              */
             if pending == nil {
                 FormatPicker(camera: camera).padding(.bottom, 8)
-                RecordingTransport(camera: camera, mode: camera.selectedMode)
+                RecordingTransport(camera: camera, mode: camera.selectedMode,
+                                   onTake: request.forWorld ? { deliverTake($0) } : nil)
                     .padding(.bottom, 14)
             }
 
@@ -3106,6 +3191,51 @@ struct PlateCameraView: View {
         pending = nil
         problem = nil
         if index + 1 < request.views.count { index += 1 } else { finish(cancelled: false) }
+    }
+
+    /*
+     * A WALKTHROUGH THAT NEVER LEAVES THE PHONE WAS A WALK FOR NOTHING.
+     *
+     * The take is written to disk and `lastTake` holds the URL; until something
+     * sends it, a director walks the room, watches the budget, stops on time,
+     * and the clip exists only on the device. That is the silent-loss failure
+     * this codebase refuses — and the reason FCC-012 deliberately left
+     * `video-media` on the system camera rather than shipping a Shoot that
+     * records and drops the file.
+     *
+     * THE TAKE IS KEPT WHEN THE UPLOAD FAILS, exactly as a photograph is. A
+     * plate can be re-shot from where you stand; a walkthrough means walking
+     * the room again.
+     */
+    private func deliverTake(_ file: URL) {
+        busy = true
+        problem = nil
+        let name = "walkthrough.\(file.pathExtension.isEmpty ? "mov" : file.pathExtension)"
+        Task {
+            do {
+                try await PlateUploader.sendTake(at: file, mime: mimeFor(file), name: name,
+                                                 request: request)
+                result.uploaded.append("walkthrough")
+                busy = false
+                finish(cancelled: false)
+            } catch {
+                result.failed["walkthrough"] = error.localizedDescription
+                problem = "Not uploaded: \(error.localizedDescription). The take is still on this "
+                    + "phone."
+                busy = false
+            }
+        }
+    }
+
+    /// What the bytes are, from the container the writer chose. The route reads
+    /// the type to tell a walkthrough from a panorama, and gets it wrong for a
+    /// clip announced as an image.
+    private func mimeFor(_ file: URL) -> String {
+        switch file.pathExtension.lowercased() {
+        case "mov", "qt": return "video/quicktime"
+        case "mp4", "m4v": return "video/mp4"
+        default: return "application/octet-stream"
+        }
     }
 
     private func upload() {
@@ -3192,6 +3322,49 @@ enum PlateUploader {
         guard (200..<300).contains(code) else {
             // The engine's own sentence, not a status number. Its refusals name
             // the remedy and a bare 400 does not.
+            let why = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])
+                .flatMap { $0?["error"] as? String } ?? ""
+            throw Failure.http(code, why)
+        }
+    }
+
+    /**
+     * A FINISHED TAKE, to the same route the page named.
+     *
+     * RAW BYTES, never base64. FCC-010 took the inflation off this path — a
+     * base64 body is a third larger than the file, and a walkthrough is
+     * megabytes where a plate is kilobytes. `readBody` hands the route
+     * `{__raw, __mime}` for a media content-type, and the world-capture import
+     * already reads either form, so this is the cheaper of two paths that
+     * existed rather than a new one.
+     *
+     * It fits by CONSTRUCTION: `RecordingBudget` stops a world take at Marble's
+     * own ceiling, which is below the body this engine accepts. That is the
+     * whole reason the budget is enforced during the take rather than checked
+     * afterwards.
+     *
+     * `fromFile` rather than reading it into memory: a take is written to disk
+     * and a phone should not hold a hundred megabytes of it twice.
+     */
+    static func sendTake(at file: URL, mime: String, name: String,
+                         request: PlateCaptureRequest) async throws {
+        let base = request.apiBase.hasSuffix("/") ? String(request.apiBase.dropLast()) : request.apiBase
+        guard var comps = URLComponents(string: "\(base)/film\(request.url)") else { throw Failure.badURL }
+        // The name travels in the query, because the body IS the file.
+        comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "name", value: name)]
+        guard let url = comps.url else { throw Failure.badURL }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(mime, forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 600
+
+        let (body, response): (Data, URLResponse)
+        do { (body, response) = try await URLSession.shared.upload(for: req, fromFile: file) }
+        catch { throw Failure.transport(error.localizedDescription) }
+
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
             let why = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])
                 .flatMap { $0?["error"] as? String } ?? ""
             throw Failure.http(code, why)
