@@ -416,9 +416,20 @@ test('a finished walkthrough is DELIVERED to the route the page named', () => {
     assert.match(transport, /onTake/,
         'the transport discards the finished take rather than handing it on, so the URL that '
         + 'exists only in that completion is lost');
-    assert.match(code(), /onTake:\s*request\.forWorld/,
-        'the view does not hand a world take to the delivery, so a walkthrough is recorded and '
+    /*
+     * The world capture still delivers — through the GENERAL mechanism now.
+     * This asserted `onTake: request.forWorld`, which was the destination
+     * (a CEILING question) standing in for whether a take is wanted. FCC-014
+     * added a second recording surface and separated the two, so the claim is
+     * re-derived rather than relaxed: what must hold is that a session which
+     * can record hands its take on, and that a world capture is such a session.
+     */
+    assert.match(code(), /onTake:\s*request\.recordsTakes/,
+        'the view does not hand a finished take to the delivery, so a walkthrough is recorded and '
         + 'stays on the phone');
+    assert.match(code(), /recordsTakes: Bool \{[^}]*contains\("video"\)/,
+        'nothing derives "this session can record" from what the target accepts, so which '
+        + 'surfaces deliver a take is decided by a flag somebody remembered to set');
 });
 
 test('a delivery that fails NAMES itself and keeps the take', () => {

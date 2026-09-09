@@ -29455,6 +29455,11 @@ ${fountainText.slice(0, 50000)}`;
              */
             destination: captureDestination(target),
             /*
+             * And what it may produce, so a footage session opens on the
+             * transport rather than the shutter and its take is delivered.
+             */
+            media: captureMedia(target),
+            /*
              * The delivery aspect, so the camera can guide the shape the plate
              * will actually be cropped to — a 9:16 deliverable guides 9:16.
              * previsAspect() is REUSED rather than the ratio parsed again here:
@@ -29532,8 +29537,32 @@ ${fountainText.slice(0, 50000)}`;
     function shootsWithCamera(target) {
         return [
             'storyboard-image', 'world-capture', 'character-plate', 'location-plate',
-            'prop-plate', 'mood-board-image', 'continuity-ref',
+            'prop-plate', 'mood-board-image', 'continuity-ref', 'video-media',
         ].indexOf(String(target || '')) !== -1;
+    }
+
+    /*
+     * WHICH MEDIA a session for this target may produce.
+     *
+     * `captureDestination` answers which CEILING binds; this answers what the
+     * camera is being opened to MAKE, and they are two different questions. A
+     * plate and a take share the destination `footage`, and a world capture
+     * takes both a panorama and a walkthrough — so a session told only where it
+     * is going opens the stills shutter for a clip and delivers nothing.
+     *
+     * MIRRORED from backend/lib/media-imports.js, self-contained for the reason
+     * the two rules beside it are: four harnesses lift these builders out by
+     * extracting FUNCTIONS, and a helper reading a module-level constant hands
+     * them a ReferenceError that `nativeCamera` then swallows.
+     *
+     * A LiDAR scan is deliberately absent from the world capture's list: the
+     * target accepts one, and this camera cannot make one.
+     */
+    function captureMedia(target) {
+        const t = String(target || '');
+        if (t === 'world-capture') return ['image', 'video'];
+        if (t === 'video-media') return ['video'];
+        return ['image'];
     }
 
     /*

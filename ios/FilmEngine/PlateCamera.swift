@@ -49,9 +49,25 @@ struct PlateCaptureRequest: Decodable {
      * Guessing the other way would silently shorten every take by a third.
      */
     let destination: String?
+    /*
+     * WHAT this session may produce, in the import registry's own vocabulary:
+     * "image", "video", or both. A separate question from `destination`, which
+     * says which CEILING binds — a plate and a take share the destination
+     * `footage`, and a world capture takes both a panorama and a walkthrough.
+     *
+     * Conflating the two is what FCC-013 did when it wired the delivery to
+     * `forWorld`: correct for the one recording surface it had, and silently
+     * wrong the moment a second one exists. Absent means stills, which is what
+     * every target but two is.
+     */
+    let media: [String]?
 
-    /// Is this session a walkthrough for a reconstruction?
+    /// Is this session a walkthrough for a reconstruction? A CEILING question.
     var forWorld: Bool { destination == "world" }
+    /// May this session take a photograph?
+    var shootsStills: Bool { (media ?? ["image"]).contains("image") }
+    /// May it record, and therefore does a finished take have somewhere to go?
+    var recordsTakes: Bool { (media ?? ["image"]).contains("video") }
 
     struct PlateView: Decodable, Identifiable {
         let key: String      // what the engine stores: "front", "side-left", …
@@ -3129,14 +3145,37 @@ struct PlateCameraView: View {
              * picker. What matters here is that the budget is VISIBLE before
              * the take, which is the whole task.
              */
-            if pending == nil {
+            /*
+             * Only where a take is actually wanted. A plate session offered a
+             * record button would produce a clip its import route refuses by
+             * magic bytes — a correct refusal for a button that should not have
+             * been there.
+             */
+            if pending == nil && request.recordsTakes {
                 FormatPicker(camera: camera).padding(.bottom, 8)
                 RecordingTransport(camera: camera, mode: camera.selectedMode,
-                                   onTake: request.forWorld ? { deliverTake($0) } : nil)
+                                   onTake: request.recordsTakes ? { deliverTake($0) } : nil)
                     .padding(.bottom, 14)
             }
 
-            if pending == nil {
+            /*
+             * THE REVIEW COMES FIRST, because a held frame is a state rather
+             * than a mode. Written as `if pending == nil && shootsStills` with
+             * an `else`, a footage session — which has no still to review —
+             * fell into the review row and offered "Retake" and "Use & finish"
+             * over a frame that does not exist, with no way out of the camera.
+             */
+            if pending != nil {
+                HStack(spacing: 28) {
+                    Button("Retake") { pending = nil; shotAt = nil; problem = nil }
+                    Button(busy ? "Uploading…" : (index + 1 < request.views.count ? "Use & next" : "Use & finish")) {
+                        upload()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(busy)
+                }
+                .foregroundStyle(.white).padding(.bottom, 34)
+            } else if request.shootsStills {
                 HStack(spacing: 40) {
                     Button("Cancel") { finish(cancelled: true) }
                     Button { take() } label: {
@@ -3150,15 +3189,17 @@ struct PlateCameraView: View {
                 }
                 .foregroundStyle(.white).padding(.bottom, 34)
             } else {
-                HStack(spacing: 28) {
-                    Button("Retake") { pending = nil; shotAt = nil; problem = nil }
-                    Button(busy ? "Uploading…" : (index + 1 < request.views.count ? "Use & next" : "Use & finish")) {
-                        upload()
-                    }
-                    .buttonStyle(.borderedProminent)
+                /*
+                 * A FOOTAGE session has no still to take, so the shutter is not
+                 * offered — a JPEG posted to a video import is refused by the
+                 * bytes, which is right for a button that should not exist. It
+                 * still needs a way OUT, or the only exit from the camera is
+                 * one the director never chose.
+                 */
+                Button("Done") { finish(cancelled: result.uploaded.isEmpty) }
+                    .foregroundStyle(.white)
                     .disabled(busy)
-                }
-                .foregroundStyle(.white).padding(.bottom, 34)
+                    .padding(.bottom, 34)
             }
         }
     }

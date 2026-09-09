@@ -72,21 +72,16 @@ function mediaImportTargets() {
          */
         const photographed = capability === 'video';
         /*
-         * FOOTAGE IS PHOTOGRAPHED AND THE CONTROLLED CAMERA CANNOT YET DELIVER
-         * IT. Recording works — FCC-001 built the writer and FCC-011 the budget
-         * — but a finished take is kept on the device as `lastTake` and nothing
-         * uploads it, which is FCC-014's whole task and the edge it depends on.
+         * FOOTAGE IS PHOTOGRAPHED AND THE CAMERA NOW DELIVERS IT.
          *
-         * So this surface KEEPS the system camera, which does deliver a clip
-         * today. Retiring it here would trade a working path for a better one
-         * that loses the take, and a Shoot that records and drops the file is
-         * the exact failure this codebase keeps paying for. Named rather than
-         * silently excluded: a gap written down is work.
+         * FCC-012 left this surface on the system camera and marked it
+         * `camera_pending`, because the controlled camera recorded a take and
+         * nothing uploaded it — routing it then would have traded a working
+         * path for a better-looking one that loses the take. FCC-014 built the
+         * delivery, so the marker is gone rather than left reading as an open
+         * gap. A gap that is closed and still announced is the same lie as one
+         * that is open and silent.
          */
-        const cameraPending = capability === 'video'
-            ? 'FCC-014 — the controlled camera records a take and nothing delivers it yet, so '
-                + 'the system camera stays until footage attaches to a shot'
-            : null;
         if (!photographed && !NOT_PHOTOGRAPHED[capability]) {
             throw new Error(`media-imports: ${capability} does not say whether its media is `
                 + 'photographed in the world, so the camera affordance would be decided by '
@@ -97,7 +92,6 @@ function mediaImportTargets() {
             capability,
             photographed,
             ...(photographed ? {} : { photographed_why: NOT_PHOTOGRAPHED[capability] }),
-            ...(cameraPending ? { camera_pending: cameraPending } : {}),
             shotScoped: spec.scope === 'shot',
             sceneScoped: spec.scope === 'scene',
             subdir: spec.subdir,
@@ -565,7 +559,10 @@ function safeStem(name) {
 function importSubjectPlate(spec, target, input) {
     const { plateFileName } = require('./reference-plates');
     const owner = subjectOwnerFor(spec, input);
-    const { mime, bytes } = decodeDataUri(input.data);
+    // `bytesFrom`, so a plate can arrive as bytes too. Three sites decoded an
+    // upload and only one went through the shared accessor — see the note in
+    // importCapabilityMedia. `decodeDataUri` now has exactly one caller.
+    const { mime, bytes } = bytesFrom(input);
     validateBytes(spec, mime, bytes);
 
     const view = String(input.view || '').trim();
@@ -675,7 +672,15 @@ function importSubjectPlate(spec, target, input) {
  */
 function importCapabilityMedia(spec, target, input) {
     const owner = spec.sceneScoped ? sceneOwnerFor(input) : ownerFor(target, input);
-    const { mime, bytes } = decodeDataUri(input.data);
+    /*
+     * `bytesFrom`, never `decodeDataUri`. This path read the data URI directly
+     * — a SECOND copy of the rule the shared accessor exists to state once —
+     * so footage and sound could arrive only base64-encoded, a third larger
+     * than the file, on the paths built for the largest files there are. That
+     * is precisely the drift `bytesFrom`'s own comment predicted, found when a
+     * take recorded on the phone had nowhere to land.
+     */
+    const { mime, bytes } = bytesFrom(input);
     validateBytes(spec, mime, bytes);
 
     /*

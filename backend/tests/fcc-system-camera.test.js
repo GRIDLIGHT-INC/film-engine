@@ -472,47 +472,21 @@ test('shootControl is asked about a TARGET, not only about an accept string', ()
  * SET 5 — the camera is told what it is being opened for              *
  * ------------------------------------------------------------------ */
 
-test('a target the camera cannot DELIVER keeps the system one, and names what closes it', () => {
-    /*
-     * Footage is photographed in the world, and the controlled camera cannot
-     * finish the act: FCC-001 built the writer and FCC-011 the budget, but a
-     * finished take is kept on the device as `lastTake` and nothing uploads it
-     * — which is FCC-014's whole task and the edge it depends on.
-     *
-     * So this surface KEEPS the system camera, which delivers a clip today.
-     * Routing it to a camera that records and drops the file would trade a
-     * working path for a better-looking one that loses the take. Named rather
-     * than quietly dropped from the set: a gap written down is work, and one
-     * silently excluded is one nobody finds again.
-     */
-    const pending = Object.entries(MEDIA_IMPORTS).filter(([, s]) => s.camera_pending);
-    assert.ok(pending.length >= 1,
-        'nothing is marked as waiting on its delivery. If FCC-014 has landed, that target belongs '
-        + 'in the camera set and this test should be deleted rather than left passing');
-
-    const b = builders(true);
-    const surfaces = surfacesFor(b);
-    const wrong = [];
-    for (const [target, spec] of pending) {
-        if (!/FCC-\d+/.test(spec.camera_pending)) {
-            wrong.push(`${target}: says it is waiting and does not name the task that closes it`);
-        }
-        assert.strictEqual(spec.photographed, true,
-            `${target}: is marked pending and is not photographed — then it is simply excluded, `
-            + 'and saying it is waiting claims work that is not owed');
-        if (!surfaces[target]) continue;
-        const html = surfaces[target]();
-        if (opensControlledCamera(html)) {
-            wrong.push(`${target}: opens the controlled camera, which records a take and delivers `
-                + `nothing. ${spec.camera_pending}`);
-        }
-        if (!inputsOf(html).some((i) => i.hasCapture)) {
-            wrong.push(`${target}: lost the system camera without gaining the controlled one, so `
-                + 'the surface can no longer shoot at all');
-        }
-    }
-    assert.deepStrictEqual(wrong, [], `\n  ${wrong.join('\n  ')}`);
-});
+/*
+ * THE PENDING TEST THAT USED TO SIT HERE IS GONE, AND THAT IS THE POINT.
+ *
+ * FCC-012 left `video-media` on the system camera because the controlled one
+ * recorded a take and nothing delivered it, and pinned that gap with a test
+ * whose own failure message said: "If FCC-014 has landed, that target belongs
+ * in the camera set and this test should be deleted rather than left passing."
+ *
+ * FCC-014 (GRD-3810) landed. The marker is gone from the registry, footage is
+ * in the camera set above — where `EVERY photographed target opens the
+ * CONTROLLED camera in the app` now covers it — and its delivery is pinned by
+ * `fcc-footage-to-shot.test.js`. A check that REQUIRES a gap to exist is one
+ * that blocks the gap being closed, which is why it was written to be removed
+ * rather than relaxed.
+ */
 
 test('the iOS bundle is re-synced, or the phone runs a page without the change', () => {
     const bundled = fs.readFileSync(path.join(ROOT, 'ios/FilmEngine/Web/index.html'), 'utf8');

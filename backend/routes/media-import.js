@@ -72,12 +72,33 @@ function importForCapability(req, res, scopeKind, ownerId, capability, opts = {}
         });
     }
     const body = req.body || {};
-    if (!body.data) return json(res, 400, { error: 'no file supplied' });
+    /*
+     * EITHER FORM, which is what `importMedia` has taken since it was written.
+     *
+     * A data URI is what a browser's FileReader produces; RAW BYTES are what a
+     * native client sends, and they cost a third less because nothing is
+     * base64-encoded. `bytesFrom`'s own comment says accepting both there
+     * rather than at each route is "what stops one import path learning the
+     * cheaper form and the other five not" — and this route, the single one
+     * serving all seven media capabilities and built for the LARGEST files,
+     * gated on `body.data` and refused bytes before reading one.
+     *
+     * That is not a hypothetical: it is what stood between a take recorded on
+     * the phone and the shot it belongs to.
+     */
+    const raw = Buffer.isBuffer(body.__raw) ? body.__raw : null;
+    if (!raw && !body.data) return json(res, 400, { error: 'no file supplied' });
 
     try {
         const imported = importMedia(`${capability}-media`, {
             ...(scopeKind === 'scene' ? { sceneId: ownerId } : { shotId: ownerId }),
-            data: body.data, name: body.name,
+            /*
+             * A raw body IS the file, so the name cannot travel in it. The
+             * query carries it — and an absent one is fine, because the stored
+             * extension follows the BYTES rather than the name either way.
+             */
+            ...(raw ? { bytes: raw, mime: body.__mime } : { data: body.data }),
+            name: body.name || (opts.query && opts.query.name),
         });
 
         /*
@@ -171,7 +192,7 @@ const CUE_CAPABILITY = Object.freeze({
     ambient: 'ambient', sfx: 'sfx',
 });
 
-function handleMediaImport(req, res, urlParts) {
+function handleMediaImport(req, res, urlParts, query) {
     if (urlParts[1] === 'media-kinds' && req.method === 'GET') return listMediaKinds(res);
 
     // Which shots a clip contains, set after the fact.
@@ -204,6 +225,7 @@ function handleMediaImport(req, res, urlParts) {
         }
         const capability = CUE_CAPABILITY[cue.cue_type] || 'music';
         return importForCapability(req, res, 'scene', cue.scene_id, capability, {
+            query,
             onImported: (imported) => {
                 db.prepare('UPDATE film_music_cues SET generated_asset_id = ? WHERE id = ?')
                     .run(imported.asset_id, cue.id);
@@ -216,7 +238,7 @@ function handleMediaImport(req, res, urlParts) {
     if (scope && urlParts[2] && urlParts[3] === 'media' && urlParts[4] && urlParts[5] === 'import') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: `Invalid ${scope} ID` });
         if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-        return importForCapability(req, res, scope, urlParts[2], urlParts[4]);
+        return importForCapability(req, res, scope, urlParts[2], urlParts[4], { query });
     }
     return false;
 }

@@ -225,12 +225,13 @@ enum PlateCameraBridge {
 
 extension PlateCaptureRequest {
     func withBase(_ base: String) -> PlateCaptureRequest {
-        // Every field is carried through. `aspect` and `destination` deliberately
-        // have NO default: with one, this reconstruction would compile while
-        // silently dropping the field, and the aspect guide would never appear
-        // — nor would a walkthrough ever be budgeted against Marble.
+        // Every field is carried through. `aspect`, `destination` and `media`
+        // deliberately have NO default: with one, this reconstruction would
+        // compile while silently dropping the field — the aspect guide would
+        // never appear, a walkthrough would never be budgeted against Marble,
+        // and every session would fall back to stills.
         PlateCaptureRequest(url: url, apiBase: base, subject: subject, views: views,
-                            aspect: aspect, destination: destination)
+                            aspect: aspect, destination: destination, media: media)
     }
 }
 
