@@ -56,7 +56,7 @@ because the hardware is here.
 | Monitoring | `FocusPeaking` and `ExposureWarning` read the luma plane with correct `bytesPerRow`; format-agnostic |
 | Frame access | `AVCaptureVideoDataOutput` present, one subscriber, one plane read per frame |
 | Recording formats | None offered; the system camera decides |
-| Transport | JSON body, base64. `FILE_LIMIT` 150 MB raw → ~112 MB of file; Marble caps video at 100 MB |
+| Transport | Raw binary body since FCC-010. `FILE_LIMIT` 150 MB binds a shot; the base64 path still admits ~112 MB; Marble's 100 MB binds a world capture only |
 | Capture budget | `capture-policy.js` models 3 ceilings and 3 HEVC modes (1080p30/4k30/4k60) and answers `maxSecondsFor` |
 | External storage | Not used |
 | Audio with footage | Not captured; `NSMicrophoneUsageDescription` is declared |
@@ -94,7 +94,7 @@ because the hardware is here.
   than a re-plan.
 
 - **A format that cannot travel must never be silently chosen.** ProRes 422 HQ
-  at 4K30 is ~7 GB/min against a 100 MB pipe. Offering it without its transport
+  at 4K30 is ~7 GB/min against a 150 MB pipe. Offering it without its transport
   is how a director loses a take they cannot re-shoot.
 
 - **ASSUMPTION, LABELLED — the surface question is answered by a rule, not a

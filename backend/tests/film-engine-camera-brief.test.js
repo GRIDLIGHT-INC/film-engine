@@ -80,7 +80,16 @@ const CLAIMS = [
              * hid behind two right ones. Same weakness that has now cost three
              * times in this session.
              */
-            const mb = Math.floor(p.bindingBytes() / 1048576);
+            /*
+             * The ceiling that binds a SHOT, which is what all three of the
+             * brief's mentions are about — what may be recorded and sent up the
+             * wire. It was the blind minimum over every ceiling, and that is
+             * Marble's cap on a world capture; quoting it here told a reader
+             * that footage is bound by a service footage never reaches.
+             */
+            const mb = Math.floor(p.bindingBytesFor({
+                transport: 'upload', destination: 'footage', kind: 'video',
+            }) / 1048576);
             // \s+ across the match, because markdown wraps: one mention is
             // "a real 100 MB\n  ceiling" and a space-only pattern missed it,
             // leaving a third of the numbers unpoliced.

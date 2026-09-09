@@ -75,22 +75,43 @@ test('every capture mode gets a duration cap, and it is computed not typed', () 
             assert.strictEqual(choice && choice.offered, false,
                 `${id}: fits zero seconds and is offered — a button that cannot produce one frame`);
         }
-        // Derived: the cap must equal the binding ceiling divided by the rate.
-        const binding = Math.min(...Object.values(policy.CEILINGS).map((c) => c.bytes));
+        /*
+         * Derived: the cap must equal the ceiling that binds THIS mode's own
+         * route, divided by the rate.
+         *
+         * It used to be the blind minimum over every ceiling, which is the
+         * defect FCC-011 removed — the smallest is World Labs' cap on a video
+         * handed to Marble, and a shot recorded for the cut never goes there.
+         * Re-derived rather than exempted: the rule is still "computed, never
+         * typed", and only the question it asks has changed.
+         */
+        const binding = policy.bindingBytesFor(policy.routeFor(m));
         assert.strictEqual(cap, Math.floor(binding / m.bytes_per_second),
             `${id}: the cap is not the binding ceiling divided by the bitrate — it has been typed`);
     }
 });
 
-test('the binding ceiling for video is Marble, not the transport', () => {
+test('the binding ceiling for a WORLD capture is Marble, and for footage it is not', () => {
     /*
-     * Worth asserting rather than assuming: it is what makes the recommended
-     * mode 1080p rather than 4K, and if the transport ever became the smaller
-     * one the advice would change.
+     * Worth asserting rather than assuming, and the two halves are the point.
+     * Marble binds a clip handed to World Labs — if the transport ever became
+     * the smaller one there, the advice for a capture would change. It binds
+     * NOTHING that goes into the cut, and asserting that keeps the two apart:
+     * they were one number for as long as this module had a blind minimum, and
+     * every take in the film was a third shorter for it.
      */
     const c = policy.CEILINGS;
     assert.ok(c.marble_video.bytes < c.transport_base64.bytes,
         'the transport now binds before Marble does — the recommendation needs revisiting');
+
+    const forWorld = policy.bindingCeilingFor({ destination: 'world', kind: 'video' });
+    assert.strictEqual(forWorld.id, 'marble_video',
+        `a world capture is bound by ${forWorld.id}, so a clip Marble will refuse is accepted here`);
+
+    const forFilm = policy.bindingCeilingFor({ destination: 'footage', kind: 'video' });
+    assert.strictEqual(forFilm.id, 'transport_raw',
+        `footage is bound by ${forFilm.id}. A shot for the cut never reaches World Labs, and `
+        + "pricing it against World Labs' cap is what cost a third of every take");
 });
 
 test('the recommendation is a mode a director can actually shoot with', () => {
@@ -107,8 +128,17 @@ test('4K60 is named as unshootable for a capture, not silently omitted', () => {
      * lets somebody shoot a minute of 4K60 and discover at upload that it was
      * never going to work.
      */
-    const cap = policy.maxSecondsFor('4k60');
+    /*
+     * FOR A CAPTURE, so the route says so: this test is about a clip handed to
+     * Marble, and that is a different number from the same mode shot for the
+     * cut — 14 seconds against 22. Asking without a route was how the two
+     * became one answer.
+     */
+    const cap = policy.maxSecondsFor('4k60', { destination: 'world' });
     assert.ok(cap < 30, `4K60 allows ${cap}s, which contradicts ~400MB/min`);
+    assert.ok(policy.maxSecondsFor('4k60') > cap,
+        'a 4K60 take for the cut fits no longer than one handed to Marble, so the destination is '
+        + 'reaching nothing and the ceilings have collapsed back into one');
     const rec = policy.recommended();
     assert.notStrictEqual(rec.mode, '4k60', '4K60 cannot be the recommendation at that bitrate');
 });

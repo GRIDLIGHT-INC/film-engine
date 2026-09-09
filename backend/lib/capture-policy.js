@@ -1,17 +1,30 @@
 /**
  * What a capture may be, derived from the ceilings that actually bind it.
  *
- * Three separate limits sit between a phone and a reconstructed world and they
- * are not the same number: the body this engine accepts, that same body after
+ * Three separate limits sit between a phone and a finished film and they are
+ * not the same number: the body this engine accepts, that same body after
  * base64 inflation, and Marble's own cap on a video. A cap stated as a constant
  * would be wrong the moment any of the three moved, so every figure here is
  * COMPUTED from the place its ceiling is defined and carries the source.
  *
- * The number that makes this worth writing down: an iPhone shooting 4K60 —
- * which is the default on a modern one — produces about 400MB a minute, so it
- * breaches the smallest ceiling in roughly fifteen seconds. That is shorter
- * than any orbit worth reconstructing from, and it is discovered at upload
- * unless somebody says so first.
+ * EVERY ONE OF THEM ALSO SAYS WHAT IT BINDS, which is what FCC-011 added and
+ * the reason the durations were wrong for as long as they were. The three were
+ * reduced with a blind `Math.min` and the answer applied to everything — and
+ * the smallest is World Labs' cap on a video handed to Marble, so a shot
+ * recorded for the CUT was priced against a service it never reaches. A
+ * director shooting 4K60 was told to stop at fourteen seconds when twenty-two
+ * fit; 4K30 said 44 against 66; 1080p30, the recommended mode, said 133 against
+ * 200. A third of every take, thrown away by a limit belonging to something
+ * else. `bindingBytesFor({transport, destination})` is the answer now and
+ * `bindingBytes()` is gone: there is no such thing as THE ceiling, and leaving
+ * an accessor that answers as though there were is how the next caller
+ * reintroduces this.
+ *
+ * The number that makes the module worth writing down at all: an iPhone
+ * shooting 4K60 — the default on a modern one — produces about 400MB a minute,
+ * so it breaches even the upload ceiling in under half a minute. That is
+ * shorter than many useful shots, and it is discovered at upload unless
+ * somebody says so first.
  */
 
 const path = require('path');
@@ -24,21 +37,80 @@ function marbleVideoCap() {
     return { bytes: c.limits.video_max_bytes, source: c.limits.video_max_bytes_source };
 }
 
+/**
+ * WHERE the footage is going. A ceiling that belongs to a destination binds
+ * only the captures that actually travel there.
+ *
+ * Two, and the distinction is the whole of FCC-011: a world capture is handed
+ * to World Labs and is capped by what World Labs accepts; a shot recorded for
+ * the cut goes into the film and never meets that service at all. Applying one
+ * to the other is how Marble's 100MB came to shorten every take in the picture.
+ */
+const DESTINATIONS = Object.freeze({
+    footage: Object.freeze({
+        label: 'the film',
+        source: 'a take that goes into the cut — it reaches this engine and stops there',
+    }),
+    world: Object.freeze({
+        label: "World Labs' Marble",
+        source: 'a capture handed to a reconstruction service, which has its own limits',
+    }),
+});
+
+/**
+ * The ceilings, and WHAT EACH ONE BINDS.
+ *
+ * `applies_to` is the field this module was missing and the reason the numbers
+ * were wrong. A ceiling is not a property of the engine, it is a property of a
+ * ROUTE — a transport, an encoding, a destination, sometimes a medium — and a
+ * ceiling that declares none of those is one a blind minimum applies to
+ * everything. A route is bound by a ceiling only when it matches EVERY
+ * dimension that ceiling names.
+ */
 const CEILINGS = Object.freeze({
     transport_raw: Object.freeze({
         bytes: FILE_LIMIT,
+        label: 'the upload to the Mac',
+        applies_to: Object.freeze({
+            transports: Object.freeze(['upload']),
+            encodings: Object.freeze(['raw']),
+        }),
         source: 'backend/lib/body-limit.js FILE_LIMIT — the body this engine accepts',
     }),
     transport_base64: Object.freeze({
         /*
-         * The same ceiling seen by anything that encodes. base64 is four thirds
-         * of the bytes, so the file that fits is three quarters of the body —
-         * and this is the number a director experiences, not FILE_LIMIT.
+         * The same ceiling seen by anything that ENCODES. base64 is four thirds
+         * of the bytes, so the file that fits is three quarters of the body.
+         *
+         * FCC-010 moved media off this path — a take travels raw and in chunks
+         * now — so this is no longer the number a director experiences when
+         * shooting. It is still live for everything that arrives as a `data:`
+         * URI, which is how the page and the world-capture route still post,
+         * and that is exactly why it now says so: a right number applied to the
+         * wrong thing is worse than a wrong number, because nobody re-checks it.
          */
         bytes: Math.floor(FILE_LIMIT * 3 / 4),
+        label: 'the upload, base64-encoded',
+        applies_to: Object.freeze({
+            transports: Object.freeze(['upload']),
+            encodings: Object.freeze(['base64']),
+        }),
         source: 'the same body ceiling after base64 inflation, which is four thirds of the file',
     }),
-    marble_video: Object.freeze(marbleVideoCap()),
+    marble_video: Object.freeze({
+        ...marbleVideoCap(),
+        label: "Marble's own cap on a video",
+        /*
+         * A DESTINATION and a MEDIUM, never a transport. A world capture and a
+         * shot video leave the phone the same way; only one of them is handed
+         * to World Labs, and only its video is capped. Naming a transport here
+         * would put this back in front of footage that never goes there.
+         */
+        applies_to: Object.freeze({
+            destinations: Object.freeze(['world']),
+            kinds: Object.freeze(['video']),
+        }),
+    }),
 });
 
 /**
@@ -93,6 +165,17 @@ const CAPABILITIES = Object.freeze({
         probe_symbol: 'CMVideoFormatDescriptionGetDimensions',
         degrade: 'This camera has no open-gate format — the take records the ordinary 16:9 crop '
             + 'of the sensor.',
+        /*
+         * The one capability with no entry in MODES, and it is a decision
+         * rather than a gap — so it is stated here where the completeness rule
+         * can read it. Open gate's raster is a property of the SENSOR and
+         * nothing published gives a pixel count, so a fixed mode would be an
+         * invented rate for hardware nobody here has measured. The camera
+         * builds it from the format the device reports, or does not offer it.
+         */
+        no_fixed_mode: 'its raster is the sensor\'s own and nothing published gives a pixel '
+            + 'count, so a fixed rate here would be a number nobody measured — the camera reads '
+            + 'it from the format the device reports instead',
     }),
 });
 
@@ -395,16 +478,113 @@ const DRIVE_CHECKS = Object.freeze({
     }),
 });
 
-/** The smallest ceiling — the one that actually decides. */
-function bindingBytes() {
-    return Math.min(...Object.values(CEILINGS).map((c) => c.bytes));
+/**
+ * WHICH CEILINGS BIND THIS ROUTE.
+ *
+ * A route is four facts: how the bytes travel, how they are encoded, where
+ * they are going, and what medium they are. A ceiling binds only when the
+ * route matches EVERY dimension that ceiling names — a ceiling that names
+ * nothing would bind everything, which is the blind minimum this replaced.
+ *
+ * An unstated dimension is the route's default, never a wildcard: the caller
+ * has to be able to say "footage, over the upload, raw" and get one answer.
+ */
+function applicableCeilings(route) {
+    const r = route || {};
+    const transport = r.transport || 'upload';
+    const destination = r.destination || 'footage';
+    const encoding = r.encoding || 'raw';
+    const kind = r.kind || null;
+
+    if (!TRANSPORTS[transport]) throw new Error(`unknown transport ${transport}`);
+    if (!DESTINATIONS[destination]) throw new Error(`unknown destination ${destination}`);
+
+    return Object.entries(CEILINGS)
+        .filter(([, c]) => {
+            const a = c.applies_to || {};
+            if (a.transports && !a.transports.includes(transport)) return false;
+            if (a.destinations && !a.destinations.includes(destination)) return false;
+            if (a.encodings && !a.encodings.includes(encoding)) return false;
+            /*
+             * A medium the caller did not state does NOT excuse a
+             * medium-scoped ceiling. "How long may a take be" is asked without
+             * saying "video", and answering it as though Marble's video cap
+             * did not apply would be the old defect pointed the other way.
+             */
+            if (a.kinds && kind && !a.kinds.includes(kind)) return false;
+            return true;
+        })
+        .map(([id, c]) => ({ id, ...c }));
 }
 
-/** How many seconds of this mode fit under the binding ceiling. */
-function maxSecondsFor(mode) {
+/**
+ * The ceiling that actually binds this route, and where its number came from.
+ *
+ * The smallest of the ones that APPLY — which is a different sentence from the
+ * smallest there is, and the difference is a third of every take.
+ *
+ * A device-reported transport has no static number at all and says so rather
+ * than inheriting one: a drive's ceiling is the free space the drive reports,
+ * which is four orders of magnitude away from any body limit here. With no
+ * drive attached the answer is zero, which is the truth — nothing fits on a
+ * disk that is not there.
+ */
+function bindingCeilingFor(route) {
+    const r = route || {};
+    const transport = r.transport || 'upload';
+    const t = TRANSPORTS[transport];
+    if (!t) throw new Error(`unknown transport ${transport}`);
+
+    if (t.device_reported) {
+        return {
+            id: transport,
+            bytes: Number(r.free_bytes) > 0 ? Number(r.free_bytes) : 0,
+            device_reported: true,
+            label: t.ceiling_is,
+            source: t.ceiling_is,
+        };
+    }
+
+    const applicable = applicableCeilings(r);
+    if (!applicable.length) {
+        throw new Error(`no ceiling declares that it binds ${transport}; a route with no ceiling `
+            + 'would be unbounded, which is never the honest answer');
+    }
+    return applicable.reduce((a, b) => (b.bytes < a.bytes ? b : a));
+}
+
+/** The binding ceiling in bytes. See `bindingCeilingFor` for which one, and why. */
+function bindingBytesFor(route) {
+    return bindingCeilingFor(route).bytes;
+}
+
+/**
+ * The route a mode travels by default: its own first declared transport, into
+ * the film. A capture MODE is always video, so a medium-scoped ceiling is
+ * weighed rather than skipped.
+ */
+function routeFor(mode, opts) {
+    const o = opts || {};
+    return {
+        transport: o.transport || (mode.transports || [])[0] || 'upload',
+        destination: o.destination || 'footage',
+        encoding: o.encoding || 'raw',
+        kind: 'video',
+        free_bytes: o.free_bytes,
+    };
+}
+
+/**
+ * How many seconds of this mode fit under the ceiling that binds IT.
+ *
+ * Not under the smallest ceiling anywhere. The two answers differ by a third
+ * on every HEVC mode, and the smaller one belongs to a service most takes
+ * never reach.
+ */
+function maxSecondsFor(mode, opts) {
     const m = MODES[mode];
     if (!m) throw new Error(`unknown capture mode ${mode}`);
-    return Math.floor(bindingBytes() / m.bytes_per_second);
+    return Math.floor(bindingBytesFor(routeFor(m, opts)) / m.bytes_per_second);
 }
 
 /**
@@ -413,40 +593,64 @@ function maxSecondsFor(mode) {
  * The longest usable clip, not the highest resolution: a world is
  * reconstructed from COVERAGE of a room, so fifteen seconds of 4K is worth less
  * than two minutes of 1080p. Chosen rather than hardcoded, so a change to any
- * ceiling moves the advice.
+ * ceiling moves the advice — and each mode is now weighed against the ceiling
+ * that binds ITS route, so a format that travels by drive is not ranked against
+ * a body limit it never meets.
  */
-function recommended() {
+function recommended(opts) {
     const best = Object.keys(MODES)
-        .map((mode) => ({ mode, max_seconds: maxSecondsFor(mode) }))
+        .map((mode) => ({ mode, max_seconds: maxSecondsFor(mode, opts) }))
         .sort((a, b) => b.max_seconds - a.max_seconds)[0];
+    const ceiling = bindingCeilingFor(routeFor(MODES[best.mode], opts));
     return {
         ...best,
-        why: `${MODES[best.mode].label} fits ${best.max_seconds}s under the binding ceiling of `
-            + `${Math.floor(bindingBytes() / 1048576)}MB. A world is reconstructed from coverage of a `
-            + 'room, so a longer clip at this resolution is worth more than a short one at a higher '
-            + 'resolution — 4K60 allows only ' + maxSecondsFor('4k60') + 's.',
+        ceiling: ceiling.id,
+        why: `${MODES[best.mode].label} fits ${best.max_seconds}s under ${ceiling.label}, which is `
+            + `${Math.floor(ceiling.bytes / 1048576)}MB. A world is reconstructed from coverage of `
+            + 'a room, so a longer clip at this resolution is worth more than a short one at a '
+            + 'higher resolution — 4K60 allows only ' + maxSecondsFor('4k60', opts) + 's.',
     };
 }
 
 /**
- * May this capture be uploaded?
+ * May this capture be sent to Marble?
  *
  * A still is bound by the TRANSPORT and a clip by MARBLE. Holding a panorama to
  * the video cap would refuse a perfectly good 120MB pano, and holding a clip to
  * the transport cap would accept one Marble then rejects — which is a paid
- * round trip to learn something knowable here.
+ * round trip to learn something knowable here. Both fall out of the route now
+ * rather than being branched by hand: the destination is `world`, and the
+ * medium decides whether Marble's cap is among the ceilings that apply.
+ *
+ * THE ENCODING DEFAULTS TO THE INFLATING ONE. A caller that does not say has
+ * bytes of unknown provenance, and this function REFUSES — so the conservative
+ * ceiling is the right default, and a caller who knows the bytes travelled raw
+ * says so and gets the larger one.
  */
 function checkCapture(input) {
     const { kind, bytes } = input || {};
-    const ceiling = kind === 'video' ? CEILINGS.marble_video : CEILINGS.transport_base64;
+    const route = {
+        transport: 'upload',
+        destination: 'world',
+        encoding: (input && input.encoding) || 'base64',
+        kind: kind === 'video' ? 'video' : 'image',
+    };
+    const ceiling = bindingCeilingFor(route);
     if (!(bytes > ceiling.bytes)) return { ok: true, ceiling };
     const mb = (n) => `${Math.floor(n / 1048576)}MB`;
     return {
         ok: false,
         ceiling,
-        why: kind === 'video'
+        why: ceiling.id === 'marble_video'
+            /*
+             * The advice has to be about the SAME route as the refusal. Quoting
+             * the footage figures here would tell a director that 1080p30 fits
+             * 200 seconds in the very sentence refusing their 101MB clip — the
+             * defect this task exists to remove, reappearing in its own error
+             * message.
+             */
             ? `That clip is ${mb(bytes)}. Marble accepts ${mb(ceiling.bytes)} of video — `
-                + `${recommended().why}`
+                + `${recommended({ destination: 'world' }).why}`
             : `That file is ${mb(bytes)}. The upload ceiling is ${mb(ceiling.bytes)} of file.`,
     };
 }
@@ -500,10 +704,26 @@ function formatChoices(extra = [], device = null) {
          * five formats that all read "0s max" — which looks broken rather than
          * available, and is the half of this task that is easy to miss.
          */
-        const ceiling = usable === 'external' && device
-            ? (device.external_free_bytes || 0)
-            : bindingBytes();
-        const maxSeconds = Math.floor(ceiling / perSecond);
+        /*
+         * THE CEILING IS THE TRANSPORT'S, and on a drive that is a different
+         * number by four orders of magnitude: ProRes 422 HQ at 4K30 fits about
+         * a second under the upload ceiling and about ninety on a terabyte.
+         *
+         * A format with NO usable transport is priced at zero, not against the
+         * upload it cannot take. Quoting the upload's figure there put a
+         * plausible "5s max" beside a refusal saying the format needs a drive —
+         * two answers to one question, and the smaller one is the one that
+         * binds: nothing fits on a disk that is not there.
+         */
+        const ceiling = usable
+            ? bindingCeilingFor({
+                transport: usable,
+                destination: 'footage',
+                kind: 'video',
+                free_bytes: device ? device.external_free_bytes : 0,
+            })
+            : { id: 'none', bytes: 0, label: 'no transport this format can take' };
+        const maxSeconds = Math.floor(ceiling.bytes / perSecond);
         const choice = {
             id: m.id,
             label: m.label,
@@ -538,14 +758,16 @@ function formatChoices(extra = [], device = null) {
              */
             choice.offered = false;
             choice.refusal = `${m.label} costs ${choice.mb_per_min}MB a minute, which does not fit `
-                + `one second under the ${Math.floor(bindingBytes() / 1048576)}MB ceiling. It needs `
-                + `a larger transport before it can be recorded at all.`;
+                + `one second under the ${Math.floor(ceiling.bytes / 1048576)}MB ceiling of `
+                + `${TRANSPORTS[usable].label}. It needs a larger transport before it can be `
+                + 'recorded at all.';
         }
         return choice;
     });
 }
 
 module.exports = {
-    CEILINGS, MODES, CODECS, CAPABILITIES, TRANSPORTS, DRIVE_CHECKS, bindingBytes, maxSecondsFor, recommended, checkCapture,
-    formatChoices,
+    CEILINGS, DESTINATIONS, MODES, CODECS, CAPABILITIES, TRANSPORTS, DRIVE_CHECKS,
+    applicableCeilings, bindingCeilingFor, bindingBytesFor, routeFor,
+    maxSecondsFor, recommended, checkCapture, formatChoices,
 };

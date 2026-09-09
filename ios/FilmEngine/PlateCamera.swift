@@ -752,8 +752,13 @@ struct RecordingMode: Equatable {
     enum Transport: String, CaseIterable {
         case upload, external
 
-        /// Declared before it exists, deliberately — FCC-009 builds `external`,
-        /// and FCC-007's ProRes must be refusable against it before then.
+        /// Whether this transport exists WITHOUT asking the device.
+        ///
+        /// The upload always does. A drive never does statically — whether one
+        /// is plugged in is a property of this moment, not of the table — so
+        /// `RecordingBudget.transport(_:driveFreeBytes:)` is what resolves it
+        /// once the phone has answered. Reading this alone for an external
+        /// format refuses ProRes with a drive attached and working.
         var isAvailable: Bool { self == .upload }
 
         var label: String {
@@ -767,8 +772,10 @@ struct RecordingMode: Equatable {
             switch self {
             case .upload: return ""
             case .external:
-                return "recording to external USB-C storage is not built yet — until it is, "
-                    + "there is nowhere to put a file this size"
+                // FCC-009 built this. The remedy is now a thing a director can
+                // DO, rather than a feature they are told does not exist.
+                return "no external drive is attached — plug in a USB-C drive the camera can "
+                    + "record to, and this format becomes available"
             }
         }
     }
@@ -894,12 +901,18 @@ struct RecordingMode: Equatable {
 
 /// How long a take may be, and how much of it is left.
 ///
-/// **The number this exists for is fourteen seconds.** The binding ceiling is
-/// 100MB and 4K60 costs about 400MB a minute, so a 4K60 take breaches it in 14
-/// seconds — shorter than most useful shots, and until now discovered at
-/// UPLOAD, after the take was shot. 4K30 gets 44 seconds; 1080p30 gets 133.
+/// **The number this exists for is twenty-two seconds.** 4K60 costs about
+/// 400MB a minute and the upload accepts 150MB, so a 4K60 take breaches it in
+/// 22 seconds — shorter than many useful shots, and until FCC-004 discovered at
+/// UPLOAD, after the take was shot. 4K30 gets 66 seconds; 1080p30 gets 200.
 /// Those differ by an order of magnitude, which is why a director has to be
 /// told which one they are working against rather than left to guess.
+///
+/// **It used to say fourteen, and that was a third of every take.** There was
+/// one `ceilingBytes` — 100MB, World Labs' cap on a video handed to Marble —
+/// applied to footage that goes into the CUT and never reaches World Labs.
+/// FCC-011 gave every transport its own ceiling on both sides of the wire, so
+/// a take is priced against the route it will actually travel by.
 ///
 /// MIRRORED FROM `backend/lib/capture-policy.js`, deliberately. Swift cannot
 /// require a node module, so the budget exists twice — the same arrangement
@@ -909,46 +922,93 @@ struct RecordingMode: Equatable {
 /// wrong: the app would promise one duration and then refuse a different one.
 enum RecordingBudget {
     /*
-     * The SMALLEST of capture-policy's three ceilings, which is currently
-     * Marble's own cap on a video. Budgeting against either of the larger two
-     * would promise up to 50% more recording time than the clip can carry, and
-     * every take made on that promise is refused after it was shot. The test
-     * takes the minimum over the registry rather than naming this one, so a
-     * change to which ceiling binds is caught here rather than on location.
+     * THE UPLOAD'S ceiling — `body-limit.js` FILE_LIMIT, the body this engine
+     * accepts. Since FCC-010 a take travels RAW and in chunks, so this is the
+     * whole number rather than the three quarters of it that base64 leaves.
      */
-    static let ceilingBytes = 104_857_600
+    static let uploadCeilingBytes = 157_286_400
+
+    /*
+     * MARBLE'S, which is a DESTINATION limit and binds only a capture handed
+     * to World Labs. It is here so the camera can quote it when shooting FOR a
+     * world — and named separately from the upload precisely so nothing can
+     * apply it to footage again by taking a minimum over both.
+     */
+    static let worldCeilingBytes = 104_857_600
+
+    /*
+     * The transport this mode would actually travel by, GIVEN what is plugged
+     * in. `Transport.isAvailable` cannot answer for a drive — the pure table
+     * has no device to ask — so the drive arrives as an argument. Reading
+     * `mode.transport` alone leaves every ProRes format refused with a healthy
+     * drive attached, which is what it did between FCC-009 and here.
+     */
+    static func transport(_ mode: RecordingMode, driveFreeBytes: Int? = nil) -> RecordingMode.Transport? {
+        mode.transports.first { $0 == .external ? (driveFreeBytes != nil) : $0.isAvailable }
+    }
+
+    /*
+     * The ceiling that binds THIS mode's route — never the smallest one there
+     * is. On a drive that is a different number by four orders of magnitude:
+     * ProRes 422 HQ at 4K30 fits zero seconds under any body limit here and
+     * about ninety on a terabyte.
+     *
+     * A destination is a separate axis from a transport, so a take shot FOR a
+     * world is held to whichever of the two is smaller. That is the only place
+     * a minimum is taken, and both numbers genuinely apply to that route.
+     */
+    static func ceilingBytes(_ mode: RecordingMode,
+                             driveFreeBytes: Int? = nil,
+                             forWorld: Bool = false) -> Int {
+        let transportCeiling: Int
+        switch transport(mode, driveFreeBytes: driveFreeBytes) {
+        case .external: transportCeiling = driveFreeBytes ?? 0
+        case .upload:   transportCeiling = uploadCeilingBytes
+        case nil:
+            // Nowhere for the file to go. Zero is the truth, and `refusal`
+            // names the transport rather than the number.
+            return 0
+        }
+        return forWorld ? min(transportCeiling, worldCeilingBytes) : transportCeiling
+    }
 
     /// The longest take this mode allows. Floor, not round: a take that fits
     /// "on average" is a take that does not fit.
-    static func maxSeconds(_ mode: RecordingMode) -> Int {
-        ceilingBytes / mode.bytesPerSecond
+    static func maxSeconds(_ mode: RecordingMode,
+                           driveFreeBytes: Int? = nil,
+                           forWorld: Bool = false) -> Int {
+        ceilingBytes(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) / mode.bytesPerSecond
     }
 
     /// What is left, once `elapsed` seconds have been recorded.
     ///
     /// CLAMPED AT ZERO. "-12s remaining" is not a duration, and on 4K60 — the
     /// mode where the ceiling actually bites — it is what a director would be
-    /// looking at within a quarter of a minute.
-    static func remaining(_ mode: RecordingMode, elapsed: Int) -> Int {
-        max(0, maxSeconds(mode) - elapsed)
+    /// looking at within half a minute.
+    static func remaining(_ mode: RecordingMode, elapsed: Int,
+                          driveFreeBytes: Int? = nil, forWorld: Bool = false) -> Int {
+        max(0, maxSeconds(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) - elapsed)
     }
 
     /*
      * The threshold SCALES with the mode, and it has to.
      *
-     * A fixed ten seconds is lit for most of 4K60's fourteen-second budget —
+     * A fixed ten seconds is lit for half of 4K60's twenty-two-second budget —
      * which is noise, and noise is what makes a real warning unreadable — while
-     * being a rounding error on 1080p30's hundred and thirty-three. The last
-     * tenth, floored at three seconds so a short budget still gets a warning
-     * somebody can act on.
+     * being a rounding error on 1080p30's two hundred. The last tenth, floored
+     * at three seconds so a short budget still gets a warning somebody can act
+     * on.
      */
-    static func warnSeconds(_ mode: RecordingMode) -> Int {
-        max(3, maxSeconds(mode) / 10)
+    static func warnSeconds(_ mode: RecordingMode,
+                            driveFreeBytes: Int? = nil, forWorld: Bool = false) -> Int {
+        max(3, maxSeconds(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) / 10)
     }
 
     /// Is the end of the clip close enough to say so?
-    static func isEndInSight(_ mode: RecordingMode, elapsed: Int) -> Bool {
-        remaining(mode, elapsed: elapsed) <= warnSeconds(mode)
+    static func isEndInSight(_ mode: RecordingMode, elapsed: Int,
+                             driveFreeBytes: Int? = nil, forWorld: Bool = false) -> Bool {
+        remaining(mode, elapsed: elapsed, driveFreeBytes: driveFreeBytes, forWorld: forWorld)
+            <= warnSeconds(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld)
     }
 
     /*
@@ -959,31 +1019,38 @@ enum RecordingBudget {
      * `RecordingMode` free of it also keeps that table a pure statement of what
      * a format IS — which is what lets the tests compile and RUN it on its own.
      */
-    static func isOffered(_ mode: RecordingMode) -> Bool {
-        mode.transport != nil && maxSeconds(mode) >= 1
+    static func isOffered(_ mode: RecordingMode,
+                          driveFreeBytes: Int? = nil, forWorld: Bool = false) -> Bool {
+        transport(mode, driveFreeBytes: driveFreeBytes) != nil
+            && maxSeconds(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) >= 1
     }
 
     /// Told no, and told what would make it yes. A refusal with no way forward
     /// is a dead end; the whole value of refusing is naming the remedy.
-    static func refusal(_ mode: RecordingMode) -> String? {
-        if isOffered(mode) { return nil }
-        if mode.transport == nil, let blocked = mode.transports.first {
+    static func refusal(_ mode: RecordingMode,
+                        driveFreeBytes: Int? = nil, forWorld: Bool = false) -> String? {
+        if isOffered(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) { return nil }
+        if transport(mode, driveFreeBytes: driveFreeBytes) == nil,
+           let blocked = mode.transports.first {
             return "\(mode.label) travels only by \(blocked.label), and \(blocked.remedy)."
         }
+        let mb = ceilingBytes(mode, driveFreeBytes: driveFreeBytes, forWorld: forWorld) / 1_048_576
         return "\(mode.label) costs \(mode.megabytesPerMinute)MB a minute, which does not fit "
-            + "one second under the \(ceilingBytes / 1_048_576)MB ceiling."
+            + "one second under the \(mb)MB ceiling."
     }
 
     /*
      * What to shoot when nobody has chosen. The LONGEST take rather than the
      * highest resolution, which is the same judgement `capture-policy.js`
      * `recommended()` makes and for the same reason: a world is reconstructed
-     * from coverage, so two minutes of 1080p is worth more than fourteen
-     * seconds of 4K60. FCC-006 makes this a choice; until then it is the
-     * default, chosen rather than hardcoded.
+     * from coverage, so three minutes of 1080p is worth more than twenty-two
+     * seconds of 4K60.
      */
-    static var recommended: RecordingMode {
-        RecordingMode.all.max { maxSeconds($0) < maxSeconds($1) } ?? RecordingMode.all[0]
+    static func recommended(driveFreeBytes: Int? = nil, forWorld: Bool = false) -> RecordingMode {
+        RecordingMode.all.max {
+            maxSeconds($0, driveFreeBytes: driveFreeBytes, forWorld: forWorld)
+                < maxSeconds($1, driveFreeBytes: driveFreeBytes, forWorld: forWorld)
+        } ?? RecordingMode.all[0]
     }
 }
 
@@ -1450,7 +1517,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
      * highest resolution — so a director who never opens the picker gets the
      * same behaviour as before.
      */
-    @Published var selectedMode: RecordingMode = RecordingBudget.recommended
+    @Published var selectedMode: RecordingMode = RecordingBudget.recommended()
 
     /*
      * The drive a take will be written to, and why there is none.
@@ -1462,6 +1529,14 @@ final class PlateCameraModel: NSObject, ObservableObject {
      */
     @Published private(set) var externalDrive: String?
     @Published private(set) var driveProblem: String?
+    /*
+     * The drive's own answer to "how much fits", which is the EXTERNAL
+     * transport's ceiling. It has no static number — that is the whole reason
+     * the transport is device-reported — so every budget question about a
+     * ProRes format takes it as an argument. Nil means no drive, which is a
+     * ceiling of zero rather than an unknown one.
+     */
+    @Published private(set) var driveFreeBytes: Int?
 
     /*
      * Which advanced formats this PHONE cannot record, and why.
@@ -1511,12 +1586,12 @@ final class PlateCameraModel: NSObject, ObservableObject {
 
     /// What is left of the budget, or nil when nothing is recording.
     var secondsRemaining: Int? {
-        recordingMode.map { RecordingBudget.remaining($0, elapsed: elapsedSeconds) }
+        recordingMode.map { RecordingBudget.remaining($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) }
     }
 
     /// Whether the end is close enough to say so.
     var endInSight: Bool {
-        recordingMode.map { RecordingBudget.isEndInSight($0, elapsed: elapsedSeconds) } ?? false
+        recordingMode.map { RecordingBudget.isEndInSight($0, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) } ?? false
     }
 
     private var ticker: Task<Void, Never>?
@@ -1987,6 +2062,10 @@ final class PlateCameraModel: NSObject, ObservableObject {
         let (found, why) = drive(for: selectedMode)
         externalDrive = found?.displayName
         driveProblem = why
+        // The free space regardless of the room verdict: that verdict is about
+        // the SELECTED mode, and the picker prices every other row against its
+        // own rate. Discarding the number here would grey a format that fits.
+        driveFreeBytes = found.map { Int($0.freeSize) }
     }
 
     /// Put every held lock back on a device.
@@ -2184,6 +2263,7 @@ final class PlateCameraModel: NSObject, ObservableObject {
             let (found, why) = drive(for: mode)
             driveProblem = why
             externalDrive = found?.displayName
+            driveFreeBytes = found.map { Int($0.freeSize) }
             if let why {
                 recordingProblem = why
                 restorePreset()
@@ -2257,8 +2337,9 @@ final class PlateCameraModel: NSObject, ObservableObject {
     private func tick() {
         guard isRecording, let mode = recordingMode else { return }
         elapsedSeconds += 1
-        if RecordingBudget.remaining(mode, elapsed: elapsedSeconds) == 0 {
-            recordingProblem = "The take reached the \(RecordingBudget.maxSeconds(mode))s limit "
+        if RecordingBudget.remaining(mode, elapsed: elapsedSeconds, driveFreeBytes: driveFreeBytes) == 0 {
+            recordingProblem = "The take reached the "
+                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: driveFreeBytes))s limit "
                 + "for \(mode.id) and was stopped, so the clip can still be uploaded."
             stopRecording()
         }
@@ -2397,14 +2478,14 @@ struct FormatPicker: View {
                 VStack(spacing: 4) {
                     ForEach(RecordingMode.all, id: \.id) { mode in
                         Button {
-                            if RecordingBudget.isOffered(mode), camera.capabilityProblem[mode.id] == nil {
+                            if RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes), camera.capabilityProblem[mode.id] == nil {
                                 camera.selectedMode = mode; open = false
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(mode.label)
                                     .font(.system(.footnote, design: .monospaced))
-                                    .foregroundStyle(RecordingBudget.isOffered(mode) && camera.capabilityProblem[mode.id] == nil
+                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) && camera.capabilityProblem[mode.id] == nil
                                                      ? .white : .white.opacity(0.45))
                                 // The price, on every row. Without it two
                                 // formats are indistinguishable buttons.
@@ -2415,13 +2496,13 @@ struct FormatPicker: View {
                                 // and both beat a row that is greyed in silence.
                                 Text(camera.capabilityProblem[mode.id]
                                      ?? (mode.transports == [.external] ? camera.driveProblem : nil)
-                                     ?? (RecordingBudget.isOffered(mode)
+                                     ?? (RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes)
                                          ? "\(mode.megabytesPerMinute)MB/min · "
-                                            + "\(clock(RecordingBudget.maxSeconds(mode))) max · "
+                                            + "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes))) max · "
                                             + (mode.transport?.label ?? "")
-                                         : (RecordingBudget.refusal(mode) ?? "unavailable")))
+                                         : (RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes) ?? "unavailable")))
                                     .font(.caption2)
-                                    .foregroundStyle(RecordingBudget.isOffered(mode) ? .white.opacity(0.7) : .orange)
+                                    .foregroundStyle(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) ? .white.opacity(0.7) : .orange)
                                     .multilineTextAlignment(.leading)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2430,12 +2511,12 @@ struct FormatPicker: View {
                                         ? .white.opacity(0.22) : .white.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 8))
                         }
-                        .disabled(!RecordingBudget.isOffered(mode) || camera.capabilityProblem[mode.id] != nil
+                        .disabled(!RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes) || camera.capabilityProblem[mode.id] != nil
                                   || (mode.transports == [.external] && camera.driveProblem != nil))
-                        .accessibilityLabel(RecordingBudget.isOffered(mode)
+                        .accessibilityLabel(RecordingBudget.isOffered(mode, driveFreeBytes: camera.driveFreeBytes)
                             ? "\(mode.label), \(mode.megabytesPerMinute) megabytes a minute, "
-                                + "\(RecordingBudget.maxSeconds(mode)) seconds maximum"
-                            : "\(mode.label), unavailable. \(RecordingBudget.refusal(mode) ?? "")")
+                                + "\(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes)) seconds maximum"
+                            : "\(mode.label), unavailable. \(RecordingBudget.refusal(mode, driveFreeBytes: camera.driveFreeBytes) ?? "")")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -2484,7 +2565,7 @@ struct RecordingTransport: View {
                 }
                 .accessibilityLabel(camera.isRecording
                     ? "Stop recording. \(camera.secondsRemaining ?? 0) seconds remaining."
-                    : "Record \(mode.id). \(RecordingBudget.maxSeconds(mode)) seconds available.")
+                    : "Record \(mode.id). \(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes)) seconds available.")
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(camera.isRecording ? clock(camera.elapsedSeconds) : mode.id)
@@ -2495,7 +2576,7 @@ struct RecordingTransport: View {
                     // "14s at 4k60" is a shot-planning fact, not a warning.
                     Text(camera.isRecording
                          ? "\(clock(camera.secondsRemaining ?? 0)) left"
-                         : "\(clock(RecordingBudget.maxSeconds(mode))) max · \(mode.id)")
+                         : "\(clock(RecordingBudget.maxSeconds(mode, driveFreeBytes: camera.driveFreeBytes))) max · \(mode.id)")
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(camera.endInSight ? .orange : .white.opacity(0.7))
                 }

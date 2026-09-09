@@ -22,7 +22,7 @@ against ProRes Log's 6–12 GB/min for nearly the same grading latitude** — a
 thirtieth of the size — so a ten-second shot is about 33 MB and fits the pipe
 Film Engine already has. And **the previz path already exists**: `world-capture`
 is the one import target that accepts video, it feeds Marble, and
-`capture-policy.js` already computes what may be shot against a real 100 MB
+`capture-policy.js` already computes what may be shot against a real 150 MB
 ceiling. It is fed today by `<input type="file" capture="environment">` — the
 iOS system camera, which is precisely what was ruled out.
 
@@ -62,7 +62,7 @@ three surfaces, with HEVC Log as the default.
 1. **HEVC Apple Log as the default recording format.**
    *What:* 10-bit 4:2:0 Log via `AVAssetWriter`, ~200 MB/min at 4K30.
    *Why:* it is the only format that is both gradeable and small enough to
-   travel the existing import path. A 10s shot ≈ 33 MB against a 100 MB ceiling.
+   travel the existing import path. A 10s shot ≈ 33 MB against a 150 MB ceiling.
    *How:* `device.activeColorSpace = .appleLog` with
    `automaticallyConfiguresCaptureDeviceForWideColor = false`, or the session
    silently overrides it.
@@ -91,7 +91,7 @@ three surfaces, with HEVC Log as the default.
 
 5. **ProRes as an explicit opt-in with its own transport.**
    *What:* record to external USB-C storage; do not attempt the JSON upload.
-   *Why:* 7 GB/min cannot travel a 100 MB pipe, and pretending otherwise is how
+   *Why:* 7 GB/min cannot travel a 150 MB pipe, and pretending otherwise is how
    a director loses a take. Requires USB-3 at 10 Gbps, exFAT, ≥220 MB/s.
    *How:* offered where the hardware is present, refused with a reason where it
    is not.

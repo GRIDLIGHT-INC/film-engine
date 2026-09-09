@@ -509,7 +509,14 @@ function importWorldCaptureRoute(req, res, locationId) {
         const kind = raw
             ? (/^video\//i.test(req.body.__mime || '') ? 'video' : 'image')
             : (/^data:video\//i.test(String(req.body.data)) ? 'video' : 'image');
-        const verdict = policy.checkCapture({ kind, bytes });
+        /*
+         * The ENCODING is stated, because it decides which ceiling binds. Raw
+         * bytes are held to the body this engine accepts; a `data:` URI is held
+         * to three quarters of it, because base64 is four thirds of the file.
+         * Leaving it unsaid took the conservative default and refused a
+         * perfectly good 130MB raw panorama against a limit it never met.
+         */
+        const verdict = policy.checkCapture({ kind, bytes, encoding: raw ? 'raw' : 'base64' });
         if (!verdict.ok) return badReq(res, verdict.why, 413);
 
         const imported = require('../lib/media-imports').importMedia('world-capture', {

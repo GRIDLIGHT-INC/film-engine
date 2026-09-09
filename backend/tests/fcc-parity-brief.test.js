@@ -78,7 +78,18 @@ const CLAIMS = [
             const p = require('../lib/capture-policy');
             // Apple's published iPhone figure: ProRes 422 HQ 1080p30 ~1.7 GB/min.
             const mbPerSecond = 1.7 * 1024 / 60;
-            const secs = Math.floor((p.bindingBytes() / 1048576) / mbPerSecond);
+            /*
+             * Against the ceiling that would bind it IF it went up the wire,
+             * which is the claim the brief is making — the argument for why
+             * ProRes needs a drive. It used to recompute from the blind minimum
+             * over every ceiling, and the smallest is Marble's cap on a world
+             * capture: a number belonging to a service this footage never
+             * reaches, deciding the headline of a document about shooting.
+             */
+            const ceiling = p.bindingBytesFor({
+                transport: 'upload', destination: 'footage', kind: 'video',
+            });
+            const secs = Math.floor((ceiling / 1048576) / mbPerSecond);
             return doc().includes(`**${secs} seconds**`)
                 || `ProRes 1080p30 now fits for ${secs}s and the brief does not say that`;
         },

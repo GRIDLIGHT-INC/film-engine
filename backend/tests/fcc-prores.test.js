@@ -45,7 +45,8 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 
 const SWIFT = path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'PlateCamera.swift');
-const { MODES, CODECS, TRANSPORTS, formatChoices, maxSecondsFor } = require('../lib/capture-policy');
+const policy = require('../lib/capture-policy');
+const { MODES, CODECS, TRANSPORTS, formatChoices, maxSecondsFor } = policy;
 
 const src = () => fs.readFileSync(SWIFT, 'utf8');
 /** Comments stripped — a mention is not a use. */
@@ -215,18 +216,33 @@ test('EVERY ProRes mode is still SHOWN, not dropped from the list', () => {
 
 test('the anchor rate reproduces the figure the brief already pins', () => {
     /*
-     * `fcc-parity-brief.test.js` recomputes its "3 seconds" headline from
-     * 1.7 GB/min for ProRes 422 HQ at 1080p30. If the registry disagrees with
-     * that, two documents state two different costs for the same format and
-     * only one of them is what the app would record.
+     * `fcc-parity-brief.test.js` recomputes its headline from 1.7 GB/min for
+     * ProRes 422 HQ at 1080p30. If the registry disagrees with that, two
+     * documents state two different costs for the same format and only one of
+     * them is what the app would record.
+     *
+     * ASKED AS A COUNTERFACTUAL, which is what the brief's sentence is: this
+     * format travels only by drive, so its real budget is the drive's free
+     * space and `maxSecondsFor` correctly answers zero with nothing plugged in.
+     * The brief's point is what would fit IF it went up the wire — the argument
+     * for why it needs a drive at all — so the route is stated rather than
+     * defaulted. It used to be three seconds against Marble's cap; FCC-010 made
+     * a take travel raw and FCC-011 stopped applying World Labs' number to
+     * footage, so the honest figure is five, and the argument is unchanged.
      */
     const anchor = Object.entries(MODES)
         .find(([id, m]) => m.codec === 'prores422hq' && id.startsWith('1080p30'));
     assert.ok(anchor, 'there is no ProRes 422 HQ mode at 1080p30 to anchor the rates to');
-    const [id] = anchor;
-    assert.strictEqual(maxSecondsFor(id), 3,
-        `${id} fits ${maxSecondsFor(id)}s and the brief's pinned headline is 3 seconds. The rate `
-        + 'has drifted from the figure another test recomputes');
+    const [id, m] = anchor;
+    const overTheWire = Math.floor(
+        policy.bindingBytesFor({ transport: 'upload', destination: 'footage', kind: 'video' })
+        / m.bytes_per_second);
+    assert.strictEqual(overTheWire, 5,
+        `${id} would fit ${overTheWire}s over the upload and the brief's pinned headline is 5 `
+        + 'seconds. The rate has drifted from the figure another test recomputes');
+    assert.strictEqual(maxSecondsFor(id), 0,
+        `${id} reports ${maxSecondsFor(id)}s with no drive attached. It travels only by drive, so `
+        + 'any other answer is a duration for a route this format cannot take');
 });
 
 test('EVERY rate that is not published says so', () => {

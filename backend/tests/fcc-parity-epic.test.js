@@ -346,8 +346,12 @@ test('the format economics that justify the plan are stated with real numbers', 
     const d = doc();
     assert.match(d, /200\s*MB\/min/i, 'the HEVC Log figure is missing');
     assert.match(d, /7\s*GB\/min/i, 'the ProRes figure is missing');
-    const { CEILINGS } = require('../lib/capture-policy');
-    const mb = Math.floor(Math.min(...Object.values(CEILINGS).map(c => c.bytes)) / 1048576);
+    const policy = require('../lib/capture-policy');
+    // The ceiling a ProRes take would meet on the wire, not the smallest number
+    // in the registry — that one is World Labs' and binds a world capture.
+    const mb = Math.floor(policy.bindingBytesFor({
+        transport: 'upload', destination: 'footage', kind: 'video',
+    }) / 1048576);
     const mentions = [...d.matchAll(/(\d+)\s*MB\s+(?:pipe|ceiling)/g)].map(m => Number(m[1]));
     assert.ok(mentions.length >= 1, 'the binding ceiling is never stated');
     const wrong = mentions.filter(v => v !== mb);

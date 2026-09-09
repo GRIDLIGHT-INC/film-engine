@@ -49,7 +49,7 @@ by the user's direction rather than carried as debt.
 
 | Component | Current State |
 |-----------|---------------|
-| `ios/FilmEngine/PlateCamera.swift` | 3119 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo` at rest, flash off — and, since FCC-001 (GRD-3797), an `AVAssetWriter` recording from the same frame queue |
+| `ios/FilmEngine/PlateCamera.swift` | 3200 lines. `AVCapturePhotoOutput`, `sessionPreset = .photo` at rest, flash off — and, since FCC-001 (GRD-3797), an `AVAssetWriter` recording from the same frame queue |
 | Exposure | Automatic, re-metered per shot. Nothing held across the session |
 | White balance | Automatic, re-metered per shot |
 | Focus | Automatic. No manual control, no peaking, no confirmation the subject is sharp |

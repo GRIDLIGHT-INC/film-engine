@@ -13,8 +13,8 @@ monitoring tools were never Apple APIs at all, so shipping them is ordinary work
 rather than blocked work. The two things that genuinely block parity are not camera
 features: **the hardware tier** (ProRes RAW, Apple Log 2, open gate and genlock are
 iPhone 17 Pro only, and this project's device is a 15 Pro Max) and **the transport**
-— a shot video travels base64-encoded, so the **113 MB** file ceiling admits
-**3 seconds** of ProRes 422 HQ at 1080p30 and **1 second** at 4K30.
+— the body this engine accepts is **150 MB**, which admits **5 seconds** of ProRes
+422 HQ at 1080p30 and **1 second** at 4K30.
 
 The conclusion that matters: capture parity is cheap and useless until the file can
 leave the phone. Fix the transport first, or build a camera whose output has
@@ -49,17 +49,23 @@ nowhere to go.
    *What:* replace whole-file base64 JSON bodies with a chunked binary transfer that
    can resume.
    *Why:* it is the only thing standing between every other idea here and a usable
-   result. Measured: `1080p30 HEVC 133s / 4k30 44s / 4k60 14s` fit today; ProRes
-   1080p30 fits for 3 seconds.
+   result. Measured: `1080p30 HEVC 200s / 4k30 66s / 4k60 22s` fit today; ProRes
+   1080p30 would fit for 5 seconds if it went up the wire at all.
 
-   *Which ceiling — this was got wrong once and is worth stating precisely.*
-   `capture-policy.js` holds three: `transport_raw` 150 MB (the body we accept),
-   `transport_base64` **113 MB** (the same body after base64 inflation — the number
-   a director actually experiences), and `marble_video` 100 MB (World Labs' own cap).
-   `bindingBytes()` returns the minimum, which is **Marble's 100 MB**, so raising the
-   upload limit alone would not move it for a world capture. For a plain shot video
-   the binding number is **113 MB**. The HEVC figures above are computed against the
-   minimum; the ProRes figures against 113 MB, because footage does not go to Marble.
+   *Which ceiling — this was got wrong twice and is worth stating precisely.*
+   `capture-policy.js` holds three, and each now declares WHAT IT BINDS rather than
+   being reduced to a single minimum: `transport_raw` 150 MB (the body we accept),
+   `transport_base64` **113 MB** (the same body after base64 inflation — what a
+   `data:` URI still experiences), and `marble_video` 100 MB (World Labs' own cap).
+   The first correction was attributing the binding number to the upload when the
+   minimum was Marble's. The second was the minimum itself: it was taken blindly and
+   applied to everything, and **Marble's cap binds only a capture handed to Marble**.
+   A shot recorded for the cut never goes there, so it is bound by the transport —
+   150 MB since FCC-010 made media travel raw. That is the difference between the
+   133/44/14 this brief used to quote and the 200/66/22 above: a third of every take,
+   thrown away by a limit belonging to a service the footage never reaches. The
+   ProRes figures are against the same 150 MB, which is why they are an argument for
+   a drive rather than for a bigger body.
    *How:* extend `capture-policy.js`, which already models bytes-per-second against
    ceilings and computes `maxSecondsFor(mode)` — adding ProRes modes makes the
    engine state the problem in its own voice.
@@ -126,7 +132,7 @@ why idea 5 is not a small change to the existing camera.
 **Monitoring** — `AVCaptureVideoDataOutput` → Core Image or Metal → `MTKView`. Every
 tool (peaking, zebras, false colour, histogram, waveform) is computed by us.
 
-**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 3119 lines.
+**What our camera is today** — `ios/FilmEngine/PlateCamera.swift`, 3200 lines.
 Still `AVCapturePhotoOutput` at `sessionPreset = .photo`, because a plate is a
 PHOTOGRAPH cropped from the full sensor later. Everything else in the original
 assessment has moved.
@@ -187,5 +193,5 @@ impossible on this hardware. If we still want native capture afterwards, the
 transport is the first task and Log/ProRes the second.
 
 The reason for that order is not caution. It is that Phase A has no blocking
-dependency, and every item in Phase B is downstream of a 113 MB ceiling that admits
-three seconds of the format the whole exercise is about.
+dependency, and every item in Phase B is downstream of a 150 MB ceiling that admits
+five seconds of the format the whole exercise is about.

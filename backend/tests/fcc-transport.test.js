@@ -43,7 +43,8 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 
 const SWIFT = path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'PlateCamera.swift');
-const { MODES, CEILINGS, maxSecondsFor, bindingBytes, formatChoices } = require('../lib/capture-policy');
+const policy = require('../lib/capture-policy');
+const { MODES, CEILINGS, maxSecondsFor, formatChoices } = policy;
 
 const src = () => fs.readFileSync(SWIFT, 'utf8');
 /** Comments stripped — a mention is not a use. */
@@ -100,8 +101,11 @@ function swiftBudget() {
     const file = path.join(dir, 'main.swift');
     fs.writeFileSync(file, `${extract('struct RecordingMode')}
 ${extract('enum RecordingBudget')}
-print("CEILING=\\(RecordingBudget.ceilingBytes)")
 for m in RecordingMode.all {
+    // The ceiling is asked PER MODE, because there is no longer one answer:
+    // FCC-011 gave every transport its own, and a single number is exactly the
+    // thing that made a shot for the cut cost a third of its length.
+    print("CEILING=\\(m.id)|\\(RecordingBudget.ceilingBytes(m))")
     let max = RecordingBudget.maxSeconds(m)
     // remaining at: the start, one second in, the last second, exactly the
     // ceiling, and well past it.
@@ -116,7 +120,11 @@ for m in RecordingMode.all {
 `);
     const out = execFileSync('swift', [file], { encoding: 'utf8', timeout: 180000 });
     const lines = out.trim().split('\n');
-    const ceiling = +lines.find((l) => l.startsWith('CEILING=')).slice('CEILING='.length);
+    const ceiling = {};
+    for (const l of lines.filter((x) => x.startsWith('CEILING='))) {
+        const [id, bytes] = l.slice('CEILING='.length).split('|');
+        ceiling[id] = +bytes;
+    }
     const modes = {};
     for (const l of lines.filter((x) => x.startsWith('MODE='))) {
         const [id, max, probes, warn] = l.slice('MODE='.length).split('|');
@@ -131,20 +139,42 @@ for m in RecordingMode.all {
  * SET 1 — the ceiling, iterated rather than named                     *
  * ------------------------------------------------------------------ */
 
-test('the camera budgets against the SMALLEST ceiling, not a chosen one', () => {
+test('the camera budgets EVERY mode against the ceiling that binds ITS route', () => {
+    /*
+     * This used to assert one number: the smallest ceiling anywhere, on both
+     * sides of the wire. Both sides agreed, and both were wrong — the smallest
+     * is World Labs' cap on a video handed to Marble, and a shot recorded for
+     * the CUT never reaches World Labs, so every take was priced a third short.
+     *
+     * Re-derived rather than relaxed. The rule is still that the camera and the
+     * server compute the same ceiling from the registry rather than naming a
+     * winner; what changed is that the question now has a route in it, and a
+     * mode that travels by drive is not held to a body limit it never meets.
+     */
     const all = Object.entries(CEILINGS);
     assert.ok(all.length >= 3,
         `capture-policy declares only ${all.length} ceilings; the registry read is broken, and a `
-        + 'minimum taken over almost nothing is not the binding one');
+        + 'rule checked over almost nothing is not checked');
 
-    const smallest = Math.min(...all.map(([, c]) => c.bytes));
-    assert.strictEqual(smallest, bindingBytes(), 'the test computes a different minimum than the module');
+    const wrong = [];
+    for (const [id, m] of Object.entries(MODES)) {
+        const swift = swiftBudget().ceiling[id];
+        if (swift === undefined) { wrong.push(`${id}: the camera reports no ceiling for it`); continue; }
+        const js = policy.bindingBytesFor(policy.routeFor(m));
+        if (swift !== js) wrong.push(`${id}: the camera budgets against ${swift} bytes, the server ${js}`);
+    }
+    assert.deepStrictEqual(wrong, [],
+        'the camera and the server disagree about which ceiling binds a take. Budgeting against a '
+        + 'larger one promises recording time the clip cannot carry; against a smaller one it '
+        + `throws away take that would have fitted:\n  ${wrong.join('\n  ')}`);
 
-    assert.strictEqual(swiftBudget().ceiling, smallest,
-        `the camera budgets against ${swiftBudget().ceiling} bytes and the binding ceiling is `
-        + `${smallest} (${all.map(([k, c]) => `${k}=${c.bytes}`).join(', ')}). Budgeting against a `
-        + 'larger ceiling promises recording time the clip cannot carry — every take made on that '
-        + 'promise is refused at upload, which is precisely what this task exists to prevent');
+    // And the two really are different numbers, or the route is reaching
+    // nothing and this has collapsed back into one ceiling for everything.
+    const footage = policy.bindingBytesFor({ destination: 'footage', kind: 'video' });
+    const world = policy.bindingBytesFor({ destination: 'world', kind: 'video' });
+    assert.ok(footage > world,
+        `footage is bound by ${footage} and a world capture by ${world}. Equal means Marble's cap `
+        + 'is being applied to shots that never go there, which is the defect FCC-011 removed');
 });
 
 /* ------------------------------------------------------------------ *
