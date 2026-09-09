@@ -168,13 +168,25 @@ test('EVERY mode id names its own colour space, and the two agree', () => {
     for (const m of swiftModes()) {
         const spec = /^(\d+)(?:p|k)(\d+)(?:-(\w+))?$/.exec(m.id);
         assert.ok(spec, `mode id ${m.id} does not name a resolution and a rate`);
+        /*
+         * THE SUFFIX NAMES WHAT MAKES THIS MODE DIFFERENT from the plain raster
+         * beside it — its colour space OR its codec. FCC-005 added `-log` and
+         * FCC-007 added `-prores422hq`, so a rule reading every suffix as a
+         * colour space now fails a correctly-named ProRes mode. What must stay
+         * true is that a director choosing from a list can tell two entries
+         * apart: a mode that differs and does not say so is the defect.
+         */
         const suffix = spec[3];
-        if (m.gradeable && !suffix) {
-            wrong.push(`${m.id} records log and its id does not say so — a director choosing from `
-                + 'a list cannot tell it apart from the Rec.709 mode beside it');
+        const differs = m.gradeable || (MODES[m.id] && MODES[m.id].codec !== 'hevc');
+        if (differs && !suffix) {
+            wrong.push(`${m.id} differs from the plain raster and its id does not say how — a `
+                + 'director choosing from a list cannot tell it apart from the mode beside it');
         }
-        if (!m.gradeable && suffix) {
-            wrong.push(`${m.id} carries the suffix "${suffix}" and is not gradeable`);
+        if (!differs && suffix) {
+            wrong.push(`${m.id} carries the suffix "${suffix}" and is an ordinary HEVC Rec.709 mode`);
+        }
+        if (m.gradeable && suffix && !/log/i.test(suffix)) {
+            wrong.push(`${m.id} records log and its suffix "${suffix}" does not say so`);
         }
     }
     assert.deepStrictEqual(wrong, [], wrong.join('\n  '));

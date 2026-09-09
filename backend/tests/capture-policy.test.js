@@ -60,7 +60,21 @@ test('every capture mode gets a duration cap, and it is computed not typed', () 
         assert.ok(m.bytes_per_second > 0, `${id}: no bitrate`);
         assert.ok(String(m.source || '').length > 10, `${id}: the bitrate has no source`);
         const cap = policy.maxSecondsFor(id);
-        assert.ok(Number.isFinite(cap) && cap > 0, `${id}: no duration cap`);
+        /*
+         * ZERO IS A REAL ANSWER, and FCC-007 made it reachable: ProRes 422 HQ
+         * at 4K30 is 116MB a second against a 100MB ceiling, so it does not fit
+         * one frame that could travel. The rule that mattered was never "the
+         * cap is positive" — it is that the cap is COMPUTED, and that a format
+         * which fits no seconds is REFUSED rather than offered. Requiring
+         * positivity would have forced either an invented rate or a format
+         * quietly dropped from the registry.
+         */
+        assert.ok(Number.isFinite(cap) && cap >= 0, `${id}: no duration cap`);
+        if (cap === 0) {
+            const choice = policy.formatChoices().find((c) => c.id === id);
+            assert.strictEqual(choice && choice.offered, false,
+                `${id}: fits zero seconds and is offered — a button that cannot produce one frame`);
+        }
         // Derived: the cap must equal the binding ceiling divided by the rate.
         const binding = Math.min(...Object.values(policy.CEILINGS).map((c) => c.bytes));
         assert.strictEqual(cap, Math.floor(binding / m.bytes_per_second),

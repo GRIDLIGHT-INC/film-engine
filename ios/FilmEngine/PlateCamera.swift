@@ -679,6 +679,27 @@ struct RecordingMode: Equatable {
     enum ColorSpace: String { case rec709, apple_log }
 
     /*
+     * What the writer encodes, and what can carry it.
+     *
+     * The container is not decoration: ProRes cannot be written into an mp4,
+     * and a writer that discovers that when the director presses record has
+     * already lost the take. FCC-001 chose `.mov` with exactly this in mind.
+     */
+    enum Codec: String {
+        case hevc, prores422, prores422hq
+
+        var fileExtension: String { "mov" }
+
+        var label: String {
+            switch self {
+            case .hevc: return "HEVC"
+            case .prores422: return "ProRes 422"
+            case .prores422hq: return "ProRes 422 HQ"
+            }
+        }
+    }
+
+    /*
      * How a take leaves the phone.
      *
      * A format is not usable because it can be RECORDED — it is usable because
@@ -717,6 +738,7 @@ struct RecordingMode: Equatable {
     let fps: Int
     let bitsPerSecond: Int
     let colorSpace: ColorSpace
+    let codec: Codec
     let transports: [Transport]
 
     /// What a second of this mode costs on disk and, later, in transport.
@@ -734,7 +756,8 @@ struct RecordingMode: Equatable {
 
     /// What a picker shows. The id is for the machine; this is for a person.
     var label: String {
-        "\(width)x\(height) at \(fps)fps"
+        (codec == .hevc ? "" : "\(codec.label), ")
+            + "\(width)x\(height) at \(fps)fps"
             + (colorSpace == .apple_log ? ", Apple Log" : "")
     }
 
@@ -748,11 +771,14 @@ struct RecordingMode: Equatable {
      */
     static let all: [RecordingMode] = [
         RecordingMode(id: "1080p30", width: 1920, height: 1080, fps: 30,
-                      bitsPerSecond: 6_291_456, colorSpace: .rec709, transports: [.upload]),      // ~45 MB/min
+                      bitsPerSecond: 6_291_456, colorSpace: .rec709, codec: .hevc,
+                      transports: [.upload]),      // ~45 MB/min
         RecordingMode(id: "4k30", width: 3840, height: 2160, fps: 30,
-                      bitsPerSecond: 18_874_368, colorSpace: .rec709, transports: [.upload]),     // ~135 MB/min
+                      bitsPerSecond: 18_874_368, colorSpace: .rec709, codec: .hevc,
+                      transports: [.upload]),     // ~135 MB/min
         RecordingMode(id: "4k60", width: 3840, height: 2160, fps: 60,
-                      bitsPerSecond: 55_924_056, colorSpace: .rec709, transports: [.upload]),     // ~400 MB/min
+                      bitsPerSecond: 55_924_056, colorSpace: .rec709, codec: .hevc,
+                      transports: [.upload]),     // ~400 MB/min
         /*
          * The gradeable one. Half as much again as 4K30 Rec.709 — 200 MB/min
          * against 135 — which is why it is a mode of its own rather than a flag:
@@ -765,7 +791,35 @@ struct RecordingMode: Equatable {
          * confidently wrong is worse than one that is absent.
          */
         RecordingMode(id: "4k30-log", width: 3840, height: 2160, fps: 30,
-                      bitsPerSecond: 27_962_024, colorSpace: .apple_log, transports: [.upload]),  // ~200 MB/min
+                      bitsPerSecond: 27_962_024, colorSpace: .apple_log, codec: .hevc,
+                      transports: [.upload]),                                // ~200 MB/min
+
+        /*
+         * PRORES, and every one of them travels ONLY by external storage.
+         *
+         * That is the epic's constraint expressed as a rule rather than
+         * remembered: `external` does not exist until FCC-009, so each is
+         * refused and SHOWN refused with that transport's remedy. Declaring
+         * `.upload` here would offer them immediately — and 422 HQ at 4K30 is
+         * 116MB a SECOND against a 100MB ceiling, so it does not fit one frame
+         * that could travel.
+         *
+         * Rates mirror `capture-policy.js`: 1080p30 422 HQ is the figure Apple
+         * publishes and the brief already pins, the rest are derived there and
+         * flagged `inferred`, and both tables are held equal by test.
+         */
+        RecordingMode(id: "1080p30-prores422hq", width: 1920, height: 1080, fps: 30,
+                      bitsPerSecond: 243_381_480, colorSpace: .rec709,
+                      codec: .prores422hq, transports: [.external]),         // ~1.70 GiB/min
+        RecordingMode(id: "4k30-prores422hq", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 973_525_920, colorSpace: .rec709,
+                      codec: .prores422hq, transports: [.external]),         // ~6.80 GiB/min
+        RecordingMode(id: "1080p30-prores422", width: 1920, height: 1080, fps: 30,
+                      bitsPerSecond: 162_623_080, colorSpace: .rec709,
+                      codec: .prores422, transports: [.external]),           // ~1.14 GiB/min
+        RecordingMode(id: "4k30-prores422", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 650_492_320, colorSpace: .rec709,
+                      codec: .prores422, transports: [.external]),           // ~4.55 GiB/min
     ]
 
     /*
@@ -919,7 +973,7 @@ final class RecordingSink {
         lock.lock(); defer { lock.unlock() }
         guard writer == nil else { return "already recording" }
 
-        guard let w = try? AVAssetWriter(outputURL: url, fileType: .mov) else {
+        guard let w = try? AVAssetWriter(outputURL: url, fileType: mode.codec.fileType) else {
             return "The recording could not be opened at \(url.lastPathComponent)."
         }
         /*
@@ -927,15 +981,30 @@ final class RecordingSink {
          * Expected frame rate is stated as well: without it the encoder rations
          * bits against a rate it guesses, and a 60fps clip comes out soft.
          */
-        let settings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
+        /*
+         * THE CODEC COMES FROM THE MODE, never from here.
+         *
+         * Hardwiring HEVC would make a mode called "ProRes 422 HQ" record HEVC
+         * — a take that lies about what it is, in a file that plays perfectly
+         * and is the wrong thing to hand an editor.
+         *
+         * ProRes is a CONSTANT-quality codec: its rate is a property of the
+         * format rather than something a caller sets, so
+         * AVVideoAverageBitRateKey does not apply. The registry's ProRes
+         * figures are what a minute COSTS, used to budget the take; asking the
+         * encoder to hit them would be asking ProRes to be something else.
+         */
+        var settings: [String: Any] = [
+            AVVideoCodecKey: mode.avCodec,
             AVVideoWidthKey: mode.width,
             AVVideoHeightKey: mode.height,
-            AVVideoCompressionPropertiesKey: [
+        ]
+        if mode.codec == .hevc {
+            settings[AVVideoCompressionPropertiesKey] = [
                 AVVideoAverageBitRateKey: mode.bitsPerSecond,
                 AVVideoExpectedSourceFrameRateKey: mode.fps,
-            ],
-        ]
+            ]
+        }
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         /*
          * AVAssetWriterInput.h: without this the input assumes it may make the
@@ -1071,6 +1140,28 @@ final class RecordingSink {
             }
         }
     }
+}
+
+/*
+ * The AVFoundation types, kept OUT of `RecordingMode` itself.
+ *
+ * That struct is a pure statement of what a format is — no AVFoundation — which
+ * is what lets `fcc-recording`, `fcc-log`, `fcc-format-picker` and `fcc-prores`
+ * compile and RUN it on its own. The same layering `RecordingBudget` follows.
+ */
+extension RecordingMode {
+    var avCodec: AVVideoCodecType {
+        switch codec {
+        case .hevc: return AVVideoCodecType.hevc
+        case .prores422: return AVVideoCodecType.proRes422
+        case .prores422hq: return AVVideoCodecType.proRes422HQ
+        }
+    }
+}
+
+extension RecordingMode.Codec {
+    /// ProRes is a QuickTime codec; an mp4 cannot carry it.
+    var fileType: AVFileType { .mov }
 }
 
 // ── the camera ───────────────────────────────────────────────────────────────
@@ -1743,7 +1834,8 @@ final class PlateCameraModel: NSObject, ObservableObject {
         }
 
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id).mov")
+            .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id)."
+                                    + mode.codec.fileExtension)
         if let why = sink.begin(mode: mode, to: url, sound: recordsAudio) {
             restorePreset()
             recordingProblem = why

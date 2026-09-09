@@ -43,7 +43,7 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 
 const SWIFT = path.join(__dirname, '..', '..', 'ios', 'FilmEngine', 'PlateCamera.swift');
-const { MODES, CEILINGS, maxSecondsFor, bindingBytes } = require('../lib/capture-policy');
+const { MODES, CEILINGS, maxSecondsFor, bindingBytes, formatChoices } = require('../lib/capture-policy');
 
 const src = () => fs.readFileSync(SWIFT, 'utf8');
 /** Comments stripped — a mention is not a use. */
@@ -151,6 +151,12 @@ test('the camera budgets against the SMALLEST ceiling, not a chosen one', () => 
  * SET 2 — every mode the registry declares                            *
  * ------------------------------------------------------------------ */
 
+test('the recordable set is not empty, or every countdown check passes over nothing', () => {
+    assert.ok(recordable().length >= 3,
+        `only ${recordable().length} recordable format(s). A countdown suite over almost nothing `
+        + 'reports a broken transport as correct');
+});
+
 test('EVERY mode gets the same maximum duration the server would give it', () => {
     const ids = Object.keys(MODES);
     assert.ok(ids.length >= 3, `only ${ids.length} modes; the registry read is broken`);
@@ -170,9 +176,24 @@ test('EVERY mode gets the same maximum duration the server would give it', () =>
         + `fine is refused after it was shot:\n  ${wrong.join('\n  ')}`);
 });
 
+/*
+ * Only formats that can actually be RECORDED have a countdown.
+ *
+ * FCC-007 added ProRes, every one of which is REFUSED — there is nowhere to put
+ * the file until FCC-009. A refused format has no take, so there is no clock to
+ * count down, and iterating every mode asserts about a transport state that
+ * cannot exist: a check failing for a format behaving correctly.
+ *
+ * OFFERED rather than "fits at least a second", which was the first attempt:
+ * ProRes 422 HQ at 1080p30 fits three seconds and is still refused, so a
+ * duration filter let it through and then failed it for warning throughout —
+ * which, on a three-second budget, is the honest answer rather than a defect.
+ */
+const recordable = () => formatChoices().filter((c) => c.offered).map((c) => c.id);
+
 test('EVERY mode counts down from its own maximum, one second at a time', () => {
     const wrong = [];
-    for (const id of Object.keys(MODES)) {
+    for (const id of recordable()) {
         const m = swiftBudget().modes[id];
         if (!m) continue;                        // owned by the test above
         if (m.remaining[0] !== m.max) {
@@ -190,7 +211,7 @@ test('EVERY mode counts down from its own maximum, one second at a time', () => 
 
 test('EVERY mode clamps at zero — a countdown never goes negative', () => {
     const wrong = [];
-    for (const id of Object.keys(MODES)) {
+    for (const id of recordable()) {
         const m = swiftBudget().modes[id];
         if (!m) continue;
         if (m.remaining[m.max] !== 0) {
@@ -213,7 +234,7 @@ test('EVERY mode warns before the end, and is quiet at the start', () => {
      * a real warning unreadable — and is a rounding error on 1080p30.
      */
     const wrong = [];
-    for (const id of Object.keys(MODES)) {
+    for (const id of recordable()) {
         const m = swiftBudget().modes[id];
         if (!m) continue;
         if (m.warn[0] !== 0) {
@@ -274,6 +295,26 @@ const TRANSPORT = [
 function transportView() {
     return extract('struct RecordingTransport');
 }
+
+test('a budget shorter than the warning itself is lit throughout, which is honest', () => {
+    /*
+     * Kept rather than lost with the ProRes formats that exposed it. The warn
+     * threshold is the last tenth of a budget, floored at three seconds so a
+     * short one still gets a warning somebody can act on — which means a budget
+     * of three seconds or less is lit from the first frame. That is correct:
+     * such a take IS almost over the moment it starts. Asserting it means the
+     * behaviour is a decision rather than an accident, and the day a format
+     * that short becomes offered, nobody reads it as a bug.
+     */
+    const short = Object.keys(MODES).filter((id) => maxSecondsFor(id) >= 1 && maxSecondsFor(id) <= 3);
+    if (!short.length) return;                 // none today; the rule still holds
+    for (const id of short) {
+        const m = swiftBudget().modes[id];
+        assert.strictEqual(m.warn[0], 1,
+            `${id} has a ${m.max}s budget and is NOT warning at the start. A take shorter than `
+            + 'the warning window is one where the end is always in sight');
+    }
+});
 
 test('EVERY transport operation exists on the MODEL', () => {
     const cam = code();

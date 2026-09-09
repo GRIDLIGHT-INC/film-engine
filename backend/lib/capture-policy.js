@@ -42,6 +42,32 @@ const CEILINGS = Object.freeze({
 });
 
 /**
+ * What the writer can encode, and what can carry it.
+ *
+ * The container is not decoration: ProRes cannot be written into an mp4, and a
+ * writer that discovers that when the director presses record has already lost
+ * the take. Naming it per codec means the file type follows the format rather
+ * than being remembered.
+ */
+const CODECS = Object.freeze({
+    hevc: Object.freeze({
+        label: 'HEVC',
+        container: 'mov',
+        source: "Apple's published iPhone figures are HEVC; every mode before FCC-007 was this",
+    }),
+    prores422: Object.freeze({
+        label: 'ProRes 422',
+        container: 'mov',
+        source: 'ProRes is a QuickTime codec — an mp4 cannot carry it',
+    }),
+    prores422hq: Object.freeze({
+        label: 'ProRes 422 HQ',
+        container: 'mov',
+        source: 'ProRes is a QuickTime codec — an mp4 cannot carry it',
+    }),
+});
+
+/**
  * Capture modes and what they cost per second.
  *
  * Apple publishes these as MB-per-minute in the Camera settings screen, which
@@ -52,6 +78,7 @@ const MODES = Object.freeze({
     '1080p30': Object.freeze({
         bytes_per_second: Math.round(45 * 1048576 / 60),
         color_space: 'rec709',
+        codec: 'hevc',
         transports: Object.freeze(['upload']),
         label: '1080p at 30fps',
         source: "Apple's published iPhone figure, about 45MB per minute (HEVC, nominal)",
@@ -59,6 +86,7 @@ const MODES = Object.freeze({
     '4k30': Object.freeze({
         bytes_per_second: Math.round(135 * 1048576 / 60),
         color_space: 'rec709',
+        codec: 'hevc',
         transports: Object.freeze(['upload']),
         label: '4K at 30fps',
         source: "Apple's published iPhone figure, about 135MB per minute (HEVC, nominal)",
@@ -66,6 +94,7 @@ const MODES = Object.freeze({
     '4k60': Object.freeze({
         bytes_per_second: Math.round(400 * 1048576 / 60),
         color_space: 'rec709',
+        codec: 'hevc',
         transports: Object.freeze(['upload']),
         label: '4K at 60fps',
         source: "Apple's published iPhone figure, about 400MB per minute (HEVC, nominal)",
@@ -87,9 +116,75 @@ const MODES = Object.freeze({
     '4k30-log': Object.freeze({
         bytes_per_second: Math.round(200 * 1048576 / 60),
         color_space: 'apple_log',
+        codec: 'hevc',
         transports: Object.freeze(['upload']),
         label: '4K at 30fps, Apple Log',
         source: 'the FCC epic\'s own figure for HEVC Apple Log at 4K30, about 200MB per minute',
+    }),
+
+    /*
+     * PRORES — added by FCC-007 (GRD-3803), and every one of them REFUSED.
+     *
+     * They travel only by `external`, which does not exist until FCC-009, so
+     * `formatChoices()` refuses them with that transport's remedy and the
+     * picker shows them greyed with the reason. That is the epic's constraint
+     * — "must not be offered without FCC-009" — expressed as a rule rather
+     * than remembered: declaring `upload` here would offer them immediately.
+     *
+     * THE ANCHOR IS 1.7 GB/min FOR 422 HQ AT 1080p30. The brief states it and
+     * `fcc-parity-brief.test.js` recomputes its "3 seconds" headline from it,
+     * so the registry must reproduce that or two documents state two different
+     * costs for one format. Everything else is DERIVED and flagged `inferred`,
+     * on the `provider-pricing.js` precedent: a figure that is not published is
+     * marked rather than quietly averaged, because FCC-009 and FCC-011 will
+     * trust these and a derived number presented as fact is one nobody
+     * re-checks.
+     *
+     * The 4K derivation corroborates independently: four times the pixels at
+     * the same rate gives 6.8 GiB/min, and the epic's own figure is "~7 GB/min
+     * at 4K30", arrived at separately.
+     */
+    '1080p30-prores422hq': Object.freeze({
+        bytes_per_second: Math.round(1.7 * 1024 * 1048576 / 60),
+        color_space: 'rec709',
+        codec: 'prores422hq',
+        transports: Object.freeze(['external']),
+        label: 'ProRes 422 HQ, 1080p at 30fps',
+        source: "Apple's published iPhone figure, 1.7 GB per minute — the same number the brief "
+            + 'states and fcc-parity-brief recomputes its 3-second headline from',
+    }),
+    '4k30-prores422hq': Object.freeze({
+        // Four times the pixels of the anchor above, at the same frame rate.
+        bytes_per_second: Math.round(1.7 * 4 * 1024 * 1048576 / 60),
+        color_space: 'rec709',
+        codec: 'prores422hq',
+        transports: Object.freeze(['external']),
+        inferred: true,
+        label: 'ProRes 422 HQ, 4K at 30fps',
+        source: 'derived from the 1080p30 anchor — four times the pixels at the same rate, giving '
+            + "6.8 GiB/min, which corroborates the epic's separately-stated ~7 GB/min at 4K30",
+    }),
+    '1080p30-prores422': Object.freeze({
+        // Apple publishes ProRes 422 and 422 HQ target data rates as 147 and
+        // 220 Mbps at 1080p; the ratio is what carries across.
+        bytes_per_second: Math.round(1.7 * (147 / 220) * 1024 * 1048576 / 60),
+        color_space: 'rec709',
+        codec: 'prores422',
+        transports: Object.freeze(['external']),
+        inferred: true,
+        label: 'ProRes 422, 1080p at 30fps',
+        source: "derived from the 422 HQ anchor by Apple's published ProRes target data-rate "
+            + 'ratio, 147 against 220 Mbps at 1080p',
+    }),
+    '4k30-prores422': Object.freeze({
+        bytes_per_second: Math.round(1.7 * 4 * (147 / 220) * 1024 * 1048576 / 60),
+        color_space: 'rec709',
+        codec: 'prores422',
+        transports: Object.freeze(['external']),
+        inferred: true,
+        label: 'ProRes 422, 4K at 30fps',
+        source: 'derived from the 422 HQ anchor by four times the pixels and Apple\'s published '
+            + 'ProRes ratio of 147 against 220 Mbps',
     }),
 });
 
@@ -256,6 +351,6 @@ function formatChoices(extra = []) {
 }
 
 module.exports = {
-    CEILINGS, MODES, TRANSPORTS, bindingBytes, maxSecondsFor, recommended, checkCapture,
+    CEILINGS, MODES, CODECS, TRANSPORTS, bindingBytes, maxSecondsFor, recommended, checkCapture,
     formatChoices,
 };
