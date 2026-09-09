@@ -1416,6 +1416,32 @@ final class PlateCameraModel: NSObject, ObservableObject {
         device.unlockForConfiguration()
     }
 
+    /// Put every held lock back on a device.
+    ///
+    /// A lock lives on the DEVICE, and the SESSION chooses that device's
+    /// `activeFormat` — so anything that reconfigures the session releases all
+    /// three at once. `select()` has known this since PCC-001; FCC-002 then
+    /// added two more reconfiguration sites, and a take metered automatically
+    /// while the chip on screen reads LOCK HELD is worse than a plate, because
+    /// a plate can be re-shot.
+    ///
+    /// ONE helper rather than a copy per site: three copies is how one of them
+    /// comes to carry the focus lock and the others do not. Each is re-applied
+    /// only if it is actually held — re-applying a lock nobody set would pin
+    /// the camera to whatever it happened to be metering.
+    ///
+    /// The refit is NOT done here. `apply(_:to:)` and its two siblings already
+    /// clamp a held value into the format's own range and report the shortfall
+    /// in stops; doing it again would be a second answer to the same question.
+    private func reapplyLocks(to device: AVCaptureDevice) {
+        if let held = exposure { apply(held, to: device) }
+        if let wb = whiteBalance { applyWhiteBalance(wb, to: device) }
+        // The POINT is re-focused rather than the lens position carried: a
+        // stored position is not a consistent distance across formats, so the
+        // number would focus somewhere else.
+        if let at = focus { applyFocus(at, to: device) }
+    }
+
     /// Point the device at a spot and hold focus there.
     ///
     /// Re-focusing rather than re-applying a number is what makes this correct
@@ -1464,12 +1490,11 @@ final class PlateCameraModel: NSObject, ObservableObject {
             // held values may be outside its format's range. Re-applying
             // refits them to the new format; without this the UI reads LOCK
             // while the next plate is metered automatically.
-            if let held = exposure { apply(held, to: next.device) }
-            if let wb = whiteBalance { applyWhiteBalance(wb, to: next.device) }
-            // The POINT is re-focused on the new lens. The lens position is
-            // deliberately NOT carried: :1265 says it is not a consistent
-            // distance across devices, so the number would focus elsewhere.
-            if let at = focus { applyFocus(at, to: next.device) }
+            //
+            // Applied INSIDE the block here, unlike a preset change: the format
+            // belongs to the device being added and is already correct before
+            // the commit.
+            reapplyLocks(to: next.device)
         } else if let current = input, session.canAddInput(current) {
             session.addInput(current)            // put the working lens back
         }
@@ -1532,6 +1557,17 @@ final class PlateCameraModel: NSObject, ObservableObject {
         session.beginConfiguration()
         session.sessionPreset = wanted
         session.commitConfiguration()
+        /*
+         * AFTER the commit, never inside it.
+         *
+         * The session applies the new preset — and therefore the device's new
+         * activeFormat — when the configuration is committed. `apply(_:to:)`
+         * refits against `device.activeFormat`, so calling it inside the block
+         * would clamp against the format being LEFT BEHIND and then set a value
+         * the new one refuses: 4K60 caps the frame duration at 1/60s, so an
+         * exposure metered at 1/30 on the photo preset is illegal there.
+         */
+        if let device = lens?.device { reapplyLocks(to: device) }
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id).mov")
@@ -1607,6 +1643,10 @@ final class PlateCameraModel: NSObject, ObservableObject {
         session.beginConfiguration()
         session.sessionPreset = before
         session.commitConfiguration()
+        // Coming back is the same reconfiguration in the other direction: the
+        // photo preset restores a longer maximum exposure, and a lock clamped
+        // for 4K60 would otherwise stay clamped for every plate after the take.
+        if let device = lens?.device { reapplyLocks(to: device) }
     }
 
     func shoot(_ done: @escaping (UIImage?) -> Void) {

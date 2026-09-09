@@ -203,6 +203,37 @@ test('support is checked before both the point and a custom position', () => {
         + 'AVCaptureLensPositionCurrent, and anything else throws');
 });
 
+/**
+ * `select()`'s body, PLUS the body of any helper in this file that it calls.
+ *
+ * FOLLOWS ONE CALL LEVEL, widened by FCC-004 (GRD-3800). select() used to hold
+ * its own copy of the three re-apply lines. FCC-002 then added two more
+ * reconfiguration sites — `startRecording` and `restorePreset`, both of which
+ * change `sessionPreset` and so release every lock — and all three now share a
+ * single `reapplyLocks` helper, because three copies is exactly how one of them
+ * comes to carry the focus lock and the others do not.
+ *
+ * A call-site match reported that refactor as a LOST LOCK. This is strictly
+ * stronger than the literal it replaces: it fails when select re-applies
+ * nothing, and it also fails when the helper select delegates to drops a lock —
+ * which a call-site match could never see.
+ *
+ * ONE level, and only functions declared in this file: an unbounded walk
+ * eventually reaches something unrelated that mentions the lock and reports a
+ * broken re-apply as covered.
+ */
+function selectRegion(s) {
+    const at = s.indexOf('func select(');
+    assert.notStrictEqual(at, -1, 'no select(); PCC-001 is not in place');
+    const body = s.slice(at, s.indexOf('\n    }', at));
+    let region = body;
+    for (const m of body.matchAll(/\b([a-z]\w+)\(/g)) {
+        const h = s.indexOf(`func ${m[1]}(`);
+        if (h !== -1) region += '\n' + s.slice(h, s.indexOf('\n    }', h));
+    }
+    return region;
+}
+
 test('a LENS CHANGE re-focuses at the point and does NOT carry the position', () => {
     /*
      * THE DECISION THIS TASK TURNS ON, and it is the opposite of PCC-002 and
@@ -210,10 +241,7 @@ test('a LENS CHANGE re-focuses at the point and does NOT carry the position', ()
      * distance from device to device", so re-applying the number after a lens
      * change focuses at a distance nobody chose. The point is what survives.
      */
-    const s = code();
-    const at = s.indexOf('func select(');
-    assert.notStrictEqual(at, -1, 'no select(); PCC-001 is not in place');
-    const body = s.slice(at, s.indexOf('\n    }', at));
+    const body = selectRegion(code());
     assert.match(body, /[fF]ocus/,
         'select() ignores the focus lock entirely, so changing lens leaves the new lens on '
         + 'autofocus while the UI still shows a held focus');
