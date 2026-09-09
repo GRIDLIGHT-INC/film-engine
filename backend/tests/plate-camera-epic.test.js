@@ -231,13 +231,48 @@ const CLAIMS = [
              * AVCaptureVideoDataOutput was REMOVED from this list by PCC-007
              * (GRD-3658). It is present now, for MONITORING — peaking and the
              * exposure warning are computed from those frames and never written
-             * anywhere. What would actually mean footage capture is writing
-             * frames to a file (AVAssetWriter) or a log colour space; those are
-             * still absent, and Phase B is still struck.
+             * anywhere.
+             *
+             * AVAssetWriter was REMOVED from this list by FCC-001 (GRD-3797),
+             * and that is this tripwire working rather than failing. It asked
+             * that somebody say so deliberately if an asset-writer path ever
+             * appeared; the direction on GRD-3796 reversed the Phase B
+             * exclusion and the whole of that epic is footage capture. The
+             * writer is pinned by `footage-capture-landed-elsewhere` below, so
+             * this epic still notices if it disappears. A log colour space is
+             * still absent, and is FCC-005's to close — not PCC's.
              */
-            const present = ['activeColorSpace', 'AVAssetWriter'].filter(s => cam.includes(s));
+            const present = ['activeColorSpace'].filter(s => cam.includes(s));
             return present.length === 0
                 || `footage capture has landed (${present.join(', ')}) — reshape this claim`;
+        },
+    },
+    {
+        id: 'footage-capture-landed-elsewhere',
+        kind: 'present',
+        /*
+         * Not a PCC task, and deliberately recorded here anyway. This epic's
+         * sizing rests on the camera being stills-only; that is no longer true,
+         * so the claim that says so has to name what replaced it or the epic
+         * would keep describing a camera that has not existed since FCC-001.
+         */
+        why: 'SPLIT from `no-footage-apis` when FCC-001 (GRD-3797) landed under GRD-3796, which '
+            + 'reversed the Phase B exclusion this epic was written against. The tripwire fired '
+            + 'as intended; this records what fired it, so PCC still notices if the writer that '
+            + 'now shares its frame queue is removed',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            if (!cam.includes('AVAssetWriter')) {
+                return 'the recording FCC-001 built is gone — reshape this back to a gap';
+            }
+            /*
+             * The half that matters TO THIS EPIC: the writer shares the frame
+             * queue with peaking and the exposure warning, so it must never be
+             * allowed to make that queue wait.
+             */
+            return /expectsMediaDataInRealTime\s*=\s*true/.test(cam)
+                || 'the writer may block the frame queue, which is the queue PCC-008 and PCC-009 '
+                 + 'compute on — the monitoring tools would stall behind the encoder';
         },
     },
     {

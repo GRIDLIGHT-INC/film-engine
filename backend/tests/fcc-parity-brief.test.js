@@ -134,9 +134,14 @@ const CLAIMS = [
             // setFocusModeLocked removed by PCC-004 (GRD-3655): built, and pinned
             // by `focus-lock-landed` below. Only the footage pair remains.
             // AVCaptureVideoDataOutput removed by PCC-007 (GRD-3658): frames are
-            // read for MONITORING and written nowhere. Footage capture means
-            // AVAssetWriter or a log colour space, both still absent.
-            const landed = ['activeColorSpace', 'AVAssetWriter'].filter(x => cam.includes(x));
+            // read for MONITORING and written nowhere.
+            // AVAssetWriter removed from this list by FCC-001 (GRD-3797): the
+            // TRIPWIRE FIRED. The direction on GRD-3796 reversed the Phase B
+            // exclusion and footage capture was built deliberately, which is
+            // exactly what this claim asked somebody to say out loud. It is
+            // pinned by `recording-landed` below. Only the log colour space is
+            // still absent, and FCC-005 closes it.
+            const landed = ['activeColorSpace'].filter(x => cam.includes(x));
             return landed.length === 0
                 || `the camera now uses ${landed.join(', ')} — reshape this claim to pin what was built`;
         },
@@ -166,22 +171,28 @@ const CLAIMS = [
         },
     },
     {
-        id: 'camera-is-photo-only',
-        kind: 'gap',
-        // Same declaration, same reason: see camera-has-no-remaining-manual-control.
-        outOfScope: 'Phase B — footage capture, gated on the transport decision and struck from '
-            + 'this epic; a plate is a photograph, not a frame grab',
-        why: 'the brief\'s footage recommendations rest on there being no AVAssetWriter path; the '
-            + 'LENS half of this claim was split off and closed by PCC-001 (GRD-3652), which is '
-            + 'why this now names only the half that is still true',
+        id: 'recording-landed',
+        kind: 'present',
+        why: 'RESHAPED from `camera-is-photo-only` when FCC-001 (GRD-3797) landed. That claim was '
+            + 'declared out of scope on Phase B, and the direction on GRD-3796 reversed the '
+            + 'exclusion — so the tripwire it left behind did its job. What replaces it pins the '
+            + 'thing the brief actually cares about: the camera can shoot footage AND stills, '
+            + 'rather than having traded one for the other',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            if (!/AVCapturePhotoOutput/.test(cam)) return 'the camera is no longer photo-based';
-            if (!/sessionPreset = \.photo/.test(cam)) return 'the session preset has changed';
-            // See PCC-007: a data output for monitoring is not footage capture.
-            const landed = ['AVAssetWriter'].filter(l => cam.includes(l));
-            return landed.length === 0
-                || `footage capture has landed (${landed.join(', ')}) — reshape this claim`;
+            if (!/AVCapturePhotoOutput/.test(cam)) return 'the camera can no longer shoot a plate';
+            /*
+             * `.photo` is still the RESTING preset — a plate needs the full
+             * sensor. Recording swaps to the mode's video preset for the take
+             * and swaps back, so a permanent video preset here would mean every
+             * plate had been quietly downgraded to record footage.
+             */
+            if (!/sessionPreset = \.photo/.test(cam)) {
+                return 'the session no longer rests at the photo preset — plates lost the full sensor';
+            }
+            const missing = ['AVAssetWriter', 'RecordingMode'].filter(l => !cam.includes(l));
+            return missing.length === 0
+                || `footage capture has been removed again: ${missing.join(', ')}`;
         },
     },
     {
@@ -338,7 +349,10 @@ test('EVERY built API names the task that built it', () => {
      */
     const rows = [...doc().matchAll(API_STATUS_RE)]
         .map(m => ({ api: m[1], status: m[2], note: m[3].trim() }));
-    const bare = rows.filter(r => r.status === 'built' && !/PCC-\d{3}/.test(r.note))
+    // FCC accepted alongside PCC by FCC-001 (GRD-3797): this brief's own epic
+    // now builds APIs in the same file, and a rule that only recognised the
+    // PREVIOUS epic's ids would report a properly attributed row as bare.
+    const bare = rows.filter(r => r.status === 'built' && !/(?:PCC|FCC)-\d{3}/.test(r.note))
         .map(r => r.api);
     assert.deepStrictEqual(bare, [], `built and unattributed: ${bare.join(', ')}`);
 });

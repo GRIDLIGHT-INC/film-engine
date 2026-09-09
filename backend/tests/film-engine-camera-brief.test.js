@@ -108,16 +108,31 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-video-recording-apis-yet',
-        kind: 'gap',
-        closes: 'the task that records HEVC Apple Log via AVAssetWriter',
-        why: 'the brief says the spine must change from photo to video capture; when it does, '
-            + 'this becomes a `present` claim naming what was built',
+        id: 'recording-spine-landed',
+        kind: 'present',
+        why: 'RESHAPED from the AVAssetWriter half of `no-video-recording-apis-yet` when FCC-001 '
+            + '(GRD-3797) landed. The brief said the spine must change from photo capture to '
+            + 'video capture; it has, and this records that rather than deleting the claim — so '
+            + 'anything that removed the writer again would be noticed',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const landed = ['AVAssetWriter', 'activeColorSpace'].filter(s => cam.includes(s));
-            return landed.length === 0
-                || `video recording has landed (${landed.join(', ')}) — reshape this claim`;
+            const missing = ['AVAssetWriter', 'RecordingSink', 'startSession(atSourceTime:']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the recording spine has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'no-log-colour-space-yet',
+        kind: 'gap',
+        closes: 'FCC-005 (GRD-3801), which sets activeColorSpace to .appleLog',
+        why: 'SPLIT from `no-video-recording-apis-yet` when FCC-001 landed. That claim covered '
+            + 'two absences and only one closed, so it is split rather than deleted — the brief '
+            + 'recommends a gradeable log format and that half is still genuinely unbuilt',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            return !cam.includes('activeColorSpace')
+                || 'a log colour space has landed — reshape this claim to pin what was built';
         },
     },
     {
@@ -135,15 +150,21 @@ const CLAIMS = [
         },
     },
     {
-        id: 'photo-output-is-still-the-spine',
-        kind: 'gap',
-        closes: 'the task that adds AVCaptureVideoDataOutput recording alongside it',
-        why: 'the brief says stills need not be lost because both outputs can be active since '
-            + 'iOS 16; that claim is only interesting while the photo output is still there',
+        id: 'both-outputs-are-active',
+        kind: 'present',
+        why: 'RESHAPED when FCC-001 (GRD-3797) landed, which is the task this gap named as its '
+            + 'closer. The brief said stills need not be lost because both outputs may be active '
+            + 'since iOS 16 — the recording is now built and the photo output is still there, so '
+            + 'the prediction held and this pins it instead of still asking for it',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            return cam.includes('AVCapturePhotoOutput')
-                || 'the photo output is gone — stills were lost, which the brief said need not happen';
+            const missing = ['AVCapturePhotoOutput', 'AVCaptureVideoDataOutput', 'AVAssetWriter']
+                .filter(s => !cam.includes(s));
+            if (missing.length) {
+                return `one output was traded for another: ${missing.join(', ')} is gone`;
+            }
+            return /func shoot\(/.test(cam)
+                || 'the photo output survives but nothing can shoot a plate with it any more';
         },
     },
 ];

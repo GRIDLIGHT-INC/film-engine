@@ -649,6 +649,191 @@ enum ExposureWarning {
     }
 }
 
+// ── recording ────────────────────────────────────────────────────────────────
+
+/// What a recording mode IS, in numbers.
+///
+/// Deliberately free of AVFoundation types so the arithmetic can be compiled
+/// and executed on its own — `fcc-recording.test.js` runs this table rather
+/// than reading it, on the precedent `FrameAnalysis` set. A regex over the
+/// source would confirm the file contains some digits.
+///
+/// **The rates are not chosen here.** They are `backend/lib/capture-policy.js`
+/// `MODES`, byte for byte, and the test holds the two to exact equality in both
+/// directions. That file computes how many seconds fit under the binding
+/// upload ceiling; those seconds only mean anything if the camera records at
+/// the rate they were computed from. A recorder encoding 1080p30 at twice the
+/// budgeted rate produces a file that is perfectly valid, plays perfectly, and
+/// breaches the ceiling at half the duration the app promised — discovered at
+/// upload, which is the entire failure `capture-policy` exists to prevent.
+struct RecordingMode: Equatable {
+    let id: String
+    let width: Int
+    let height: Int
+    let fps: Int
+    let bitsPerSecond: Int
+
+    /// What a second of this mode costs on disk and, later, in transport.
+    var bytesPerSecond: Int { bitsPerSecond / 8 }
+
+    /*
+     * Apple's published iPhone figures, as MB per minute of HEVC, converted the
+     * same way capture-policy converts them. Nominal, not measured — which is
+     * what they are called there too, rather than presented as exact.
+     */
+    static let all: [RecordingMode] = [
+        RecordingMode(id: "1080p30", width: 1920, height: 1080, fps: 30,
+                      bitsPerSecond: 6_291_456),      // ~45 MB/min
+        RecordingMode(id: "4k30", width: 3840, height: 2160, fps: 30,
+                      bitsPerSecond: 18_874_368),     // ~135 MB/min
+        RecordingMode(id: "4k60", width: 3840, height: 2160, fps: 60,
+                      bitsPerSecond: 55_924_056),     // ~400 MB/min
+    ]
+
+    /*
+     * REFUSES rather than defaults. Falling back to a working mode would record
+     * at a rate nobody chose against a budget computed for a different one, and
+     * it would look exactly like it worked — the shape of failure this whole
+     * table exists to remove.
+     */
+    static func mode(_ id: String) -> RecordingMode? { all.first { $0.id == id } }
+}
+
+/// The writer, and everything that must happen on the frame queue.
+///
+/// A separate object rather than fields on the model, for the reason the frame
+/// consumer is held behind a lock: `append` runs on `frameQueue` sixty times a
+/// second and start/stop are pressed on the main actor. Keeping the writer's
+/// whole lifecycle inside one non-isolated class means there is exactly one
+/// place that has to be right about which thread it is on.
+///
+/// Not an `AVCaptureMovieFileOutput`, which would record video with none of
+/// this code. That is a SECOND capture path: the monitoring tools read frames
+/// from the data output, so peaking and the exposure warning would be computed
+/// from buffers that are not the ones being written, and the two would drift
+/// under load with nothing to show for it. The epic says the writer is fed from
+/// the output that already exists, and this is why.
+final class RecordingSink {
+    private let lock = NSLock()
+    private var writer: AVAssetWriter?
+    private var input: AVAssetWriterInput?
+    private var started = false
+    private var dropped = 0
+
+    private(set) var url: URL?
+
+    var isRecording: Bool { lock.lock(); defer { lock.unlock() }; return writer != nil }
+
+    /// Frames appended, and frames the encoder could not take. Reported rather
+    /// than swallowed: a clip that quietly lost a third of its frames plays.
+    private(set) var written = 0
+
+    /// Open a writer for `mode`. Returns why not, or nil on success.
+    func begin(mode: RecordingMode, to url: URL) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        guard writer == nil else { return "already recording" }
+
+        guard let w = try? AVAssetWriter(outputURL: url, fileType: .mov) else {
+            return "The recording could not be opened at \(url.lastPathComponent)."
+        }
+        /*
+         * The bitrate is the mode's, so the file matches what the budget priced.
+         * Expected frame rate is stated as well: without it the encoder rations
+         * bits against a rate it guesses, and a 60fps clip comes out soft.
+         */
+        let settings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: mode.width,
+            AVVideoHeightKey: mode.height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: mode.bitsPerSecond,
+                AVVideoExpectedSourceFrameRateKey: mode.fps,
+            ],
+        ]
+        let i = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        /*
+         * AVAssetWriterInput.h: without this the input assumes it may make the
+         * caller wait. The caller here is `frameQueue`, which also carries
+         * focus peaking and the exposure warning — so the encoder would stall
+         * the monitoring the director is watching while they record.
+         */
+        i.expectsMediaDataInRealTime = true
+        guard w.canAdd(i) else { return "This device cannot record \(mode.id)." }
+        w.add(i)
+        guard w.startWriting() else {
+            return w.error.map { "Recording failed to start: \($0.localizedDescription)" }
+                ?? "Recording failed to start."
+        }
+        writer = w
+        input = i
+        started = false
+        written = 0
+        dropped = 0
+        self.url = url
+        return nil
+    }
+
+    /// Feed one buffer. Called on the frame queue, never on main.
+    func append(_ sample: CMSampleBuffer) {
+        lock.lock(); defer { lock.unlock() }
+        guard let writer, let input, writer.status == .writing else { return }
+
+        /*
+         * The session is anchored to the FIRST buffer's own timestamp.
+         *
+         * `.zero` is the tempting constant and it is wrong: capture buffers
+         * carry the host clock, which is time since boot. Starting at zero puts
+         * every sample hours into the timeline — the file writes successfully,
+         * reports a duration of several hours, and opens in an NLE as a clip
+         * that is almost entirely empty. It fails as a plausible file rather
+         * than as an error.
+         */
+        if !started {
+            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sample))
+            started = true
+        }
+        /*
+         * Asked, not assumed. `append` returns false when the encoder is behind
+         * and the sample is simply lost; without the guard a clip silently
+         * drops frames under load and still reports success.
+         */
+        guard input.isReadyForMoreMediaData else { dropped += 1; return }
+        if input.append(sample) { written += 1 } else { dropped += 1 }
+    }
+
+    /// Close the file. `done` carries the finished URL, or nil and a reason.
+    func finish(_ done: @escaping (URL?, String?) -> Void) {
+        lock.lock()
+        guard let writer, let input else {
+            lock.unlock()
+            done(nil, "nothing was recording")
+            return
+        }
+        let out = url
+        let lost = dropped
+        self.writer = nil
+        self.input = nil
+        lock.unlock()
+
+        input.markAsFinished()
+        // A file with no samples is not a clip. Saying so beats handing over
+        // something that opens and shows nothing.
+        guard started else {
+            writer.cancelWriting()
+            done(nil, "No frames reached the recording.")
+            return
+        }
+        writer.finishWriting {
+            if writer.status == .completed {
+                done(out, lost > 0 ? "\(lost) frames were dropped by the encoder." : nil)
+            } else {
+                done(nil, writer.error.map { "Recording failed: \($0.localizedDescription)" }
+                        ?? "Recording did not complete.")
+            }
+        }
+    }
+}
+
 // ── the camera ───────────────────────────────────────────────────────────────
 
 /// The capture session, and the one honest answer when there is no camera.
@@ -749,6 +934,28 @@ final class PlateCameraModel: NSObject, ObservableObject {
     private let frameQueue = DispatchQueue(label: "film-engine.plate.frames")
     private var input: AVCaptureDeviceInput?
     private var onCapture: ((UIImage?) -> Void)?
+
+    /*
+     * The writer. Non-isolated because `append` is called from the frame queue
+     * delegate, which cannot hop to the main actor per buffer without becoming
+     * the stall it is trying to avoid.
+     */
+    nonisolated let sink = RecordingSink()
+
+    /// Whether a take is running, and what it is being recorded at.
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordingMode: RecordingMode?
+    /// Why the last take could not start or finish. Nil when it went fine.
+    @Published private(set) var recordingProblem: String?
+
+    /*
+     * Restored when the take ends. Recording at 4K needs a 4K preset, and a
+     * plate needs `.photo` for the full sensor — so the preset is the mode's
+     * for the duration and the stills setting the rest of the time. Putting the
+     * session permanently on a video preset would quietly downgrade every plate
+     * the camera has ever shot.
+     */
+    private var presetBeforeRecording: AVCaptureSession.Preset?
 
     /*
      * What the monitoring tools read. Called on `frameQueue`, never on main —
@@ -1035,10 +1242,93 @@ final class PlateCameraModel: NSObject, ObservableObject {
         // Detach FIRST. A delegate left attached holds a strong reference and
         // keeps the queue awake after the sheet is dismissed — the camera
         // indicator stays lit and frames keep arriving for nobody.
+        /*
+         * A take in progress is CLOSED, not abandoned. Detaching the delegate
+         * below stops the buffers, so a writer left open would keep a
+         * half-written file on disk that no longer has anything feeding it —
+         * the take is unrecoverable either way, and this at least leaves a
+         * playable one.
+         */
+        if isRecording { stopRecording { _ in } }
         frames.setSampleBufferDelegate(nil, queue: nil)
         onFrame = nil
         guard session.isRunning else { return }
         Task.detached { [session] in session.stopRunning() }
+    }
+
+    /*
+     * The preset a mode needs. `.photo` delivers the full sensor for a plate
+     * and is not a video size, so recording swaps to the matching video preset
+     * and swaps back — see `presetBeforeRecording`.
+     */
+    private func preset(for mode: RecordingMode) -> AVCaptureSession.Preset {
+        mode.height >= 2160 ? .hd4K3840x2160 : .hd1920x1080
+    }
+
+    /// Start a take. Reports why not rather than failing silently.
+    ///
+    /// The photo output is untouched: since iOS 16 both outputs may be active
+    /// on one session, so recording never required losing the plate camera.
+    func startRecording(_ modeID: String) {
+        guard !isRecording else { return }
+        guard state == .ready else {
+            recordingProblem = "The camera is not ready."
+            return
+        }
+        /*
+         * REFUSED, not defaulted. Recording at a rate nobody asked for, against
+         * a budget computed for a different one, is the failure `RecordingMode`
+         * exists to remove — and it would look exactly like it worked.
+         */
+        guard let mode = RecordingMode.mode(modeID) else {
+            recordingProblem = "\(modeID) is not a recording mode this camera knows."
+            return
+        }
+
+        let wanted = preset(for: mode)
+        guard session.canSetSessionPreset(wanted) else {
+            recordingProblem = "This device cannot record \(mode.id)."
+            return
+        }
+        presetBeforeRecording = session.sessionPreset
+        session.beginConfiguration()
+        session.sessionPreset = wanted
+        session.commitConfiguration()
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970))-\(mode.id).mov")
+        if let why = sink.begin(mode: mode, to: url) {
+            restorePreset()
+            recordingProblem = why
+            return
+        }
+        recordingProblem = nil
+        recordingMode = mode
+        isRecording = true
+    }
+
+    /// Stop the take and hand over the file.
+    func stopRecording(_ done: @escaping (URL?) -> Void) {
+        guard isRecording else { done(nil); return }
+        isRecording = false
+        sink.finish { [weak self] url, problem in
+            Task { @MainActor in
+                guard let self else { return }
+                self.restorePreset()
+                self.recordingMode = nil
+                self.recordingProblem = problem
+                done(url)
+            }
+        }
+    }
+
+    private func restorePreset() {
+        guard let before = presetBeforeRecording else { return }
+        presetBeforeRecording = nil
+        guard session.canSetSessionPreset(before) else { return }
+        session.beginConfiguration()
+        session.sessionPreset = before
+        session.commitConfiguration()
     }
 
     func shoot(_ done: @escaping (UIImage?) -> Void) {
@@ -1054,6 +1344,18 @@ extension PlateCameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
     nonisolated func captureOutput(_ output: AVCaptureOutput,
                                    didOutput sampleBuffer: CMSampleBuffer,
                                    from connection: AVCaptureConnection) {
+        /*
+         * The recording is fed FIRST, and unconditionally.
+         *
+         * Below this line the monitoring path returns early when nothing is
+         * reading frames — which is the common case, since peaking and the
+         * exposure warning are both toggles. Feeding the writer after that
+         * guard would mean a take recorded nothing whenever the director had
+         * the monitoring tools switched off: a file that opens, plays as
+         * nothing, and blames the camera.
+         */
+        sink.append(sampleBuffer)
+
         guard let consumer = onFrame,
               let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         // The subsample is planned HERE, once, rather than by each consumer:

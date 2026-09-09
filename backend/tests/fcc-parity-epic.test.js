@@ -255,16 +255,32 @@ const CLAIMS = [
         },
     },
     {
-        id: 'no-recording-apis-yet',
-        kind: 'gap',
-        closes: 'FCC-001, FCC-005',
-        why: 'the whole of Phase 1 and 2 rests on these being absent; when they land the claim '
-            + 'records what was built',
+        id: 'the-recording-spine-is-built',
+        kind: 'present',
+        why: 'RESHAPED from the AVAssetWriter half of `no-recording-apis-yet` when FCC-001 '
+            + '(GRD-3797) landed. Phase 1 rested on this being absent and it no longer is, so '
+            + 'the claim now pins what was built — every later task in the epic is fed from this '
+            + 'writer, and its removal would silently unbuild all of them',
         holds() {
             const cam = code('ios/FilmEngine/PlateCamera.swift');
-            const landed = ['AVAssetWriter', 'activeColorSpace'].filter(s => cam.includes(s));
-            return landed.length === 0
-                || `recording has landed (${landed.join(', ')}) — reshape this claim`;
+            const missing = ['AVAssetWriter', 'RecordingMode', 'RecordingSink']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the recording spine FCC-001 built has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'no-log-colour-space-yet',
+        kind: 'gap',
+        closes: 'FCC-005',
+        why: 'SPLIT from `no-recording-apis-yet` when FCC-001 closed the recording half. The '
+            + 'claim covered two absences and only one of them closed, so splitting keeps it '
+            + 'saying something true rather than failing for succeeding — Phase 2 still rests on '
+            + 'the log colour space being absent',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            return !cam.includes('activeColorSpace')
+                || 'a log colour space has landed — reshape this claim to pin what was built';
         },
     },
     {
