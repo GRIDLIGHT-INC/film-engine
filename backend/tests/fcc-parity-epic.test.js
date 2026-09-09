@@ -240,18 +240,218 @@ const CLAIMS = [
         },
     },
     {
-        id: 'system-camera-is-still-there',
-        kind: 'gap',
-        closes: 'FCC-012',
-        why: 'the epic exists because shootControl renders the system camera. When FCC-012 lands '
-            + 'this must be RESHAPED to pin what replaced it — a gap pinned as permanent makes '
-            + 'the epic fail for succeeding',
+        id: 'the-controlled-camera-replaced-the-system-one',
+        kind: 'present',
+        why: 'RESHAPED from `system-camera-is-still-there` when FCC-012 (GRD-3808) landed. The '
+            + 'epic existed because shootControl rendered the OS picker, and that claim was '
+            + 'written to break the day it stopped — "a gap pinned as permanent makes the epic '
+            + 'fail for succeeding". It did NOT break: it asked only whether shootControl renders '
+            + 'a `capture` attribute anywhere, and the browser fallback still does and should, so '
+            + 'it passed while asserting the opposite of the code. Both arms are pinned here, '
+            + 'because the pair IS the claim.',
         holds() {
             const page = code('src/index.html');
             const at = page.indexOf('function shootControl');
-            if (at === -1) return 'shootControl is gone — reshape this claim';
-            return /capture=/.test(page.slice(at, page.indexOf('\n    }', at)))
-                || 'shootControl no longer renders a capture attribute — reshape this claim';
+            if (at === -1) return 'shootControl is gone — reshape this claim to pin what replaced it';
+            const body = page.slice(at, page.indexOf('\n    }', at));
+            const missing = [];
+            if (!/plateShootButton\(/.test(body)) missing.push('it never reaches the controlled camera');
+            if (!/shootsWithCamera\(/.test(body)) missing.push('it does not ask which targets photograph the world');
+            if (!/capture=/.test(body)) missing.push('the browser lost its only camera');
+            return missing.length === 0
+                || `shootControl no longer replaces the system camera: ${missing.join('; ')}`;
+        },
+    },
+    {
+        id: 'the-recording-transport-is-built',
+        kind: 'present',
+        why: 'RECORDS FCC-002 (GRD-3798). "A director must see the clip end coming, not discover '
+            + 'it" — the transport is that sentence, and the countdown is the half that makes it '
+            + 'true. Losing the remaining figure would leave a record button that runs until the '
+            + 'ceiling stops it with no warning, which is the state the task removed',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const missing = ['struct RecordingTransport', 'secondsRemaining', 'elapsedSeconds',
+                'endInSight'].filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the recording transport has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'the-audio-track-is-built',
+        kind: 'present',
+        why: 'RECORDS FCC-003 (GRD-3799). A mute clip writes, plays and says nothing — it is '
+            + 'indistinguishable from a working one until somebody listens, by which time the '
+            + 'take is over. The sound capture and the fact that a MOS take SAYS so are one '
+            + 'claim, because the second is what makes the first noticeable',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const missing = ['AVCaptureAudioDataOutput', 'recordsAudio']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0 || `the audio track has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'the-locks-reach-a-recording-session',
+        kind: 'present',
+        why: 'RECORDS FCC-004 (GRD-3800). A preset swap releases every lock the device holds, so '
+            + 'a take metered automatically while the chip on screen reads LOCK HELD is worse '
+            + 'than a bad plate — a plate can be re-shot. `reapplyLocks` is the one helper that '
+            + 'puts them back, and it has to be REACHED from the recording path rather than '
+            + 'merely existing',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            if (!cam.includes('func reapplyLocks')) return 'reapplyLocks is gone';
+            const at = cam.indexOf('func startRecording');
+            if (at === -1) return 'startRecording is gone';
+            return /reapplyLocks\(/.test(cam.slice(at, cam.indexOf('\n    }', at)))
+                || 'startRecording no longer re-applies the locks, so a take is metered live '
+                 + 'while the chip says the exposure is held';
+        },
+    },
+    {
+        id: 'the-format-picker-is-built',
+        kind: 'present',
+        why: 'RECORDS FCC-006 (GRD-3802). "Every format shows MB/min, maximum duration and how it '
+            + 'will travel" — two formats are equal buttons until those numbers are on them, and '
+            + 'a format whose transport is absent must be REFUSED with the remedy rather than '
+            + 'offered or hidden. The picker and the choices it renders are one claim',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            if (!cam.includes('struct FormatPicker')) return 'the format picker is gone';
+            const p = require('../lib/capture-policy');
+            if (typeof p.formatChoices !== 'function') return 'capture-policy no longer priced the choices';
+            const choices = p.formatChoices();
+            const priced = choices.filter(c => typeof c.mb_per_min === 'number' && c.mb_per_min > 0);
+            if (priced.length !== choices.length) return 'a choice states no cost per minute';
+            const refused = choices.filter(c => !c.offered);
+            return refused.every(c => c.refusal && c.refusal.length > 30)
+                || 'a refused format says nothing useful about why, so it is indistinguishable '
+                 + 'from one that was never built';
+        },
+    },
+    {
+        id: 'prores-recording-is-built',
+        kind: 'present',
+        why: 'RECORDS FCC-007 (GRD-3803). ProRes is ~7 GB/min at 4K30, which is why the epic says '
+            + 'it "must not be offered without FCC-009" — so the codecs existing and every ProRes '
+            + 'mode declaring the external transport are the same claim. Losing the second would '
+            + 'offer a director a format whose take nothing can carry',
+        holds() {
+            const p = require('../lib/capture-policy');
+            const codecs = ['prores422', 'prores422hq'].filter(c => !p.CODECS[c]);
+            if (codecs.length) return `the codec registry has lost: ${codecs.join(', ')}`;
+            const prores = Object.entries(p.MODES).filter(([, m]) => /^prores/.test(m.codec));
+            if (prores.length < 3) return `only ${prores.length} ProRes modes are declared`;
+            const wrong = prores
+                .filter(([, m]) => !(m.transports || []).includes('external'))
+                .map(([id]) => id);
+            return wrong.length === 0
+                || `these ProRes modes no longer require a drive: ${wrong.join(', ')}`;
+        },
+    },
+    {
+        id: 'the-hardware-tier-is-gated-on-the-device',
+        kind: 'present',
+        why: 'RECORDS FCC-008 (GRD-3804). "Gated on the device reporting the capability rather '
+            + 'than on a model string" is the whole task: a model string has never heard of the '
+            + 'phone that shipped this morning, which is exactly the one with the feature. The '
+            + 'capabilities and the report of what THIS phone lacks are one claim, because a '
+            + 'capability the device lacks must be named rather than silently skipped',
+        holds() {
+            const p = require('../lib/capture-policy');
+            const missing = ['apple_log2', 'prores_raw', 'open_gate']
+                .filter(c => !p.CAPABILITIES[c]);
+            if (missing.length) return `the capability registry has lost: ${missing.join(', ')}`;
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            return cam.includes('capabilityProblem')
+                || 'nothing reports which advanced formats this phone cannot record, so a 15 Pro '
+                 + 'Max meets an exception at the moment the director presses record';
+        },
+    },
+    {
+        id: 'external-storage-is-checked-before-the-take',
+        kind: 'present',
+        why: 'RECORDS FCC-009 (GRD-3805). "The drive is checked BEFORE recording starts" — a '
+            + 'drive that turns out to be too slow four seconds into a ProRes take has not '
+            + 'produced a shorter take, it has produced a corrupt one, and the moment is gone. '
+            + 'Four of the five checks are the OS\'s own answers; the fifth is room for THIS '
+            + 'take, which the OS cannot know',
+        holds() {
+            const p = require('../lib/capture-policy');
+            if (Object.keys(p.DRIVE_CHECKS || {}).length < 5) {
+                return `only ${Object.keys(p.DRIVE_CHECKS || {}).length} drive checks remain`;
+            }
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            const missing = ['AVExternalStorageDevice', 'isNotRecommendedForCaptureUse', 'freeSize']
+                .filter(s => !cam.includes(s));
+            return missing.length === 0
+                || `the drive pre-flight has lost: ${missing.join(', ')}`;
+        },
+    },
+    {
+        id: 'the-resumable-upload-is-built',
+        kind: 'present',
+        why: 'RECORDS FCC-010 (GRD-3806). "A phone loses Wi-Fi mid-transfer and a restart from '
+            + 'zero on a multi-gigabyte file is a transfer that never completes" — that is '
+            + 'arithmetic rather than pessimism, and resuming is the whole point. The server '
+            + 'holds the only authoritative answer to how much arrived, so `received` is derived '
+            + 'from the file rather than stored beside it',
+        holds() {
+            const up = require('../lib/uploads');
+            const missing = ['beginUpload', 'appendChunk', 'uploadStatus', 'completeUpload',
+                'abandonUpload'].filter(f => typeof up[f] !== 'function');
+            if (missing.length) return `the transfer has lost: ${missing.join(', ')}`;
+            const lib = code('backend/lib/uploads.js');
+            return /statSync\(part\)\.size|fs\.statSync/.test(lib)
+                || 'the received count is no longer read from the file, so a counter and the '
+                 + 'bytes can disagree — which is the state this exists to recover from';
+        },
+    },
+    {
+        id: 'the-walkthrough-is-budgeted-against-marble',
+        kind: 'present',
+        why: 'RECORDS FCC-013 (GRD-3809). A world is reconstructed from COVERAGE, so the budget '
+            + 'is the feature: 4K60 gives a walkthrough fourteen seconds, which covers one corner '
+            + 'of a room. `RecordingBudget` could answer that from FCC-011 and nothing asked — '
+            + 'eight entry points declared and defaulted — so what this records is that a session '
+            + 'REACHES them, and that a world take holds its exposure',
+        holds() {
+            const cam = code('ios/FilmEngine/PlateCamera.swift');
+            if (!/forWorld:\s*(forWorld|camera\.forWorld|world)/.test(cam)) {
+                return 'no session asks the budget about a world capture, so a walkthrough is '
+                    + 'budgeted against the upload and Marble refuses the clip after the walk';
+            }
+            const at = cam.indexOf('func startRecording');
+            if (at === -1) return 'startRecording is gone';
+            const body = cam.slice(at, cam.indexOf('\n    }', at));
+            return /lockExposure\(\)/.test(body)
+                || 'a world take no longer holds its exposure, so the same wall reaches the '
+                 + 'reconstruction at two brightnesses';
+        },
+    },
+    {
+        id: 'footage-attaches-to-a-shot',
+        kind: 'present',
+        why: 'RECORDS FCC-014 (GRD-3810). FCC-012 left this surface on the OS picker because the '
+            + 'camera recorded a take and nothing delivered it. What closed it was the ROUTE: '
+            + 'three sites decoded an upload and only one used the shared accessor, so the one '
+            + 'built for the largest files refused raw bytes before reading one. That single '
+            + 'caller is the load-bearing half',
+        holds() {
+            const m = require('../lib/media-imports');
+            if (!m.shootsWithCamera('video-media')) {
+                return 'footage no longer reaches the controlled camera';
+            }
+            if (m.MEDIA_IMPORTS['video-media'].camera_pending) {
+                return 'footage is marked as waiting again, which is the gap this task closed';
+            }
+            const lib = code('backend/lib/media-imports.js');
+            const callers = (lib.match(/decodeDataUri\(/g) || []).length;
+            return callers === 2
+                || `decodeDataUri has ${callers - 1} caller(s) besides bytesFrom — a site that `
+                 + 'decodes directly cannot accept raw bytes, which is what stood between a take '
+                 + 'on the phone and its shot';
         },
     },
     {
