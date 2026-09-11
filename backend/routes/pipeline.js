@@ -201,6 +201,10 @@ async function executeStep(stepId, shot, scene, project) {
         return {
             ok: false, code: result.state, error: result.error, plan: result.plan,
             permanent: verdict ? verdict.permanent : false,
+            // The whole executor walk, forwarded rather than flattened to a
+            // line: the runners carry it to the event, the response and the
+            // run row, so a failed film says what was tried and what was not.
+            walk: result.walk || [], walk_stage: result.walk_stage || null,
         };
     }
 
@@ -429,6 +433,15 @@ function runStatus({ failed, projectFailed }) {
     return failed && failed.length ? 'completed_with_errors' : 'complete';
 }
 
+/** What a failed step is recorded as: the id, the code, the error, the walk. */
+function failureOf(step, result) {
+    return {
+        step: step.id, code: (result && result.code) || null,
+        error: (result && result.error) || 'failed',
+        walk: (result && result.walk) || [],
+    };
+}
+
 /**
  * One step, with its retries. The ONLY attempt loop, so the no-retry rule for
  * a permanent refusal holds wherever a step is run — per shot or per film.
@@ -459,13 +472,13 @@ async function attemptStep(step, ctx, hooks, i) {
  */
 async function runProjectSteps(steps, { project, opts, hooks, offset }) {
     const h = hooks || {};
-    const completed = [], failed = [], skipped = [];
+    const completed = [], failed = [], skipped = [], failures = [];
     for (let j = 0; j < steps.length; j++) {
         const step = steps[j];
         const i = (offset || 0) + j;
 
         const stop = h.shouldStop && h.shouldStop();
-        if (stop) return { completed, failed, skipped, stopped: stop };
+        if (stop) return { completed, failed, skipped, failures, stopped: stop };
 
         if (!(opts && opts.runProjectSteps)) {
             const reason = `belongs to the whole film, not this ${(opts && opts.runType) || 'run'} `
@@ -478,9 +491,10 @@ async function runProjectSteps(steps, { project, opts, hooks, offset }) {
         if (h.onStart) h.onStart(step, i);
         const out = await attemptStep(step, { shot: null, scene: null, project }, h, i);
         (out.ok ? completed : failed).push(step.id);
+        if (!out.ok) failures.push(failureOf(step, out.result));
         if (h.onProgress) h.onProgress(completed, failed, skipped, i, steps.length);
     }
-    return { completed, failed, skipped, stopped: null };
+    return { completed, failed, skipped, failures, stopped: null };
 }
 
 /**
@@ -531,13 +545,13 @@ function preflightProjectSteps(projectSteps, body, willRun) {
  */
 async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
     const h = hooks || {};
-    const completed = [], failed = [], skipped = [];
+    const completed = [], failed = [], skipped = [], failures = [];
 
     for (let i = 0; i < plan.length; i++) {
         const step = plan[i];
 
         const stop = h.shouldStop && h.shouldStop();
-        if (stop) return { completed, failed, skipped, stopped: stop };
+        if (stop) return { completed, failed, skipped, failures, stopped: stop };
 
         const gate = sceneScopeGate(step.id, scene, done, opts);
         if (!gate.run) {
@@ -554,6 +568,7 @@ async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
 
         if (!success) {
             failed.push(step.id);
+            failures.push(failureOf(step, attempt.result));
             /*
              * A scene-scoped step that failed must be releasable, or one bad
              * attempt on the first shot means the scene silently never gets its
@@ -565,7 +580,7 @@ async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
         if (h.onProgress) h.onProgress(completed, failed, skipped, i, plan.length);
     }
 
-    return { completed, failed, skipped, stopped: null };
+    return { completed, failed, skipped, failures, stopped: null };
 }
 
 /**
@@ -646,7 +661,7 @@ async function runShotPipeline(req, res, shotId) {
     // The whole-film steps, once, after this shot — and only if asked for on
     // a run this small. A film is not a property of one shot.
     const film = outcome.stopped
-        ? { completed: [], failed: [], skipped: [], stopped: null }
+        ? { completed: [], failed: [], skipped: [], failures: [], stopped: null }
         : await runProjectSteps(projectSteps, {
             project, offset: perShot.length,
             opts: { runType: 'shot', runProjectSteps: !!(req.body && req.body.include_project_steps) },
@@ -660,6 +675,7 @@ async function runShotPipeline(req, res, shotId) {
     const completedSteps = [...outcome.completed, ...film.completed];
     const failedSteps = [...outcome.failed, ...film.failed];
     const skippedSteps = [...outcome.skipped, ...film.skipped];
+    const failures = [...outcome.failures, ...film.failures];
     const stopped = outcome.stopped || film.stopped;
 
     if (stopped) {
@@ -668,12 +684,13 @@ async function runShotPipeline(req, res, shotId) {
         return json(res, 200, {
             run_id: runId, shot_id: shotId, status: stopped,
             steps_completed: completedSteps, steps_failed: failedSteps,
-            steps_skipped: skippedSteps, readiness,
+            steps_skipped: skippedSteps, failures, readiness,
         });
     }
 
     const finalStatus = runStatus({ failed: failedSteps, projectFailed: film.failed });
     progress(completedSteps, failedSteps, skippedSteps);
+    recordFailures(runId, failures);
     db.prepare('UPDATE film_pipeline_runs SET status = ?, completed_at = datetime(?) WHERE id = ?')
         .run(finalStatus, new Date().toISOString(), runId);
     activePipelines.delete(runId);
@@ -684,6 +701,9 @@ async function runShotPipeline(req, res, shotId) {
         // Named, never silent: a scene-scoped step that did not run here is a
         // decision, and one that looks like nothing happened is the defect.
         steps_skipped: skippedSteps,
+        // And a failure says what was tried: the id alone sends the reader to
+        // the database, and the walk is what tells them which fix applies.
+        failures,
         total_steps: plan.length, progress_pct: 100,
         readiness,
     });
@@ -757,7 +777,8 @@ async function runShotPipelineStream(req, res, shotId) {
         onStart: (step, i) => sendEvent({ type: 'step_start', step_id: step.id, step_name: step.name, step_index: i, total_steps: plan.length }),
         onComplete: (step, i) => sendEvent({ type: 'step_complete', step_id: step.id, step_index: i, progress_pct: Math.round(((i + 1) / plan.length) * 100) }),
         onRetry: (step, attempt) => sendEvent({ type: 'step_retry', step_id: step.id, attempt: attempt + 1 }),
-        onFailed: (step, i) => sendEvent({ type: 'step_failed', step_id: step.id, step_index: i }),
+        onFailed: (step, i, result) => sendEvent({ type: 'step_failed', step_id: step.id, step_index: i,
+            ...failureOf(step, result) }),
         onSkip: (step, reason, i) => sendEvent({ type: 'step_skipped', step_id: step.id, step_index: i, reason }),
     };
 
@@ -769,7 +790,7 @@ async function runShotPipelineStream(req, res, shotId) {
     });
 
     const film = outcome.stopped
-        ? { completed: [], failed: [], skipped: [], stopped: null }
+        ? { completed: [], failed: [], skipped: [], failures: [], stopped: null }
         : await runProjectSteps(projectSteps, {
             project, offset: perShot.length, hooks,
             opts: { runType: 'shot', runProjectSteps: !!(req.body && req.body.include_project_steps) },
@@ -778,6 +799,7 @@ async function runShotPipelineStream(req, res, shotId) {
     const completedSteps = [...outcome.completed, ...film.completed];
     const failedSteps = [...outcome.failed, ...film.failed];
     const skippedSteps = [...outcome.skipped, ...film.skipped];
+    const failures = [...outcome.failures, ...film.failures];
     const stopped = outcome.stopped || film.stopped;
 
     if (stopped) {
@@ -796,10 +818,11 @@ async function runShotPipelineStream(req, res, shotId) {
         `UPDATE film_pipeline_runs SET status = ?, steps_completed = ?, steps_failed = ?, steps_skipped = ?, progress_pct = 100, completed_at = datetime(?) WHERE id = ?`)
         .run(streamStatus, JSON.stringify(completedSteps), JSON.stringify(failedSteps), JSON.stringify(skippedSteps),
             new Date().toISOString(), runId);
+    recordFailures(runId, failures);
     activePipelines.delete(runId);
 
     sendEvent({ type: 'result', run_id: runId, status: streamStatus, steps_completed: completedSteps,
-        steps_failed: failedSteps, steps_skipped: skippedSteps, total_steps: plan.length });
+        steps_failed: failedSteps, steps_skipped: skippedSteps, failures, total_steps: plan.length });
     sendEvent({ type: 'done' });
     res.end();
 }
@@ -821,7 +844,7 @@ async function runShotPipelineStream(req, res, shotId) {
 async function executeShots({ runId, shots, project, body, runType }) {
     const done = new Set();
     const sceneCache = new Map();
-    const completedSteps = [], failedSteps = [], skippedSteps = [];
+    const completedSteps = [], failedSteps = [], skippedSteps = [], failures = [];
     let totalPlanned = 0;
 
     // The whole-film steps come from the request, not from any shot's card —
@@ -877,7 +900,9 @@ async function executeShots({ runId, shots, project, body, runType }) {
         completedSteps.push(...outcome.completed.map(id => shot.shot_code + ':' + id));
         failedSteps.push(...outcome.failed.map(id => shot.shot_code + ':' + id));
         skippedSteps.push(...outcome.skipped.map(sk => ({ step_id: shot.shot_code + ':' + sk.step_id, reason: sk.reason })));
+        failures.push(...outcome.failures.map(f => ({ ...f, step: shot.shot_code + ':' + f.step })));
         record();
+        recordFailures(runId, failures);
 
         if (outcome.stopped) return halt(outcome.stopped);
     }
@@ -898,13 +923,29 @@ async function executeShots({ runId, shots, project, body, runType }) {
     completedSteps.push(...film.completed.map(id => 'film:' + id));
     failedSteps.push(...film.failed.map(id => 'film:' + id));
     skippedSteps.push(...film.skipped.map(sk => ({ step_id: 'film:' + sk.step_id, reason: sk.reason })));
+    failures.push(...film.failures.map(f => ({ ...f, step: 'film:' + f.step })));
     record();
+    recordFailures(runId, failures);
     if (film.stopped) return halt(film.stopped);
 
     const status = runStatus({ failed: failedSteps, projectFailed: film.failed });
     db.prepare('UPDATE film_pipeline_runs SET status = ?, progress_pct = 100, completed_at = datetime(?) WHERE id = ?')
         .run(status, new Date().toISOString(), runId);
     activePipelines.delete(runId);
+}
+
+/**
+ * Write what failed to the run row: the structured list, and a readable line
+ * per failure in `error_message`. A run row that says `failed` and lists
+ * `assembly` under steps_failed tells a person nothing about which of the two
+ * executors was tried; the walk is what tells them which fix applies.
+ */
+function recordFailures(runId, failures) {
+    if (!failures || !failures.length) return;
+    try {
+        db.prepare('UPDATE film_pipeline_runs SET failures = ?, error_message = ? WHERE id = ?')
+            .run(JSON.stringify(failures), failures.map(f => `${f.step}: ${f.error}`).join('\n'), runId);
+    } catch (_) { /* a row that cannot carry its failures still carries its status */ }
 }
 
 /**
@@ -1026,6 +1067,7 @@ function getPipelineStatus(req, res, runId) {
         steps_remaining: run.steps_remaining ? JSON.parse(run.steps_remaining) : [],
         steps_failed: run.steps_failed ? JSON.parse(run.steps_failed) : [],
         steps_skipped: run.steps_skipped ? JSON.parse(run.steps_skipped) : [],
+        failures: run.failures ? JSON.parse(run.failures) : [],
     });
 }
 

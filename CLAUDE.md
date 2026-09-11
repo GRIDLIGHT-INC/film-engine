@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (100 migrations)
+│   │   └── migrations/     # SQL migration files (101 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -3870,6 +3870,45 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### A Failed Conform Says What Was Tried, What Was Not, and Why
+`lib/image-fallback.js` reports `_chain` on failure — every provider, tried or
+skipped, with its reason — because a message quoting only the first refusal
+sends the reader to the wrong fix. The conform had the same shape one level
+down and did not follow the rule. Two executors are probed, the local encoder
+and the provider stitch, and a failure named only whichever one was reached: a
+refused join said *"cannot read 1B.mp4"* and nothing about the provider path
+sitting untried beside it, a no-executor refusal listed the probe while a
+stitch failure did not, and the orchestrator dropped even that on the way to
+the run row — a failed project run recorded `assembly` in a list of ids and
+nothing else.
+
+**Every failure carries `walk`.** One entry per probed executor, in the probe's
+own order: tried with its error, or not tried with the reason (unavailable, or
+*"not tried: ffmpeg was chosen first"*, or the provider stitch's own *"no
+provider adapter implements a whole-film conform yet"*). A refusal at the
+**plan** — a shot with no footage — carries an empty walk and `walk_stage:
+'plan'`, because no executor was consulted and pretending one was is the lie
+this exists to end. The error a person reads names each executor and what
+became of it. `runConform` takes an injectable `probe`, the same reason
+`preflight` takes `resolvers`: the encoder probe caches an available answer for
+the life of the process, so the no-executor path is otherwise unreachable on a
+machine that has one.
+
+**And every surface forwards it.** The assembly step passes `walk` through
+rather than flattening it to a line; `failureOf` is the one shape a failed
+step is recorded as — id, code, error, walk — collected by both step loops;
+the JSON runners answer `failures`, the SSE `step_failed` event carries it,
+and migration 104 gives the run row a `failures` column plus one readable line
+per failure in `error_message`, so a run read back later still says which
+executor was tried.
+
+`tests/conform-walk.test.js` is set-based over every failure state
+`CONFORM_STATES` declares — each constructible one is built for real, and the
+two that cannot be built here (`failed`, `no_clips`) are named rather than
+silently untested — over the probed executors, and over the two `runConform`
+callers derived from the source, through the route, the stream, the JSON
+response and the run row.
+
 ### The Conform Is Projected, Not Omitted
 Both projections that feed the 402 gate — `projectedCost` for a flow graph and
 `buildRunPlan` for an orchestrated run — priced only the steps that call a
@@ -4307,7 +4346,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (100 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (101 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -4710,6 +4749,7 @@ node --test backend/tests/project-master.test.js
 node --test backend/tests/assembly-once.test.js
 node --test backend/tests/qa-master-checks.test.js
 node --test backend/tests/conform-cost.test.js
+node --test backend/tests/conform-walk.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js

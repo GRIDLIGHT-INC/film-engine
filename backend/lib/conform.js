@@ -257,28 +257,66 @@ function availableExecutors() {
  * states — produced, refused, no executor — stay distinct, because collapsing
  * any of them into success is the exact defect this replaces.
  */
+/**
+ * THE WALK: every executor, what became of it, and why.
+ *
+ * `lib/image-fallback.js` reports `_chain` on failure for a reason that holds
+ * here one level down: a message quoting only the executor that was reached
+ * sends the reader to the wrong fix. A refused join said "cannot read 1B.mp4"
+ * and nothing about the provider path sitting untried beside it. So a failure
+ * lists EVERY probed executor — tried with its error, or not tried with the
+ * reason — in the probe's own order, and the error a person reads names each.
+ */
+const PROVIDER_STITCH_UNBUILT = 'no provider adapter implements a whole-film conform yet';
+
+function walkFrom(executors, chosen, attempt) {
+    return executors.map(e => {
+        if (!e.available) return { executor: e.id, available: false, attempted: false, ok: null, error: null, reason: e.reason };
+        if (chosen && e.id !== chosen.id) {
+            return { executor: e.id, available: true, attempted: false, ok: null, error: null,
+                reason: `not tried: ${chosen.id} was chosen first` };
+        }
+        if (!attempt) {
+            return { executor: e.id, available: true, attempted: false, ok: null, error: null,
+                reason: e.id === 'provider-stitch' ? PROVIDER_STITCH_UNBUILT : 'not tried' };
+        }
+        return { executor: e.id, available: true, attempted: true, ok: !!attempt.ok, error: attempt.ok ? null : attempt.error, reason: null };
+    });
+}
+
+function describeWalk(walk) {
+    return walk.map(w => w.attempted
+        ? `${w.executor}: tried, ${w.ok ? 'ok' : w.error}`
+        : `${w.executor}: not tried, ${w.reason}`).join('; ');
+}
+
 async function runConform(projectId, options) {
     const opts = options || {};
     const plan = planConform(projectId);
-    if (!plan.ok) return { ok: false, state: 'missing_shots', plan, error: plan.error };
+    // Refused at the plan: no executor was consulted, and the walk says so
+    // rather than pretending one was.
+    if (!plan.ok) return { ok: false, state: 'missing_shots', plan, error: plan.error, walk: [], walk_stage: 'plan' };
 
-    const probe = availableExecutors();
+    // Injectable so the no-executor path can be exercised on a machine that
+    // has one — the encoder probe caches an available answer for the process.
+    const probe = typeof opts.probe === 'function' ? opts.probe() : availableExecutors();
     const executor = probe.executors.find(e => e.available);
     if (!executor) {
+        const walk = walkFrom(probe.executors, null, null);
         return {
-            ok: false, state: 'no_executor', plan, executors: probe.executors,
-            error: 'Nothing available can conform the film: '
-                + probe.executors.map(e => `${e.id} (${e.reason})`).join('; '),
+            ok: false, state: 'no_executor', plan, executors: probe.executors, walk, walk_stage: 'execute',
+            error: `Nothing available can conform the film — ${describeWalk(walk)}`,
         };
     }
 
     if (executor.id === 'provider-stitch') {
         // The provider path exists in the registry but no adapter implements a
         // whole-film stitch today. Saying so beats pretending to try.
+        const walk = walkFrom(probe.executors, executor, null);
         return {
-            ok: false, state: 'no_executor', plan, executors: probe.executors,
-            error: 'Only a provider executor is available, and no provider adapter implements a '
-                + 'whole-film conform yet. Install ffmpeg to conform locally.',
+            ok: false, state: 'no_executor', plan, executors: probe.executors, walk, walk_stage: 'execute',
+            error: `Only a provider executor is available, and ${PROVIDER_STITCH_UNBUILT}. `
+                + `Install ffmpeg to conform locally — ${describeWalk(walk)}`,
         };
     }
 
@@ -309,10 +347,11 @@ async function runConform(projectId, options) {
         fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
     });
     if (!joined.ok) {
-        // The join's own state travels through, not a flattened 'failed': the
-        // orchestrator decides whether a second attempt could change anything
-        // from the state, and a missing clip does not appear on the retry.
-        return { ok: false, state: joined.state, plan, error: joined.error };
+        const walk = walkFrom(probe.executors, executor, { ok: false, error: joined.error });
+        return {
+            ok: false, state: joined.state, plan, executors: probe.executors, walk, walk_stage: 'execute',
+            error: `${joined.error} — ${describeWalk(walk)}`,
+        };
     }
 
     // Measured from the file, never copied from the plan: a master registered
