@@ -76,7 +76,7 @@ const STEM_ROLES = Object.freeze({
 const FAMILY_STEMS = new Set(['instrumental', 'other']);
 
 /** Limits on what an archive may make us inflate. Per entry, per archive, and how many entries. */
-const ZIP_LIMITS = Object.freeze({
+const ZIP_LIMITS_DEFAULT = Object.freeze({
     max_inflated_bytes: 256 * 1024 * 1024,
     max_total_bytes: 1024 * 1024 * 1024,
     max_entries: 32,
@@ -94,7 +94,10 @@ const OUTPUT_FORMATS = /^mp3_\d+_\d+$/;
  * or `{ ok: false, error }` naming what was wrong. Stored and deflated entries
  * only; ZIP64 and encryption are refused by name.
  */
-function readZip(buf) {
+function readZip(buf, limitsIn) {
+    // A caller with a different ceiling (a score package holds more, larger
+    // entries than one separation) passes its own; the checks are the same.
+    const ZIP_LIMITS = { ...ZIP_LIMITS_DEFAULT, ...(limitsIn || {}) };
     if (!Buffer.isBuffer(buf) || buf.length < 22) return { ok: false, error: 'the provider did not return a ZIP archive (too short to hold one)' };
     let eocd = -1;
     for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xFFFF); i--) {
@@ -463,6 +466,6 @@ async function retrySeparation(db, sessionId, opId, opts) {
 }
 
 module.exports = {
-    VARIATIONS, STEM_ROLES, ZIP_LIMITS,
+    VARIATIONS, STEM_ROLES, ZIP_LIMITS: ZIP_LIMITS_DEFAULT,
     readZip, stemNameOf, planSeparation, startSeparation, getSeparation, listSeparations, retrySeparation, resolveSeparator,
 };

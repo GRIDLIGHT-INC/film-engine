@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**320 tools, 69 families.** Everything the app can do, you can ask for in a
+**324 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -597,7 +597,8 @@ asset on the scene and cost money to make.
 `music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept` ·
 `music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry` ·
 `music_generate_plan` · `music_generate` · `music_generation_list` ·
-`music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry`
+`music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry` ·
+`music_package_build` · `music_package_list` · `music_package_validate` · `music_package_import`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -656,6 +657,14 @@ the context sent (tempo, meter, key and the accepted arc, never a proposal) and
 the cost hint. `music_generate` spends: each output is a new asset and clip, a
 candidate take beside what a track already holds. It refuses when no arc is
 accepted unless you say to go without one (the ignore_emotion argument). `music_generation_list` reads them.
+
+**A score package takes the session to any DAW and back.**
+`music_package_build` spends nothing and builds one byte-stable archive. It holds
+a manifest, equal-length aligned Broadcast WAV stems, the master and the
+reference picture. `music_package_validate` checks a package and writes nothing.
+`music_package_import` brings one back. Into the session it came from, each stem
+lands on its own track as a candidate take; otherwise a new session is made with
+the tempo map, markers and arc restored.
 
 **Every generation and separation is one job with its outputs in order.**
 `music_job_list` and `music_job_get` are free. They show each job's outputs with

@@ -118,6 +118,7 @@ film-engine/
 │   │   ├── music-separation.js   # A recording split into stems: a derivative, aligned under its source, from an untrusted ZIP
 │   │   ├── music-generation.js   # Compose, parts, reference, picture, inpaint: every output a new take, nothing replaced
 │   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
+│   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -609,6 +610,7 @@ film-engine/
 │       ├── music-generation.test.js # Five workflows: the contract decides, no unaccepted arc, every output a new take, parts are not stems
 │       ├── music-jobs.test.js # A truth table over child states: no parent is complete over a failed or missing child
 │       ├── music-ai-controls.test.js # Every AI action: plan first, one confirmation, the provider's own "no", free ones spend nothing
+│       ├── music-package.test.js # Every manifest section, every broken arrival refused by name, the same bytes twice, and the round trip
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -649,6 +651,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `POST /music-sessions/:id/stems` (aligned import), `GET /music-sessions/vocabulary` (free: enums, ranges, lifecycle) |
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
+| Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -3940,6 +3943,49 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### A Score That Leaves Film Engine and Comes Back: the Portable Package
+The epic puts **portable interchange first**: before any DAW adapter there is a
+package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
+builds one archive per session state: a versioned, DAW-neutral `manifest.json`
+beside equal-length 48 kHz / 24-bit **Broadcast WAV** stems aligned at sample 0,
+the master, and the reference picture when the film has a conformed master.
+`MANIFEST_SECTIONS` is the manifest's own registry: format, version, package,
+session, operations, picture, timing, markers, tracks, stems, master, emotion,
+rights, provenance, files and matching. Every one is written, and a package
+missing any one is refused by name.
+
+**The stems are the session's own bounce.** The package reuses the
+instrument-mode bounce whose fingerprint is the session as it stands, and
+renders one only when there is none. A package that mixed on its own would be a
+second statement of what the session sounds like, and the two would come to
+disagree. Each stem gains a `bext` chunk with time reference 0 and a description
+that leads with the stem's matching key (`fe:track:<id>`). The key goes in the
+256-byte Description because the 32-byte OriginatorReference cannot hold it.
+
+**Deterministic.** Stored entries in sorted order, the DOS epoch as every
+timestamp, a manifest with sorted keys and nothing that varies with the clock:
+the BWF origination stamp is the bounce's own completion time. The same session
+therefore packages to the same bytes, and a rebuild finds the package it already
+made by hash and registers nothing. A build is recorded as a `push` operation
+with `params.kind: 'package'`; `film_music_operations.kind` cannot be widened in
+place, and a package is the DAW-neutral push.
+
+**Validation is the gate.** Every listed file must be present with its hash and
+size, nothing unlisted may be in the archive, every stem must be a WAV at the
+package's sample rate and exactly its length, and the format and version must be
+ones this engine reads. An import validates first and writes nothing on any
+refusal. **The round trip lands takes, never replacements.** Into the session a
+package came from, each stem finds its track by key and lands as a candidate
+take in that track's group, and a key whose track is gone gets a new track. Into
+a new session, the tempo and time-signature map, markers and accepted arc are
+restored and every stem is aligned at the start, stored byte-identical with its
+hash and its most-encumbered source's rights.
+
+Served at `POST /film/music-sessions/:id/package`, `GET …/packages` and
+`POST /film/projects/:id/music-packages/import` (with `validate_only`), and as
+`music_package_build`, `music_package_list`, `music_package_validate` and
+`music_package_import` (**324 tools**).
+
 ### Every AI Action on the Score Page Shows Its Plan, and "No" Names the Provider's Reason
 The workstation could generate, separate, inpaint and regenerate over HTTP and
 MCP, and a director at the Score page could do none of it. MUS-014 adds an **AI
@@ -5471,6 +5517,7 @@ node --test backend/tests/music-separation.test.js
 node --test backend/tests/music-generation.test.js
 node --test backend/tests/music-jobs.test.js
 node --test backend/tests/music-ai-controls.test.js
+node --test backend/tests/music-package.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

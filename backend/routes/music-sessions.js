@@ -28,6 +28,9 @@
  *   GET    /film/music-sessions/:id/jobs[/:opId]         FREE: every generation and separation as a parent with its ordered children
  *   POST   /film/music-sessions/:id/jobs/:opId/poll      FREE: where a job has got to; one whose process is gone is reported interrupted
  *   POST   /film/music-sessions/:id/jobs/:opId/retry     a failed job again as the next attempt (SPENDS)
+ *   POST   /film/music-sessions/:id/package              FREE (a local render at most): the portable score package — manifest, aligned BWF stems, master, picture
+ *   GET    /film/music-sessions/:id/packages             every package built from the session
+ *   POST   /film/projects/:id/music-packages/import      validate (validate_only) or import a package; into session_id as candidate takes, or a new session
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -54,6 +57,7 @@ const emotion = require('../lib/music-emotion');
 const separation = require('../lib/music-separation');
 const generation = require('../lib/music-generation');
 const musicJobs = require('../lib/music-jobs');
+const musicPackage = require('../lib/music-package');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -309,6 +313,23 @@ async function handleMusicSessions(req, res, urlParts, query) {
         return json(res, 405, { error: 'Method not allowed' });
     }
 
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'music-packages') {
+        // The portable score package (lib/music-package.js). `import` carries
+        // a file, so it takes the file ceiling; validate_only answers the
+        // verdict and writes nothing.
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (urlParts[4] !== 'import' || req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+        const b = req.body || {};
+        const got = musicPackage.packageBytes(db, b);
+        if (got.error) return json(res, got.error.status || 400, got.error);
+        if (b.validate_only === true || b.validate_only === 'true') {
+            const v = musicPackage.validatePackage(got.bytes);
+            return json(res, 200, { ok: v.ok, errors: v.errors, warnings: v.warnings, manifest: v.manifest ? { format: v.manifest.format, version: v.manifest.version, package: v.manifest.package, session: v.manifest.session, stems: v.manifest.stems, timing: v.manifest.timing } : null });
+        }
+        const out = musicPackage.importPackage(db, urlParts[2], got.bytes, { session_id: b.session_id || null });
+        return json(res, out.ok ? 201 : (out.status || 400), out);
+    }
+
     if (urlParts[1] === 'music-sessions' && urlParts[2] === 'vocabulary') {
         // The page's pickers are filled from HERE, on the card-vocabulary
         // precedent: a page holding its own copy offers values the route then
@@ -380,6 +401,13 @@ async function handleMusicSessions(req, res, urlParts, query) {
             const one = renderer.getBounce(db, id, urlParts[4]);
             return one ? json(res, 200, one) : json(res, 404, { error: 'Bounce not found' });
         }
+        if (sub === 'package' && req.method === 'POST') {
+            const out = await musicPackage.buildPackage(db, id, { include_picture: (req.body || {}).include_picture !== false });
+            if (!out.ok) return json(res, out.status || 400, out);
+            const { file_path, manifest, ...rest } = out;
+            return json(res, out.reused ? 200 : 201, { ...rest, manifest: { format: manifest.format, version: manifest.version, package: manifest.package, stems: manifest.stems, picture: manifest.picture, timing: manifest.timing } });
+        }
+        if (sub === 'packages' && req.method === 'GET') return json(res, 200, { session_id: id, packages: musicPackage.listPackages(db, id) });
         if (sub === 'jobs') {
             // Grouped jobs (lib/music-jobs.js): a parent's status is derived
             // from its children, so what is read here cannot claim a finished

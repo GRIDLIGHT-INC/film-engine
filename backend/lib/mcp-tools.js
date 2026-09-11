@@ -3865,6 +3865,33 @@ function musicSessionTools() {
             required: ['session_id', 'operation_id'],
         },
         {
+            name: 'music_package_build', handler: H, method: 'POST',
+            description: 'Spends nothing — no provider is called; at most the session is rendered locally. Builds the portable, DAW-neutral score package: a versioned manifest (session and operation ids, frame and sample rates, tempo and time-signature map, markers, track and clip placement, accepted emotional arc, rights, provenance, hashes and round-trip matching keys) beside equal-length 48 kHz / 24-bit Broadcast WAV stems aligned at the session start, the master, and the reference picture when the film has a conformed master. Deterministic: an unchanged session builds the same bytes and the existing package is returned.',
+            path: a => `/film/music-sessions/${a.session_id}/package`, body: dropIds('session_id'),
+            schema: { ...S, include_picture: { type: 'boolean', description: 'Carry the conformed film as the reference picture (default true; over 256 MB it is identified by hash instead).' } },
+            required: ['session_id'],
+        },
+        {
+            name: 'music_package_list', handler: H, method: 'GET',
+            description: 'Free. Every score package built from a session, newest first, with its hash, size, stem count and served url.',
+            path: a => `/film/music-sessions/${a.session_id}/packages`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_package_validate', handler: H, method: 'POST',
+            description: 'Free — writes nothing. Checks a score package: the format and version, every manifest section, every listed file present with its hash and size, nothing unlisted, and every stem a WAV at the package\'s sample rate and exactly its length. Answers the verdict with each problem named.',
+            path: a => `/film/projects/${a.project_id}/music-packages/import`, body: a => ({ ...dropIds('project_id')(a), validate_only: true }),
+            schema: { project_id: { type: 'string' }, asset_id: { type: 'string', description: 'A package already on this machine.' }, data: { type: 'string', description: 'Or the archive itself, as a data URI or base64.' } },
+            required: ['project_id'],
+        },
+        {
+            name: 'music_package_import', handler: H, method: 'POST',
+            description: 'Imports a score package — a Film Engine one, or one returned from a DAW with its keys intact. Validated first; a refusal writes nothing. Into session_id (a round trip) every stem finds its track by its matching key and lands as a CANDIDATE take beside what the track holds, never over it; a key whose track is gone gets a new track. Without session_id a new session is made with the tempo map, markers and accepted arc restored and every stem aligned at the start. Stems are stored byte-identical with their hashes and rights.',
+            path: a => `/film/projects/${a.project_id}/music-packages/import`, body: dropIds('project_id'),
+            schema: { project_id: { type: 'string' }, asset_id: { type: 'string' }, data: { type: 'string', description: 'The archive as a data URI or base64.' },
+                session_id: { type: 'string', description: 'Import back into this session: matched stems land as candidate takes.' } },
+            required: ['project_id'],
+        },
+        {
             name: 'music_bounce_list', handler: H, method: 'GET',
             description: 'Free. Every bounce of a session, newest version first: status, fingerprint, what it superseded, the master and each stem with its served url, what was left out and why. The newest complete one is marked current.',
             path: a => `/film/music-sessions/${a.session_id}/bounces`, schema: S, required: ['session_id'],
