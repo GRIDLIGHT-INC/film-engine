@@ -24,6 +24,7 @@ film-engine/
 │   ├── preflight.js        # End-to-end readiness report (CLI, exits 1 if blocked)
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
+│   ├── ableton-sidecar.js  # The Ableton sidecar: loopback-only, token-gated, an allowlist of typed AbletonOSC operations (run by hand)
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -121,7 +122,11 @@ film-engine/
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
 │   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
 │   │   ├── daw/                  # DAW adapters behind the contract
-│   │   │   └── memory.js         #   the reference DAW, in memory, that can be told to misbehave
+│   │   │   ├── memory.js         #   the reference DAW, in memory, that can be told to misbehave
+│   │   │   ├── ableton.js        #   Ableton Live through the sidecar: marker-named tracks, tempo, supervised transport
+│   │   │   └── fake-live.js      #   the AbletonOSC subset over real UDP, for testing the sidecar — no Ableton in it
+│   │   ├── osc.js                # OSC 1.0, the subset AbletonOSC speaks: a codec that refuses what it cannot read
+│   │   ├── ableton-osc.js        # The AbletonOSC client: pinned, handshaken, correlated, heartbeat-supervised, allowlisted
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -615,9 +620,11 @@ film-engine/
 │       ├── music-ai-controls.test.js # Every AI action: plan first, one confirmation, the provider's own "no", free ones spend nothing
 │       ├── music-package.test.js # Every manifest section, every broken arrival refused by name, the same bytes twice, and the round trip
 │       ├── daw-adapter.test.js # Seven operations, every misbehaviour a recorded failure, and nothing outside Film Engine's own tracks
+│       ├── ableton-sidecar.test.js # Over real UDP: correlation, timeouts, reconnect, the allowlist, and the DAW contract through the sidecar
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
+│   ├── ableton-sidecar.md  # Installing AbletonOSC at the pinned commit, running the sidecar; nothing of Ableton's is bundled
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
 │   └── adr/                # Architecture decision records (7 ADRs)
@@ -3994,6 +4001,51 @@ request, hangs, touches a foreign track, or returns bytes other than those it
 advertised. There is no route or tool yet: the Ableton sidecar (MUS-017), its
 MCP tools (MUS-018) and the sync UI (MUS-019) are the surfaces built on this.
 
+### Ableton Through a Sidecar You Start Yourself
+The first real DAW behind the contract is Ableton Live over
+[AbletonOSC](https://github.com/ideoforms/AbletonOSC), and it runs in its own
+process (MUS-017): `backend/ableton-sidecar.js`, started by a person, never by
+the server. It listens on 127.0.0.1 only, refuses a caller without its token,
+refuses a non-loopback OSC host at startup, and does only what `SIDECAR_OPS` in
+`lib/ableton-osc.js` lists. Those are typed operations over a reviewed set of
+fourteen OSC addresses, with no generic address, no property setter and no
+delete. Status codes say which rule answered: 401, 403, 400, 503, 409, 504,
+502. Installation is `docs/ableton-sidecar.md`, and nothing of Ableton's is in
+the repository.
+
+**Pinned, and honest about what the pin proves.** AbletonOSC `0ca6821` and Live
+12.4.5. AbletonOSC reports major and minor only, so the handshake proves 12.4
+and says it cannot prove the bugfix. Another version is connected, readable,
+and refused every change (409).
+
+**UDP has no request id, so correlation is the client's job.** A reply is
+matched by address plus the track id AbletonOSC echoes on per-track queries,
+first in, first out per key. A lost reply fails its own request on its own
+timer. `/live/error` carries only text, so it goes to the waiting request it
+names, else the oldest. A heartbeat marks two misses as a disconnect, fails
+pending work, refuses new work and backs off. An answer afterwards, or Live's
+own `/live/startup`, is a reconnect and a fresh handshake.
+
+**A track has no stable id over OSC, so Film Engine's tracks carry one in their
+names.** `strings ⟨fe:3a9c01b2d4⟩`: the marker is derived from the Film Engine
+key, and it is the external id `lib/daw/ableton.js` hands the driver. The
+revision is a hash of the name, the one property the adapter writes. A rename
+in Live that keeps the marker becomes a conflict, and a track without a marker
+is only ever read. Creating by key is idempotent, so a retry after a timeout
+cannot make a second track.
+
+**What AbletonOSC cannot do is said on every answer.** It places no audio from
+a file, so a push creates and names the tracks, sets the tempo, and
+acknowledges each track with `audio: 'manual'` and the stem to drag in at
+1.1.1. It exports no render, so the pull plan is empty with the reason, and a
+Live render comes back through the package import. Locate converts
+milliseconds to beats at Live's tempo.
+
+`tests/ableton-sidecar.test.js` runs over real UDP against
+`lib/daw/fake-live.js`, which speaks the same subset and can go silent, reply
+out of order, drop a reply, report another version and restart on the same
+port. It proves the protocol, not Live: no real Live was in the loop.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5571,6 +5623,7 @@ node --test backend/tests/music-jobs.test.js
 node --test backend/tests/music-ai-controls.test.js
 node --test backend/tests/music-package.test.js
 node --test backend/tests/daw-adapter.test.js
+node --test backend/tests/ableton-sidecar.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
