@@ -86,6 +86,7 @@ film-engine/
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
 │   │   ├── uploads.js          # Resumable transfer: create, append, ask where you got to, finalise
 │   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
+│   │   ├── music-sessions.js   # The score session over a picture sequence: sessions, tracks, clips, batch, brief, drift, rebase
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
 │   │   ├── approvals.js        # Decision packets: may I run this, and which of these is the take
@@ -627,6 +628,9 @@ All routes prefixed with `/film`:
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
+| Score Sessions | `GET/POST /projects/:id/music-sessions`, `GET/PUT/DELETE /music-sessions/:id` |
+| Score Sessions | `GET /music-sessions/:id/{brief,drift}` (free), `POST /music-sessions/:id/{rebase,batch}` |
+| Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -3871,6 +3875,40 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Session API Decides Nothing
+`routes/music-sessions.js` is the first consumer of the contracts and the
+brief, and it adds nothing of its own: a write is a validator's verdict from
+`lib/music-session.js`, a read is `readScoreSession`, drift is `sessionDrift`
+and the rebase is `stampSessionContext`. A route that re-derived any of those
+would be the second shape of one thing this epic exists to prevent, and the
+MCP tools (MUS-005) will dispatch *through* this handler rather than beside it.
+
+**Every write is scoped.** A session belongs to a project; a child belongs to
+a session, directly or through the track it sits on. A row reached through
+another session's URL is **not found** — not forbidden — and a clip cannot be
+placed on a track of another session. `CHILD_KINDS` is the registry of child
+URL segments, each naming its table and its owner, and the test holds it equal
+to the schema's child tables so a table added to the migration arrives on the
+API or fails.
+
+**A session is stamped on create** with the brief it was written against, so
+drift is sayable from the first read; the brief may carry warnings (no
+screenplay yet) and they travel with the answer rather than stopping the
+create. The lifecycle goes through `canTransition`: a draft cannot be
+approved, and the refusal is a **409** naming both states.
+
+**The batch is ordered and atomic.** Ops run in one `better-sqlite3`
+transaction, `$n` in an op's `id` or `data` names the id produced by op *n* —
+so a track and the clips on it are made together — and any refusal rolls back
+everything and is reported with `failed_at`. The test builds a batch whose
+third op is a zero-length clip and holds the first two unwritten.
+
+**One audit deliberately does not see this route yet.** `manual-edit.test.js`
+derives editable fields from handlers that read `body.x` directly; these
+handlers go through the validators, so their fields are outside its
+denominator. The controls belong to the multitrack editor (MUS-007), and that
+task must wire a control for every field the validators accept.
+
 ### The Score Brief Is Compiled Once, and Every Field Says Where It Came From
 `music_brief` reads a handful of scene facts. A score session is written
 against an **ordered sequence**: the exact screenplay version and passage of
@@ -4909,6 +4947,7 @@ node --test backend/tests/music-workstation-research.test.js
 node --test backend/tests/music-workstation-schema.test.js
 node --test backend/tests/music-session-contracts.test.js
 node --test backend/tests/music-context.test.js
+node --test backend/tests/music-sessions-routes.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

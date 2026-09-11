@@ -89,6 +89,7 @@ const { handleBrands } = require('./routes/brands');
 const { handleMediaImport } = require('./routes/media-import');
 const { handleUploads } = require('./routes/uploads');
 const { handleSequences } = require('./routes/sequences');
+const { handleMusicSessions } = require('./routes/music-sessions');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
 const { handleCharacters } = require('./routes/characters');
@@ -476,6 +477,16 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'sequences')
             || (parts[1] === 'sequences' && parts[2])) {
             const handled = await handleSequences(req, res, parts, query);
+            if (handled !== false) return handled;
+        }
+
+        // The score session: a multitrack arrangement over a picture sequence.
+        // Registered here, before the project catch-all, on the trap
+        // /film/locations/:id already cost once: a handler that exists and is
+        // never reached looks exactly like a missing feature.
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'music-sessions')
+            || (parts[1] === 'music-sessions' && parts[2])) {
+            const handled = await handleMusicSessions(req, res, parts, query);
             if (handled !== false) return handled;
         }
 
