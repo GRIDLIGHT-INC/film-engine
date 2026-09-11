@@ -14,8 +14,8 @@
 | SHIP-013 | WAITING ON SHIP-010 | SHIP-010 skipped as superseded: a `text_to_screenplay` tool is forbidden by `mcp-no-server-llm.test.js`. Needs a person to re-scope or drop. |
 | SHIP-014 | WAITING ON SHIP-011 | Chain rests on skipped SHIP-010. Note: `lib/agent-presence.js` / `agent_presence` already report whether a host is attached and what it would replace; a host-served `llm` adapter contradicts the fixed MCP direction (hosts are clients). Needs a person to re-scope. |
 | SHIP-015 | WAITING ON SHIP-014 | Chain rests on skipped SHIP-010. |
-| SHIP-020 | BLOCKED | The requested previs→storyboard implementation and both named tests already landed in commit `dc42498`; 54 focused assertions pass, including byte-identical unblocked payloads. State cannot be committed because the mandatory full suite remains red (3 unrelated/intentional failures). |
-| SHIP-021 | WAITING ON SHIP-001, SHIP-020 | Phase 1 includes blocked SHIP-001, and SHIP-020 cannot be marked done under the red-suite gate. |
+| SHIP-020 | DONE | The previs→storyboard work landed in commit `dc42498` (an ancestor of HEAD: `capability-payloads.js` carries `ctx.previs`, `previsFacets` reaches the image prompt, `reference-capability.test.js` and `previs-storyboard.test.js` present). Nothing previs-related is uncommitted. Verified 2026-09-11: the five previs suites 55/55, and the full suite on a PRISTINE checkout of HEAD (ae842af) 4181/4181 — the run under test is the committed one. Nothing to land; recorded. |
+| SHIP-021 | TODO | Phase 1 (SHIP-001..006) and SHIP-020 are DONE; unblocked 2026-09-11. Needs real provider credentials and a person to watch spend: a live run of `thirty-second.fountain` through every stage. |
 | SHIP-022 | WAITING ON SHIP-021 | SHIP-021 is waiting. |
 | SHIP-023 | WAITING ON SHIP-021 | SHIP-021 is waiting. |
 | SHIP-024 | WAITING ON SHIP-021 | Phase 2's SHIP-010 is skipped as superseded (the host already reasons through data tools, no `ANTHROPIC_API_KEY` needed), so this now waits only on the live run. |
