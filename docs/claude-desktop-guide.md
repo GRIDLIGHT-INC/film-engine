@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**331 tools, 70 families.** Everything the app can do, you can ask for in a
+**332 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -683,6 +683,9 @@ render over OSC either, so `ableton_mix_pull_plan` is empty with the reason, and
 stems exported by hand come back with `music_package_import`. `ableton_transport`
 plays, stops or locates Live only when a person asked for it. Setup is in
 docs/ableton-sidecar.md.
+`music_daw_audit` is free and needs no connection: every push, pull and
+transport a session has sent to a DAW, with its outcome, and for a push whose
+outcome is unknown, the key to retry it with.
 
 **Every generation and separation is one job with its outputs in order.**
 `music_job_list` and `music_job_get` are free. They show each job's outputs with

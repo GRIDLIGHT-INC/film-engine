@@ -37,6 +37,7 @@
  *   GET    /film/music-sessions/:id/daw/:adapter/pull/plan   FREE: what the DAW has rendered that could come back
  *   POST   /film/music-sessions/:id/daw/:adapter/pull    bring a render back, validated by hash and alignment, as candidate takes
  *   POST   /film/music-sessions/:id/daw/:adapter/transport   play / stop / locate, only when a person asked (supervised)
+ *   GET    /film/music-sessions/:id/daw/:adapter/audit   FREE: every DAW push, pull and transport on the session, needing no connection (MUS-019)
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -427,6 +428,11 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.reused ? 200 : 201, { ...rest, manifest: { format: manifest.format, version: manifest.version, package: manifest.package, stems: manifest.stems, picture: manifest.picture, timing: manifest.timing } });
         }
         if (sub === 'packages' && req.method === 'GET') return json(res, 200, { session_id: id, packages: musicPackage.listPackages(db, id) });
+        if (sub === 'daw' && urlParts[4] && urlParts[5] === 'audit' && req.method === 'GET') {
+            // History needs no connection: it is what Film Engine recorded (MUS-019).
+            if (!dawRegistry.ADAPTERS[urlParts[4]]) return json(res, 404, { error: `no DAW adapter '${urlParts[4]}'` });
+            return json(res, 200, { session_id: id, adapter_id: urlParts[4], audit: dawDriver.listAudit(db, id).filter(r => r.adapter_id === urlParts[4]) });
+        }
         if (sub === 'daw' && urlParts[4]) {
             // Push, pull and transport through the MUS-016 driver (MUS-018): the
             // driver holds every adapter to acknowledgement, idempotency, the

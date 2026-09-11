@@ -35806,7 +35806,7 @@ ${fountainText.slice(0, 50000)}`;
         selection: null, playheadMs: 0, playing: false, pxPerSec: 40,
         audio: null, buffers: {}, timers: {}, pending: {}, saveNote: '',
         raf: null, ctxStart: 0, msStart: 0, drag: null, sources: [],
-        jobs: [], audition: null, emotionBox: '',
+        jobs: [], audition: null, emotionBox: '', daw: null,
     };
     const MW_KIND_TABLE = { tracks: 'film_music_tracks', clips: 'film_music_clips', markers: 'film_music_markers',
         'emotion-ranges': 'film_music_emotion_ranges', automation: 'film_music_automation', session: 'film_music_sessions' };
@@ -35846,6 +35846,9 @@ ${fountainText.slice(0, 50000)}`;
             MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift; MW.capabilities = capabilities; MW.jobs = jobsRead.jobs || [];
             if (MW.selection && !mwFindRow(MW.selection.kind, MW.selection.id)) MW.selection = null;
             mwRender();
+            // The DAW panel is fetched AFTER the editor is on screen and paints
+            // only its own region: a missing sidecar must not delay the lanes.
+            dawRefresh();
         } catch (e) {
             if (root) root.innerHTML = `<p class="text-muted">This session could not be loaded — the rows are still there, this is a display fault: ${esc(e.message)}</p>`;
         }
@@ -35926,6 +35929,7 @@ ${fountainText.slice(0, 50000)}`;
                     ${mwContextHtml(MW.brief)}
                     ${scoreAiPanelHtml(MW.capabilities)}
                     ${scoreAiJobsHtml(MW.jobs)}
+                    <div id="mwDaw">${dawPanelHtml(dawState())}</div>
                     ${mwProviderHtml(MW.capabilities)}
                 </div>
             </div>`;
@@ -36439,6 +36443,280 @@ ${fountainText.slice(0, 50000)}`;
             mwNote('Import refused: ' + e.message);
             setStatus('Import refused: ' + e.message);
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // DAW CONNECTION AND SYNC (MUS-019)
+    //
+    // One registry, one action per operation of the DAW contract, and each
+    // names the PORTABLE path that does the same job with no DAW at all — a
+    // package exported, imported or validated, or the workstation's own
+    // playback. The panel paints into its own region (#mwDaw) and is fetched
+    // after the editor renders, so a missing sidecar, a closed Live or a
+    // version nobody reviewed changes this panel and nothing else.
+    // ══════════════════════════════════════════════════════════════
+
+    const DAW_ADAPTER = 'ableton';
+    const DAW_ACTIONS = [
+        { op: 'status', label: 'Check again', fn: 'dawRefresh', what: 'Is Live reachable through the sidecar, which version answered, and is it the reviewed one.', portable: { label: 'Export a score package', fn: 'dawExportPackage' } },
+        { op: 'session_read', label: 'Read the Live set', fn: 'dawReadSession', what: 'The tracks in the Live set, which are Film Engine’s and which are somebody else’s.', portable: { label: 'Validate a package from any DAW', fn: 'dawImportPackage' } },
+        { op: 'push_plan', label: 'Plan a push', fn: 'dawPlanPush', what: 'What a push would create, update and leave alone, and every track edited in Live since the last push.', portable: { label: 'Export a score package', fn: 'dawExportPackage' } },
+        { op: 'push', label: 'Push this plan', fn: 'dawPush', what: 'Carry out exactly the plan reviewed here, into Film Engine’s own tracks, with every conflict decided.', portable: { label: 'Export a score package', fn: 'dawExportPackage' } },
+        { op: 'pull_plan', label: 'What can come back', fn: 'dawPlanPull', what: 'The renders Live has that could come back into this session, with their hashes.', portable: { label: 'Import a package', fn: 'dawImportPackage' } },
+        { op: 'pull', label: 'Bring back', fn: 'dawPull', what: 'One render back as candidate takes, imported only after its hash and alignment check out.', portable: { label: 'Import a package', fn: 'dawImportPackage' } },
+        { op: 'transport', label: 'Play / stop / locate Live', fn: 'dawTransport', what: 'Move Live’s transport because you asked; nothing moves it on its own.', portable: { label: 'Play in the workstation', fn: 'mwTogglePlay' } },
+    ];
+
+    function dawState() {
+        if (!MW.daw) MW.daw = { status: null, error: null, unconfigured: false, loaded: false, session: null, plan: null, resolutions: {}, pullPlan: null, audit: [], busy: null, result: null, pkg: null };
+        return MW.daw;
+    }
+    function dawBase() { return '/music-sessions/' + MW.session.id + '/daw/' + DAW_ADAPTER; }
+    function dawPaint() { const el = document.getElementById('mwDaw'); if (el) el.innerHTML = dawPanelHtml(dawState()); }
+
+    /** Whether Live can be changed right now, and the reason when it cannot. */
+    function dawCanChange(d) {
+        if (d.busy) return { ok: false, why: 'an operation is running' };
+        if (d.unconfigured) return { ok: false, why: 'the sidecar is not configured' };
+        const s = d.status;
+        if (!s || s.ok === false) return { ok: false, why: 'the sidecar is not reachable' };
+        if (!s.connected) return { ok: false, why: 'Live is not answering' };
+        if (!s.compatible) return { ok: false, why: 'Live is not the reviewed version' };
+        return { ok: true, why: '' };
+    }
+    function dawUndecided(d) {
+        const p = d.plan; if (!p || !p.conflicts) return [];
+        return p.conflicts.filter(c => !d.resolutions[c.fe_key] || (d.resolutions[c.fe_key] === 'overwrite' && !c.choices));
+    }
+
+    function dawConnectionHtml(d) {
+        if (!d.loaded) return '<p class="text-sm text-muted">Checking the connection to Live…</p>';
+        if (d.unconfigured) return `<div class="mw-warn text-sm"><b>Not set up.</b> ${esc(d.error || '')}
+            <div>To connect: install AbletonOSC at commit 0ca6821, run <code>node backend/ableton-sidecar.js</code> with an ABLETON_SIDECAR_TOKEN, and start this server with the same ABLETON_SIDECAR_TOKEN (and ABLETON_SIDECAR_URL if the sidecar is not on port 3190). The steps are in docs/ableton-sidecar.md.</div></div>`;
+        const s = d.status || {};
+        if (s.ok === false) return `<div class="mw-warn text-sm"><b>The sidecar is not reachable.</b> ${esc(s.error || '')}
+            <div>Start it beside Live with <code>node backend/ableton-sidecar.js</code>, using the same token this server has, then check again.</div></div>`;
+        if (!s.connected) return `<div class="mw-warn text-sm"><b>Live is not answering.</b> ${esc(s.reason || '')}
+            <div>Open Live, and in Settings › Link, Tempo &amp; MIDI choose AbletonOSC as a Control Surface. Nothing else may hold UDP port 11001.</div></div>`;
+        if (!s.compatible) return `<div class="mw-warn text-sm"><b>Live ${esc(s.version || '')} can be read, not changed.</b> ${esc(s.reason || '')}
+            <div>Reads only until that version is reviewed. The package path below works either way.</div></div>`;
+        return `<p class="text-sm"><b>Connected</b> · Live ${esc(s.version || '')} · AbletonOSC ${esc(s.pin || '')}<br><span class="text-muted">${esc(s.version_note || '')}</span></p>`;
+    }
+
+    function dawPortableHtml(d) {
+        const pkg = d.pkg;
+        return `<div class="mw-ai-row">
+            <div class="text-sm">Works with no DAW connected. Any DAW, or any person, can open a package, and one exported from a DAW with its stems comes back here as candidate takes.</div>
+            <button class="btn btn-sm btn-secondary" onclick="dawExportPackage()" ${d.busy ? 'disabled' : ''}>Export score package</button>
+            <label class="btn btn-sm btn-secondary" style="cursor:pointer;margin:0;">Import a package
+                <input type="file" accept=".zip,application/zip" style="display:none" onchange="dawImportPackage(this); this.value='';">
+            </label>
+            ${pkg ? `<div class="text-sm">${pkg.error ? esc(pkg.error) : `<a href="${esc(API_BASE + pkg.url)}" target="_blank" rel="noopener">score package</a> · ${esc((pkg.manifest && pkg.manifest.stems || []).length)} stems · ${esc(String(pkg.sha256 || '').slice(0, 12))}${pkg.reused ? ' · unchanged, the existing package' : ''}`}</div>` : ''}
+        </div>`;
+    }
+
+    function dawSessionHtml(d) {
+        if (!d.session) return '';
+        const t = d.session.tracks || [];
+        return `<div class="text-sm">${t.length} track(s) in the Live set: ${t.map(x => `${esc(x.name)} <span class="text-muted">(${esc(x.owner)})</span>`).join(', ') || 'none'}</div>`;
+    }
+
+    function dawPushHtml(d) {
+        const can = dawCanChange(d);
+        const p = d.plan;
+        let body = '';
+        if (p) {
+            const undecided = dawUndecided(d);
+            const row = (label, items, fmt) => items && items.length ? `<div class="text-sm"><b>${label}</b> ${items.map(fmt).join(', ')}</div>` : '';
+            body = `${row('create', p.instructions.filter(i => i.action === 'create'), i => esc(i.name))}
+                ${row('update', p.instructions.filter(i => i.action === 'update'), i => esc(i.name))}
+                ${row('left alone (not Film Engine’s)', p.untouched, i => esc(i.name))}
+                ${row('left in place (no longer in the session)', p.orphans, i => esc(i.name))}
+                ${(p.conflicts || []).map(c => `<div class="text-sm mw-warn"><b>${esc(c.name)}</b> — ${esc(c.reason)}
+                    <select class="form-control" onchange="dawResolve('${esc(c.fe_key)}', this.value)">
+                        <option value="">decide…</option>
+                        ${c.choices ? `<option value="overwrite" ${d.resolutions[c.fe_key] === 'overwrite' ? 'selected' : ''}>overwrite Live with Film Engine’s</option>` : ''}
+                        <option value="keep_daw" ${d.resolutions[c.fe_key] === 'keep_daw' ? 'selected' : ''}>keep what is in Live</option>
+                    </select></div>`).join('')}
+                <button class="btn btn-sm btn-primary" onclick="dawPush()" ${!can.ok || undecided.length ? 'disabled' : ''}>Push this plan</button>
+                ${undecided.length ? `<span class="text-sm text-muted">${undecided.length} conflict(s) to decide first</span>` : ''}`;
+        }
+        return `<div class="mw-ai-row">
+            <button class="btn btn-sm btn-secondary" onclick="dawPlanPush()" ${can.ok ? '' : 'disabled'}>Plan a push</button>
+            <button class="btn btn-sm btn-secondary" onclick="dawReadSession()" ${d.status && d.status.connected && !d.busy ? '' : 'disabled'}>Read the Live set</button>
+            ${can.ok ? '' : `<span class="text-sm text-muted">${esc(can.why)}</span>`}
+            ${dawSessionHtml(d)}
+            ${body}
+        </div>`;
+    }
+
+    function dawResultHtml(d) {
+        const r = d.result;
+        if (!r) return '';
+        if (!r.ok) return `<div class="mw-warn text-sm">${esc(r.op)} failed: ${esc(r.error)}</div>`;
+        if (r.op === 'push') {
+            return `<div class="text-sm"><b>Pushed${r.replayed ? ' (already done — nothing sent twice)' : ''}.</b> Live cannot load audio over OSC: drag each stem onto its track at bar 1.1.1.
+                ${(r.applied || []).map(a => `<div>${esc(a.action)} ${esc(a.fe_key)} → ${esc(a.stem_path || 'no stem')} at ${esc(a.place_at || '1.1.1')}</div>`).join('')}</div>`;
+        }
+        return `<div class="text-sm"><b>${esc(r.op)} done.</b></div>`;
+    }
+
+    function dawPullHtml(d) {
+        const can = d.status && d.status.connected && !d.busy;
+        const pp = d.pullPlan;
+        const items = pp && pp.items || [];
+        return `<div class="mw-ai-row">
+            <button class="btn btn-sm btn-secondary" onclick="dawPlanPull()" ${can ? '' : 'disabled'}>What can come back</button>
+            ${pp ? (items.length ? items.map(it => `<div class="text-sm">${esc(it.kind || 'render')} · ${esc(String(it.sha256 || '').slice(0, 12))}${it.already_pulled ? ' · already here' : ` <button class="btn btn-sm btn-secondary" onclick="dawPull('${esc(it.item_id)}')" ${can ? '' : 'disabled'}>Bring back</button>`}</div>`).join('')
+                : `<div class="text-sm text-muted">Nothing to bring back. ${esc(pp.unavailable || '')} Stems exported from Live come in with Import a package above.</div>`) : ''}
+        </div>`;
+    }
+
+    function dawTransportHtml(d) {
+        const can = dawCanChange(d).ok;
+        const dis = can ? '' : 'disabled';
+        return `<div class="mw-ai-row text-sm">Live's transport
+            <button class="btn btn-sm btn-secondary" onclick="dawTransport('play')" ${dis}>Play</button>
+            <button class="btn btn-sm btn-secondary" onclick="dawTransport('stop')" ${dis}>Stop</button>
+            <button class="btn btn-sm btn-secondary" onclick="dawTransport('locate')" ${dis}>Go to ${esc(mwTime(MW.playheadMs))}</button>
+        </div>`;
+    }
+
+    function dawAuditHtml(d) {
+        const list = d.audit || [];
+        if (!list.length) return '<p class="text-sm text-muted">Nothing has been sent to Live from this session yet.</p>';
+        return list.map(a => {
+            const unknown = a.status === 'failed' && /outcome is unknown/.test(a.error || '');
+            return `<div class="text-sm">${esc(a.op)} · ${esc(a.status)}${a.duration_ms != null ? ' · ' + esc(a.duration_ms) + ' ms' : ''}${a.completed_at ? ' · ' + esc(a.completed_at) : ''}
+                ${a.error ? `<div class="text-muted">${esc(a.error)}</div>` : ''}
+                ${unknown ? `<div>Read the Live set, then plan and push again: a track carrying its marker is never created twice. <button class="btn btn-sm btn-secondary" onclick="dawPlanPush()">Plan again</button></div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
+    function dawPanelHtml(d) {
+        const busy = { push: 'Pushing to Live…', plan: 'Planning…', pull: 'Bringing a render back…', transport: 'Moving Live’s transport…', package: 'Building the package…', import: 'Importing the package…', read: 'Reading the Live set…' };
+        return `<section class="mw-panel"><h4>DAW · Ableton Live</h4>
+            ${dawConnectionHtml(d)}
+            <p class="text-sm text-muted">The workstation works the same with or without Live: nothing in the editor waits for it.</p>
+            <button class="btn btn-sm btn-secondary" onclick="dawRefresh()" ${d.busy ? 'disabled' : ''}>Check again</button>
+            ${d.busy ? `<div class="text-sm"><b>${esc(busy[d.busy] || 'Working…')}</b></div>` : ''}
+            ${dawResultHtml(d)}
+            <h5 class="text-sm">Push the score</h5>${dawPushHtml(d)}
+            <h5 class="text-sm">Bring a mix back</h5>${dawPullHtml(d)}
+            ${dawTransportHtml(d)}
+            <h5 class="text-sm">Portable package</h5>${dawPortableHtml(d)}
+            <h5 class="text-sm">History</h5>${dawAuditHtml(d)}
+        </section>`;
+    }
+
+    // ── Actions ────────────────────────────────────────────────────
+
+    async function dawRefresh() {
+        const d = dawState();
+        if (!MW.session) return;
+        try {
+            d.status = await api('/daw/' + DAW_ADAPTER + '/status');
+            d.unconfigured = false; d.error = null;
+        } catch (e) {
+            const msg = e.message || '';
+            d.unconfigured = /ABLETON_SIDECAR_TOKEN|ABLETON_SIDECAR_URL|not configured/.test(msg);
+            d.error = msg;
+            d.status = d.unconfigured ? null : { ok: false, connected: false, error: msg };
+        }
+        try { d.audit = (await api(dawBase() + '/audit')).audit || []; } catch (e) { d.audit = []; }
+        d.loaded = true;
+        dawPaint();
+    }
+
+    /** Run one operation with its progress shown, and its failure kept in the panel. */
+    async function dawRun(kind, op, fn) {
+        const d = dawState();
+        d.busy = kind; dawPaint();
+        try { const out = await fn(); if (op) d.result = { op, ok: true, ...out }; }
+        catch (e) { d.result = { op: op || kind, ok: false, error: e.message }; }
+        finally {
+            d.busy = null;
+            try { d.audit = (await api(dawBase() + '/audit')).audit || []; } catch (_) { /* history is optional */ }
+            dawPaint();
+        }
+    }
+
+    async function dawReadSession() {
+        const d = dawState();
+        return dawRun('read', null, async () => { d.session = await api('/daw/' + DAW_ADAPTER + '/session'); return {}; });
+    }
+    async function dawPlanPush() {
+        const d = dawState();
+        return dawRun('plan', null, async () => { d.plan = await api(dawBase() + '/push/plan'); d.resolutions = {}; d.result = null; return {}; });
+    }
+    function dawResolve(feKey, value) {
+        const d = dawState();
+        if (value) d.resolutions[feKey] = value; else delete d.resolutions[feKey];
+        dawPaint();
+    }
+    async function dawPush() {
+        const d = dawState();
+        if (!d.plan || dawUndecided(d).length) return;
+        const body = { plan_fingerprint: d.plan.plan_fingerprint, resolutions: d.resolutions };
+        return dawRun('push', 'push', async () => {
+            const out = await api(dawBase() + '/push', { method: 'POST', body: JSON.stringify(body) });
+            d.plan = null; d.resolutions = {};
+            return out;
+        });
+    }
+    async function dawPlanPull() {
+        const d = dawState();
+        return dawRun('plan', null, async () => { d.pullPlan = await api(dawBase() + '/pull/plan'); return {}; });
+    }
+    async function dawPull(itemId) {
+        const d = dawState();
+        await dawRun('pull', 'pull', async () => {
+            const out = await api(dawBase() + '/pull', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+            d.pullPlan = null;
+            return out;
+        });
+        if (d.result && d.result.ok) await mwLoadSession(MW.session.id);
+    }
+    async function dawTransport(command) {
+        const position_ms = command === 'locate' ? Math.round(MW.playheadMs) : undefined;
+        // A person pressed this, so the command is supervised — nothing else sends it.
+        return dawRun('transport', 'transport', () => api(dawBase() + '/transport', { method: 'POST', body: JSON.stringify({ command, position_ms, supervised: true }) }));
+    }
+    async function dawExportPackage() {
+        const d = dawState();
+        return dawRun('package', null, async () => {
+            try { d.pkg = await api('/music-sessions/' + MW.session.id + '/package', { method: 'POST', body: JSON.stringify({}) }); }
+            catch (e) { d.pkg = { error: 'The package could not be built: ' + e.message }; }
+            return {};
+        });
+    }
+    /** A package from any DAW or person: validated first (writes nothing), then imported into this session as candidate takes. */
+    async function dawImportPackage(holder) {
+        const d = dawState();
+        const f = holder && holder.files && holder.files[0];
+        if (!f || !MW.session) return;
+        const url = '/projects/' + state.currentProject.id + '/music-packages/import';
+        let reloaded = false;
+        await dawRun('import', null, async () => {
+            try {
+                checkUploadSize(f, url);
+                const data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('could not read ' + f.name));
+                    reader.readAsDataURL(f);
+                });
+                const v = await api(url, { method: 'POST', body: JSON.stringify({ data, validate_only: true }) });
+                if (!v.ok) { d.pkg = { error: 'Refused, nothing written: ' + (v.errors || []).join('; ') }; return {}; }
+                const out = await api(url, { method: 'POST', body: JSON.stringify({ data, session_id: MW.session.id }) });
+                d.pkg = null;
+                d.result = { op: 'import', ok: true, ...out };
+                reloaded = true;
+            } catch (e) { d.pkg = { error: 'Import refused: ' + e.message }; }
+            return {};
+        });
+        if (reloaded) await mwLoadSession(MW.session.id);
     }
 
     // ── Playback: the audio graph the mix is heard through ─────────

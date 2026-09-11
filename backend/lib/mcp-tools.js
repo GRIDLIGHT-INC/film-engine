@@ -3940,6 +3940,12 @@ function musicSessionTools() {
             required: ['session_id', 'command'],
         },
         {
+            name: 'music_daw_audit', handler: H, method: 'GET',
+            description: 'Free — needs no DAW connection. Every push, pull and transport a session has sent to a DAW, newest first: the operation, request id, idempotency key, outcome, duration and the error when it failed. A failed push whose outcome is unknown (a timeout) says so and names the key to retry it with.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/${a.adapter || 'ableton'}/audit`,
+            schema: { ...S, adapter: { type: 'string', description: 'Which DAW adapter (default ableton).' } }, required: ['session_id'],
+        },
+        {
             name: 'music_bounce_list', handler: H, method: 'GET',
             description: 'Free. Every bounce of a session, newest version first: status, fingerprint, what it superseded, the master and each stem with its served url, what was left out and why. The newest complete one is marked current.',
             path: a => `/film/music-sessions/${a.session_id}/bounces`, schema: S, required: ['session_id'],

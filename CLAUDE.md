@@ -623,6 +623,7 @@ film-engine/
 │       ├── daw-adapter.test.js # Seven operations, every misbehaviour a recorded failure, and nothing outside Film Engine's own tracks
 │       ├── ableton-sidecar.test.js # Over real UDP: correlation, timeouts, reconnect, the allowlist, and the DAW contract through the sidecar
 │       ├── ableton-mcp.test.js # One tool per DAW operation, none that can set anything else in Live, and the pull gate through the tools
+│       ├── daw-sync-ui.test.js # Every DAW operation on the Score page with its portable twin, every connection state rendered, and an editor that never waits on Live
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -665,7 +666,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
-| DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}` |
+| DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}`, `GET /music-sessions/:id/daw/:adapter/audit` (free, no connection needed) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -4065,6 +4066,27 @@ proves the pull gate through the tools with the reference DAW standing in,
 because Ableton itself has no render to pull: bytes that fail the hash import
 nothing, and the same render is fetched once.
 
+**The Score page has a DAW panel, and the editor never waits for it** (MUS-019).
+`DAW_ACTIONS` in the page is one action per contract operation, and each names
+its **portable twin**: exporting a score package stands in for a push, importing
+one (validated first, then landed as candidate takes) stands in for a pull, and
+the workstation's own playback stands in for Live's transport. So nothing on the
+panel needs Live. The panel is fetched **after** the editor renders and paints
+only `#mwDaw`, so a missing sidecar, a closed Live or an unreviewed version
+changes that region and nothing else. It shows five connection states, each with
+its own recovery step: not set up (the environment variables and the guide),
+sidecar unreachable, Live not answering (the Control Surface setting), readable
+but not the reviewed version, and connected. A push is reviewed as a diff
+(create, update, left alone, left in place) and every conflict is decided in a
+select. Overwrite is offered only where the contract allows it, and the push
+button stays disabled until each conflict is decided. Progress is shown on the
+panel while an operation runs. The history comes from
+`GET …/daw/:adapter/audit` (and `music_daw_audit`, **332 tools**), which needs
+no connection. A push whose outcome is unknown carries the recovery step, "plan
+again", which is safe because a marked track is never created twice.
+`tests/daw-sync-ui.test.js` executes the renderers in every state rather than
+grepping them.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5644,6 +5666,7 @@ node --test backend/tests/music-package.test.js
 node --test backend/tests/daw-adapter.test.js
 node --test backend/tests/ableton-sidecar.test.js
 node --test backend/tests/ableton-mcp.test.js
+node --test backend/tests/daw-sync-ui.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
