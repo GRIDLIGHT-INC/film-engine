@@ -515,6 +515,8 @@ function importPackage(db, projectId, buf, opts) {
                         VALUES (?, ?, 'music', ?, ?, 'music_license', ?, ?, 'score package', ?)`)
                 .run(generateId(), projectId, assetId, st.name || st.path, rightsStatus, (st.rights_owners || []).join(', '),
                     `from score package ${m.package.id}: the stem's rights are its most encumbered source's (${rightsStatus})`);
+            // Rights (MUS-022): returned from a DAW or a package, the stem is its sources (where they exist here) and its manifest's claim.
+            require('./music-rights').recordDerivative(db, assetId, st.source_asset_ids || [], `returned in score package ${m.package.id}`, { own_status: rightsStatus });
 
             const ref = m.matching && m.matching.keys && m.matching.keys[st.key];
             const home = ref && ref.kind === 'track' ? db.prepare('SELECT * FROM film_music_tracks WHERE id = ? AND session_id = ?').get(ref.id, sessionId) : null;

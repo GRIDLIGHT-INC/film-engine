@@ -454,6 +454,10 @@ async function generate(db, sessionId, workflow, input, opts) {
             db.prepare(`INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, size_bytes, duration_ms, metadata, license_source, license_status, provider)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated', 'unknown', ?)`)
                 .run(s.assetId, session.project_id, media.assetType, s.filePath, s.fileName, s.spec.ext, s.spec.mime, s.bytes.length, s.tech.duration_ms, JSON.stringify(meta), plan.provider.id || '');
+            // Rights (MUS-022): generated from nothing is generated and unknown; generated over a source also carries the source's.
+            const musicRights = require('./music-rights');
+            if (derivedFrom) musicRights.recordDerivative(db, s.assetId, [derivedFrom], `generated (${workflow}) by ${plan.provider.id || 'a provider'}`);
+            else musicRights.recordGenerated(db, s.assetId, plan.provider.id || '');
             const length = workflow === 'music_inpaint' ? Math.min(plan.placement.duration_ms, s.tech.duration_ms) : s.tech.duration_ms;
             const cv = VALIDATORS.film_music_clips({
                 name: s.role || workflow.replace('music_', ''), asset_id: s.assetId, source_operation_id: operationId,

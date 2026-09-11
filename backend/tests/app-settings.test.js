@@ -53,7 +53,8 @@ test('every known setting reads back as it was written, in its own type', async 
      * so nothing is listed twice here.
      */
     for (const [key, def] of Object.entries(SETTINGS)) {
-        const value = typeof def.default === 'boolean' ? true : `value-for-${key}`;
+        // A setting with a validator declares an example it accepts; arbitrary text is (rightly) refused.
+        const value = typeof def.default === 'boolean' ? true : (def.example !== undefined ? def.example : `value-for-${key}`);
         const put = await call('PUT', { [key]: value });
         assert.strictEqual(put.status, 200, JSON.stringify(put.body));
         const got = await call('GET');

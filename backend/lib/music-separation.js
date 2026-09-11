@@ -374,8 +374,9 @@ async function runSeparation(db, session, plan, adapter, operationId) {
         const nextOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM film_music_tracks WHERE session_id = ?').get(session.id).m) + 1;
         const insertAsset = db.prepare(`INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, size_bytes, duration_ms, metadata, license_source, license_status, rights_notes)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        const insertRights = db.prepare(`INSERT INTO film_rights (id, project_id, entity_type, entity_id, subject, rights_type, status, owner, source, license_url, territory, expires_on, restrictions, notes)
-                                         VALUES (?, ?, 'music', ?, ?, 'music_license', ?, ?, ?, ?, ?, ?, ?, ?)`);
+        // origin 'derived': this row is the stem's own record, computed from its source (MUS-022), not a person's declaration.
+        const insertRights = db.prepare(`INSERT INTO film_rights (id, project_id, entity_type, entity_id, subject, rights_type, status, owner, source, license_url, territory, expires_on, restrictions, notes, origin)
+                                         VALUES (?, ?, 'music', ?, ?, 'music_license', ?, ?, ?, ?, ?, ?, ?, ?, 'derived')`);
         staged.forEach((s, i) => {
             const trackId = generateId();
             const clipId = generateId();
@@ -392,6 +393,7 @@ async function runSeparation(db, session, plan, adapter, operationId) {
             insertRights.run(generateId(), session.project_id, s.assetId, `${s.stem} — derived from ${asset.file_name || asset.id}`, r.status || 'unknown', r.owner || '', r.source || '',
                 r.license_url || '', r.territory || 'worldwide', r.expires_on || '', r.restrictions || '',
                 `derived: separated from asset ${asset.id} by operation ${operationId}${sourceRights ? '' : '; the source had no rights row, so this one is unknown'}${r.notes ? `. Source notes: ${r.notes}` : ''}`);
+            require('./music-rights').recordDerivative(db, s.assetId, [asset.id], `separated (${plan.variation.id}) by operation ${operationId}`);
 
             const tv = VALIDATORS.film_music_tracks({ name: s.stem, role_kind: FAMILY_STEMS.has(s.stem) ? 'family' : 'instrument', role, sort_order: nextOrder + i });
             if (!tv.ok) throw new Error(`${s.stem}: ${tv.errors.map(e => e.message).join('; ')}`);

@@ -85,6 +85,17 @@ const CONSTRUCT = {
     missing_shots: () => ({ film: makeFilm([{ code: '1A', footage: 'ok' }, { code: '1B', footage: false }]) }),
     missing_clip: () => ({ film: makeFilm([{ code: '1A', footage: 'missing' }]) }),
     invalid_clip: () => ({ film: makeFilm([{ code: '1A', footage: 'garbage' }]) }),
+    // The rights policy refusing the score the master would carry (MUS-022): an approved session whose mix
+    // a person marked blocked. Refused at the plan, like a missing shot — no executor is consulted.
+    rights_blocked: () => {
+        const film = makeFilm([{ code: '1A', footage: 'ok' }]);
+        const mix = path.join(TMP, `${film.projectId.slice(0, 6)}_mix.wav`); fs.writeFileSync(mix, 'the mix bytes are never read');
+        const assetId = generateId(), sessionId = generateId();
+        db.prepare("INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, duration_ms, metadata) VALUES (?, ?, 'audio_mix', ?, 'mix.wav', 'wav', 1000, '{\"kind\":\"bounce_master\"}')").run(assetId, film.projectId, mix);
+        db.prepare("INSERT INTO film_rights (id, project_id, entity_type, entity_id, subject, rights_type, status) VALUES (?, ?, 'music', ?, 'mix', 'music_license', 'blocked')").run(generateId(), film.projectId, assetId);
+        db.prepare("INSERT INTO film_music_sessions (id, project_id, scene_id, name, status, approved_mix_asset_id, approved_at) VALUES (?, ?, ?, 'S', 'approved', ?, datetime('now'))").run(sessionId, film.projectId, film.sceneId, assetId);
+        return { film };
+    },
     no_executor: () => ({
         film: makeFilm([{ code: '1A', footage: 'ok' }]),
         opts: { probe: () => ({ any: false, executors: [
@@ -159,7 +170,7 @@ test('every failure the conform can return carries the walk, and the error names
         assert.strictEqual(r.state, state, `${state}: fixture produced '${r.state}' instead`);
         assertWalk(r.walk, state);
 
-        if (state === 'missing_shots') {
+        if (state === 'missing_shots' || state === 'rights_blocked') {
             // Refused at the plan: no executor was consulted, and the walk
             // says so rather than pretending one was.
             assert.strictEqual(r.walk.length, 0, 'a plan refusal walked executors it never reached');

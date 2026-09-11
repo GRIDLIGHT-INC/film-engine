@@ -403,6 +403,8 @@ async function runBounce(db, sessionId, opts) {
                 sources: [...new Set((f.out.stem ? plan.clips.filter(c => f.out.stem.clip_ids.includes(c.clip_id)) : plan.clips).map(c => c.asset_id))],
             };
             insert.run(id, plan.project_id, f.out.kind === 'bounce_master' ? 'audio_mix' : kind.assetType, f.file, f.out.name, OUTPUT.ext, OUTPUT.mime, f.size, f.probe.duration_ms, JSON.stringify(meta), 'unknown');
+            // Rights (MUS-022): a mix is every clip it mixed — the most encumbered of them.
+            require('./music-rights').recordDerivative(db, id, meta.sources, `bounced (v${plan.version}, ${f.out.kind})`);
             registered.push({ asset_id: id, kind: f.out.kind, key: f.out.key, name: f.out.name, url: getFileUrl(kind.serveDir, plan.project_id, f.out.name), duration_ms: f.probe.duration_ms, size_bytes: f.size,
                 track_ids: f.out.stem ? f.out.stem.track_ids : null });
         }

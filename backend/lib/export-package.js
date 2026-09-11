@@ -76,6 +76,11 @@ function byShotId(assets) {
 function preflightExport(project, shots, assets = [], opts = {}) {
     const blocking = [];
     const warnings = [];
+    // The rights policy at final export, over the approved score (MUS-022; evaluated by the caller).
+    if (opts.rights) {
+        if (opts.rights.blocked.length) blocking.push({ code: 'SCORE_RIGHTS', message: `The rights policy blocks the score: ${opts.rights.blocked.map(i => `${i.name} (${i.status})`).join('; ')}`, items: opts.rights.blocked });
+        if (opts.rights.warned.length) warnings.push({ code: 'SCORE_RIGHTS', message: `Score rights to settle before delivery: ${opts.rights.warned.map(i => `${i.name} (${i.status})`).join('; ')}`, items: opts.rights.warned });
+    }
     const all = shots || [];
     const { shots: shootable } = shootableShots(all, byShotId(assets));
 

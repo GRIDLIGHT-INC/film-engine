@@ -44,6 +44,18 @@ const SETTINGS = {
      * chosen to, and here "using" means pointing paid generation at a closed
      * port.
      */
+    /*
+     * THE MUSIC RIGHTS POLICY (MUS-022): what each rights status does at
+     * approval and at final export — allow, warn or block. Blank is the stated
+     * default in lib/music-rights.js; a value replaces only the parts it names.
+     */
+    music_rights_policy: {
+        description: 'JSON: what each music rights status does at each gate, e.g. {"approval":{"unknown":"warn"},"final_export":{"restricted":"block"}}. Statuses: cleared, unknown, restricted, expired, blocked; actions: allow, warn, block. Blank keeps the stated default (unknown and restricted warn; expired blocks final export; blocked blocks both).',
+        default: '',
+        validate: v => require('../lib/music-rights').validatePolicy(v),
+        // A value the validator accepts, so anything probing every setting can write a real one.
+        example: '{"approval":{"unknown":"warn"}}',
+    },
     gridlight_enabled: {
         description: 'Turn on the local Gridlight endpoints. Off by default: until it is enabled, '
             + 'nothing resolves to it, and a capability it is the only provider for reports that '
@@ -198,6 +210,13 @@ function putSettings(req, res) {
     const upsert = db.prepare(
         `INSERT INTO film_app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
+
+    // A setting that declares a validator is checked before anything is written, so a bad value never half-lands.
+    for (const key of Object.keys(SETTINGS)) {
+        if (body[key] === undefined || typeof SETTINGS[key].validate !== 'function') continue;
+        const errors = SETTINGS[key].validate(body[key]);
+        if (errors && errors.length) return json(res, 400, { error: errors.join('; '), key });
+    }
 
     for (const key of Object.keys(SETTINGS)) {
         if (body[key] === undefined) continue;      // merge, so an absent key is "leave it"

@@ -293,8 +293,12 @@ function validateRights(rights) {
         return { ok: false, error: `rights.status '${status}' is not one the register knows; it must be one of ${RIGHTS_STATUSES.join(', ')}` };
     }
     const str = v => (v === undefined || v === null ? '' : String(v));
+    // What the material IS, as the person importing it says (MUS-022). Never inferred.
+    const origin = decl.origin === undefined || decl.origin === null || decl.origin === '' ? 'unknown' : String(decl.origin);
+    const ORIGINS = require('./music-rights').ORIGINS;
+    if (!ORIGINS.includes(origin)) return { ok: false, error: `rights.origin '${origin}' is not one of ${ORIGINS.join(', ')}` };
     return { ok: true, value: {
-        status, owner: str(decl.owner), source: str(decl.source), license_url: str(decl.license_url),
+        status, origin, owner: str(decl.owner), source: str(decl.source), license_url: str(decl.license_url),
         territory: str(decl.territory) || 'worldwide', expires_on: str(decl.expires_on),
         restrictions: str(decl.restrictions), notes: str(decl.notes),
     } };
@@ -403,8 +407,8 @@ async function importStems(db, sessionId, input) {
 
         const insertAsset = db.prepare(`INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, size_bytes, duration_ms, metadata, license_source, license_status, rights_notes)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external', ?, ?)`);
-        const insertRights = db.prepare(`INSERT INTO film_rights (id, project_id, entity_type, entity_id, subject, rights_type, status, owner, source, license_url, territory, expires_on, restrictions, notes)
-                                         VALUES (?, ?, 'music', ?, ?, 'music_license', ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const insertRights = db.prepare(`INSERT INTO film_rights (id, project_id, entity_type, entity_id, subject, rights_type, status, owner, source, license_url, territory, expires_on, restrictions, notes, origin)
+                                         VALUES (?, ?, 'music', ?, ?, 'music_license', ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
         staged.forEach((s, i) => {
             const trackId = generateId();
@@ -418,7 +422,7 @@ async function importStems(db, sessionId, input) {
                 s.d.bytes.length, s.tech.duration_ms, JSON.stringify(meta), rights.value.status, rights.value.notes);
             const rightsId = generateId();
             insertRights.run(rightsId, session.project_id, s.assetId, s.d.name, rights.value.status, rights.value.owner, rights.value.source,
-                rights.value.license_url, rights.value.territory, rights.value.expires_on, rights.value.restrictions, rights.value.notes);
+                rights.value.license_url, rights.value.territory, rights.value.expires_on, rights.value.restrictions, rights.value.notes, rights.value.origin);
 
             let workingId = null;
             if (s.working) {

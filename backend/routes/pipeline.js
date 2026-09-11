@@ -415,6 +415,7 @@ const CONFORM_STATES = {
     missing_clip:  { permanent: true },    // a file that is not on disk
     invalid_clip:  { permanent: true },    // a file that does not decode
     failed:        { permanent: false },   // the encoder crashed or timed out
+    rights_blocked: { permanent: true },   // the rights policy refuses the score; a retry meets the same register
 };
 
 /**

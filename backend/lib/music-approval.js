@@ -77,7 +77,13 @@ function approveMix(db, sessionId, opts) {
     if (stale && o.ignore_stale !== true) {
         return refuse(409, 'STALE_MIX', `bounce v${chosen.version} was rendered before the session last changed, so it is not the mix on the lanes — bounce again and approve that, or pass ignore_stale to approve this one anyway`);
     }
-    const warnings = [];
+    // The rights policy at approval (MUS-022): a block refuses with the items; a warning travels with the approval.
+    const rightsCheck = require('./music-rights').evaluate(db, [master.id], 'approval');
+    if (!rightsCheck.ok && o.ignore_rights !== true) {
+        return { ...refuse(409, 'RIGHTS_BLOCKED', `the rights policy blocks approving this mix: ${rightsCheck.blocked.map(i => `${i.name} (${i.status})`).join('; ')} — clear them in the rights register, or pass ignore_rights to approve anyway (recorded)`), items: rightsCheck.blocked, policy_note: rightsCheck.note };
+    }
+    const warnings = rightsCheck.warned.map(i => `${i.name}: ${i.reason}`);
+    if (!rightsCheck.ok) warnings.push(`approved over a rights block at the director's request: ${rightsCheck.blocked.map(i => `${i.name} (${i.status})`).join('; ')}`);
     try {
         const d = require('./music-context').sessionDrift(db, sessionId);
         if (d && d.drifted) warnings.push('the picture or the screenplay moved since this session was written; the score may no longer fit the cut');
@@ -85,7 +91,8 @@ function approveMix(db, sessionId, opts) {
     if (stale) warnings.push(`approved over a stale bounce (v${chosen.version}) at the director's request`);
     db.transaction(() => {
         db.prepare("UPDATE film_music_sessions SET status = 'approved', approved_mix_asset_id = ?, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(master.id, sessionId);
-        recordOp(db, sessionId, { action: 'approve', bounce_operation_id: chosen.operation_id, version: chosen.version, asset_id: master.id, fingerprint: chosen.fingerprint, stale, previous_asset_id: s.approved_mix_asset_id || null });
+        recordOp(db, sessionId, { action: 'approve', bounce_operation_id: chosen.operation_id, version: chosen.version, asset_id: master.id, fingerprint: chosen.fingerprint, stale, previous_asset_id: s.approved_mix_asset_id || null,
+            rights: { blocked: rightsCheck.blocked.map(i => ({ asset_id: i.asset_id, status: i.status })), warned: rightsCheck.warned.map(i => ({ asset_id: i.asset_id, status: i.status })), ignore_rights: !rightsCheck.ok && o.ignore_rights === true } });
     })();
     return { ok: true, session_id: sessionId, asset_id: master.id, bounce_operation_id: chosen.operation_id, version: chosen.version, stale, warnings };
 }
@@ -206,11 +213,15 @@ function applyToTimeline(db, projectId, timeline) {
  * each delayed to its offset, summed with nothing normalised, the film's
  * length kept. Returns an argument array, never a shell string.
  */
-function scoreMixArgs(input, placements, output) {
+function scoreMixArgs(input, placements, output, opts) {
+    const o = opts || {};
     const args = ['-y', '-loglevel', 'error', '-i', input];
     for (const p of placements) args.push('-i', p.file_path);
     const fmt = 'aformat=sample_rates=48000:channel_layouts=stereo';
-    const parts = [`[0:a]${fmt}[f]`];
+    // A film with no audio stream (silent clips, joined) gets the score over silence of the film's own length.
+    if (o.silentBaseSeconds) args.push('-f', 'lavfi', '-t', String(o.silentBaseSeconds), '-i', 'anullsrc=r=48000:cl=stereo');
+    const base = o.silentBaseSeconds ? `[${placements.length + 1}:a]` : '[0:a]';
+    const parts = [`${base}${fmt}[f]`];
     placements.forEach((p, i) => parts.push(`[${i + 1}:a]${fmt},adelay=${Math.round(p.offset_ms)}|${Math.round(p.offset_ms)}[s${i}]`));
     parts.push(`[f]${placements.map((_, i) => `[s${i}]`).join('')}amix=inputs=${placements.length + 1}:normalize=0:duration=first:dropout_transition=0[a]`);
     args.push('-filter_complex', parts.join(';'), '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output);
@@ -223,7 +234,9 @@ function mixScoreIntoFilm(filmPath, placements, opts) {
     const found = resolveFfmpeg();
     if (!found.available) return { ok: false, error: `no encoder to mix the score with: ${found.reason}` };
     const tmp = `${filmPath}.score-${crypto.randomUUID().slice(0, 8)}.mp4`;
-    const r = require('child_process').spawnSync(found.bin, scoreMixArgs(filmPath, placements, tmp), { encoding: 'utf8', timeout: o.timeoutMs || 600000 });
+    const seen = require('./ffmpeg').inspectMedia(filmPath);
+    const silentBaseSeconds = seen.ok && !seen.hasAudio ? Math.max(0.1, seen.durationSeconds) : null;
+    const r = require('child_process').spawnSync(found.bin, scoreMixArgs(filmPath, placements, tmp, { silentBaseSeconds }), { encoding: 'utf8', timeout: o.timeoutMs || 600000 });
     if (r.status !== 0 || !fs.existsSync(tmp)) {
         try { fs.unlinkSync(tmp); } catch (_) { /* nothing written */ }
         return { ok: false, error: `mixing the approved score into the film failed: ${String(r.stderr || r.error || '').trim().split('\n').slice(-2).join(' ')}` };

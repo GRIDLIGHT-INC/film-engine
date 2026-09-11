@@ -20,6 +20,7 @@ const VALID_ASSET_TYPES = [
 ];
 
 const VALID_CUE_TYPES = ['score', 'source', 'sfx', 'ambient', 'transition'];
+const RIGHT_ORIGINS = require('../lib/music-rights').ORIGINS;
 const VALID_PRESET_TYPES = ['lut', 'film_grain', 'color_grade', 'look', 'composite'];
 
 function handleAssets(req, res, urlParts, query) {
@@ -440,6 +441,7 @@ function listRights(req, res, projectId, query) {
             rights_type: VALID_RIGHT_TYPES,
             status: VALID_RIGHT_STATUSES,
             entity_type: VALID_RIGHT_ENTITY_TYPES,
+            origin: RIGHT_ORIGINS,
         },
         rights,
     });
@@ -456,8 +458,8 @@ function createRight(req, res, projectId) {
         INSERT INTO film_rights (
             id, project_id, entity_type, entity_id, subject, rights_type, status,
             owner, source, license_url, consent_reference, territory, expires_on,
-            restrictions, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            restrictions, notes, created_at, updated_at, origin
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
         id,
         projectId,
@@ -475,7 +477,8 @@ function createRight(req, res, projectId) {
         (body.restrictions || '').slice(0, 2000),
         (body.notes || '').slice(0, 2000),
         now,
-        now
+        now,
+        RIGHT_ORIGINS.includes(body.origin) ? body.origin : 'unknown'
     );
 
     const row = db.prepare('SELECT * FROM film_rights WHERE id = ?').get(id);
@@ -510,6 +513,11 @@ function updateRight(req, res, rightId) {
     if (body.expires_on !== undefined) add('expires_on', (body.expires_on || '').slice(0, 50));
     if (body.restrictions !== undefined) add('restrictions', (body.restrictions || '').slice(0, 2000));
     if (body.notes !== undefined) add('notes', (body.notes || '').slice(0, 2000));
+    // What the material IS, as a person declares it (MUS-022). 'derived' is the engine's own and never set by hand.
+    if (body.origin !== undefined) {
+        if (!RIGHT_ORIGINS.includes(body.origin)) return badReq(res, `Invalid origin: one of ${RIGHT_ORIGINS.join(', ')}`);
+        add('origin', body.origin);
+    }
     if (!fields.length) return badReq(res, 'No valid fields to update');
 
     add('updated_at', new Date().toISOString());

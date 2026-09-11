@@ -159,7 +159,7 @@ function handleNLEExport(req, res, urlParts, query) {
      */
     if (format === 'preflight') {
         const { preflightExport } = require('../lib/export-package');
-        const out = preflightExport(project, shots, assets, { settings });
+        const out = preflightExport(project, shots, assets, { settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export') });
         res.writeHead(out.ready ? 200 : 409, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ project_id: projectId, ...out }));
         return;
@@ -176,7 +176,7 @@ function handleNLEExport(req, res, urlParts, query) {
         const { ensureDir } = require('../lib/file-storage');
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         const dest = path.join(ensureDir(projectId, 'exports'), `${safeTitle}_${stamp}`);
-        packageExport(project, shots, assets, { format: query.target || 'premiere', dest, settings })
+        packageExport(project, shots, assets, { format: query.target || 'premiere', dest, settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export') })
             .then(out => {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({

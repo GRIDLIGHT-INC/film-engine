@@ -28,7 +28,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (105 migrations)
+│   │   └── migrations/     # SQL migration files (106 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -121,6 +121,7 @@ film-engine/
 │   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
 │   │   ├── music-approval.js     # The approved score: selected once, placed once at its picture's offset, and no scene music under it
+│   │   ├── music-rights.js       # Origins declared not assumed, derivatives carry their sources, one lineage, one warn/block policy
 │   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
 │   │   ├── daw-registry.js       # Which DAW adapters the engine can reach, how each is configured, and the seven Ableton tools
 │   │   ├── daw/                  # DAW adapters behind the contract
@@ -627,6 +628,7 @@ film-engine/
 │       ├── daw-sync-ui.test.js # Every DAW operation on the Score page with its portable twin, every connection state rendered, and an editor that never waits on Live
 │       ├── approved-score.test.js # The approved mix consumed once at its offset by all six assembly surfaces, measured in the master
 │       ├── music-bundle.test.js # A scored project carried to a clean machine: every table, every id new, every file hashed, then reopened, played, rebounced and reassembled
+│       ├── music-rights.test.js # Every origin, every derivative writer, every gate × status: rights follow the music and the policy acts where it is stated
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -669,7 +671,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
-| Score Approval | `POST /music-sessions/:id/{approve,unapprove}`, `GET /projects/:id/music-score` (free) |
+| Score Approval | `POST /music-sessions/:id/{approve,unapprove}`, `GET /projects/:id/music-score` (free), `GET /music-sessions/:id/lineage` (free) |
 | DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}`, `GET /music-sessions/:id/daw/:adapter/audit` (free, no connection needed) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
@@ -4134,6 +4136,53 @@ does now.
 iterating `SCORE_CONSUMERS`, and **measures** the conformed master: silent
 before the score, the score's tone after, and the film's length unchanged.
 
+### Rights Follow the Music, and the Policy Acts Where It Is Stated
+Four things, each stated once in `lib/music-rights.js` (MUS-022).
+
+**Origins are declared, never assumed.** Source material is `original`,
+`generated`, `licensed`, `public_domain` or `unknown`. A person declares the
+origin at stem import (`rights.origin`) or in the rights register (migration
+109 adds `film_rights.origin`). The engine records `generated` only when it
+witnessed a provider make the file, and then as status `unknown`, never
+cleared, because a provider's terms are not a clearance anyone here read. An
+undeclared import is `unknown`.
+
+**Every derivative carries its sources.** A take generated over a source, a
+separated stem, a bounce master or stem, and a stem returned from a DAW or a
+package each call `recordDerivative`. It links the sources and records the most
+encumbered of their statuses (blocked > expired > restricted > unknown >
+cleared) in the file's own `derived` row. That row is a snapshot. The lineage
+itself is computed **live**, so a source cleared or blocked later reaches every
+derivative at once without re-rendering. A person's own record on a file (the
+status a package manifest declared, say) still counts; the engine's `derived`
+row never does. `DERIVATIVE_WRITERS` names the four writers, and the test holds
+each to calling it.
+
+**One lineage.** `assetLineage` walks a file to its sources, and `scoreLineage`
+(`GET /music-sessions/:id/lineage`, `music_score_lineage`, **336 tools**) walks
+every clip and the mix. Each node carries origin, status, owner, provider,
+model, operation and hash, and the report names every issue.
+
+**One policy, at approval and final export.** Each gate maps each status to
+allow, warn or block. The default is stated, pending the epic's Open Question 3:
+- unknown and restricted warn at both gates;
+- expired warns at approval and blocks final export;
+- blocked blocks both.
+
+The `music_rights_policy` setting replaces any part of it, and is validated
+before it is stored. A block refuses approval (409 `RIGHTS_BLOCKED` with the
+items), refuses the conformed master (conform state `rights_blocked`,
+permanent, refused at the plan before anything is encoded) and blocks the NLE
+export preflight (`SCORE_RIGHTS`, so the handover refuses it too).
+`ignore_rights` passes a block and is recorded; a warning travels with the
+approval. The rights register page gains an Origin field; a derived file's
+origin is shown, not editable.
+
+**It found a defect in MUS-020's score mix.** A film with no audio stream (a
+single silent clip) made the mix filter reference an audio input that did not
+exist, so the conform failed. The score is now laid over silence the film's own
+length.
+
 ### A Scored Project Travels Whole
 The project bundle (MUS-021) carries every score-session table: sessions,
 tracks, clips, emotion ranges, markers, automation, operations with their job
@@ -5313,7 +5362,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (105 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (106 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5749,6 +5798,7 @@ node --test backend/tests/ableton-mcp.test.js
 node --test backend/tests/daw-sync-ui.test.js
 node --test backend/tests/approved-score.test.js
 node --test backend/tests/music-bundle.test.js
+node --test backend/tests/music-rights.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

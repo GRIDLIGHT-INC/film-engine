@@ -32,6 +32,7 @@
  *   GET    /film/music-sessions/:id/packages             every package built from the session
  *   POST   /film/projects/:id/music-packages/import      validate (validate_only) or import a package; into session_id as candidate takes, or a new session
  *   POST   /film/music-sessions/:id/approve             select a bounce as the approved mix (refused when stale); POST …/unapprove takes it back (MUS-020)
+ *   GET    /film/music-sessions/:id/lineage             FREE: every clip and the mix walked to their sources — origin, status, owner, provider, hash — and every issue (MUS-022)
  *   GET    /film/projects/:id/music-score                FREE: the approved mixes the film consumes, their offsets, and every session not consumed and why
  *   GET    /film/daw/:adapter/{status,session}           FREE: is the DAW reachable and compatible; the DAW session as it is (MUS-018)
  *   GET    /film/music-sessions/:id/daw/:adapter/push/plan   FREE: what a push would create, update, leave alone, and every conflict
@@ -397,11 +398,16 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.ok ? 200 : 409, out);
         }
         if (sub === 'batch' && req.method === 'POST') { const r = runBatch(id, req.body); return json(res, r.status, r.body); }
+        if (sub === 'lineage' && req.method === 'GET') {
+            // Every clip and the mix, walked to their sources, with the policy in force (MUS-022).
+            const out = require('../lib/music-rights').scoreLineage(db, id);
+            return json(res, out.ok ? 200 : (out.status || 400), out);
+        }
         if ((sub === 'approve' || sub === 'unapprove') && req.method === 'POST') {
             // The explicit approval (lib/music-approval.js): select a bounce, or take it back.
             const b = req.body || {};
             const out = sub === 'approve'
-                ? musicApproval.approveMix(db, id, { bounce_operation_id: b.bounce_operation_id, ignore_stale: b.ignore_stale === true })
+                ? musicApproval.approveMix(db, id, { bounce_operation_id: b.bounce_operation_id, ignore_stale: b.ignore_stale === true, ignore_rights: b.ignore_rights === true })
                 : musicApproval.revokeApproval(db, id);
             if (!out.ok) return json(res, out.status || 409, out);
             return json(res, 200, { ...out, session: readScoreSession(db, id).session });

@@ -160,6 +160,8 @@ function planConform(projectId) {
     const reports = [...scored.reports, ...placed.reports];
     if (mix) reports.push(...approval.shadowedByProjectMix(placed.placements));
     plan.score = { placements: mix ? [] : placed.placements, reports };
+    // The rights policy at final export (MUS-022), over the score the master will carry.
+    plan.rights = placed.placements.length && !mix ? require('./music-rights').evaluate(db, placed.placements.map(p => p.asset_id), 'final_export') : null;
 
     if (missing.length) {
         plan.error = `Cannot conform: ${missing.length} shot(s) have no video — `
@@ -317,6 +319,10 @@ async function runConform(projectId, options) {
     // Refused at the plan: no executor was consulted, and the walk says so
     // rather than pretending one was.
     if (!plan.ok) return { ok: false, state: 'missing_shots', plan, error: plan.error, walk: [], walk_stage: 'plan' };
+    if (plan.rights && !plan.rights.ok && opts.ignore_rights !== true) {
+        return { ok: false, state: 'rights_blocked', plan, walk: [], walk_stage: 'plan', rights: plan.rights,
+            error: `The rights policy blocks the final master: ${plan.rights.blocked.map(i => `${i.name} (${i.status})`).join('; ')}. Clear them in the rights register, or pass ignore_rights to conform anyway.` };
+    }
 
     // Injectable so the no-executor path can be exercised on a machine that
     // has one — the encoder probe caches an available answer for the process.

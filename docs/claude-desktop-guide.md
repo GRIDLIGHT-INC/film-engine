@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**335 tools, 70 families.** Everything the app can do, you can ask for in a
+**336 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -599,7 +599,7 @@ asset on the scene and cost money to make.
 `music_generate_plan` · `music_generate` · `music_generation_list` ·
 `music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry` ·
 `music_package_build` · `music_package_list` · `music_package_validate` · `music_package_import` ·
-`music_session_approve` · `music_session_unapprove` · `music_score_report`
+`music_session_approve` · `music_session_unapprove` · `music_score_report` · `music_score_lineage`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -669,6 +669,16 @@ dropped. Ask before approving; it is the director's decision.
 mixes the film uses and where, and every session that is not used and why
 (unapproved, stale, missing, unplaced, overlapping, or shadowed by a finished
 project mix).
+
+**Rights follow the music.** `music_score_lineage` is free. It walks every clip
+and the mix to their sources, with each source's origin (original, generated,
+licensed, public domain or unknown) and rights status. A derivative (a bounce,
+a separated stem, a take made over a source, a stem returned from a DAW) carries
+the most encumbered status of what it was made from. Nothing is assumed: a
+generated file is generated, not cleared. Approval and the final master follow
+the rights policy: blocked material blocks both, expired material blocks the
+master, and unknown or restricted material warns. A person can change that in
+settings. A block can be passed only by saying so, and that is recorded.
 
 **A score package takes the session to any DAW and back.**
 `music_package_build` spends nothing and builds one byte-stable archive. It holds

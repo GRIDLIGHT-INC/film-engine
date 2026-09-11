@@ -89,9 +89,22 @@ function resolveFfmpegUncached() {
     };
 }
 
+/*
+ * A PROBE THAT FAILS UNDER LOAD IS NOT AN ANSWER.
+ *
+ * With dozens of encoders and servers running at once, `ffmpeg -version` can
+ * time out or fail to spawn, and the resolver then reported NO encoder for a
+ * binary that is perfectly present — every caller received `bin: null` and
+ * died on "the file argument must be a string", in a different test each full
+ * run. A candidate that is simply not there (ENOENT) is answered at once; any
+ * other failure is tried again, once, with a longer ceiling.
+ */
 function runs(bin) {
-    try { execFileSync(bin, ['-version'], { stdio: 'ignore', timeout: 8000 }); return true; }
-    catch (_) { return false; }
+    for (const timeout of [8000, 30000]) {
+        try { execFileSync(bin, ['-version'], { stdio: 'ignore', timeout }); return true; }
+        catch (e) { if (e && e.code === 'ENOENT') return false; }
+    }
+    return false;
 }
 
 /** Run the encoder and hand back what it said. Never throws. */

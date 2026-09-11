@@ -3944,13 +3944,19 @@ function musicSessionTools() {
             description: 'Spends nothing. Approves a score session by SELECTING a bounce as its mix — the newest complete one, or bounce_operation_id. Only a session in review (or already approved, to reselect) can be approved, and a bounce rendered before the session last changed is refused as STALE_MIX (ignore_stale overrides). From then on the timeline, playback, audio mix, pipeline, NLE exports and the conformed master consume that one mix at the start of the session\'s picture, and the scene music under it is dropped. Only a person\'s decision should drive this: ask before approving.',
             path: a => `/film/music-sessions/${a.session_id}/approve`, body: dropIds('session_id'),
             schema: { ...S, bounce_operation_id: { type: 'string', description: 'Which bounce to approve (from music_bounce_list); default the newest complete one.' },
-                ignore_stale: { type: 'boolean', description: 'Approve a bounce made before the session last changed.' } },
+                ignore_stale: { type: 'boolean', description: 'Approve a bounce made before the session last changed.' },
+                ignore_rights: { type: 'boolean', description: 'Approve over a rights block (recorded). Only when a person decided to.' } },
             required: ['session_id'],
         },
         {
             name: 'music_session_unapprove', handler: H, method: 'POST',
             description: 'Spends nothing. Takes an approval back: the session returns to review, its mix is no longer consumed by anything, and the scene music it replaced comes back.',
             path: a => `/film/music-sessions/${a.session_id}/unapprove`, body: dropIds('session_id'), schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_score_lineage', handler: H, method: 'GET',
+            description: 'Free. Every clip of a score session and its mix (the approved one, else the current bounce), each walked to its sources: origin (original, generated, licensed, public_domain, unknown — or derived from its sources), rights status (a derivative carries the most encumbered of its sources), owner, provider, model, operation and hash. Names every issue and the rights policy in force at approval and final export. Nothing is assigned: a generated file is generated, not cleared.',
+            path: a => `/film/music-sessions/${a.session_id}/lineage`, schema: S, required: ['session_id'],
         },
         {
             name: 'music_score_report', handler: H, method: 'GET',
