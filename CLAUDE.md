@@ -626,6 +626,7 @@ film-engine/
 │       ├── ableton-mcp.test.js # One tool per DAW operation, none that can set anything else in Live, and the pull gate through the tools
 │       ├── daw-sync-ui.test.js # Every DAW operation on the Score page with its portable twin, every connection state rendered, and an editor that never waits on Live
 │       ├── approved-score.test.js # The approved mix consumed once at its offset by all six assembly surfaces, measured in the master
+│       ├── music-bundle.test.js # A scored project carried to a clean machine: every table, every id new, every file hashed, then reopened, played, rebounced and reassembled
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -4133,6 +4134,39 @@ does now.
 iterating `SCORE_CONSUMERS`, and **measures** the conformed master: silent
 before the score, the score's tone after, and the film's length unchanged.
 
+### A Scored Project Travels Whole
+The project bundle (MUS-021) carries every score-session table: sessions,
+tracks, clips, emotion ranges, markers, automation, operations with their job
+children, and DAW links. It also carries the picture sequences the sessions sit
+on, and `manifest.files` lists every carried file with its sha256. Import is
+built so that nothing points back at the machine it came from:
+- **Files are verified first.** A damaged file refuses the whole import,
+  naming it, and nothing is written.
+- **Every exported id is replaced wherever it appears**, in a column, inside
+  JSON (operation params, asset metadata, a sequence's shot list) or inside a
+  path. The old importer remapped only declared foreign-key columns, so a
+  scene-scoped asset's `scene_id` was never remapped. Its insert failed
+  silently, and scene music vanished from every bundle.
+- **Every path column is rebuilt under this machine's data directory**
+  through `data-paths`' own `tailOf`.
+- **Foreign keys are checked over the inserted rows inside the transaction.**
+  Rows can land in any order, which matters because clips and operations
+  reference each other. A broken score reference rolls everything back, while
+  older tables keep their tolerance: a reference to something the bundle does
+  not carry is cleared or dropped, and reported.
+- **Mtimes are kept, and bounces are re-stamped.** A file's identity is part
+  of the bounce fingerprint, so a copy that reset it would read as new work.
+  Each bounce that was current in its stems mode at export is re-stamped
+  against the new ids, so an approved score is not reported stale for having
+  moved. Without the re-stamp it is, and the test holds that.
+
+`tests/music-bundle.test.js` proves it by doing it. A real scored film is
+exported, the original's rows and files are deleted, and the bundle is
+imported. The copy then reopens with its approval still `ok`, plays its score
+bed from this machine, refuses an unforced rebounce as unchanged and renders a
+forced one, still validates its score package, and reassembles a master with
+the score measured where it belongs.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5714,6 +5748,7 @@ node --test backend/tests/ableton-sidecar.test.js
 node --test backend/tests/ableton-mcp.test.js
 node --test backend/tests/daw-sync-ui.test.js
 node --test backend/tests/approved-score.test.js
+node --test backend/tests/music-bundle.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
