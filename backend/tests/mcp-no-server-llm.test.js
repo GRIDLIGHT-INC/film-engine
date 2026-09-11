@@ -169,6 +169,10 @@ const ENTITY_ROUTES = [
     // A cue carries the music DIRECTION. An agent that can generate music and 
     // cannot write the brief for it has the wrong half of the job.
     { kind: 'music cue', file: 'assets.js', verbs: { POST: 'music_cue_create', PUT: 'music_cue_update', DELETE: 'music_cue_delete' } },
+    // A score session is where the soundtrack is arranged. The agent host is
+    // the model, so a session it cannot create, change or remove is a
+    // soundtrack that has to be built by hand.
+    { kind: 'score session', file: 'music-sessions.js', verbs: { POST: 'music_session_create', PUT: 'music_session_update', DELETE: 'music_session_delete' } },
 ];
 
 test('every entity route an agent should reach has a tool', () => {

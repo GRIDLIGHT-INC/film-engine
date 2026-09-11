@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**270 tools, 69 families.** Everything the app can do, you can ask for in a
+**299 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -582,6 +582,44 @@ every cue was generated at a hardcoded thirty seconds.
 `music_cue_update` merges, so refining one sentence cannot clear the
 instruments. Deleting a cue keeps any audio generated from it — that is an
 asset on the scene and cost money to make.
+
+### Scoring the picture
+
+`music_session_list` · `music_session_create` · `music_session_get` ·
+`music_session_brief` · `music_session_drift` · `music_session_update` ·
+`music_session_delete` · `music_session_rebase` · `music_session_batch` ·
+`music_track_list` · `music_track_create` · `music_track_update` · `music_track_delete` ·
+`music_clip_list` · `music_clip_create` · `music_clip_update` · `music_clip_delete` ·
+`music_marker_list` · `music_marker_create` · `music_marker_update` · `music_marker_delete` ·
+`music_emotion_list` · `music_emotion_create` · `music_emotion_update` · `music_emotion_delete` ·
+`music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete`
+
+A cue is one piece of music. A **score session** is the soundtrack of an
+ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
+markers and automation, written against the exact screenplay version and cut
+it was created for. `music_session_create` attaches one to a sequence (or a
+scene, when the project has none) and stamps it with the brief it was written
+against.
+
+**Read `music_session_brief` first.** It is free and it is the facts: the shots
+in play order with their real timings and cameras, the exact screenplay
+passages, the cast and how much they talk, the look, the cues already written,
+the accepted emotional arc, and the themes already made. It decides nothing
+about what the music should be — that is your judgement, recorded with
+`music_emotion_create` (a director's ranges are accepted; yours are
+**proposals** until a person accepts them, and nothing paid rests on a
+proposal) and with the cues.
+
+**`music_session_drift` says when the ground moved.** A script edit or a
+re-cut after the session was stamped is reported, with which side moved, and
+nothing is changed. `music_session_rebase` is the explicit act of accepting
+the new ground.
+
+Every create and update tool carries the exact vocabulary the database
+accepts, so a refusal names the field rather than failing on save. Deleting
+anything here removes the arrangement row only; audio assets stay registered.
+`music_session_batch` writes several edits in order, atomically, with `$n`
+naming an earlier op's result — a track and the clips on it in one call.
 
 ### Your own shots, kept across every film
 

@@ -3538,6 +3538,189 @@ const PRODUCTION_TOOLS = [
     },
 ];
 
+// ── Set 3b: the score session ──────────────────────────────────────────────
+//
+// The agent host is the model here, so a score session an agent cannot reach
+// is one that must be built by hand. Every child kind the HTTP route exposes
+// gets list / create / update / delete, the session gets its nine operations,
+// and all of them dispatch THROUGH handleMusicSessions by the same shim —
+// nothing is reimplemented beside the route. The schemas are DERIVED: each
+// table's fields come from its validator's own defaults, every enum from the
+// contract's VOCABULARY and every bound from RANGES, so the model is told what
+// the database will accept before it tries.
+const { handleMusicSessions, CHILD_KINDS: MUSIC_KINDS } = require('../routes/music-sessions');
+const musicContracts = require('./music-session');
+
+const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
+const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
+const MUSIC_WHAT = {
+    tracks: 'a lane with a role (instrument, family, bus, reference, picture) and mixer state: gain, pan, mute, solo, order',
+    clips: 'an immutable asset placed on a track: start_ms and duration_ms in the session clock, source_offset_ms into the file, fades, loop and warp policy, take group and status, and source_kind (generated, native_part, separated, rendered, imported)',
+    markers: 'a moment on the ruler: a shot boundary, a hit, a section, a sync point, cue in/out, or a note, at position_ms',
+    'emotion-ranges': 'a span of the emotional arc with valence (-1..1), arousal, intensity and confidence (0..1), a label, its source and its status — an ai_proposal stays proposed until a person accepts it, and nothing paid rests on a proposal',
+    automation: 'a parameter over time on a track (or one clip): gain, pan, mute, send or filter, as sorted { at_ms, value } points',
+};
+const MUSIC_HELP = {
+    start_ms: 'Whole milliseconds in the session clock — the cut is in milliseconds, never beats.',
+    duration_ms: 'Whole milliseconds; must be > 0.',
+    source_offset_ms: 'Where in the source file the clip begins. Keep 0 on import to preserve leading silence.',
+    tempo_map: 'List of { at_ms, bpm, numerator, denominator }, sorted, starting at 0. Empty means constant tempo not yet stated.',
+    points: 'List of { at_ms, value }, sorted by at_ms, value inside the parameter\'s own range.',
+    track_id: 'A track of this session.',
+    role: 'Free text inside role_kind: "cello", "strings", "music bus".',
+};
+
+/*
+ * Path builders, written out per kind rather than derived from a string:
+ * tests/mcp-tools.test.js reads each builder's own source for the argument it
+ * forwards, so a builder that reaches `a[idArg]` through a variable reads as
+ * a tool whose argument nothing consumes.
+ */
+const MUSIC_PATHS = {
+    tracks: {
+        list: a => `/film/music-sessions/${a.session_id}/tracks`,
+        item: a => `/film/music-sessions/${a.session_id}/tracks/${a.track_id}`,
+    },
+    clips: {
+        list: a => `/film/music-sessions/${a.session_id}/clips`,
+        item: a => `/film/music-sessions/${a.session_id}/clips/${a.clip_id}`,
+    },
+    markers: {
+        list: a => `/film/music-sessions/${a.session_id}/markers`,
+        item: a => `/film/music-sessions/${a.session_id}/markers/${a.marker_id}`,
+    },
+    'emotion-ranges': {
+        list: a => `/film/music-sessions/${a.session_id}/emotion-ranges`,
+        item: a => `/film/music-sessions/${a.session_id}/emotion-ranges/${a.emotion_id}`,
+    },
+    automation: {
+        list: a => `/film/music-sessions/${a.session_id}/automation`,
+        item: a => `/film/music-sessions/${a.session_id}/automation/${a.automation_id}`,
+    },
+};
+
+function musicSchemaFor(table, omit) {
+    const seed = musicContracts.VALIDATORS[table](MUSIC_SEED[table] || {});
+    const out = {};
+    for (const key of Object.keys(seed.value)) {
+        if ((omit || []).includes(key)) continue;
+        const vocab = musicContracts.VOCABULARY[`${table}.${key}`];
+        const range = musicContracts.RANGES[`${table}.${key}`];
+        let prop;
+        if (['muted', 'soloed'].includes(key)) prop = { type: 'boolean' };
+        else if (vocab) prop = { type: typeof vocab[0] === 'number' ? 'integer' : 'string', enum: vocab };
+        else if (range) prop = { type: 'number', minimum: range.min, maximum: range.max };
+        else if (/_ms$/.test(key) || key === 'sort_order') prop = { type: 'integer' };
+        else if (['gain_db', 'frame_rate', 'cost_usd'].includes(key)) prop = { type: 'number' };
+        else if (['tempo_map', 'points'].includes(key)) prop = { type: 'array' };
+        else if (key === 'params') prop = { type: 'object' };
+        else prop = { type: 'string' };
+        if (MUSIC_HELP[key]) prop.description = MUSIC_HELP[key];
+        out[key] = prop;
+    }
+    return out;
+}
+
+function musicSessionTools() {
+    const H = handleMusicSessions;
+    const S = { session_id: { type: 'string' } };
+    const dropIds = (...ids) => a => { const rest = { ...a }; for (const id of ids) delete rest[id]; return rest; };
+    const tools = [
+        {
+            name: 'music_session_list', handler: H, method: 'GET',
+            description: 'Free. The score sessions of a project, each with the picture unit it is attached to (a sequence, or a scene as the fallback) and its lifecycle status.',
+            path: a => `/film/projects/${a.project_id}/music-sessions`,
+            schema: { project_id: { type: 'string' } }, required: ['project_id'],
+        },
+        {
+            name: 'music_session_create', handler: H, method: 'POST',
+            description: 'Creates a score session for a picture sequence (sequence_id) or, when the project has none, a scene (scene_id). Created as a draft and STAMPED with the brief it was written against, so drift is sayable from the first read. Writes one row; spends nothing.',
+            path: a => `/film/projects/${a.project_id}/music-sessions`,
+            body: dropIds('project_id'),
+            schema: { project_id: { type: 'string' }, sequence_id: { type: 'string', description: 'The ordered picture sequence this score is for.' },
+                scene_id: { type: 'string', description: 'Fallback: a scene, when the project has no sequence.' },
+                ...musicSchemaFor('film_music_sessions', ['status', 'sequence_id', 'scene_id', 'script_id']) },
+            required: ['project_id'],
+        },
+        {
+            name: 'music_session_get', handler: H, method: 'GET',
+            description: 'Free. The whole ScoreSession read model: the session, its picture unit, tracks with their clips and automation, emotion ranges, markers, operations, the derived length, and the vocabulary every field accepts. The same shape the page and the bounce read.',
+            path: a => `/film/music-sessions/${a.session_id}`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_session_brief', handler: H, method: 'GET',
+            description: 'Free — spends nothing. The compiled ScoreBrief: the shots in play order with real timings and cameras, the exact screenplay passages, scenes, cast and dialogue density, the look, cues with sections, the accepted emotional arc and existing motifs, with provenance per field and fingerprints. Read it before writing any cue or note; it is the facts, and YOU decide what the music is.',
+            path: a => `/film/music-sessions/${a.session_id}/brief`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_session_drift', handler: H, method: 'GET',
+            description: 'Free; writes nothing. Whether the script or the picture moved since the session was stamped, and which side. A session that reads as drifted was written against something that no longer exists — say so before generating; rebase only when the director agrees.',
+            path: a => `/film/music-sessions/${a.session_id}/drift`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_session_update', handler: H, method: 'PUT',
+            description: 'Changes a session: name, notes, sample rate, frame rate, tempo map, or its lifecycle status. Status moves through the contract (draft → arranging → review → approved; approved can be reopened) and an illegal move is refused naming both states. Merged, not replaced.',
+            path: a => `/film/music-sessions/${a.session_id}`, body: dropIds('session_id'),
+            schema: { ...S, sequence_id: { type: 'string' }, scene_id: { type: 'string' },
+                ...musicSchemaFor('film_music_sessions', ['sequence_id', 'scene_id', 'script_id']) },
+            required: ['session_id'],
+        },
+        {
+            name: 'music_session_delete', handler: H, method: 'DELETE',
+            description: 'Deletes a score session and everything arranged in it: tracks, clips, ranges, markers, automation and the operation lineage. Registered audio assets are NOT deleted — they cost money and are referenced by clips, never owned by them.',
+            path: a => `/film/music-sessions/${a.session_id}`, body: () => ({}), schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_session_rebase', handler: H, method: 'POST',
+            description: 'The explicit rebase: stamps the session with the brief as it stands now, so drift clears. Writes the fingerprints and the script version; changes no music. Do this only after the director has accepted that the score will be judged against the new picture and script.',
+            path: a => `/film/music-sessions/${a.session_id}/rebase`, body: () => ({}), schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_session_batch', handler: H, method: 'POST',
+            description: 'Applies an ORDERED list of child edits in one transaction: ops of { op: create|update|delete, kind: tracks|clips|markers|emotion-ranges|automation, id?, data? }. "$n" in an id or a data value names the id produced by op n, so a track and the clips on it are written together. Any refusal rolls back everything and names the op by failed_at.',
+            path: a => `/film/music-sessions/${a.session_id}/batch`, body: a => ({ ops: a.ops }),
+            schema: { ...S, ops: { type: 'array', description: 'The ops, in order. Each: { op, kind, id (update/delete), data (create/update) }.' } },
+            required: ['session_id', 'ops'],
+        },
+    ];
+    for (const [kind, spec] of Object.entries(MUSIC_KINDS)) {
+        const one = MUSIC_SINGULAR[kind];
+        const idArg = `${one}_id`;
+        const what = MUSIC_WHAT[kind];
+        const fields = musicSchemaFor(spec.table, ['session_id']);
+        const paths = MUSIC_PATHS[kind];
+        if (!paths) throw new Error(`mcp-tools: no path builders for music child kind '${kind}'`);
+        const kindPath = paths.list;
+        const itemPath = paths.item;
+        tools.push(
+            {
+                name: `music_${one}_list`, handler: H, method: 'GET',
+                description: `Free. The ${kind.replace('-', ' ')} of a session, each ${what.split(':')[0]}.`,
+                path: kindPath, schema: S, required: ['session_id'],
+            },
+            {
+                name: `music_${one}_create`, handler: H, method: 'POST',
+                description: `Creates ${what}. Validated against the same vocabulary the database enforces; a refusal names the field. Writes one row; spends nothing.`,
+                path: kindPath, body: dropIds('session_id'),
+                schema: { ...S, ...fields }, required: ['session_id', ...(spec.owner === 'track' ? ['track_id'] : [])],
+            },
+            {
+                name: `music_${one}_update`, handler: H, method: 'PUT',
+                description: `Changes ${kind === 'emotion-ranges' ? 'an emotion range' : `a ${one}`}: ${what.split(':')[0]}. Merged, not replaced, so one field can be corrected without restating the rest. A row that belongs to another session is not found.`,
+                path: itemPath, body: dropIds('session_id', idArg),
+                schema: { ...S, [idArg]: { type: 'string' }, ...fields }, required: ['session_id', idArg],
+            },
+            {
+                name: `music_${one}_delete`, handler: H, method: 'DELETE',
+                description: `Deletes ${kind === 'emotion-ranges' ? 'an emotion range' : `a ${one}`} from its session${kind === 'tracks' ? ', and the clips and automation on it' : ''}. Removes the arrangement row only; any asset it referenced stays registered.`,
+                path: itemPath, body: () => ({}), schema: { ...S, [idArg]: { type: 'string' } }, required: ['session_id', idArg],
+            },
+        );
+    }
+    return tools;
+}
+PRODUCTION_TOOLS.push(...musicSessionTools());
+
 const ROUTE_TOOLS = [
     {
         name: 'flow_list',

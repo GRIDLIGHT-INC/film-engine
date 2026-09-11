@@ -3875,7 +3875,28 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
-### The Session API Decides Nothing
+### The Score Session Over MCP Is Derived, Not Typed
+Twenty-nine tools (**299 tools**) put the score session in front of an agent:
+nine for the session and, for **every** child kind the HTTP route exposes,
+list / create / update / delete. The set is generated from the route's own
+`CHILD_KINDS` and the contracts' own vocabulary, so a kind added to the route
+arrives on MCP with its schema, and a schema cannot say something the database
+refuses: every enum is `VOCABULARY`'s list and every bound is `RANGES`'. Each
+table's fields come from its validator's own defaults rather than a second
+list. All twenty-nine dispatch **through** `handleMusicSessions` by the same
+in-process shim every route tool uses — nothing is reimplemented beside it, and
+no tool here calls a model, so `mcp-no-server-llm` stays green by construction.
+
+Three of the repo's standing rules shaped the set. A delete with no list or
+get is *blind* — an agent can remove only what it created in the same
+conversation — so every kind has a list. Every create is paired with its delete
+in the decision list. And the session entity is in the entity-route registry,
+so a verb the route dispatches and no tool reaches fails there rather than
+being noticed months later.
+
+Reads and the brief say **free**; mutations say what they write; drift
+promises it changes nothing and rebase says it is the explicit act.
+
 `routes/music-sessions.js` is the first consumer of the contracts and the
 brief, and it adds nothing of its own: a write is a validator's verdict from
 `lib/music-session.js`, a read is `readScoreSession`, drift is `sessionDrift`
@@ -4948,6 +4969,7 @@ node --test backend/tests/music-workstation-schema.test.js
 node --test backend/tests/music-session-contracts.test.js
 node --test backend/tests/music-context.test.js
 node --test backend/tests/music-sessions-routes.test.js
+node --test backend/tests/music-session-mcp.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
