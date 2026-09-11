@@ -4,7 +4,7 @@
 |------|-------|------|
 | SHIP-001 | DONE | ADR-007 records local FFmpeg as the sole conform executor (FFMPEG_PATH → system PATH → ffmpeg-static); `e2e-preflight.js` declares `assembly` as depending on `ffmpeg` and probes the runtime resolver via `checkConformDependency`; `tests/conform-contract.test.js` covers it. Full suite 4157/4157. |
 | SHIP-002 | DONE | `POST /projects/:id/conform` runs `runConform`: shots in the timeline's running order, best cut per shot, the project mix as master audio, written under DATA_DIR where `/film/video/:project/:file` serves it, registered as `video_final` + `metadata.kind: project_master` with measured duration and size, replacing the previous master. `conform_plan` / `conform_run` MCP tools. `tests/project-master.test.js` (8, file-and-row based, fails 5/8 against HEAD). Pure-tree full suite 4158/4158. |
-| SHIP-003 | TODO | SHIP-002 is done; unblocked 2026-09-10. |
+| SHIP-003 | DONE | `assembly` is project-scoped in `PIPELINE_STEPS`: a project run conforms the film ONCE after every shot; shot and scene runs skip it with a reason unless `include_project_steps`. `runStatus()` is the one rule for all three runners and a failed whole-film step makes the run `failed`. `CONFORM_STATES` classifies every conform/stitch state; only an encoder failure is retried, through the single `attemptStep` loop. Migration 103 stores `steps_skipped`. `tests/assembly-once.test.js` (7, set-based over project-scoped steps × 4 router-derived entry points × conform states; fails 6/7 against HEAD). Pure-tree full suite 4165/4165. |
 | SHIP-004 | TODO | SHIP-002 is done; unblocked 2026-09-10. |
 | SHIP-005 | TODO | SHIP-001 is done; unblocked 2026-09-10. |
 | SHIP-006 | TODO | SHIP-002 is done; unblocked 2026-09-10. |

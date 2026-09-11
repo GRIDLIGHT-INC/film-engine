@@ -17,7 +17,7 @@ const PIPELINE_STEPS = [
     { id: 'sfx', name: 'Sound Effects', depends: [], scope: 'shot', handler: 'music-gen' },
     { id: 'ambient', name: 'Ambient Audio', depends: [], scope: 'scene', handler: 'music-gen' },
     { id: 'post', name: 'Post-Production', depends: ['lipsync'], scope: 'shot', handler: 'post-production' },
-    { id: 'assembly', name: 'Final Assembly', depends: ['post', 'music', 'sfx', 'ambient'], scope: 'shot', handler: 'nle-export' },
+    { id: 'assembly', name: 'Final Assembly', depends: ['post', 'music', 'sfx', 'ambient'], scope: 'project', handler: 'conform' },
 ];
 
 const STEP_IDS = PIPELINE_STEPS.map(s => s.id);

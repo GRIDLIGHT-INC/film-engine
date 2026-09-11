@@ -282,7 +282,10 @@ async function runConform(projectId, options) {
         fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
     });
     if (!joined.ok) {
-        return { ok: false, state: joined.state === 'no_executor' ? 'no_executor' : 'failed', plan, error: joined.error };
+        // The join's own state travels through, not a flattened 'failed': the
+        // orchestrator decides whether a second attempt could change anything
+        // from the state, and a missing clip does not appear on the retry.
+        return { ok: false, state: joined.state, plan, error: joined.error };
     }
 
     // Measured from the file, never copied from the plan: a master registered

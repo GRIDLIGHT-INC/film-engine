@@ -132,7 +132,12 @@ describe('Pipeline end-to-end (scene → final, mock gateway)', () => {
         //
         // The test now pins the DISTINCTION rather than the old happy answer:
         // whatever assembly does, it must never claim a film it did not make.
-        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: {} });
+        //
+        // include_project_steps because assembly is project-scoped: a bare shot
+        // run skips the whole-film step with a reason (proven in
+        // assembly-once.test.js), and what is proven here is that when it DOES
+        // run it is honest about the outcome.
+        const res = await request(`/film/shots/${shotId}/pipeline/run`, { method: 'POST', body: { include_project_steps: true } });
         const made = (res.data.steps_completed || []).includes('assembly');
         const failed = (res.data.steps_failed || []).includes('assembly');
         assert.ok(made !== failed, 'assembly is both completed and failed, or neither');

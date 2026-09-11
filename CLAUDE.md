@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (99 migrations)
+│   │   └── migrations/     # SQL migration files (100 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -3870,6 +3870,56 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Film Is Made Once, at the End
+`assembly` stopped returning `use export endpoints to finalize` and started
+calling the conform. That closed the lie in the step and opened three more one
+level up, all from one fact: the registry declared assembly **`scope: 'shot'`**,
+and the runner does what the registry says.
+
+A project run conformed the **whole film once per shot**. On a fresh run the
+first N−1 attempts necessarily refused — later shots had no footage yet — each
+was retried three times with backoff, and the run ended `completed_with_errors`
+even when the last conform made the film. A single-shot run conformed the whole
+film too, and refused, so every shot run during production reported errors
+about a film nobody had asked for yet: the warning you learn to ignore. And a
+refusal was retried as if it were a provider hiccup, when the conform is local
+and deterministic and the same files give the same answer.
+
+**The rule is the one scene scope already established, one rung up.** A step
+runs by default on runs *at or above* its scope, once, and is skipped **with a
+reason** below it unless the caller opts in — `include_project_steps`, the
+sibling of `include_scene_steps`. Assembly's product is the film, so its scope
+is the **project**: a project run makes it once, after every shot; a shot or
+scene run says *"belongs to the whole film, not this scene — pass
+include_project_steps to make it here"*. `PROJECT_SCOPED` is derived from
+`PIPELINE_STEPS`, so a second whole-film step arrives covered.
+
+**A run without a film is `failed`, not complete.** `runStatus()` is the one
+rule, read by all three runners — the JSON shot runner, the SSE shot runner and
+the scene/project runner each decided this inline, which is how the stream once
+said `complete` while the JSON runner said `completed_with_errors` for the same
+work. A failed shot step leaves a film with a hole in it (`completed_with_errors`);
+a failed whole-film step leaves no film, which is the stance `persistStepResult`
+already takes for a step that generated and could not save.
+
+**Every outcome the conform can return is classified.** `CONFORM_STATES` says
+whether a second attempt could change it, and only an encoder crash can; a
+missing shot is still missing five seconds later. `runConform` now passes the
+stitcher's own state through rather than flattening it to `failed`, because the
+verdict is read from the state. `attemptStep` is the **only** retry loop, so the
+no-retry rule holds wherever a step runs. And migration 103 adds
+`steps_skipped` to the run row: the scene and project runners computed the
+skipped list and stored nothing, so the one thing that distinguishes *did not
+run, on purpose, for this reason* from *nothing happened* was thrown away the
+moment it was known.
+
+`tests/assembly-once.test.js` is set-based three ways, because each failure was
+partial: over the project-scoped steps from the registry, over the four run
+entry points derived from the router's own dispatch, and over every `state:`
+the conform and the stitcher can return. Three of its checks asserted over an
+empty set on the first run and passed — the registry had no project-scoped
+step yet — so each now refuses to run over nothing.
+
 ### Character Reference Sheets
 Generates front/side/back character views via `POST /image` with pose-specific prompts. Stored at `data/refsheets/{project_id}/{character_name}_{view}.png`. Registered as `character_sheet` assets.
 
@@ -4166,7 +4216,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (99 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (100 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -4566,6 +4616,7 @@ node --test backend/tests/backup.test.js
 node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/conform-contract.test.js
 node --test backend/tests/project-master.test.js
+node --test backend/tests/assembly-once.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js
