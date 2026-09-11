@@ -60,6 +60,11 @@ const HEAD_STAGES = [
     { id: 'breakdown', name: 'AI screenplay breakdown', capability: 'llm', after: 'script' },
 ];
 
+/** External runtime dependencies for otherwise-local pipeline steps. */
+const STEP_EXTERNAL_DEPENDENCY = {
+    assembly: 'ffmpeg',
+};
+
 /**
  * The complete ordered stage list.
  *
@@ -70,6 +75,7 @@ function stages() {
         id: step.id,
         name: step.name,
         capability: STEP_CAPABILITY[step.id] || null,   // assembly has none — local
+        externalDependency: STEP_EXTERNAL_DEPENDENCY[step.id] || null,
         scope: step.scope,
         depends: step.depends,
     }));
@@ -82,6 +88,37 @@ function stages() {
         ...generation,
         ...TAIL_STAGES,
     ];
+}
+
+/** Probe the exact encoder resolver used by conform execution. Never throws. */
+function checkConformDependency(resolve = () => require('./ffmpeg').resolveFfmpeg()) {
+    let encoder;
+    try {
+        encoder = resolve();
+    } catch (err) {
+        return {
+            verdict: 'blocked',
+            reasons: [`FFmpeg probe failed: ${err.message}`],
+            fixes: ['Set FFMPEG_PATH, install FFmpeg on the system PATH, or reinstall ffmpeg-static.'],
+        };
+    }
+
+    if (!encoder || !encoder.available) {
+        return {
+            verdict: 'blocked',
+            reasons: [(encoder && encoder.reason) || 'No encoder available.'],
+            fixes: ['Set FFMPEG_PATH, install FFmpeg on the system PATH, or reinstall ffmpeg-static.'],
+        };
+    }
+
+    const where = encoder.source === 'env' ? 'FFMPEG_PATH'
+        : encoder.source === 'bundled' ? 'the bundled ffmpeg-static binary'
+            : 'the system PATH';
+    return {
+        verdict: 'go',
+        reasons: [`FFmpeg is available from ${where}.`],
+        fixes: [],
+    };
 }
 
 /** Can we open a TCP connection and get an HTTP answer, any answer? */
@@ -251,6 +288,11 @@ async function preflight(opts) {
                 row.reasons.push(`${stage.endpoint} is served by Gridlight at ${GRIDLIGHT_URL}, which is not answering (${cache.gridlight.reason})`);
                 row.fixes.push('start Gridlight');
             }
+        } else if (stage.externalDependency === 'ffmpeg') {
+            const dependency = checkConformDependency();
+            row.verdict = dependency.verdict;
+            row.reasons.push(...dependency.reasons);
+            row.fixes.push(...dependency.fixes);
         }
 
         results.push(row);
@@ -271,4 +313,8 @@ async function preflight(opts) {
     };
 }
 
-module.exports = { preflight, stages, checkCapability, reachable, HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, GRIDLIGHT_URL };
+module.exports = {
+    preflight, stages, checkCapability, checkConformDependency, reachable,
+    HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, STEP_EXTERNAL_DEPENDENCY,
+    GRIDLIGHT_URL,
+};

@@ -596,7 +596,7 @@ film-engine/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
-│   └── adr/                # Architecture decision records (6 ADRs)
+│   └── adr/                # Architecture decision records (7 ADRs)
 ├── src/
 │   ├── index.html          # Frontend SPA
 │   └── app.json            # App config
@@ -4563,6 +4563,7 @@ node --test backend/tests/project-presets.test.js
 node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
 node --test backend/tests/mcp-tools.test.js
+node --test backend/tests/conform-contract.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js
