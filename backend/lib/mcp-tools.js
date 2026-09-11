@@ -3560,6 +3560,7 @@ const musicContracts = require('./music-session');
 const musicStems = require('./music-stems');
 const musicRenderer = require('./music-renderer');
 const musicSeparation = require('./music-separation');
+const musicGeneration = require('./music-generation');
 
 const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
 const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
@@ -3789,6 +3790,55 @@ function musicSessionTools() {
             path: a => `/film/music-sessions/${a.session_id}/separations/${a.operation_id}/retry`, body: dropIds('session_id', 'operation_id'),
             schema: { ...S, operation_id: { type: 'string' }, wait: { type: 'boolean', description: 'Block until the retry has finished.' } },
             required: ['session_id', 'operation_id'],
+        },
+        {
+            name: 'music_generate_plan', handler: H, method: 'POST',
+            description: 'Free — spends nothing, writes nothing. What a generation on a score session WOULD do, for any of the five generating workflows: the project\'s music provider and model (or that provider\'s own reason it cannot, e.g. no native parts or no inpainting), the length, how many outputs and of what kind (a whole cue, native parts, an inpainted range — never mistaken for separated stems), the context sent (session tempo and meter, your key, the ACCEPTED emotional arc — never a proposal — and the arc as composition sections where the provider takes them), the cost hint, and the take behaviour. Refuses EMOTION_NOT_ACCEPTED when no arc is accepted unless ignore_emotion. Read it before music_generate.',
+            path: a => `/film/music-sessions/${a.session_id}/generate/plan`, body: dropIds('session_id'),
+            schema: { ...S,
+                workflow: { type: 'string', enum: musicGeneration.GENERATE_WORKFLOWS.slice(), description: 'music_compose (a whole cue), music_parts (the provider\'s native parts), music_reference (conditioned on an audio or melody reference), music_video (conditioned on the picture), music_inpaint (a range of an existing clip regenerated in context).' },
+                prompt: { type: 'string', description: 'The musical direction, in words. The session\'s tempo, meter, the key you give and the ACCEPTED emotional arc are added.' },
+                duration_ms: { type: 'integer', minimum: 1, description: 'Length to make; defaults to the picture the session covers. Not used by inpaint.' },
+                key: { type: 'string', description: 'The key, e.g. "D minor".' },
+                tempo_bpm: { type: 'number', description: 'Overrides the session\'s opening tempo.' },
+                model: { type: 'string', description: 'One of the provider\'s music models.' },
+                track_id: { type: 'string', description: 'Land the take on this track (as a candidate beside what it holds); a new track when omitted.' },
+                start_ms: { type: 'integer', minimum: 0, description: 'Where the take starts on the session clock. Default 0.' },
+                parts: { type: 'array', description: 'music_parts: the parts wanted, by role (e.g. ["strings","drums"]).' },
+                reference_asset_id: { type: 'string', description: 'music_reference: the audio asset to condition on.' },
+                reference_kind: { type: 'string', description: 'music_reference: audio or melody.' },
+                video_asset_id: { type: 'string', description: 'music_video: the clip or the conformed film.' },
+                clip_id: { type: 'string', description: 'music_inpaint: the clip whose range is regenerated; it is kept.' },
+                range: { type: 'object', description: 'music_inpaint: { start_ms, end_ms } measured inside the clip.' },
+                ignore_emotion: { type: 'boolean', description: 'Generate with no accepted arc. Without it an unaccepted arc refuses (EMOTION_NOT_ACCEPTED).' } },
+            required: ['session_id', 'workflow'],
+        },
+        {
+            name: 'music_generate', handler: H, method: 'POST',
+            description: 'COSTS MONEY — generates music on a score session with the project\'s provider: a whole cue, native parts, a reference- or picture-conditioned cue, or an inpainted range. Every output is a NEW file, asset and clip — a candidate take beside what a track already holds (selected only on a new track), labelled by kind; nothing on the session is replaced and every earlier take is kept. The session\'s tempo, meter, your key and the accepted emotional arc travel with the request. A provider error or bytes that are not audio leave a failed operation and nothing registered. Read music_generate_plan first, and ask before spending.',
+            path: a => `/film/music-sessions/${a.session_id}/generate`, body: dropIds('session_id'),
+            schema: { ...S,
+                workflow: { type: 'string', enum: musicGeneration.GENERATE_WORKFLOWS.slice(), description: 'music_compose (a whole cue), music_parts (the provider\'s native parts), music_reference (conditioned on an audio or melody reference), music_video (conditioned on the picture), music_inpaint (a range of an existing clip regenerated in context).' },
+                prompt: { type: 'string', description: 'The musical direction, in words. The session\'s tempo, meter, the key you give and the ACCEPTED emotional arc are added.' },
+                duration_ms: { type: 'integer', minimum: 1, description: 'Length to make; defaults to the picture the session covers. Not used by inpaint.' },
+                key: { type: 'string', description: 'The key, e.g. "D minor".' },
+                tempo_bpm: { type: 'number', description: 'Overrides the session\'s opening tempo.' },
+                model: { type: 'string', description: 'One of the provider\'s music models.' },
+                track_id: { type: 'string', description: 'Land the take on this track (as a candidate beside what it holds); a new track when omitted.' },
+                start_ms: { type: 'integer', minimum: 0, description: 'Where the take starts on the session clock. Default 0.' },
+                parts: { type: 'array', description: 'music_parts: the parts wanted, by role (e.g. ["strings","drums"]).' },
+                reference_asset_id: { type: 'string', description: 'music_reference: the audio asset to condition on.' },
+                reference_kind: { type: 'string', description: 'music_reference: audio or melody.' },
+                video_asset_id: { type: 'string', description: 'music_video: the clip or the conformed film.' },
+                clip_id: { type: 'string', description: 'music_inpaint: the clip whose range is regenerated; it is kept.' },
+                range: { type: 'object', description: 'music_inpaint: { start_ms, end_ms } measured inside the clip.' },
+                ignore_emotion: { type: 'boolean', description: 'Generate with no accepted arc. Without it an unaccepted arc refuses (EMOTION_NOT_ACCEPTED).' } },
+            required: ['session_id', 'workflow'],
+        },
+        {
+            name: 'music_generation_list', handler: H, method: 'GET',
+            description: 'Free. Every generation on a session, newest first: the workflow, provider and model, the context that was sent, each output with its asset, track, clip and take status, or the failure.',
+            path: a => `/film/music-sessions/${a.session_id}/generations`, schema: S, required: ['session_id'],
         },
         {
             name: 'music_bounce_list', handler: H, method: 'GET',

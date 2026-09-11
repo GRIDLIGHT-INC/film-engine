@@ -116,6 +116,7 @@ film-engine/
 │   │   ├── music-capabilities.js # Six music workflows; every provider answers for each, and "no" has a reason
 │   │   ├── music-emotion.js      # The model proposes the arc, a person accepts it, nothing paid rests on a proposal
 │   │   ├── music-separation.js   # A recording split into stems: a derivative, aligned under its source, from an untrusted ZIP
+│   │   ├── music-generation.js   # Compose, parts, reference, picture, inpaint: every output a new take, nothing replaced
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -604,6 +605,7 @@ film-engine/
 │       ├── music-capabilities.test.js   # Six workflows, every music adapter answers for each, and a refusal names the reason
 │       ├── music-emotion-proposals.test.js # Every bound refused out of range, coverage validated, and a proposal reaches nothing until accepted
 │       ├── music-separation.test.js # Two and six stems land aligned with lineage; a bad ZIP or a provider error registers nothing
+│       ├── music-generation.test.js # Five workflows: the contract decides, no unaccepted arc, every output a new take, parts are not stems
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -3935,6 +3937,52 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### Five Ways to Make Music, and a Take Is Added, Never Swapped In
+`lib/music-generation.js` (MUS-012) is one free plan and one runner for the
+five generating workflows of the `music` capability: a whole cue, the
+provider's native parts, a cue conditioned on an audio or melody reference, a
+cue conditioned on the picture, and a range of an existing clip regenerated in
+context. Separation is the sixth and stays in its own module, because it is a
+derivative of a recording rather than a new performance.
+
+**The provider's own contract decides.** A workflow the project's provider
+does not declare available is refused with that provider's reason and never
+attempted. Today every registered provider serves composition and nothing
+else, and the test holds each workflow to being planned exactly when the
+contract says available, so the other four arrive the day a provider declares
+them, with nothing to rewire.
+
+**Nothing is generated from an arc nobody accepted.** The accepted emotional
+arc is the context and a proposal never reaches a request, which the test
+checks by planting a proposal with a label that must appear in no payload. With
+no accepted arc the plan refuses `EMOTION_NOT_ACCEPTED`; `ignore_emotion` goes
+without one and the plan says so in its warnings.
+
+**The session's context travels.** The opening tempo and meter from the
+session's tempo map, the key the caller states, the arc as time ranges, and —
+where the provider declares section limits, as ElevenLabs does — the arc as
+the composition plan's sections, so the cue changes where the director said the
+feeling does. A range under the provider's minimum folds into its neighbour, a
+gap is held as its own section, and the sections always sum to the length.
+
+**A take is added.** Every output is a new file, asset and clip. On a track that
+already holds something the new clip is a **candidate** in that track's take
+group, so what was heard is still what is heard until a person selects
+otherwise; on a new track it is selected, since there is nothing to replace. An
+inpainted range lands on the source track over exactly the range it rewrites,
+with the range translated into the source file through the clip's offset. The
+source file, asset and clip placement are never touched. **A native part is not
+a separated stem**: `source_kind` and `metadata.kind` come from the registry's
+own output taxonomy. A provider error, bytes that are not audio, or a failed
+registration leaves a failed `generate` operation and nothing else.
+
+Served at `POST /film/music-sessions/:id/generate/plan` (free; a POST only
+because its input is structured), `POST …/generate` and
+`GET …/generations[/:opId]`, and as `music_generate_plan`, `music_generate`
+and `music_generation_list` (**316 tools**). `tests/music-generation.test.js`
+is set-based over the generating workflows derived from the registry, against a
+fake provider with a full contract and against every real one.
+
 ### Separating a Recording Makes a Derivative, and the Recording Is Kept
 A clip on a score session can be split into two stems (vocals, instrumental)
 or six (vocals, drums, bass, guitar, piano, other) by ElevenLabs — the only two
@@ -5330,6 +5378,7 @@ node --test backend/tests/music-bounce.test.js
 node --test backend/tests/music-capabilities.test.js
 node --test backend/tests/music-emotion-proposals.test.js
 node --test backend/tests/music-separation.test.js
+node --test backend/tests/music-generation.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

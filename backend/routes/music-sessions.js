@@ -22,6 +22,9 @@
  *   POST   /film/music-sessions/:id/separations          separate a clip into 2 or 6 stems (SPENDS); answers at once with a running operation
  *   GET    /film/music-sessions/:id/separations[/:opId]  every separation of the session, or one, with its stems or its failure
  *   POST   /film/music-sessions/:id/separations/:opId/retry  a failed separation again, as a new operation naming the one it retries
+ *   POST   /film/music-sessions/:id/generate/plan        FREE: compose, parts, reference, video or inpaint — provider, length, outputs, context, cost, take behaviour
+ *   POST   /film/music-sessions/:id/generate             generate (SPENDS): new assets and new clips as candidate takes, nothing replaced
+ *   GET    /film/music-sessions/:id/generations[/:opId]  every generation of the session, with its outputs or its failure
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -46,6 +49,7 @@ const stems = require('../lib/music-stems');
 const renderer = require('../lib/music-renderer');
 const emotion = require('../lib/music-emotion');
 const separation = require('../lib/music-separation');
+const generation = require('../lib/music-generation');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -371,6 +375,29 @@ async function handleMusicSessions(req, res, urlParts, query) {
             if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid id' });
             const one = renderer.getBounce(db, id, urlParts[4]);
             return one ? json(res, 200, one) : json(res, 404, { error: 'Bounce not found' });
+        }
+        if (sub === 'generate') {
+            // The generation is the whole rule (lib/music-generation.js). The
+            // plan is a POST only because its input is structured (a range, a
+            // list of parts); it writes nothing and spends nothing.
+            const b = req.body || {};
+            const { workflow, ...input } = b;
+            if (urlParts[4] === 'plan' && req.method === 'POST') {
+                const plan = generation.planGeneration(db, id, workflow, input);
+                return json(res, plan.ok ? 200 : (plan.status || 400), generation.publicPlan(plan));
+            }
+            if (!urlParts[4] && req.method === 'POST') {
+                const out = await generation.generate(db, id, workflow, input);
+                if (out.ok) return json(res, 201, out);
+                return json(res, typeof out.status === 'number' ? out.status : (out.http_status || 502), generation.publicPlan(out));
+            }
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        if (sub === 'generations' && req.method === 'GET') {
+            if (!urlParts[4]) return json(res, 200, { session_id: id, generations: generation.listGenerations(db, id) });
+            if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid generation id' });
+            const one = generation.getGeneration(db, id, urlParts[4]);
+            return one ? json(res, 200, one) : json(res, 404, { error: 'Generation not found' });
         }
         if (sub === 'separations') {
             // The separation is the whole rule (lib/music-separation.js). A

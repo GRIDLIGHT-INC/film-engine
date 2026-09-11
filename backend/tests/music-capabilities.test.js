@@ -207,7 +207,7 @@ test('every place that resolves the music capability is in the call-site registr
     assert.ok(found.length >= 3, `only ${found.length} music call sites found — the scan is broken`);
     const registered = caps.MUSIC_CALL_SITES.map(c => `${c.file}:${c.fn}`);
     assert.deepStrictEqual([...new Set(found)].sort(), registered.slice().sort(), 'the call-site registry and the code disagree about who resolves the music capability');
-    for (const c of caps.MUSIC_CALL_SITES) assert.ok(caps.WORKFLOWS[c.workflow], `${c.file}:${c.fn} performs '${c.workflow}', which is not a workflow`);
+    for (const c of caps.MUSIC_CALL_SITES) for (const wf of (c.workflows || [c.workflow])) assert.ok(caps.WORKFLOWS[wf], `${c.file}:${c.fn} performs '${wf}', which is not a workflow`);
 });
 
 // ── Served, and reachable ──────────────────────────────────────────────────

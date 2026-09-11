@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**313 tools, 69 families.** Everything the app can do, you can ask for in a
+**316 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -595,7 +595,8 @@ asset on the scene and cost money to make.
 `music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete` ·
 `music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities` ·
 `music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept` ·
-`music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry`
+`music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry` ·
+`music_generate_plan` · `music_generate` · `music_generation_list`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -645,6 +646,15 @@ stems grouped per instrument, family or production bus — registers every
 output with its render parameters, keeps every earlier version, and refuses an
 unchanged session unless forced. `music_bounce_list` lists every version with
 its files. None of the three reaches a provider.
+
+**Generating on a session adds takes and never replaces one.**
+`music_generate_plan` is free and answers for any of the five generating
+workflows — compose, native parts, reference, picture, inpaint — with the
+provider's own reason when it cannot, the length, the outputs and their kind,
+the context sent (tempo, meter, key and the accepted arc, never a proposal) and
+the cost hint. `music_generate` spends: each output is a new asset and clip, a
+candidate take beside what a track already holds. It refuses when no arc is
+accepted unless you say to go without one (the ignore_emotion argument). `music_generation_list` reads them.
 
 **Separating a recording costs money and never touches the recording.**
 `music_separate_plan` is free: the provider, the variation (two stems —
