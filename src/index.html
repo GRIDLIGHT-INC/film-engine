@@ -1517,6 +1517,66 @@
         .snd-tile { position:relative; height:62px; display:flex; align-items:center;
                     justify-content:center; background:rgba(0,0,0,.25); }
         .snd-wave { width:100%; height:100%; display:block; color:var(--gl-accent,#818cf8); opacity:.85; }
+        /* ── Music workstation (MUS-007) ─────────────────────────────── */
+        .mw-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
+        .mw-bar .form-control { width:auto; }
+        .mw-status { display:inline-flex; align-items:center; gap:6px; }
+        .mw-save { margin-left:auto; }
+        .mw-drift { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 12px; margin-bottom:10px; border:1px solid #f59e0b; border-radius:8px; background:rgba(245,158,11,.08); }
+        .mw-warn { padding:8px 12px; margin-bottom:10px; border:1px solid var(--gl-border,rgba(255,255,255,.12)); border-radius:8px; color:var(--gl-text-secondary); }
+        .mw-grid { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; align-items:start; }
+        @media (max-width:900px) { .mw-grid { grid-template-columns:minmax(0,1fr); } }
+        .mw-main { min-width:0; }
+        .mw-transport { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+        .mw-transport .mw-spacer { flex:1; }
+        .mw-clock { font-family:var(--gl-font-mono, monospace); font-size:13px; min-width:64px; }
+        .mw-scroll { overflow-x:auto; overflow-y:hidden; border:1px solid var(--gl-border,rgba(255,255,255,.1)); border-radius:8px; background:var(--gl-bg-code,#0d0d14); }
+        .mw-timeline { position:relative; min-width:100%; }
+        .mw-playhead { position:absolute; top:0; bottom:0; width:2px; background:#f43f5e; pointer-events:none; z-index:5; }
+        .mw-ruler { position:relative; height:58px; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.1)); cursor:pointer; user-select:none; }
+        .mw-ruler-ticks { position:relative; height:16px; font-size:10px; color:var(--gl-text-muted); }
+        .mw-tick { position:absolute; top:0; border-left:1px solid rgba(255,255,255,.15); padding-left:3px; white-space:nowrap; }
+        .mw-ruler-shots { position:relative; height:20px; }
+        .mw-shot-band { position:absolute; top:2px; height:16px; line-height:16px; font-size:10px; padding:0 4px; overflow:hidden; white-space:nowrap; border-left:1px solid rgba(255,255,255,.35); background:rgba(99,102,241,.18); color:var(--gl-text-secondary); box-sizing:border-box; }
+        .mw-ruler-markers { position:relative; height:20px; }
+        .mw-marker { position:absolute; top:0; transform:translateX(-50%); font-size:11px; color:#fbbf24; cursor:pointer; white-space:nowrap; }
+        .mw-marker.selected { color:#fff; }
+        .mw-marker-shot_boundary { color:#94a3b8; }
+        .mw-marker-label { font-size:9px; margin-left:2px; color:var(--gl-text-muted); }
+        .mw-lane { position:relative; display:flex; border-bottom:1px solid var(--gl-border,rgba(255,255,255,.08)); border-left:3px solid transparent; }
+        .mw-lane.selected { background:rgba(99,102,241,.08); }
+        .mw-lane-head { position:sticky; left:0; z-index:4; width:200px; min-width:200px; padding:6px 8px; box-sizing:border-box; background:var(--gl-bg-surface,#1a1a2e); border-right:1px solid var(--gl-border,rgba(255,255,255,.1)); cursor:pointer; display:flex; flex-direction:column; gap:2px; }
+        .mw-lane-head b { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mw-mini { display:flex; align-items:center; gap:4px; }
+        .mw-mini input[type=range] { width:52px; }
+        .mw-toggle { width:20px; height:18px; font-size:10px; line-height:16px; padding:0; border:1px solid var(--gl-border,rgba(255,255,255,.2)); border-radius:4px; background:transparent; color:var(--gl-text-secondary); cursor:pointer; }
+        .mw-toggle.on { background:#f59e0b; color:#111; border-color:#f59e0b; }
+        .mw-lane-body { position:relative; flex:1; height:64px; }
+        .mw-emotion .mw-lane-body { height:34px; }
+        .mw-range { position:absolute; top:6px; height:22px; line-height:22px; font-size:11px; padding:0 6px; overflow:hidden; white-space:nowrap; border-radius:4px; cursor:pointer; color:#fff; box-sizing:border-box; }
+        .mw-range.proposed { border:1px dashed rgba(255,255,255,.7); }
+        .mw-range.selected { outline:2px solid #fff; }
+        .mw-clip { position:absolute; top:6px; height:52px; border-radius:6px; background:rgba(99,102,241,.25); border:1px solid rgba(129,140,248,.6); overflow:hidden; cursor:grab; box-sizing:border-box; user-select:none; }
+        .mw-clip.selected { border-color:#fff; box-shadow:0 0 0 1px #fff inset; }
+        .mw-clip.take-candidate { opacity:.55; border-style:dashed; }
+        .mw-clip.take-rejected { opacity:.3; }
+        .mw-clip .snd-wave { position:absolute; inset:0; pointer-events:none; }
+        .mw-clip-name { position:absolute; left:8px; top:2px; font-size:10px; color:#fff; text-shadow:0 1px 2px #000; pointer-events:none; }
+        .mw-clip-name em { font-style:normal; color:#fbbf24; }
+        .mw-clip-handle { position:absolute; top:0; bottom:0; width:7px; cursor:ew-resize; z-index:2; }
+        .mw-clip-handle.left { left:0; } .mw-clip-handle.right { right:0; }
+        .mw-clip-handle:hover { background:rgba(255,255,255,.25); }
+        .mw-side { min-width:0; }
+        .mw-panel { border:1px solid var(--gl-border,rgba(255,255,255,.1)); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--gl-bg-surface,#1a1a2e); }
+        .mw-panel h4 { margin:0 0 8px; }
+        .mw-panel details { margin-top:8px; } .mw-panel summary { cursor:pointer; font-size:12px; color:var(--gl-text-secondary); }
+        .mw-kv { display:flex; gap:8px; font-size:12px; margin-bottom:4px; } .mw-kv span:first-child { min-width:64px; }
+        .mw-shot { padding:4px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:12px; }
+        .mw-passage pre { white-space:pre-wrap; font-size:11px; margin:4px 0 8px; color:var(--gl-text-secondary); }
+        .mw-field { display:block; margin-bottom:8px; font-size:12px; }
+        .mw-field-name { display:block; color:var(--gl-text-muted); margin-bottom:2px; text-transform:capitalize; }
+        .mw-field .form-control { width:100%; }
+        .mw-sub { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:12px; }
         .snd-play { position:absolute; inset:0; margin:auto; width:30px; height:30px; border-radius:50%;
                     border:0; cursor:pointer; background:rgba(0,0,0,.55); color:#fff; font-size:12px;
                     line-height:1; display:flex; align-items:center; justify-content:center; }
@@ -5054,6 +5114,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <button class="nav-item" data-page="musiccues" onclick="navigateTo('musiccues')" data-tooltip="Score, SFX, and ambient audio cues tied to scenes" data-tooltip-pos="right">
                     <span class="nav-icon">&#127925;</span> Music Cues
                 </button>
+                <button class="nav-item" data-page="musicws" onclick="navigateTo('musicws')" data-tooltip="The score session: tracks, clips, emotion lane and markers on one ruler, against the picture" data-tooltip-pos="right">
+                    <span class="nav-icon">&#127932;</span> Score
+                </button>
                 <div class="sidebar-divider"></div>
                 <div class="nav-section">Workflow</div>
                 <button class="nav-item" data-page="milestones" onclick="navigateTo('milestones')" data-tooltip="Production timeline tracking with target and completion dates" data-tooltip-pos="right">
@@ -5725,6 +5788,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 11. MUSIC CUES ───────────────────────────────────── -->
+        <div class="page" id="page-musicws">
+            <div class="flex-between mb-16">
+                <h2>Score</h2>
+                <span class="text-sm text-muted">One ruler for the picture, the emotion and the music. Everything here saves as you change it.</span>
+            </div>
+            <div id="mwRoot"><p class="text-muted">Loading the score session...</p></div>
+        </div>
         <div class="page" id="page-musiccues">
             <div class="flex-between mb-16">
                 <h2>Music Cues</h2>
@@ -13061,6 +13131,21 @@ THREE.GLTFLoader = GLTFLoader;
         pro: 'Composer + sound design + re-recording mixer'
       },
 
+      musicws: {
+        title: 'Score', icon: '&#127932;', group: 'Media', stage: 'produce', order: 14.5,
+        tooltip: 'The score session: tracks, clips, emotion lane and markers on one ruler against the picture',
+        purpose: 'The native multitrack editor. A score session is written against an ordered picture sequence; its tracks, clips, emotion ranges and hit markers share one ruler and one playhead, and every change autosaves.',
+        does: [
+          'Pick or create a score session for a sequence or a scene',
+          'Read the brief: shots, screenplay passages, cast, look, cues, accepted emotion',
+          'Import stems aligned at the playhead; move, trim and loop clips; choose takes',
+          'Mute, solo, gain, pan and fades, heard in the browser without spending anything',
+          'See when the script or the picture moved on, and rebase deliberately'
+        ],
+        needs: ['A sequence or a scene. Stems or generated audio to place.'],
+        next: ['exportpage'],
+        pro: 'Composer + music editor'
+      },
       musiccues: {
         title: 'Music Cues', icon: '&#127925;', group: 'Media', stage: 'produce', order: 14,
         tooltip: 'The cue sheet: every score, SFX, and ambient cue tied to its scene',
@@ -19497,6 +19582,7 @@ THREE.GLTFLoader = GLTFLoader;
             props: loadProps,
             assets: loadAssets,
             musiccues: loadMusicCues,
+            musicws: loadMusicWorkstation,
             milestones: loadMilestones,
             notes: loadNotesPage,
             renderhistory: loadRenderPage,
@@ -35680,6 +35766,734 @@ ${fountainText.slice(0, 50000)}`;
      * invented — a card that guesses shows a confident blank where a fact
      * should be, and `film_assets` can already answer all five.
      */
+    // ══════════════════════════════════════════════════════════════
+    // MUSIC WORKSTATION (MUS-007) — the native multitrack editor
+    //
+    // The score session had a route and thirty tools and no page, so every
+    // track, clip, range and marker could be written by an agent and by curl
+    // and by nobody at a keyboard. This is that keyboard.
+    //
+    // ONE RULE FOR EVERY CONTROL: it carries data-mw="<table>:<field>" and
+    // its change reaches mwSave, which PUTs the row through the session route
+    // — the same validator the agent's write meets, so a refusal names the
+    // field here exactly as it does there. Nothing is decided on the page:
+    // the vocabulary, the ranges and the lifecycle table are SERVED
+    // (/music-sessions/vocabulary) rather than typed a second time, which is
+    // how a picker came to offer prop categories the CHECK refused.
+    //
+    // PLAYBACK SPENDS NOTHING. Clips are decoded once into an AudioContext and
+    // scheduled from the playhead with their own source offset, gain, pan,
+    // fades and loop policy — mute and solo decide what is heard, the way the
+    // bounce will decide it. The waveform on each clip is the sound library's
+    // own painter; a second painter is how two surfaces come to disagree
+    // about what a file looks like.
+    //
+    // AUTOSAVE IS PER ROW, DEBOUNCED, AND SAYS WHAT HAPPENED. A slider fires
+    // dozens of changes a second; each row saves once it settles, and the
+    // status line says Saving / Saved / Save failed with the reason — a save
+    // that fails silently is a director who believes their mix is kept.
+    // ══════════════════════════════════════════════════════════════
+    const MW = {
+        sessions: [], session: null, model: null, brief: null, drift: null, vocab: null,
+        selection: null, playheadMs: 0, playing: false, pxPerSec: 40,
+        audio: null, buffers: {}, timers: {}, pending: {}, saveNote: '',
+        raf: null, ctxStart: 0, msStart: 0, drag: null, sources: [],
+    };
+    const MW_KIND_TABLE = { tracks: 'film_music_tracks', clips: 'film_music_clips', markers: 'film_music_markers',
+        'emotion-ranges': 'film_music_emotion_ranges', automation: 'film_music_automation', session: 'film_music_sessions' };
+    const MW_LANE_H = 64;
+
+    async function loadMusicWorkstation() {
+        const root = document.getElementById('mwRoot');
+        if (!root) return;
+        if (!state.currentProject) { root.innerHTML = '<p class="text-muted">Open a project to score it.</p>'; return; }
+        setStatus('Loading score sessions...');
+        try {
+            if (!MW.vocab) MW.vocab = await api('/music-sessions/vocabulary');
+            const list = await api('/projects/' + state.currentProject.id + '/music-sessions');
+            MW.sessions = list.sessions || [];
+            const keep = MW.session && MW.sessions.find(s => s.id === MW.session.id);
+            const pick = keep ? keep.id : (MW.sessions[0] && MW.sessions[0].id);
+            if (pick) await mwLoadSession(pick);
+            else { MW.session = null; MW.model = null; mwRender(); }
+            setStatus('Ready');
+        } catch (e) {
+            root.innerHTML = `<p class="text-muted">The score sessions could not be loaded: ${esc(e.message)}</p>`;
+            setStatus('Error: ' + e.message);
+        }
+    }
+
+    /** Read one session whole: the model, its brief and its drift, then draw it. */
+    async function mwLoadSession(id) {
+        const root = document.getElementById('mwRoot');
+        try {
+            const [model, brief, drift] = await Promise.all([
+                api('/music-sessions/' + id),
+                api('/music-sessions/' + id + '/brief').catch(e => ({ ok: false, brief: null, warnings: [e.message] })),
+                api('/music-sessions/' + id + '/drift').catch(e => ({ ok: false, tracked: false, drifted: false, error: e.message })),
+            ]);
+            MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift;
+            if (MW.selection && !mwFindRow(MW.selection.kind, MW.selection.id)) MW.selection = null;
+            mwRender();
+        } catch (e) {
+            if (root) root.innerHTML = `<p class="text-muted">This session could not be loaded — the rows are still there, this is a display fault: ${esc(e.message)}</p>`;
+        }
+    }
+
+    function mwPickSession(id) { if (id) mwLoadSession(id); }
+
+    /** Which row the selection names, from the model rather than the DOM. */
+    function mwFindRow(kind, id) {
+        const m = MW.model; if (!m) return null;
+        if (kind === 'session') return m.session;
+        if (kind === 'tracks') return m.tracks.find(t => t.id === id) || null;
+        if (kind === 'clips') { for (const t of m.tracks) { const c = (t.clips || []).find(x => x.id === id); if (c) return c; } return null; }
+        if (kind === 'automation') { for (const t of m.tracks) { const a = (t.automation || []).find(x => x.id === id); if (a) return a; } return null; }
+        if (kind === 'markers') return m.markers.find(x => x.id === id) || null;
+        if (kind === 'emotion-ranges') return m.emotion_ranges.find(x => x.id === id) || null;
+        return null;
+    }
+    function mwTrackOf(clipId) { return (MW.model.tracks || []).find(t => (t.clips || []).some(c => c.id === clipId)) || null; }
+    function mwLengthMs() {
+        const m = MW.model, b = MW.brief && MW.brief.brief;
+        return Math.max(Number(m && m.duration_ms) || 0, Number(b && b.length && b.length.ms) || 0, 10000);
+    }
+    const mwX = ms => Math.round((Number(ms) || 0) / 1000 * MW.pxPerSec);
+    const mwMs = px => Math.max(0, Math.round(px / MW.pxPerSec * 1000));
+    function mwTime(ms) {
+        const s = Math.max(0, Number(ms) || 0) / 1000;
+        return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') + '.' + String(Math.round((s % 1) * 10));
+    }
+
+    // ── Rendering ──────────────────────────────────────────────────
+
+    function mwRender() {
+        const root = document.getElementById('mwRoot');
+        if (!root) return;
+        if (!MW.session) {
+            root.innerHTML = `<div class="mw-bar">${mwSessionListHtml()}</div>
+                <p class="text-muted" style="margin-top:12px;">No score session yet. Create one for a picture sequence, or a scene, and the brief, the ruler and the lanes appear here.</p>`;
+            return;
+        }
+        const m = MW.model;
+        root.innerHTML = `
+            <div class="mw-bar">
+                ${mwSessionListHtml()}
+                ${mwStatusHtml(m.session)}
+                <span class="mw-save text-sm text-muted" id="mwSaveNote">${esc(MW.saveNote)}</span>
+            </div>
+            ${mwDriftHtml(MW.drift)}
+            ${(m.warnings || []).length ? `<div class="mw-warn text-sm">${m.warnings.map(w => esc(w)).join(' · ')}</div>` : ''}
+            <div class="mw-grid">
+                <div class="mw-main" ondragover="mwDragOver(event)" ondrop="mwDrop(event)">
+                    <div class="mw-transport">
+                        <button class="btn btn-secondary btn-sm" onclick="mwTogglePlay()" id="mwPlayBtn">${MW.playing ? '&#10073;&#10073; Pause' : '&#9654; Play'}</button>
+                        <button class="btn btn-secondary btn-sm" onclick="mwStop()">&#9632; Stop</button>
+                        <span class="mw-clock" id="mwClock">${mwTime(MW.playheadMs)}</span>
+                        <label class="text-sm text-muted">zoom <input type="range" min="10" max="200" value="${MW.pxPerSec}" oninput="mwZoom(this.value)" style="width:90px;vertical-align:middle;"></label>
+                        <span class="mw-spacer"></span>
+                        <button class="btn btn-secondary btn-sm" onclick="mwCreate('tracks', {})" data-mw-create="tracks">+ Track</button>
+                        <button class="btn btn-secondary btn-sm" onclick="mwCreate('markers', { position_ms: MW.playheadMs, kind: 'hit' })" data-mw-create="markers">+ Hit at playhead</button>
+                        <button class="btn btn-secondary btn-sm" onclick="mwCreate('emotion-ranges', { start_ms: MW.playheadMs, end_ms: MW.playheadMs + 4000, label: 'new' })" data-mw-create="emotion-ranges">+ Emotion range</button>
+                        <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;">Import stems
+                            <input type="file" multiple accept="audio/*,.wav,.bwf,.aiff,.aif,.flac,.mp3,.m4a" style="display:none" onchange="mwImportFiles(event.target); event.target.value='';">
+                        </label>
+                        <label class="text-sm text-muted"><input type="checkbox" id="mwNormalize48k"> 48 kHz working copy</label>
+                    </div>
+                    <div class="mw-scroll" id="mwScroll">
+                        <div class="mw-timeline" style="width:${mwX(mwLengthMs()) + 240}px;">
+                            ${mwRulerHtml(m, MW.brief)}
+                            ${mwEmotionHtml(m)}
+                            ${m.tracks.map(mwTrackHtml).join('')}
+                            <div class="mw-playhead" id="mwPlayhead" style="left:${mwX(MW.playheadMs)}px;"></div>
+                        </div>
+                    </div>
+                    <p class="text-sm text-muted" style="margin:8px 0 0;">Drop stem files anywhere on the lanes: each lands as its own track and clip at the playhead, untrimmed — the original is kept byte-for-byte.</p>
+                </div>
+                <div class="mw-side">
+                    <div id="mwInspector">${mwInspectorHtml()}</div>
+                    ${mwContextHtml(MW.brief)}
+                </div>
+            </div>`;
+        paintWaveforms(root);
+    }
+
+    function mwSessionListHtml() {
+        const opts = MW.sessions.map(s => `<option value="${esc(s.id)}" ${MW.session && s.id === MW.session.id ? 'selected' : ''}>${esc(s.name || 'untitled')} · ${esc(s.status)}${s.picture ? ' · ' + esc(s.picture.name || s.picture.kind || '') : ''}</option>`).join('');
+        return `<select class="form-control" style="max-width:320px;" onchange="mwPickSession(this.value)" title="Which score session to work in">
+                    ${opts || '<option value="">no sessions</option>'}
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="mwCreateSession()">+ Session</button>
+                ${MW.session ? `<button class="btn btn-secondary btn-sm" onclick="mwSelect('session', '${esc(MW.session.id)}')">Session settings</button>` : ''}`;
+    }
+
+    /** The lifecycle, from the served transition table: the current state and where it may go. */
+    function mwStatusHtml(session) {
+        const table = (MW.vocab && MW.vocab.transitions && MW.vocab.transitions['film_music_sessions.status']) || {};
+        const next = table[session.status] || [];
+        const options = [session.status, ...next].map(s => `<option value="${esc(s)}" ${s === session.status ? 'selected' : ''}>${esc(s)}</option>`).join('');
+        return `<label class="mw-status text-sm">status
+                    <select class="form-control" data-mw="film_music_sessions:status" data-kind="session" data-id="${esc(session.id)}" onchange="mwFieldChanged(this)">${options}</select>
+                </label>`;
+    }
+
+    function mwDriftHtml(drift) {
+        if (!drift || !drift.tracked) return drift && drift.error ? `<div class="mw-warn text-sm">Drift could not be read: ${esc(drift.error)}</div>` : '';
+        if (!drift.drifted) return '';
+        const sides = ['script', 'picture', 'context'].filter(k => drift[k] && drift[k].changed);
+        return `<div class="mw-drift">
+            <strong>The ${esc(sides.join(' and ') || 'brief')} moved since this session was written.</strong>
+            <span class="text-sm">The score is being judged against a picture or a screenplay that no longer exists. Rebase only once you accept the new cut.</span>
+            <button class="btn btn-secondary btn-sm" onclick="mwRebase()">Rebase to the current brief</button>
+        </div>`;
+    }
+
+    async function mwRebase() {
+        if (!MW.session) return;
+        try { await api('/music-sessions/' + MW.session.id + '/rebase', { method: 'POST', body: '{}' }); await mwLoadSession(MW.session.id); setStatus('Rebased'); }
+        catch (e) { setStatus('Rebase failed: ' + e.message); }
+    }
+
+    /** The brief, read-only: what the music is written AGAINST. */
+    function mwContextHtml(out) {
+        const b = out && out.brief;
+        if (!b) return `<section class="mw-panel"><h4>Story &amp; picture</h4><p class="text-sm text-muted">The brief could not be compiled${out && out.warnings ? ': ' + esc(out.warnings.join('; ')) : ''}.</p></section>`;
+        const shots = (b.picture && b.picture.shots) || [];
+        const passages = (b.screenplay && b.screenplay.passages) || [];
+        const characters = b.characters || [];
+        const cues = b.cues || [];
+        const emotion = b.emotion || [];
+        const row = (k, v) => `<div class="mw-kv"><span class="text-muted">${esc(k)}</span><span>${v}</span></div>`;
+        return `<section class="mw-panel">
+            <h4>Story &amp; picture</h4>
+            ${row('picture', esc((b.picture && b.picture.name) || '') + ' · ' + shots.length + ' shots · ' + mwTime(b.length && b.length.ms))}
+            ${row('length', esc((b.length && b.length.source) || ''))}
+            ${row('look', esc([b.look && b.look.genre, b.look && b.look.style_preset].filter(Boolean).join(' · ') || 'none stated'))}
+            <details open><summary>Shots</summary>
+                ${shots.map(s => `<div class="mw-shot"><b>${esc(s.shot_code)}</b> <span class="text-muted">${mwTime(s.start_ms)} · ${mwTime(s.duration_ms)}${s.camera && s.camera.shot_type ? ' · ' + esc(s.camera.shot_type) : ''}</span><div class="text-sm">${esc(s.action || '')}</div>${(s.characters || []).length ? `<div class="text-sm text-muted">${esc(s.characters.join(', '))}</div>` : ''}</div>`).join('') || '<p class="text-sm text-muted">No shots.</p>'}
+            </details>
+            <details><summary>Screenplay${b.screenplay && b.screenplay.version ? ' v' + esc(b.screenplay.version) : ''}</summary>
+                ${passages.map(p => `<div class="mw-passage"><b>${esc(p.heading || 'scene ' + p.scene_number)}</b><pre>${esc(p.text || '')}</pre></div>`).join('') || '<p class="text-sm text-muted">No passages.</p>'}
+            </details>
+            <details><summary>Cast (${characters.length})</summary>
+                ${characters.map(c => `<div class="text-sm">${esc(c.name || c)}${c.line_count !== undefined ? ` <span class="text-muted">· ${c.line_count} lines</span>` : ''}</div>`).join('') || '<p class="text-sm text-muted">Nobody named.</p>'}
+            </details>
+            <details><summary>Cues written (${cues.length})</summary>
+                ${cues.map(c => `<div class="text-sm"><b>${esc(c.cue_type || '')}</b> ${esc(c.description || '')}</div>`).join('') || '<p class="text-sm text-muted">No cues yet.</p>'}
+            </details>
+            <details><summary>Accepted emotion (${emotion.length})</summary>
+                ${emotion.map(e => `<div class="text-sm">${mwTime(e.start_ms)}–${mwTime(e.end_ms)} <b>${esc(e.label || '')}</b> <span class="text-muted">v ${e.valence} · a ${e.arousal}</span></div>`).join('') || '<p class="text-sm text-muted">Nothing accepted yet.</p>'}
+            </details>
+            ${(out.warnings || []).length ? `<p class="text-sm text-muted">${esc(out.warnings.join(' · '))}</p>` : ''}
+        </section>`;
+    }
+
+    /** The shared ruler: seconds, the shots from the brief, and the session's markers. */
+    function mwRulerHtml(m, out) {
+        const total = mwLengthMs();
+        const b = out && out.brief;
+        const shots = (b && b.picture && b.picture.shots) || [];
+        const markers = m.markers || [];
+        let ticks = '';
+        const step = MW.pxPerSec >= 80 ? 1000 : MW.pxPerSec >= 30 ? 5000 : 10000;
+        for (let t = 0; t <= total; t += step) ticks += `<span class="mw-tick" style="left:${mwX(t)}px;">${mwTime(t)}</span>`;
+        const shotHtml = shots.map(s => `<span class="mw-shot-band" style="left:${mwX(s.start_ms)}px;width:${Math.max(2, mwX(s.duration_ms))}px;" title="${esc(s.shot_code)} · ${esc(s.action || '')}">${esc(s.shot_code)}</span>`).join('');
+        const markerHtml = markers.map(k => `<span class="mw-marker mw-marker-${esc(k.kind)} ${MW.selection && MW.selection.id === k.id ? 'selected' : ''}" style="left:${mwX(k.position_ms)}px;" title="${esc(k.kind)} ${esc(k.label || '')}" onclick="event.stopPropagation(); mwSelect('markers', '${esc(k.id)}')">&#9660;<span class="mw-marker-label">${esc(k.label || k.kind)}</span></span>`).join('');
+        return `<div class="mw-ruler" onclick="mwSeek(mwMs(event.offsetX))">
+            <div class="mw-ruler-ticks">${ticks}</div>
+            <div class="mw-ruler-shots">${shotHtml}</div>
+            <div class="mw-ruler-markers">${markerHtml}</div>
+        </div>`;
+    }
+
+    /** The emotional arc as ranges on the same ruler; a proposal is a dashed range until somebody accepts it. */
+    function mwEmotionHtml(m) {
+        const ranges = m.emotion_ranges || [];
+        return `<div class="mw-lane mw-emotion" title="Emotion: click a range to edit it">
+            <div class="mw-lane-head"><b>Emotion</b><span class="text-sm text-muted">valence / arousal</span></div>
+            <div class="mw-lane-body">
+                ${ranges.map(r => {
+                    const hue = Math.round(120 + (Number(r.valence) || 0) * 120);
+                    const alpha = 0.25 + (Number(r.intensity) || 0) * 0.5;
+                    return `<div class="mw-range ${r.status === 'proposed' ? 'proposed' : ''} ${MW.selection && MW.selection.id === r.id ? 'selected' : ''}"
+                        style="left:${mwX(r.start_ms)}px;width:${Math.max(6, mwX(r.end_ms) - mwX(r.start_ms))}px;background:hsla(${hue},70%,55%,${alpha});"
+                        title="${esc(r.label)} · v ${r.valence} · a ${r.arousal} · ${esc(r.status)}${r.source === 'ai_proposal' ? ' (AI proposal)' : ''}"
+                        onclick="mwSelect('emotion-ranges', '${esc(r.id)}')">${esc(r.label || '')}</div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }
+
+    function mwTrackHtml(t) {
+        const sel = MW.selection && MW.selection.kind === 'tracks' && MW.selection.id === t.id;
+        return `<div class="mw-lane mw-track ${sel ? 'selected' : ''}" data-track="${esc(t.id)}" style="border-left-color:${esc(t.color || 'transparent')}">
+            <div class="mw-lane-head" onclick="mwSelect('tracks', '${esc(t.id)}')">
+                <b>${esc(t.name || 'untitled')}</b>
+                <span class="text-sm text-muted">${esc(t.role || t.role_kind)}</span>
+                <div class="mw-mini">
+                    <button class="mw-toggle ${t.muted ? 'on' : ''}" title="Mute" data-mw="film_music_tracks:muted" data-kind="tracks" data-id="${esc(t.id)}" data-value="${t.muted ? 'false' : 'true'}" onclick="event.stopPropagation(); mwFieldChanged(this)">M</button>
+                    <button class="mw-toggle ${t.soloed ? 'on' : ''}" title="Solo" data-mw="film_music_tracks:soloed" data-kind="tracks" data-id="${esc(t.id)}" data-value="${t.soloed ? 'false' : 'true'}" onclick="event.stopPropagation(); mwFieldChanged(this)">S</button>
+                    <input type="range" min="-60" max="12" step="0.5" value="${Number(t.gain_db) || 0}" title="Gain ${t.gain_db} dB" data-mw="film_music_tracks:gain_db" data-kind="tracks" data-id="${esc(t.id)}" oninput="mwFieldChanged(this)" onclick="event.stopPropagation()">
+                    <input type="range" min="-1" max="1" step="0.05" value="${Number(t.pan) || 0}" title="Pan ${t.pan}" data-mw="film_music_tracks:pan" data-kind="tracks" data-id="${esc(t.id)}" oninput="mwFieldChanged(this)" onclick="event.stopPropagation()">
+                </div>
+            </div>
+            <div class="mw-lane-body" ondblclick="mwSeek(mwMs(event.offsetX))">
+                ${(t.clips || []).map(c => mwClipHtml(c, t)).join('')}
+            </div>
+        </div>`;
+    }
+
+    /** A clip: positioned by start_ms, sized by duration_ms, with the sound library's waveform inside it. */
+    function mwClipHtml(c, t) {
+        const sel = MW.selection && MW.selection.kind === 'clips' && MW.selection.id === c.id;
+        const w = Math.max(24, mwX(c.duration_ms));
+        return `<div class="mw-clip ${sel ? 'selected' : ''} take-${esc(c.take_status)} ${c.loop_policy !== 'none' ? 'looping' : ''}" data-clip="${esc(c.id)}"
+                style="left:${mwX(c.start_ms)}px;width:${w}px;"
+                title="${esc(c.name || '')} · ${mwTime(c.start_ms)} for ${mwTime(c.duration_ms)} · offset ${mwTime(c.source_offset_ms)} · ${esc(c.take_status)}"
+                onclick="event.stopPropagation(); mwSelect('clips', '${esc(c.id)}')"
+                onpointerdown="mwClipPointerDown(event, '${esc(c.id)}', 'move')">
+            <span class="mw-clip-handle left" onpointerdown="event.stopPropagation(); mwClipPointerDown(event, '${esc(c.id)}', 'trim-start')"></span>
+            ${c.asset_id ? `<canvas class="snd-wave" data-asset="${esc(c.asset_id)}"></canvas>` : '<span class="text-sm text-muted">no audio</span>'}
+            <span class="mw-clip-name">${esc(c.name || '')}${c.take_status !== 'selected' ? ` <em>${esc(c.take_status)}</em>` : ''}${c.loop_policy !== 'none' ? ' &#8635;' : ''}</span>
+            <span class="mw-clip-handle right" onpointerdown="event.stopPropagation(); mwClipPointerDown(event, '${esc(c.id)}', 'trim-end')"></span>
+        </div>`;
+    }
+
+    // ── Controls: one builder for every field the validators accept ─────────
+
+    /** Options for an enum field, from the SERVED vocabulary — never a list typed here. */
+    function mwEnumOptions(table, column, current, vocab) {
+        const values = (vocab && vocab[table + '.' + column]) || [];
+        return values.map(v => `<option value="${esc(v)}" ${String(v) === String(current) ? 'selected' : ''}>${esc(v)}</option>`).join('');
+    }
+
+    function mwControl(table, kind, id, field, value, spec) {
+        const s = spec || {};
+        const attrs = `data-mw="${table}:${field}" data-kind="${kind}" data-id="${esc(id)}"`;
+        const vocab = (MW.vocab && MW.vocab.vocabulary) || {};
+        const ranges = (MW.vocab && MW.vocab.ranges) || {};
+        const key = table + '.' + field;
+        let input;
+        if (s.type === 'bool') input = `<input type="checkbox" ${attrs} ${value ? 'checked' : ''} onchange="mwFieldChanged(this)">`;
+        else if (vocab[key]) input = `<select class="form-control" ${attrs} onchange="mwFieldChanged(this)">${mwEnumOptions(table, field, value, vocab)}</select>`;
+        else if (s.type === 'select') input = `<select class="form-control" ${attrs} onchange="mwFieldChanged(this)"><option value="">${esc(s.empty || 'none')}</option>${(s.options || []).map(o => `<option value="${esc(o.value)}" ${String(o.value) === String(value || '') ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
+        else if (s.type === 'json') input = `<textarea class="form-control" rows="3" ${attrs} onchange="mwFieldChanged(this)">${esc(JSON.stringify(value === undefined ? [] : value))}</textarea>`;
+        else if (s.type === 'text') input = `<textarea class="form-control" rows="3" ${attrs} onchange="mwFieldChanged(this)">${esc(value == null ? '' : value)}</textarea>`;
+        else if (ranges[key] || s.type === 'range') {
+            const r = ranges[key] || s;
+            input = `<input type="range" min="${r.min}" max="${r.max}" step="${s.step || 0.01}" value="${Number(value) || 0}" ${attrs} oninput="mwFieldChanged(this)"> <span class="text-sm">${Number(value) || 0}</span>`;
+        }
+        else if (s.type === 'number') input = `<input type="number" class="form-control" ${s.min !== undefined ? `min="${s.min}"` : ''} ${s.step ? `step="${s.step}"` : ''} value="${value == null ? '' : value}" ${attrs} onchange="mwFieldChanged(this)">`;
+        else if (s.type === 'color') input = `<input type="color" value="${/^#[0-9a-f]{6}$/i.test(value || '') ? value : '#6366f1'}" ${attrs} onchange="mwFieldChanged(this)">`;
+        else input = `<input type="text" class="form-control" value="${esc(value == null ? '' : value)}" ${attrs} onchange="mwFieldChanged(this)">`;
+        return `<label class="mw-field"><span class="mw-field-name">${esc(s.label || field.replace(/_/g, ' '))}</span>${input}${s.note ? `<span class="text-sm text-muted">${esc(s.note)}</span>` : ''}</label>`;
+    }
+
+    /** The selected row, every field the validator accepts, and the way to remove it. */
+    function mwInspectorHtml() {
+        const sel = MW.selection;
+        if (!sel) return `<section class="mw-panel"><h4>Inspector</h4><p class="text-sm text-muted">Select a track, a clip, a marker or an emotion range to edit every field it has. Drag a clip to move it; drag its edges to trim; double-click a lane to move the playhead.</p></section>`;
+        const row = mwFindRow(sel.kind, sel.id);
+        if (!row) return '<section class="mw-panel"><h4>Inspector</h4><p class="text-sm text-muted">That row is gone.</p></section>';
+        const m = MW.model;
+        const T = MW_KIND_TABLE[sel.kind];
+        const c = (field, value, spec) => mwControl(T, sel.kind, row.id, field, value, spec);
+        const trackOpts = m.tracks.map(t => ({ value: t.id, label: t.name || 'untitled' }));
+        const shots = ((MW.brief && MW.brief.brief && MW.brief.brief.picture && MW.brief.brief.picture.shots) || []).map(s => ({ value: s.id, label: s.shot_code }));
+        const assets = m.tracks.flatMap(t => t.clips || []).filter(x => x.asset_id).map(x => ({ value: x.asset_id, label: (x.name || x.asset_id) }));
+        const ops = (m.operations || []).map(o => ({ value: o.id, label: `${o.kind} · ${o.status} · ${(o.created_at || '').slice(0, 16)}` }));
+        let body = '';
+        let title = '';
+        if (sel.kind === 'session') {
+            title = 'Session';
+            body = c('name', row.name) + c('status', row.status) + c('sample_rate', row.sample_rate)
+                + c('frame_rate', row.frame_rate, { type: 'number', step: 0.001 })
+                + c('sequence_id', row.sequence_id, { label: 'picture sequence id', note: 'The ordered picture this score is for; a scene is the fallback.' })
+                + c('scene_id', row.scene_id, { label: 'scene id' })
+                + c('script_id', row.script_id, { label: 'screenplay version id', note: 'Stamped by the rebase; change it only to pin a draft on purpose.' })
+                + c('tempo_map', row.tempo_map, { type: 'json', note: 'List of { at_ms, bpm, numerator, denominator }, sorted, starting at 0.' })
+                + c('notes', row.notes, { type: 'text' });
+        } else if (sel.kind === 'tracks') {
+            title = 'Track';
+            body = c('name', row.name) + c('role_kind', row.role_kind) + c('role', row.role, { note: 'Free text inside the kind: "cello", "strings", "music bus".' })
+                + c('sort_order', row.sort_order, { type: 'number', step: 1 }) + c('color', row.color, { type: 'color' })
+                + c('gain_db', row.gain_db, { type: 'range', min: -96, max: 24, step: 0.5 }) + c('pan', row.pan, { step: 0.05 })
+                + c('muted', row.muted, { type: 'bool' }) + c('soloed', row.soloed, { type: 'bool' })
+                + c('output_track_id', row.output_track_id, { type: 'select', options: trackOpts.filter(o => o.value !== row.id), empty: 'the master', label: 'routes to' })
+                + `<div class="mw-sub"><b>Clips</b> <button class="btn btn-secondary btn-sm" data-mw-create="clips" onclick="mwAddClipFromAsset('${esc(row.id)}')">+ Place an audio file at the playhead</button></div>`
+                + `<div class="mw-sub"><b>Automation</b> ${(row.automation || []).map(a => `<button class="btn btn-secondary btn-sm" onclick="mwSelect('automation', '${esc(a.id)}')">${esc(a.parameter)} (${(a.points || []).length})</button>`).join(' ')}
+                    <button class="btn btn-secondary btn-sm" data-mw-create="automation" onclick="mwCreate('automation', { track_id: '${esc(row.id)}', parameter: 'gain', points: [] })">+ Curve</button></div>`;
+        } else if (sel.kind === 'clips') {
+            title = 'Clip';
+            body = c('name', row.name)
+                + c('start_ms', row.start_ms, { type: 'number', min: 0, step: 1, note: 'Where it sits in the session clock.' })
+                + c('duration_ms', row.duration_ms, { type: 'number', min: 1, step: 1 })
+                + c('source_offset_ms', row.source_offset_ms, { type: 'number', min: 0, step: 1, note: 'Where in the file it begins. 0 keeps the leading silence.' })
+                + c('gain_db', row.gain_db, { type: 'range', min: -96, max: 24, step: 0.5 })
+                + c('fade_in_ms', row.fade_in_ms, { type: 'number', min: 0, step: 1 }) + c('fade_out_ms', row.fade_out_ms, { type: 'number', min: 0, step: 1 })
+                + c('loop_policy', row.loop_policy) + c('warp_policy', row.warp_policy)
+                + c('take_group', row.take_group, { note: 'Clips sharing a group are takes of one part; one is selected.' }) + c('take_status', row.take_status)
+                + c('source_kind', row.source_kind)
+                + c('asset_id', row.asset_id, { type: 'select', options: assets, empty: 'no audio', label: 'audio asset' })
+                + c('source_operation_id', row.source_operation_id, { type: 'select', options: ops, empty: 'none', label: 'made by operation' })
+                + `<div class="mw-sub"><b>Takes in this group</b> ${mwTakeGroupHtml(row)}</div>`;
+        } else if (sel.kind === 'emotion-ranges') {
+            title = 'Emotion range';
+            body = c('label', row.label) + c('start_ms', row.start_ms, { type: 'number', min: 0, step: 1 }) + c('end_ms', row.end_ms, { type: 'number', min: 1, step: 1 })
+                + c('valence', row.valence, { step: 0.05 }) + c('arousal', row.arousal, { step: 0.05 }) + c('intensity', row.intensity, { step: 0.05 })
+                + c('confidence', row.confidence, { step: 0.05 }) + c('source', row.source)
+                + c('status', row.status, { note: 'A proposal stays proposed until a person accepts it here; nothing paid rests on a proposal.' });
+        } else if (sel.kind === 'markers') {
+            title = 'Marker';
+            body = c('kind', row.kind) + c('position_ms', row.position_ms, { type: 'number', min: 0, step: 1 }) + c('label', row.label)
+                + c('shot_id', row.shot_id, { type: 'select', options: shots, empty: 'no shot', label: 'shot' });
+        } else if (sel.kind === 'automation') {
+            title = 'Automation';
+            const clips = (mwTrackOfAutomation(row.id) || { clips: [] }).clips.map(x => ({ value: x.id, label: x.name || x.id }));
+            body = c('parameter', row.parameter) + c('interpolation', row.interpolation)
+                + c('clip_id', row.clip_id, { type: 'select', options: clips, empty: 'the whole track', label: 'scoped to clip' })
+                + c('points', row.points, { type: 'json', note: 'List of { at_ms, value }, sorted, inside the parameter\'s own range.' });
+        }
+        return `<section class="mw-panel">
+            <div class="flex-between"><h4>${esc(title)}</h4>
+                ${sel.kind !== 'session' ? `<button class="btn btn-secondary btn-sm" data-mw-delete="${sel.kind}" onclick="mwDelete('${sel.kind}', '${esc(row.id)}', this)">Delete</button>` : ''}
+            </div>
+            ${body}
+        </section>`;
+    }
+    function mwTrackOfAutomation(id) { return (MW.model.tracks || []).find(t => (t.automation || []).some(a => a.id === id)) || null; }
+
+    /** The other takes of this clip's group, so choosing one is one click. */
+    function mwTakeGroupHtml(clip) {
+        if (!clip.take_group) return '<span class="text-sm text-muted">no group</span>';
+        const takes = MW.model.tracks.flatMap(t => t.clips || []).filter(x => x.take_group === clip.take_group);
+        return takes.map(x => `<button class="btn btn-secondary btn-sm ${x.take_status === 'selected' ? 'active' : ''}" title="Make this the selected take" onclick="mwChooseTake('${esc(x.id)}')">${esc(x.name || x.id.slice(0, 6))} · ${esc(x.take_status)}</button>`).join(' ');
+    }
+    async function mwChooseTake(clipId) {
+        const chosen = mwFindRow('clips', clipId); if (!chosen) return;
+        const others = MW.model.tracks.flatMap(t => t.clips || []).filter(x => x.take_group === chosen.take_group && x.id !== clipId && x.take_status === 'selected');
+        const ops = [{ op: 'update', kind: 'clips', id: clipId, data: { take_status: 'selected' } },
+            ...others.map(x => ({ op: 'update', kind: 'clips', id: x.id, data: { take_status: 'candidate' } }))];
+        try { await api('/music-sessions/' + MW.session.id + '/batch', { method: 'POST', body: JSON.stringify({ ops }) }); await mwLoadSession(MW.session.id); }
+        catch (e) { mwNote('Save failed: ' + e.message); }
+    }
+
+    /** Place an existing audio asset — a generated cue, a library sound, a stem — on a track at the playhead, whole and untrimmed. */
+    async function mwAddClipFromAsset(trackId) {
+        if (!state.currentProject || !MW.session) return;
+        // The sound library: every audio file the project holds, one card each,
+        // with its measured length — the asset list is paged and answers by
+        // newest, which on a boarded film is pictures all the way down.
+        let assets = [];
+        try { assets = ((await api('/projects/' + state.currentProject.id + '/sounds')).sounds || []).filter(a => a.url); }
+        catch (e) { mwNote('Could not list the audio: ' + e.message); return; }
+        if (!assets.length) { mwNote('This project has no audio files yet: generate a cue, or drop stems on the lanes.'); return; }
+        const opts = assets.map(a => `<option value="${esc(a.id)}" data-ms="${Number(a.duration_ms) || 0}">${esc(a.file_name || a.id)} · ${esc(a.kind_label || a.kind || '')}${a.duration_ms ? ' · ' + mwTime(a.duration_ms) : ''}</option>`).join('');
+        showModalHtml('mwPlaceClipModal', `
+            <div class="modal-header"><h3>Place an audio file</h3><button class="modal-close" onclick="closeModal('mwPlaceClipModal')">&times;</button></div>
+            <div class="modal-body">
+                <label style="display:block;margin-bottom:10px;">Audio<select id="mwPlaceAsset" class="form-control">${opts}</select></label>
+                <p class="text-sm text-muted">It lands at ${mwTime(MW.playheadMs)} for its whole measured length with no source offset; trim it on the lane afterwards.</p>
+            </div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="mwAddClipFromAssetSubmit('${esc(trackId)}')">Place</button></div>`);
+    }
+    async function mwAddClipFromAssetSubmit(trackId) {
+        const sel = document.getElementById('mwPlaceAsset'); if (!sel || !sel.value) return;
+        const opt = sel.options[sel.selectedIndex];
+        const ms = Number(opt && opt.dataset.ms) || 0;
+        closeModal('mwPlaceClipModal');
+        await mwCreate('clips', { track_id: trackId, asset_id: sel.value, name: (opt && opt.textContent.split(' · ')[0]) || '', source_kind: 'imported',
+            start_ms: MW.playheadMs, duration_ms: ms > 0 ? ms : 1000, source_offset_ms: 0 });
+    }
+
+    // ── Change → autosave ──────────────────────────────────────────
+
+    /** A control changed: read which field, coerce, and save that one row. */
+    function mwFieldChanged(el) {
+        const [table, field] = String(el.dataset.mw || '').split(':');
+        const kind = el.dataset.kind, id = el.dataset.id;
+        if (!table || !field || !kind || !id) return;
+        let value;
+        if (el.dataset.value !== undefined) value = el.dataset.value === 'true';
+        else if (el.type === 'checkbox') value = !!el.checked;
+        else if (el.type === 'range' || el.type === 'number') value = el.value === '' ? null : Number(el.value);
+        else if (el.tagName === 'TEXTAREA' && (field === 'points' || field === 'tempo_map')) {
+            try { value = JSON.parse(el.value || '[]'); } catch (e) { mwNote('Save failed: ' + field + ' is not valid JSON'); return; }
+        } else value = el.value === '' && /_id$/.test(field) ? null : el.value;
+        if (el.type === 'range' && el.nextElementSibling) el.nextElementSibling.textContent = value;
+        if (field === 'sample_rate') value = Number(value);
+        mwSave(kind, id, { [field]: value }, table);
+    }
+
+    /** One save per row, once it settles; the model is updated from what came back. */
+    function mwSave(kind, id, patch, table) {
+        const key = kind + ':' + id;
+        MW.pending[key] = Object.assign(MW.pending[key] || {}, patch);
+        clearTimeout(MW.timers[key]);
+        mwNote('Saving…');
+        MW.timers[key] = setTimeout(async () => {
+            const body = MW.pending[key]; delete MW.pending[key];
+            const sid = MW.session.id;
+            const url = kind === 'session' ? `/music-sessions/${sid}` : `/music-sessions/${sid}/${kind}/${id}`;
+            try {
+                const out = await api(url, { method: 'PUT', body: JSON.stringify(body) });
+                const row = mwFindRow(kind, id);
+                if (row) Object.assign(row, kind === 'session' ? (out.session || out) : out);
+                if (kind === 'session' && MW.session) Object.assign(MW.session, out.session || out);
+                mwNote('Saved');
+                // A lifecycle move or a mixer change repaints what depends on it.
+                if (kind === 'session' || kind === 'tracks' || kind === 'clips' || kind === 'markers' || kind === 'emotion-ranges') mwRepaint();
+                if (MW.playing && (kind === 'tracks' || kind === 'clips')) mwRestartAudio();
+            } catch (e) {
+                mwNote('Save failed: ' + e.message + ' — the row was not changed');
+                await mwLoadSession(sid);
+            }
+        }, kind === 'session' ? 500 : 350);
+        void table;
+    }
+    function mwNote(text) { MW.saveNote = text; const el = document.getElementById('mwSaveNote'); if (el) el.textContent = text; }
+
+    /** Repaint the lanes and inspector from the model without a round trip. */
+    function mwRepaint() {
+        const scroll = document.getElementById('mwScroll');
+        const left = scroll ? scroll.scrollLeft : 0;
+        mwRender();
+        const again = document.getElementById('mwScroll'); if (again) again.scrollLeft = left;
+    }
+
+    function mwSelect(kind, id) {
+        MW.selection = { kind, id };
+        mwRepaint();
+    }
+
+    async function mwCreate(kind, data) {
+        if (!MW.session) return;
+        try {
+            const out = await api('/music-sessions/' + MW.session.id + '/' + kind, { method: 'POST', body: JSON.stringify(data || {}) });
+            await mwLoadSession(MW.session.id);
+            if (out && out.id) mwSelect(kind, out.id);
+        } catch (e) { mwNote('Could not create: ' + e.message); }
+    }
+
+    /** Two clicks: the first arms the button, the second deletes. No native dialog. */
+    async function mwDelete(kind, id, btn) {
+        if (btn && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = 'Delete — sure?'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Delete'; } }, 4000); return; }
+        try {
+            await api('/music-sessions/' + MW.session.id + '/' + kind + '/' + id, { method: 'DELETE' });
+            MW.selection = null;
+            await mwLoadSession(MW.session.id);
+        } catch (e) { mwNote('Delete failed: ' + e.message); }
+    }
+
+    // ── New session ────────────────────────────────────────────────
+
+    async function mwCreateSession() {
+        if (!state.currentProject) return;
+        const pid = state.currentProject.id;
+        let sequences = [], scenes = [];
+        try { sequences = (await api('/projects/' + pid + '/sequences')).sequences || []; } catch (_) { sequences = []; }
+        try { scenes = (await api('/projects/' + pid + '/scenes')).scenes || []; } catch (_) { scenes = []; }
+        const opts = [
+            ...sequences.map(s => `<option value="sequence:${esc(s.id)}">Sequence · ${esc(s.name || s.id)}</option>`),
+            ...scenes.map(s => `<option value="scene:${esc(s.id)}">Scene ${esc(s.scene_number)} · ${esc(s.location || '')}</option>`),
+        ].join('');
+        showModalHtml('mwNewSessionModal', `
+            <div class="modal-header"><h3>New score session</h3><button class="modal-close" onclick="closeModal('mwNewSessionModal')">&times;</button></div>
+            <div class="modal-body">
+                <label style="display:block;margin-bottom:10px;">Name<input id="mwNewName" class="form-control" placeholder="Reel 1 score"></label>
+                <label style="display:block;margin-bottom:10px;">Picture<select id="mwNewPicture" class="form-control">${opts || '<option value="">no sequences or scenes yet</option>'}</select></label>
+                <p class="text-sm text-muted">A session is written against an ordered sequence; a scene is the fallback when the project has none. It is stamped with the brief as it stands, so drift is sayable from the first read.</p>
+            </div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="mwCreateSessionSubmit()">Create</button></div>`);
+    }
+    async function mwCreateSessionSubmit() {
+        const pick = String((document.getElementById('mwNewPicture') || {}).value || '');
+        const [kind, id] = pick.split(':');
+        const body = { name: (document.getElementById('mwNewName') || {}).value || '' };
+        if (kind === 'sequence') body.sequence_id = id; else if (kind === 'scene') body.scene_id = id;
+        try {
+            const out = await api('/projects/' + state.currentProject.id + '/music-sessions', { method: 'POST', body: JSON.stringify(body) });
+            closeModal('mwNewSessionModal');
+            MW.session = out.session || out;
+            await loadMusicWorkstation();
+        } catch (e) { setStatus('Could not create the session: ' + e.message); }
+    }
+
+    // ── Ruler, playhead, zoom ──────────────────────────────────────
+
+    function mwSeek(ms) {
+        MW.playheadMs = Math.max(0, Math.round(Number(ms) || 0));
+        const ph = document.getElementById('mwPlayhead'); if (ph) ph.style.left = mwX(MW.playheadMs) + 'px';
+        const clock = document.getElementById('mwClock'); if (clock) clock.textContent = mwTime(MW.playheadMs);
+        if (MW.playing) mwRestartAudio();
+    }
+    function mwZoom(v) { MW.pxPerSec = Math.max(10, Math.min(200, Number(v) || 40)); mwRepaint(); }
+
+    // ── Clip drag: move, trim start, trim end ──────────────────────
+
+    function mwClipPointerDown(ev, clipId, mode) {
+        if (ev.button !== 0) return;
+        const clip = mwFindRow('clips', clipId); if (!clip) return;
+        MW.drag = { id: clipId, mode, x0: ev.clientX, start: clip.start_ms, dur: clip.duration_ms, off: clip.source_offset_ms, moved: false };
+        const el = ev.currentTarget.closest ? ev.currentTarget.closest('.mw-clip') : null;
+        const onMove = e => {
+            const d = MW.drag; if (!d) return;
+            const dms = mwMs(Math.abs(e.clientX - d.x0)) * Math.sign(e.clientX - d.x0);
+            if (Math.abs(e.clientX - d.x0) > 2) d.moved = true;
+            let start = d.start, dur = d.dur, off = d.off;
+            if (d.mode === 'move') start = Math.max(0, d.start + dms);
+            else if (d.mode === 'trim-start') { const cut = Math.max(-d.off, Math.min(d.dur - 50, dms)); start = d.start + cut; dur = d.dur - cut; off = d.off + cut; }
+            else if (d.mode === 'trim-end') dur = Math.max(50, d.dur + dms);
+            d.next = { start_ms: Math.round(start), duration_ms: Math.round(dur), source_offset_ms: Math.round(off) };
+            if (el) { el.style.left = mwX(start) + 'px'; el.style.width = Math.max(24, mwX(dur)) + 'px'; }
+        };
+        const onUp = () => {
+            document.removeEventListener('pointermove', onMove); document.removeEventListener('pointerup', onUp);
+            const d = MW.drag; MW.drag = null;
+            if (!d || !d.moved || !d.next) return;
+            const patch = d.mode === 'move' ? { start_ms: d.next.start_ms }
+                : d.mode === 'trim-end' ? { duration_ms: d.next.duration_ms }
+                : { start_ms: d.next.start_ms, duration_ms: d.next.duration_ms, source_offset_ms: d.next.source_offset_ms };
+            Object.assign(clip, patch);
+            mwSave('clips', clipId, patch);
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+    }
+
+    // ── Aligned import by drop ─────────────────────────────────────
+
+    function mwDragOver(ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; }
+    function mwDrop(ev) {
+        ev.preventDefault();
+        if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) mwImportFiles(ev.dataTransfer);
+    }
+
+    /** Every dropped file, aligned at the playhead, through the stem importer — one batch, or nothing. */
+    async function mwImportFiles(holder) {
+        if (!MW.session) { setStatus('Create a session before importing stems'); return; }
+        const list = holder && holder.files && holder.files.length ? Array.from(holder.files) : [];
+        if (!list.length) return;
+        const url = '/music-sessions/' + MW.session.id + '/stems';
+        try {
+            for (const f of list) checkUploadSize(f, url);
+            const read = f => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve({ name: f.name, data: reader.result });
+                reader.onerror = () => reject(new Error('could not read ' + f.name));
+                reader.readAsDataURL(f);
+            });
+            mwNote('Importing ' + list.length + ' stem' + (list.length > 1 ? 's' : '') + '…');
+            const payload = {
+                files: await Promise.all(list.map(read)),
+                start_ms: MW.playheadMs,
+                normalize_48k: !!(document.getElementById('mwNormalize48k') || {}).checked,
+            };
+            const out = await api(url, { method: 'POST', body: JSON.stringify(payload) });
+            mwNote('Imported ' + (out.imported || []).length + ' at ' + mwTime(out.start_ms) + ((out.warnings || []).length ? ' · ' + out.warnings.join('; ') : ''));
+            await mwLoadSession(MW.session.id);
+        } catch (e) {
+            mwNote('Import refused: ' + e.message);
+            setStatus('Import refused: ' + e.message);
+        }
+    }
+
+    // ── Playback: the audio graph the mix is heard through ─────────
+
+    /** What one clip plays at: track and clip gain summed in dB, mute, solo across the session, pan, and the fades in seconds. */
+    function mwClipLevel(track, clip, tracks) {
+        const anySolo = (tracks || []).some(t => t.soloed);
+        const silent = !!track.muted || (anySolo && !track.soloed);
+        const db = (Number(track.gain_db) || 0) + (Number(clip.gain_db) || 0);
+        const gain = silent ? 0 : Math.pow(10, db / 20);
+        return {
+            gain,
+            pan: Math.max(-1, Math.min(1, Number(track.pan) || 0)),
+            fade_in_s: (Number(clip.fade_in_ms) || 0) / 1000,
+            fade_out_s: (Number(clip.fade_out_ms) || 0) / 1000,
+        };
+    }
+
+    async function mwBuffer(assetId) {
+        if (MW.buffers[assetId]) return MW.buffers[assetId];
+        const row = await api('/assets/' + assetId).catch(() => null);
+        // The serving route comes from the file's own directory, the rule
+        // mediaUrl already states for dialogue against music.
+        const src = row && row.file_path ? mediaUrl(row.file_path) : '';
+        if (!src) throw new Error('no file for asset ' + assetId);
+        const res = await fetch(src);
+        const bytes = await res.arrayBuffer();
+        const buf = await MW.audio.decodeAudioData(bytes);
+        MW.buffers[assetId] = buf;
+        return buf;
+    }
+
+    function mwTogglePlay() { if (MW.playing) mwPause(); else mwPlay(); }
+
+    /** Schedule every audible clip from the playhead. Spends nothing: it reads files already made. */
+    async function mwPlay() {
+        if (!MW.model) return;
+        if (!MW.audio) MW.audio = new (window.AudioContext || window.webkitAudioContext)();
+        // A context started outside a gesture stays suspended and resume()
+        // never settles; bounded, so a script-driven play cannot hang the page.
+        if (MW.audio.state === 'suspended') await Promise.race([MW.audio.resume(), new Promise(r => setTimeout(r, 1500))]);
+        if (MW.audio.state !== 'running') { mwNote('The browser needs a click before it will play audio — press Play.'); return; }
+        mwStopSources();
+        const ctx = MW.audio;
+        const tracks = MW.model.tracks || [];
+        const clips = tracks.flatMap(t => (t.clips || []).filter(c => c.asset_id && c.take_status === 'selected').map(c => ({ t, c })));
+        const ready = await Promise.all(clips.map(async ({ t, c }) => { try { return { t, c, buf: await mwBuffer(c.asset_id) }; } catch (e) { return null; } }));
+        const t0 = ctx.currentTime + 0.05;
+        const from = MW.playheadMs / 1000;
+        MW.ctxStart = t0; MW.msStart = MW.playheadMs; MW.playing = true;
+        for (const item of ready) {
+            if (!item) continue;
+            const { t, c, buf } = item;
+            const lvl = mwClipLevel(t, c, tracks);
+            if (lvl.gain === 0) continue;
+            const start = (Number(c.start_ms) || 0) / 1000, dur = (Number(c.duration_ms) || 0) / 1000, off = (Number(c.source_offset_ms) || 0) / 1000;
+            const end = start + dur;
+            if (end <= from) continue;
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            const gain = ctx.createGain(); const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+            if (pan) { pan.pan.value = lvl.pan; src.connect(gain).connect(pan).connect(ctx.destination); }
+            else src.connect(gain).connect(ctx.destination);
+            const loops = c.loop_policy && c.loop_policy !== 'none';
+            if (loops) { src.loop = true; src.loopStart = off; src.loopEnd = Math.min(buf.duration, off + Math.max(0.05, buf.duration - off)); }
+            const late = Math.max(0, from - start);            // how far into the clip the playhead already is
+            const when = t0 + Math.max(0, start - from);
+            const playFor = end - Math.max(from, start);
+            // Fades are ramps inside the clip; a playhead dropped mid-fade starts at that point of the ramp.
+            const g = gain.gain;
+            g.setValueAtTime(0.0001, when);
+            if (lvl.fade_in_s > late) g.linearRampToValueAtTime(lvl.gain, when + (lvl.fade_in_s - late)); else g.setValueAtTime(lvl.gain, when);
+            if (lvl.fade_out_s > 0) { g.setValueAtTime(lvl.gain, Math.max(when, when + playFor - lvl.fade_out_s)); g.linearRampToValueAtTime(0.0001, when + playFor); }
+            try { src.start(when, off + late, loops ? undefined : Math.max(0.01, Math.min(playFor, buf.duration - off - late))); if (loops) src.stop(when + playFor); }
+            catch (_) { continue; }
+            MW.sources.push(src);
+        }
+        const btn = document.getElementById('mwPlayBtn'); if (btn) btn.innerHTML = '&#10073;&#10073; Pause';
+        cancelAnimationFrame(MW.raf);
+        const tick = () => {
+            if (!MW.playing) return;
+            MW.playheadMs = MW.msStart + Math.max(0, (ctx.currentTime - MW.ctxStart) * 1000);
+            const ph = document.getElementById('mwPlayhead'); if (ph) ph.style.left = mwX(MW.playheadMs) + 'px';
+            const clock = document.getElementById('mwClock'); if (clock) clock.textContent = mwTime(MW.playheadMs);
+            if (MW.playheadMs >= mwLengthMs()) { mwStop(); return; }
+            MW.raf = requestAnimationFrame(tick);
+        };
+        MW.raf = requestAnimationFrame(tick);
+    }
+    function mwStopSources() { for (const s of MW.sources) { try { s.stop(); } catch (_) { /* already ended */ } } MW.sources = []; }
+    function mwPause() {
+        MW.playing = false; mwStopSources(); cancelAnimationFrame(MW.raf);
+        const btn = document.getElementById('mwPlayBtn'); if (btn) btn.innerHTML = '&#9654; Play';
+    }
+    function mwStop() { mwPause(); mwSeek(0); }
+    /** A mixer change while playing: re-schedule from where the playhead is. */
+    function mwRestartAudio() { if (!MW.playing) return; MW.playing = false; mwStopSources(); cancelAnimationFrame(MW.raf); mwPlay(); }
+
+
     function fmtDuration(ms) {
         if (!ms || ms < 0) return null;
         const s = Math.round(ms / 1000);
@@ -42212,7 +43026,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'plan',       label:'Plan',           blurb:'Board it, block it, and know what it costs.',
       pages:['deliverables','storyboard','previs','consistency','milestones','budget'] },
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
-      pages:['shotboard','videoshots','music','musiccues','playback','pipeline','flows'] },
+      pages:['shotboard','videoshots','music','musiccues','musicws','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',
       pages:['exportpage','titles','subtitles','rights','marketing','assets','jobsqueue','renderhistory'] }
   ];

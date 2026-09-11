@@ -25,7 +25,7 @@ What changed, and the measurements that replaced the ones above:
 | Phase track on a phone | unreachable | **moved** into the drawer, one node |
 | API base | literal `http://localhost:3100` | follows `location.hostname` |
 | Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
-| Shell-aware media queries | 0 of 6 | **1 of 15 media queries** — the phone breakpoint |
+| Shell-aware media queries | 0 of 6 | **1 of 16 media queries** — the phone breakpoint |
 
 Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
 still starts at 262px and the burger is hidden — **not one computed value above 700px
@@ -68,7 +68,7 @@ something. That is the single most useful thing to copy.
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 15 media queries that are not `print` (12 at
+**The responsive layout did not exist.** There are 16 media queries that are not `print` (12 at
 the time of this assessment, plus the one the character sheet's two-up block
 added when its layout was brought back to the reference design), and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They
@@ -99,7 +99,7 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 34 pages is phone work?
+## 3. Which of the 35 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:
@@ -117,7 +117,8 @@ on a desktop — you think of an angle away from the desk.
 and nothing is lost by making them read-only. `titles` and `subtitles` are the clearest case of
 that shape: a credit roll and a cue list are read to check a spelling, and typed with a keyboard.
 
-**Desktop only, and that is correct (19).**
+**Desktop only, and that is correct (20).**
+`musicws` is the score workstation — lanes, a ruler, clip drag and trim, a mixer — and a thumb on a 390px lane is how a clip gets moved a bar without anyone noticing.
 `screenplay` (a full-page editor with pagination), `previs` (a 3D stage with six-axis drag),
 `flows` (an SVG graph canvas), `timeline`-adjacent work in `videoshots` and `selects`,
 `colorgrading`, `colorpipeline`, `broadcastqc`, `dubbing`, `consistency`, `continuity`,

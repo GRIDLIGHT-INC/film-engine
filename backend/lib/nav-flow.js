@@ -71,7 +71,7 @@ const NAV_FLOW = {
         // pages are one job. It was not in the requested list and dropping it
         // would have removed the only surface where music direction can be
         // written, which is a capability loss rather than a tidy-up.
-        pages: ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
+        pages: ['shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
             'pipeline', 'flows'],
     },
 

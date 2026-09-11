@@ -82,7 +82,7 @@ const WANTED = [
     ['Write & Design', ['screenplay', 'scenes', 'notes', 'moodboard',
         'characters', 'locations', 'props', 'threed']],
     ['Plan',           ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget']],
-    ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'playback',
+    ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
         'pipeline', 'flows']],
     ['Post',           ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
         'jobsqueue', 'renderhistory']],

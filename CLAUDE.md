@@ -595,6 +595,7 @@ film-engine/
 │       ├── fountain-parser.test.js       # Fountain parser
 │       ├── docx-text.test.js             # DOCX text extraction
 │       ├── integration.test.js       # Integration test suite (43 tests)
+│       ├── music-workstation-editor.test.js # Every field the score validators accept has a control that saves; the mix is heard, not spent
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -632,6 +633,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET/POST /projects/:id/music-sessions`, `GET/PUT/DELETE /music-sessions/:id` |
 | Score Sessions | `GET /music-sessions/:id/{brief,drift}` (free), `POST /music-sessions/:id/{rebase,batch}` |
 | Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
+| Score Sessions | `POST /music-sessions/:id/stems` (aligned import), `GET /music-sessions/vocabulary` (free: enums, ranges, lifecycle) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -3876,6 +3878,72 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Score Has a Keyboard
+The score session had a route (MUS-004), thirty tools (MUS-005) and an
+importer (MUS-006), and no page: every track, clip, range and marker could be
+written by an agent and by curl and by nobody at a keyboard. `manual-edit`
+could not see the gap — it derives editable fields from handlers that read
+`body.x`, and this route goes through validators — so the **Score** page
+(`musicws`, in Production beside the cue sheet; MUS-007) is held to the
+validators themselves: the value keys each one returns are the fields the
+database will take, and `tests/music-workstation-editor.test.js` EXECUTES the
+inspector over a fixture session with one row of every kind and requires a
+control, bound to the autosave, for every one of them. A grep for the literal
+would report the working editor as broken, because the controls are built as
+`data-mw="${table}:${field}"` at run time — the same reason the blocking
+panels are executed rather than grepped.
+
+**One rule for every control.** It carries `data-mw="<table>:<field>"`, its
+change reaches `mwFieldChanged`, and that reaches `mwSave`, which PUTs the row
+through the session route — the same validator the agent's write meets, so a
+refusal names the field here exactly as it does there. Saves are per row and
+debounced (a slider fires dozens of changes a second), and the status line says
+*Saving / Saved / Save failed: <reason>*; a failed save reloads the session,
+because a director who believes a mix is kept when it is not is the failure the
+line exists to prevent.
+
+**Nothing is decided on the page.** Enums, ranges and the lifecycle table come
+from `GET /film/music-sessions/vocabulary`, on the `card-vocabulary` precedent:
+a page holding its own copy offers values the route then refuses, and the
+refusal reads as saving being broken. The status picker offers the current
+state and only the moves `TRANSITIONS` allows from it. An AI emotion proposal
+is drawn dashed and stays `proposed` until a person changes its status in the
+inspector; the page never writes `accepted` on its own.
+
+**One ruler.** The shots come from the brief (`/brief`), the hit markers from
+the session, the emotion ranges sit on the same scale, and one playhead moves
+by clicking the ruler or double-clicking a lane. A clip is positioned by
+`start_ms` and sized by `duration_ms`; dragging it moves it, dragging an edge
+trims it (the start edge also moves `source_offset_ms`, so trimming never
+touches the file), and each carries the sound library's own waveform canvas —
+a second painter is how two surfaces come to disagree about what a file looks
+like. Takes in a group are one click apart, through the batch route so the
+old selection and the new one change together.
+
+**Playback spends nothing.** Clips are decoded once into an `AudioContext`
+and scheduled from the playhead with their own source offset, gain, pan, fades
+and loop policy. `mwClipLevel` is the one rule for what a clip plays at — track
+and clip gain summed in dB, mute, solo across the session, pan — and the test
+executes it: a track is silent while another is soloed, −6 dB is half
+amplitude, a fade is a ramp in seconds inside the clip. A mixer change while
+playing re-schedules from where the playhead is.
+
+**Stems are dropped on the lanes**, aligned at the playhead, through the
+MUS-006 importer with the 48 kHz working copy as a checkbox, after
+`checkUploadSize` refuses an oversize file on the page rather than as a dead
+server. An existing audio file — a generated cue, a library sound — can be
+placed on a track whole. Drift is a banner with the rebase beside it; the
+brief is the context panel: shots with timings and cameras, the exact
+screenplay passages, the cast, the cues written, the accepted emotion.
+
+**Two of the test's own checks were wrong first.** The stripper used a
+block-comment regex, and the import control's `accept="audio/*"` opened a
+"comment" that ran to the next `*/` and swallowed the session selector — the
+trap the page-handlers stripper already recorded; it is line-based now. And
+a first mutation that "removed" the pan control matched nothing because the
+text sits mid-line; the pan control lives in two places, and only removing
+both fails the audit, which is what proved it reads the rendered set.
+
 ### The Original Is Sacred; the Placement Is Aligned
 A composer hands over stems — several equal-length files sharing one start —
 and the one thing an importer must never do is help. `lib/music-stems.js`
@@ -5037,6 +5105,7 @@ node --test backend/tests/music-context.test.js
 node --test backend/tests/music-sessions-routes.test.js
 node --test backend/tests/music-session-mcp.test.js
 node --test backend/tests/music-stem-import.test.js
+node --test backend/tests/music-workstation-editor.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

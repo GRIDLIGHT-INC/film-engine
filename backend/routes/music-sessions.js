@@ -3,6 +3,7 @@
  *
  *   GET    /film/projects/:id/music-sessions            list
  *   POST   /film/projects/:id/music-sessions            create (stamped against the brief it was written to)
+ *   GET    /film/music-sessions/vocabulary              FREE: every enum, range and lifecycle table the validators enforce
  *   GET    /film/music-sessions/:id                     the ScoreSession read model
  *   PUT    /film/music-sessions/:id                     update (lifecycle through the contract)
  *   DELETE /film/music-sessions/:id
@@ -285,6 +286,17 @@ async function handleMusicSessions(req, res, urlParts, query) {
         if (req.method === 'GET') { const r = listSessions(urlParts[2]); return json(res, r.status, r.body); }
         if (req.method === 'POST') { const r = createSession(urlParts[2], req.body); return json(res, r.status, r.body); }
         return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    if (urlParts[1] === 'music-sessions' && urlParts[2] === 'vocabulary') {
+        // The page's pickers are filled from HERE, on the card-vocabulary
+        // precedent: a page holding its own copy offers values the route then
+        // refuses, and the refusal reads as saving being broken.
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        return json(res, 200, {
+            vocabulary: contracts.VOCABULARY, ranges: contracts.RANGES,
+            automation_ranges: contracts.AUTOMATION_RANGES, transitions: contracts.TRANSITIONS,
+        });
     }
 
     if (urlParts[1] === 'music-sessions' && urlParts[2]) {
