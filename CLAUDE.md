@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (103 migrations)
+│   │   └── migrations/     # SQL migration files (104 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -117,6 +117,7 @@ film-engine/
 │   │   ├── music-emotion.js      # The model proposes the arc, a person accepts it, nothing paid rests on a proposal
 │   │   ├── music-separation.js   # A recording split into stems: a derivative, aligned under its source, from an untrusted ZIP
 │   │   ├── music-generation.js   # Compose, parts, reference, picture, inpaint: every output a new take, nothing replaced
+│   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -606,6 +607,7 @@ film-engine/
 │       ├── music-emotion-proposals.test.js # Every bound refused out of range, coverage validated, and a proposal reaches nothing until accepted
 │       ├── music-separation.test.js # Two and six stems land aligned with lineage; a bad ZIP or a provider error registers nothing
 │       ├── music-generation.test.js # Five workflows: the contract decides, no unaccepted arc, every output a new take, parts are not stems
+│       ├── music-jobs.test.js # A truth table over child states: no parent is complete over a failed or missing child
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -3937,6 +3939,56 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### A Job Is a Parent With Ordered Children, and the Parent Cannot Lie
+A generation that makes three parts, or a separation that returns six stems,
+used to be one operation row with its outputs folded into a JSON blob. That
+made two questions unanswerable: which output a failure belonged to, and
+whether a row reading `complete` actually had every output behind it.
+Migration 107 lets an operation be a **child**: `group_id` points at its parent
+(CASCADE — a child means nothing without it), `seq` orders the siblings, and
+each child carries its provider, model and provider job id, its cost, the
+`attempt` it belongs to, the `source_fingerprint` and `context_fingerprint` of
+what it was made from, its `take_number`, and the clip it became
+(`output_clip_id`, SET NULL so deleting a take keeps the record that it was
+made). `group_id` is deliberately not `parent_id`: `parent_id` is already the
+lineage of a retry or a supersession, and one column holding two relations is
+how "retried" gets read as "is part of".
+
+**The parent's status is derived** (`lib/music-jobs.js`, MUS-013).
+`deriveStatus` is the one rule: complete only when there is at least one child,
+every child is complete and none the parent expected is missing; running while
+any child is open; failed otherwise, with a reason naming the child. The stored
+status is a cache of that answer — `readJob` reports the derived status, flags
+a stored one that disagrees, and `rollup` repairs it — so a failed child cannot
+leave a parent reading as complete however the row was written.
+`tests/music-jobs.test.js` proves it as a **truth table** over every combination
+of the five operation states for up to three children and every expected count,
+because a rollup that gets "two done, one failed" right and "all done, one
+missing" wrong passes any example written against the first.
+
+**Acceptance is read, not copied.** A child's acceptance is its clip's own
+`take_status` — selected is accepted, candidate is pending, rejected is
+rejected, a deleted clip is removed — so the job record cannot disagree with the
+arrangement. The **take number** is the clip's place in its take group: a
+second take on an occupied track is take 2. One bad part fails its child with
+the reason and **cancels** its siblings, naming the part that failed, because
+registration stays all or nothing; a provider failure fails every child.
+
+**Resumable.** A run this process owns is registered while it is in flight.
+Polling a job no process owns any more — the server restarted mid-run — reports
+it **interrupted** and fails its open children, rather than leaving a row that
+says running for ever. Retrying a failed job runs it again as the next attempt
+from the input it recorded, with `parent_id` naming the attempt it retries; a
+running or complete job is refused. Every music provider wired today answers
+synchronously, so there is no provider handle to collect after a restart; one
+that returns a handle would be polled through the same record.
+
+The listings of generations and separations show parents only. Served at
+`GET /film/music-sessions/:id/jobs[/:opId]`, `POST …/jobs/:opId/poll` (free) and
+`POST …/jobs/:opId/retry`, and as `music_job_list`, `music_job_get`,
+`music_job_poll` and `music_job_retry` (**320 tools**). The cue-generation job
+table, `film_music_jobs`, is the older per-cue path and is unchanged.
+
 ### Five Ways to Make Music, and a Take Is Added, Never Swapped In
 `lib/music-generation.js` (MUS-012) is one free plan and one runner for the
 five generating workflows of the `music` capability: a whole cue, the
@@ -4953,7 +5005,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (103 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (104 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5379,6 +5431,7 @@ node --test backend/tests/music-capabilities.test.js
 node --test backend/tests/music-emotion-proposals.test.js
 node --test backend/tests/music-separation.test.js
 node --test backend/tests/music-generation.test.js
+node --test backend/tests/music-jobs.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

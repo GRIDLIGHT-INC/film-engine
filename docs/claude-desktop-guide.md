@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**316 tools, 69 families.** Everything the app can do, you can ask for in a
+**320 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -596,7 +596,8 @@ asset on the scene and cost money to make.
 `music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities` ·
 `music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept` ·
 `music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry` ·
-`music_generate_plan` · `music_generate` · `music_generation_list`
+`music_generate_plan` · `music_generate` · `music_generation_list` ·
+`music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -655,6 +656,14 @@ the context sent (tempo, meter, key and the accepted arc, never a proposal) and
 the cost hint. `music_generate` spends: each output is a new asset and clip, a
 candidate take beside what a track already holds. It refuses when no arc is
 accepted unless you say to go without one (the ignore_emotion argument). `music_generation_list` reads them.
+
+**Every generation and separation is one job with its outputs in order.**
+`music_job_list` and `music_job_get` are free. They show each job's outputs with
+the provider job id, cost, attempt, fingerprints, take number and whether the
+take was accepted. A job is complete only when every output it expected is.
+`music_job_poll` is free and reports a job whose run was lost to a restart as
+interrupted. `music_job_retry` spends: it runs a failed job again as the next
+attempt.
 
 **Separating a recording costs money and never touches the recording.**
 `music_separate_plan` is free: the provider, the variation (two stems —

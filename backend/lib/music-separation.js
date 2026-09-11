@@ -53,6 +53,7 @@ const pricing = require('./provider-pricing');
 const caps = require('./music-capabilities');
 const { VALIDATORS, toRow, fromRow } = require('./music-session');
 const { STEM_FORMATS, detectFormat, inspectStem, roleFromName } = require('./music-stems');
+const jobs = require('./music-jobs');
 
 /**
  * The variations the provider accepts, each with the stems it is expected to
@@ -246,27 +247,6 @@ function resolveSeparator(config) {
     return providers.resolve('music', config);
 }
 
-function insertOperation(db, sessionId, fields) {
-    const v = VALIDATORS.film_music_operations({ kind: 'separate', status: 'running', ...fields });
-    if (!v.ok) throw new Error(v.errors.map(e => e.message).join('; '));
-    const r = toRow('film_music_operations', v.value);
-    const id = generateId();
-    db.prepare(`INSERT INTO film_music_operations (id, session_id, kind, status, parent_id, source_asset_id, output_asset_id, provider, model, job_ref, params_json, cost_usd, error_message, started_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
-        .run(id, sessionId, r.kind, r.status, r.parent_id, r.source_asset_id, r.output_asset_id, r.provider, r.model, r.job_ref, r.params_json, r.cost_usd, r.error_message);
-    return id;
-}
-
-function finishOperation(db, opId, status, patch) {
-    const row = db.prepare('SELECT params_json FROM film_music_operations WHERE id = ?').get(opId);
-    let params = {};
-    try { params = JSON.parse(row.params_json || '{}'); } catch (_) { params = {}; }
-    const p = patch || {};
-    Object.assign(params, p.params || {});
-    db.prepare(`UPDATE film_music_operations SET status = ?, error_message = ?, params_json = ?, cost_usd = COALESCE(?, cost_usd), job_ref = COALESCE(?, job_ref), completed_at = datetime('now') WHERE id = ?`)
-        .run(status, p.error || '', JSON.stringify(params), p.cost_usd === undefined ? null : p.cost_usd, p.job_ref || null, opId);
-}
-
 function dropFiles(paths) {
     for (const p of paths) { try { fs.unlinkSync(p); } catch (_) { /* already gone */ } }
 }
@@ -284,24 +264,30 @@ async function startSeparation(db, sessionId, input, opts) {
     const project = projectOf(db, session);
     const adapter = o.adapter || resolveSeparator(providerConfigOf(project));
 
-    const operationId = insertOperation(db, sessionId, {
-        parent_id: o.parent_id || null, source_asset_id: plan.source.asset_id,
-        provider: plan.provider.id || (adapter && adapter.id) || '', model: plan.variation.id,
+    // One parent (MUS-013); a child per stem is added when the stems are
+    // registered. `expected` is null: the provider decides what comes back,
+    // and a stem it did not return is a warning, not a failed child.
+    const srcAsset = db.prepare('SELECT file_path FROM film_assets WHERE id = ?').get(plan.source.asset_id);
+    let sourceFingerprint = '';
+    try { sourceFingerprint = crypto.createHash('sha256').update(fs.readFileSync(resolveStored(srcAsset.file_path))).digest('hex'); } catch (_) { sourceFingerprint = ''; }
+    const operationId = jobs.openJob(db, sessionId, {
+        kind: 'separate', parent_id: o.parent_id || null, attempt: o.attempt || 1, source_asset_id: plan.source.asset_id, live: true, expected: null,
+        provider: plan.provider.id || (adapter && adapter.id) || '', model: plan.variation.id, source_fingerprint: sourceFingerprint,
         params: { clip_id: plan.source.clip_id, stems: plan.variation.stems, variation: plan.variation.id, expected_stems: plan.expected_stems,
             placement: plan.placement, output_format: plan.output_format, cost_hint: plan.cost_hint, outputs: [], warnings: [] },
     });
 
     const done = runSeparation(db, session, plan, adapter, operationId).catch(e => {
-        try { finishOperation(db, operationId, 'failed', { error: `separation failed: ${e.message}` }); } catch (_) { /* the row is gone with its session */ }
+        try { jobs.failJob(db, operationId, `separation failed: ${e.message}`); } catch (_) { /* the row is gone with its session */ }
         return { ok: false, status: 'failed', operation_id: operationId, error: `separation failed: ${e.message}` };
-    });
+    }).finally(() => jobs.release(operationId));
     if (o.wait) return done;
     return { ok: true, status: 'running', operation_id: operationId, plan, done };
 }
 
 async function runSeparation(db, session, plan, adapter, operationId) {
     const fail = (error) => {
-        finishOperation(db, operationId, 'failed', { error });
+        jobs.failJob(db, operationId, error);
         return { ok: false, status: 'failed', operation_id: operationId, error };
     };
     if (!adapter || typeof adapter.generate !== 'function') return fail(`no music provider could be resolved for ${plan.provider.id || 'this project'}`);
@@ -426,13 +412,16 @@ async function runSeparation(db, session, plan, adapter, operationId) {
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                 .run(clipId, trackId, c.asset_id, c.source_operation_id, c.name, c.source_kind, c.start_ms, c.duration_ms, c.source_offset_ms,
                     c.gain_db, c.fade_in_ms, c.fade_out_ms, c.loop_policy, c.warp_policy, c.take_group, c.take_status);
+            // One child per stem, in the order the archive gave them; each is take 1 on its own new track.
+            jobs.addChild(db, operationId, {
+                seq: i, label: s.stem, status: 'complete', output_asset_id: s.assetId, output_clip_id: clipId, take_number: 1,
+                job_ref: result.provider_job_id || '', model: result.provider_model || plan.variation.id,
+                cost_usd: plan.cost_hint && plan.cost_hint.usd ? plan.cost_hint.usd / staged.length : 0,
+            });
             outputs.push({ stem: s.stem, expected: s.expected, role, asset_id: s.assetId, track_id: trackId, clip_id: clipId,
                 url: getFileUrl(kind.serveDir, session.project_id, s.fileName), format: s.format, hash: s.hash, duration_ms: s.tech.duration_ms });
         });
-        finishOperation(db, operationId, 'complete', {
-            params: { outputs, warnings }, cost_usd: plan.cost_hint && plan.cost_hint.usd ? plan.cost_hint.usd : 0,
-            job_ref: result.provider_job_id || '',
-        });
+        jobs.rollup(db, operationId, { params: { outputs, warnings }, job_ref: result.provider_job_id || '' });
     });
     try { register(); } catch (e) {
         dropFiles(written);
@@ -456,21 +445,21 @@ function present(row) {
 }
 
 function getSeparation(db, sessionId, opId) {
-    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'separate'").get(opId, sessionId);
+    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'separate' AND group_id IS NULL").get(opId, sessionId);
     return row ? present(row) : null;
 }
 
 function listSeparations(db, sessionId) {
-    return db.prepare("SELECT * FROM film_music_operations WHERE session_id = ? AND kind = 'separate' ORDER BY created_at DESC, rowid DESC").all(sessionId).map(present);
+    return db.prepare("SELECT * FROM film_music_operations WHERE session_id = ? AND kind = 'separate' AND group_id IS NULL ORDER BY created_at DESC, rowid DESC").all(sessionId).map(present);
 }
 
 /** A failed separation, tried again as a new operation that names the one it retries. */
 async function retrySeparation(db, sessionId, opId, opts) {
-    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'separate'").get(opId, sessionId);
+    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'separate' AND group_id IS NULL").get(opId, sessionId);
     if (!row) return { ok: false, status: 404, error: 'Separation not found in this session' };
     if (row.status !== 'failed') return { ok: false, status: 409, error: `that separation is ${row.status}, not failed; only a failed separation is retried` };
     const params = present(row);
-    return startSeparation(db, sessionId, { clip_id: params.clip_id, stems: params.stems_requested }, { ...(opts || {}), parent_id: row.id });
+    return startSeparation(db, sessionId, { clip_id: params.clip_id, stems: params.stems_requested }, { attempt: (row.attempt || 1) + 1, ...(opts || {}), parent_id: row.id });
 }
 
 module.exports = {

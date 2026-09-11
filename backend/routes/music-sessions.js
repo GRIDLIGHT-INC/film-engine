@@ -25,6 +25,9 @@
  *   POST   /film/music-sessions/:id/generate/plan        FREE: compose, parts, reference, video or inpaint — provider, length, outputs, context, cost, take behaviour
  *   POST   /film/music-sessions/:id/generate             generate (SPENDS): new assets and new clips as candidate takes, nothing replaced
  *   GET    /film/music-sessions/:id/generations[/:opId]  every generation of the session, with its outputs or its failure
+ *   GET    /film/music-sessions/:id/jobs[/:opId]         FREE: every generation and separation as a parent with its ordered children
+ *   POST   /film/music-sessions/:id/jobs/:opId/poll      FREE: where a job has got to; one whose process is gone is reported interrupted
+ *   POST   /film/music-sessions/:id/jobs/:opId/retry     a failed job again as the next attempt (SPENDS)
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -50,6 +53,7 @@ const renderer = require('../lib/music-renderer');
 const emotion = require('../lib/music-emotion');
 const separation = require('../lib/music-separation');
 const generation = require('../lib/music-generation');
+const musicJobs = require('../lib/music-jobs');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -375,6 +379,25 @@ async function handleMusicSessions(req, res, urlParts, query) {
             if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid id' });
             const one = renderer.getBounce(db, id, urlParts[4]);
             return one ? json(res, 200, one) : json(res, 404, { error: 'Bounce not found' });
+        }
+        if (sub === 'jobs') {
+            // Grouped jobs (lib/music-jobs.js): a parent's status is derived
+            // from its children, so what is read here cannot claim a finished
+            // job while one of its outputs failed.
+            const opId = urlParts[4], verb = urlParts[5];
+            if (!opId && req.method === 'GET') return json(res, 200, { session_id: id, jobs: musicJobs.listJobs(db, id) });
+            if (!opId) return json(res, 405, { error: 'Method not allowed' });
+            if (!UUID_RE.test(opId)) return json(res, 400, { error: 'Invalid job id' });
+            if (!verb && req.method === 'GET') { const one = musicJobs.readJob(db, id, opId); return one ? json(res, 200, one) : json(res, 404, { error: 'Job not found' }); }
+            if (verb === 'poll' && req.method === 'POST') { const one = musicJobs.pollJob(db, id, opId); return one ? json(res, 200, one) : json(res, 404, { error: 'Job not found' }); }
+            if (verb === 'retry' && req.method === 'POST') {
+                const b = req.body || {};
+                const out = await musicJobs.retryJob(db, id, opId, { wait: b.wait === true || b.wait === 'true' });
+                if (typeof out.status === 'number') return json(res, out.status, generation.publicPlan(out));
+                if (out.operation_id) return json(res, out.ok ? 202 : 502, { ...(musicJobs.readJob(db, id, out.operation_id) || {}), error: out.error });
+                return json(res, 502, out);
+            }
+            return json(res, 405, { error: 'Method not allowed' });
         }
         if (sub === 'generate') {
             // The generation is the whole rule (lib/music-generation.js). The

@@ -3841,6 +3841,30 @@ function musicSessionTools() {
             path: a => `/film/music-sessions/${a.session_id}/generations`, schema: S, required: ['session_id'],
         },
         {
+            name: 'music_job_list', handler: H, method: 'GET',
+            description: 'Free. Every generation and separation on a score session as one PARENT job with its ordered CHILD outputs: each child\'s provider, model and provider job id, cost, attempt, source and context fingerprints, take number and acceptance (read from the take itself: accepted, pending, rejected). A parent\'s status is derived from its children — it is complete only when every expected output is — and a stored status that disagrees is flagged.',
+            path: a => `/film/music-sessions/${a.session_id}/jobs`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_job_get', handler: H, method: 'GET',
+            description: 'Free. One job with its children and the reason when it failed, naming the child.',
+            path: a => `/film/music-sessions/${a.session_id}/jobs/${a.operation_id}`,
+            schema: { ...S, operation_id: { type: 'string' } }, required: ['session_id', 'operation_id'],
+        },
+        {
+            name: 'music_job_poll', handler: H, method: 'POST',
+            description: 'Free — spends nothing. Where a job has got to. A job still marked running that no process owns any more (the server restarted mid-run) is reported INTERRUPTED and its open outputs failed, so it can be retried instead of reading as running for ever.',
+            path: a => `/film/music-sessions/${a.session_id}/jobs/${a.operation_id}/poll`, body: dropIds('session_id', 'operation_id'),
+            schema: { ...S, operation_id: { type: 'string' } }, required: ['session_id', 'operation_id'],
+        },
+        {
+            name: 'music_job_retry', handler: H, method: 'POST',
+            description: 'COSTS MONEY — runs a FAILED job again (a generation with the input it recorded, or a separation of the same clip) as the next attempt, whose parent names the attempt it retries. A running or complete job is refused. Ask before spending.',
+            path: a => `/film/music-sessions/${a.session_id}/jobs/${a.operation_id}/retry`, body: dropIds('session_id', 'operation_id'),
+            schema: { ...S, operation_id: { type: 'string' }, wait: { type: 'boolean', description: 'Separation only: block until the retry has finished.' } },
+            required: ['session_id', 'operation_id'],
+        },
+        {
             name: 'music_bounce_list', handler: H, method: 'GET',
             description: 'Free. Every bounce of a session, newest version first: status, fingerprint, what it superseded, the master and each stem with its served url, what was left out and why. The newest complete one is marked current.',
             path: a => `/film/music-sessions/${a.session_id}/bounces`, schema: S, required: ['session_id'],

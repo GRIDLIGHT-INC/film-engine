@@ -60,6 +60,7 @@ const { VALIDATORS, toRow, fromRow, readScoreSession } = require('./music-sessio
 const { STEM_FORMATS, detectFormat, inspectStem } = require('./music-stems');
 const { emotionForGeneration } = require('./music-emotion');
 const { compileScoreContext } = require('./music-context');
+const jobs = require('./music-jobs');
 
 /** Every registry workflow that makes new music; separation is MUS-011's. */
 const GENERATE_WORKFLOWS = Object.freeze(Object.keys(caps.WORKFLOWS).filter(w => w !== 'music_separate'));
@@ -314,26 +315,40 @@ async function generate(db, sessionId, workflow, input, opts) {
     const project = db.prepare('SELECT id, provider_config FROM film_projects WHERE id = ?').get(session.project_id);
     const adapter = o.adapter || musicProviderFor(providerConfigOf(project));
 
-    const opv = VALIDATORS.film_music_operations({
-        kind: 'generate', status: 'running', provider: plan.provider.id || '', model: plan.provider.model || '',
-        source_asset_id: (plan._sources.source && plan._sources.source.asset.id) || (plan._sources.reference && plan._sources.reference.asset.id) || (plan._sources.video && plan._sources.video.asset.id) || null,
-        params: { workflow, prompt: i.prompt || '', context: plan.context, placement: plan.placement, outputs_expected: plan.outputs, sections: plan.sections, ignore_emotion: !plan.context.emotion.length },
+    // One parent, one child per expected output (MUS-013): the parent's status
+    // is derived from its children, so a failed output cannot leave it complete.
+    const srcOf = plan._sources.source || plan._sources.reference || plan._sources.video || null;
+    const sourceFingerprint = srcOf ? crypto.createHash('sha256').update(fs.readFileSync(srcOf.path)).digest('hex') : '';
+    const contextFingerprint = contextFingerprintOf(db, sessionId, plan.context);
+    const labels = workflow === 'music_parts' ? plan.outputs.parts.slice() : [workflow.replace('music_', '')];
+    const operationId = jobs.openJob(db, sessionId, {
+        kind: 'generate', provider: plan.provider.id || '', model: plan.provider.model || '', live: true,
+        parent_id: o.parent_id || null, attempt: o.attempt || 1, expected: labels.length,
+        source_asset_id: srcOf ? srcOf.asset.id : null, source_fingerprint: sourceFingerprint, context_fingerprint: contextFingerprint,
+        params: { workflow, input: i, prompt: i.prompt || '', context: plan.context, placement: plan.placement, outputs_expected: plan.outputs, sections: plan.sections, ignore_emotion: !plan.context.emotion.length },
     });
-    const opRow = toRow('film_music_operations', opv.value);
-    const operationId = generateId();
-    db.prepare(`INSERT INTO film_music_operations (id, session_id, kind, status, parent_id, source_asset_id, output_asset_id, provider, model, job_ref, params_json, cost_usd, error_message, started_at)
-                VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, '', ?, 0, '', datetime('now'))`)
-        .run(operationId, sessionId, opRow.kind, opRow.status, opRow.source_asset_id, opRow.provider, opRow.model, opRow.params_json);
+    const childIds = labels.map((label, seq) => jobs.addChild(db, operationId, { seq, label }));
+    try {
+        return await runGeneration();
+    } finally {
+        jobs.release(operationId);
+    }
 
-    const finish = (status, patch) => {
-        const row = db.prepare('SELECT params_json FROM film_music_operations WHERE id = ?').get(operationId);
-        let params = {};
-        try { params = JSON.parse(row.params_json || '{}'); } catch (_) { params = {}; }
-        Object.assign(params, patch.params || {});
-        db.prepare(`UPDATE film_music_operations SET status = ?, error_message = ?, params_json = ?, cost_usd = ?, job_ref = ?, output_asset_id = ?, completed_at = datetime('now') WHERE id = ?`)
-            .run(status, patch.error || '', JSON.stringify(params), patch.cost_usd || 0, patch.job_ref || '', patch.output_asset_id || null, operationId);
+    async function runGeneration() {
+    /*
+     * A failure fails the children it belongs to and cancels the rest — none
+     * of them is registered, because registration is all or nothing — and the
+     * parent is rolled up from them, so its reason names the child.
+     */
+    const fail = (error, status, bad) => {
+        for (const c of jobs.childrenOf(db, operationId).filter(k => k.status === 'running' || k.status === 'planned')) {
+            if (!bad) jobs.settleChild(db, c.id, { status: 'failed', error });
+            else if (c.seq === bad.seq) jobs.settleChild(db, c.id, { status: 'failed', error: bad.error || error });
+            else jobs.settleChild(db, c.id, { status: 'cancelled', error: `not registered: ${labels[bad.seq] || 'an output'} (#${bad.seq}) failed` });
+        }
+        jobs.rollup(db, operationId, { error });
+        return { ok: false, status: 'failed', http_status: status || 502, operation_id: operationId, error };
     };
-    const fail = (error, status) => { finish('failed', { error }); return { ok: false, status: 'failed', http_status: status || 502, operation_id: operationId, error }; };
     if (!adapter || typeof adapter.generate !== 'function') return fail(`no music provider could be resolved for ${plan.provider.id || 'this project'}`, 409);
 
     const ctx = plan.context;
@@ -364,7 +379,16 @@ async function generate(db, sessionId, workflow, input, opts) {
         ? (Array.isArray(result.parts) ? result.parts : [])
         : [{ role: null, data: result.data }];
     if (!pieces.length) return fail(`${plan.provider.id} returned no parts`);
-    if (workflow === 'music_parts' && pieces.length !== plan.outputs.count) plan.warnings.push(`asked for ${plan.outputs.count} parts and ${pieces.length} came back`);
+    if (pieces.length < labels.length) {
+        const missing = pieces.length;
+        return fail(`${plan.provider.id} returned ${pieces.length} of the ${labels.length} parts asked for; nothing was registered`, 502, { seq: missing, error: `${plan.provider.id} returned no ${labels[missing]}` });
+    }
+    // More than was asked for: each extra is a child of its own, named.
+    for (let k = labels.length; k < pieces.length; k++) {
+        const role = pieces[k].role || `extra ${k + 1}`;
+        labels.push(role); childIds.push(jobs.addChild(db, operationId, { seq: k, label: role }));
+        plan.warnings.push(`${plan.provider.id} returned ${role}, which was not asked for; it is registered and named`);
+    }
 
     const kind = caps.WORKFLOWS[workflow].output_kind;
     const media = MEDIA_KINDS.music;
@@ -375,14 +399,14 @@ async function generate(db, sessionId, workflow, input, opts) {
             const bytes = Buffer.isBuffer(piece.data) ? piece.data : Buffer.from(piece.data || []);
             const fmt = detectFormat(bytes);
             const label = piece.role || workflow.replace('music_', '');
-            if (!fmt) { dropFiles(written); return fail(`${plan.provider.id} returned something that is not audio for ${label}; nothing was registered`); }
+            if (!fmt) { dropFiles(written); const why = `${plan.provider.id} returned something that is not audio for ${label}; nothing was registered`; return fail(why, 502, { seq: n, error: why }); }
             const spec = STEM_FORMATS[fmt];
             const assetId = generateId();
             const fileName = `${workflow.replace('music_', '')}_${String(label).replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_${assetId.slice(0, 8)}.${spec.ext}`;
             const filePath = saveFile(session.project_id, media.subdir, fileName, bytes);
             written.push(filePath);
             const seen = inspectStem(filePath, spec);
-            if (!seen.ok) { dropFiles(written); return fail(`${label}: ${seen.error}; nothing was registered`); }
+            if (!seen.ok) { dropFiles(written); const why = `${label}: ${seen.error}; nothing was registered`; return fail(why, 502, { seq: n, error: why }); }
             staged.push({ n, role: piece.role || null, bytes, fmt, spec, assetId, fileName, filePath, tech: seen.tech, hash: crypto.createHash('sha256').update(bytes).digest('hex') });
         }
     } catch (e) {
@@ -442,17 +466,31 @@ async function generate(db, sessionId, workflow, input, opts) {
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                 .run(clipId, trackId, c.asset_id, c.source_operation_id, c.name, c.source_kind, c.start_ms, c.duration_ms, c.source_offset_ms,
                     c.gain_db, c.fade_in_ms, c.fade_out_ms, c.loop_policy, c.warp_policy, c.take_group, c.take_status);
-            outputs.push({ asset_id: s.assetId, track_id: trackId, clip_id: clipId, role: s.role, take_status: takeStatus, take_group: takeGroup,
+            // The take number is this clip's place in its take group, counting what the group already held.
+            const takeNumber = takeGroup ? db.prepare('SELECT COUNT(*) AS n FROM film_music_clips WHERE take_group = ? AND track_id = ?').get(takeGroup, trackId).n : 1;
+            jobs.settleChild(db, childIds[s.n], {
+                status: 'complete', output_asset_id: s.assetId, output_clip_id: clipId, take_number: takeNumber,
+                job_ref: result.provider_job_id || '', model: result.provider_model || plan.provider.model || '',
+                cost_usd: plan.cost_hint && plan.cost_hint.usd ? plan.cost_hint.usd / staged.length : 0,
+            });
+            outputs.push({ asset_id: s.assetId, track_id: trackId, clip_id: clipId, role: s.role, take_status: takeStatus, take_group: takeGroup, take_number: takeNumber,
                 source_kind: c.source_kind, url: getFileUrl(media.serveDir, session.project_id, s.fileName), duration_ms: s.tech.duration_ms, hash: s.hash });
         }
-        finish('complete', { params: { outputs, warnings: plan.warnings }, cost_usd: plan.cost_hint ? plan.cost_hint.usd : 0,
-            job_ref: result.provider_job_id || '', output_asset_id: outputs.length === 1 ? outputs[0].asset_id : null });
+        jobs.rollup(db, operationId, { params: { outputs, warnings: plan.warnings }, job_ref: result.provider_job_id || '' });
     });
     try { register(); } catch (e) {
         dropFiles(written);
         return fail(`the output could not be registered: ${e.message}; nothing was recorded`);
     }
     return { ok: true, status: 'complete', operation_id: operationId, workflow, outputs, warnings: plan.warnings };
+    }
+}
+
+/** A fingerprint of the context actually SENT, bound to the session brief it came from. */
+function contextFingerprintOf(db, sessionId, sent) {
+    let brief = null;
+    try { const c = compileScoreContext(db, { sessionId }); brief = c && c.fingerprints ? c.fingerprints.context : null; } catch (_) { brief = null; }
+    return crypto.createHash('sha256').update(JSON.stringify({ brief, sent })).digest('hex');
 }
 
 // ── Reading ────────────────────────────────────────────────────────────────
@@ -469,11 +507,11 @@ function present(row) {
 }
 
 function listGenerations(db, sessionId) {
-    return db.prepare("SELECT * FROM film_music_operations WHERE session_id = ? AND kind = 'generate' ORDER BY created_at DESC, rowid DESC").all(sessionId).map(present);
+    return db.prepare("SELECT * FROM film_music_operations WHERE session_id = ? AND kind = 'generate' AND group_id IS NULL ORDER BY created_at DESC, rowid DESC").all(sessionId).map(present);
 }
 
 function getGeneration(db, sessionId, opId) {
-    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'generate'").get(opId, sessionId);
+    const row = db.prepare("SELECT * FROM film_music_operations WHERE id = ? AND session_id = ? AND kind = 'generate' AND group_id IS NULL").get(opId, sessionId);
     return row ? present(row) : null;
 }
 

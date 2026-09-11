@@ -379,8 +379,19 @@ function validateOperation(input) {
         params: i.params && typeof i.params === 'object' ? i.params : {},
         cost_usd: i.cost_usd === undefined || i.cost_usd === null ? 0 : Number(i.cost_usd),
         error_message: text(i.error_message, ''),
+        // MUS-013: a child is one output of its parent (group_id), in order.
+        group_id: i.group_id || null,
+        seq: i.seq === undefined || i.seq === null ? 0 : Number(i.seq),
+        attempt: i.attempt === undefined || i.attempt === null ? 1 : Number(i.attempt),
+        take_number: i.take_number === undefined || i.take_number === null ? null : Number(i.take_number),
+        output_clip_id: i.output_clip_id || null,
+        source_fingerprint: text(i.source_fingerprint, ''),
+        context_fingerprint: text(i.context_fingerprint, ''),
     };
     check(errors, 'cost_usd', Number.isFinite(value.cost_usd) && value.cost_usd >= 0, 'cost_usd must be a non-negative number');
+    check(errors, 'seq', Number.isInteger(value.seq) && value.seq >= 0, 'seq must be a whole number from 0: the order of a child among its siblings');
+    check(errors, 'attempt', Number.isInteger(value.attempt) && value.attempt >= 1, 'attempt must be a whole number from 1');
+    check(errors, 'take_number', value.take_number === null || (Number.isInteger(value.take_number) && value.take_number >= 1), 'take_number must be a whole number from 1, or absent');
     if (i.params !== undefined && i.params !== null && (typeof i.params !== 'object' || Array.isArray(i.params))) {
         errors.push({ field: 'params', message: 'params must be an object' });
     }
