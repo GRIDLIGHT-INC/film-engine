@@ -14,7 +14,8 @@
  */
 
 const { CAPABILITIES } = require('./providers/base');
-const { nodeType } = require('./flow-node-types');
+const { nodeType, NODE_TYPES, nodeTypeForStep } = require('./flow-node-types');
+const { PIPELINE_STEPS } = require('./pipeline-engine');
 
 /**
  * USD per generation call, per capability. Order-of-magnitude figures for
@@ -44,6 +45,39 @@ const COST_PER_CALL = {
 for (const capability of CAPABILITIES) {
     if (typeof COST_PER_CALL[capability] !== 'number') {
         throw new Error(`flow-cost: no cost estimate for capability '${capability}'`);
+    }
+}
+
+/**
+ * Pipeline steps that reach NO provider — their node type declares no
+ * capability — derived from the two registries rather than named.
+ */
+const LOCAL_STEPS = PIPELINE_STEPS
+    .filter(s => { const id = nodeTypeForStep(s.id); return id && !NODE_TYPES[id].capability; })
+    .map(s => s.id);
+
+/**
+ * What a local step costs, and WHY. The conform is the largest single
+ * operation in the product and it appeared in neither projection — not as a
+ * line, not as a zero, not at all — because both priced only what calls a
+ * provider. Today it is free in provider credits: ADR-007 made local ffmpeg
+ * the sole executor. The moment a priced executor arrives, an absent line is
+ * indistinguishable from a free one, and the gate that exists to stop the
+ * whole-film spend would wave it through. So it is a LINE, with a reason, and
+ * the guard below refuses to boot with a local step left unpriced — the same
+ * stance COST_PER_CALL takes for a capability.
+ */
+const LOCAL_STEP_COST = {
+    assembly: {
+        cost: 0.00,
+        executor: 'local ffmpeg',
+        reason: 'joined by the local encoder (ADR-007: FFMPEG_PATH, then the system PATH, then ffmpeg-static); '
+            + 'no provider is billed. Wall time is roughly the length of the film.',
+    },
+};
+for (const step of LOCAL_STEPS) {
+    if (!LOCAL_STEP_COST[step] || typeof LOCAL_STEP_COST[step].cost !== 'number') {
+        throw new Error(`flow-cost: no cost estimate for local step '${step}'`);
     }
 }
 
@@ -97,20 +131,40 @@ function branchMultipliers(graph) {
 /**
  * Projected cost of running a graph once.
  *
- * @returns {{ total: number, calls: number, byCapability: object }}
+ * `calls` counts provider calls only; `local` carries the steps that reach no
+ * provider — the conform — each as a line with its runs, cost, executor and
+ * reason, and their cost is in `total`. A line at zero is not decoration: it
+ * is what makes a priced executor land under the gate on the day it arrives.
+ *
+ * @returns {{ total: number, calls: number, byCapability: object, local: object }}
  */
 function projectedCost(graph) {
     const multipliers = branchMultipliers(graph);
     const byCapability = {};
+    const local = {};
     let total = 0;
     let calls = 0;
 
     for (const node of (graph && graph.nodes) || []) {
         const def = nodeType(node.type);
         const capability = def && def.capability;
-        if (!capability) continue;              // inputs, transforms and outputs call no provider
-
         const runs = multipliers.get(node.id) || 1;
+
+        if (!capability) {
+            // Inputs, transforms and outputs call no provider — but an output
+            // that IS a local pipeline step still costs what its executor costs.
+            for (const step of (def && def.pipelineSteps) || []) {
+                const spec = LOCAL_STEP_COST[step];
+                if (!spec) continue;
+                const line = local[step] || { runs: 0, cost: 0, executor: spec.executor, reason: spec.reason };
+                line.runs += runs;
+                line.cost += spec.cost * runs;
+                local[step] = line;
+                total += spec.cost * runs;
+            }
+            continue;
+        }
+
         const cost = (COST_PER_CALL[capability] || 0) * runs;
 
         byCapability[capability] = (byCapability[capability] || 0) + cost;
@@ -118,7 +172,7 @@ function projectedCost(graph) {
         calls += runs;
     }
 
-    return { total, calls, byCapability };
+    return { total, calls, byCapability, local };
 }
 
 /**
@@ -149,4 +203,4 @@ function budgetStatus(db, projectId, projected) {
     };
 }
 
-module.exports = { COST_PER_CALL, projectedCost, branchMultipliers, budgetStatus };
+module.exports = { COST_PER_CALL, LOCAL_STEP_COST, LOCAL_STEPS, projectedCost, branchMultipliers, budgetStatus };

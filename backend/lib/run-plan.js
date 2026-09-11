@@ -26,11 +26,16 @@
 const { db } = require('../db/database');
 const { PIPELINE_STEPS } = require('./pipeline-engine');
 const { STEP_MODELS } = require('./scheduling-engine');
-const { COST_PER_CALL, budgetStatus } = require('./flow-cost');
+const { COST_PER_CALL, LOCAL_STEP_COST, budgetStatus } = require('./flow-cost');
 const { ARTEFACT_KINDS, fingerprintFor, isStale } = require('./artefact-fingerprint');
 
-/** Steps that call a provider. `assembly` is local and costs nothing. */
-const GENERATIVE_STEPS = PIPELINE_STEPS.filter(s => s.id !== 'assembly');
+/**
+ * Steps that call a provider, derived: everything the cost registry does not
+ * price as a LOCAL step. `assembly` was excluded here by name and then
+ * appeared nowhere in the plan — not as a strip, not as a line — so the one
+ * operation that spans the whole film was the one the plan never mentioned.
+ */
+const GENERATIVE_STEPS = PIPELINE_STEPS.filter(s => !LOCAL_STEP_COST[s.id]);
 
 /** Step id → capability, for cost. Mirrors routes/pipeline.js STEP_CAPABILITY. */
 const STEP_CAPABILITY = {
@@ -121,7 +126,21 @@ function buildRunPlan(projectId, options) {
         strip.capability = caps.length === 1 ? caps[0] : null;
     }
 
-    const projected = Number(strips.reduce((n, s) => n + s.projected_cost, 0).toFixed(6));
+    /*
+     * THE FILM, ONCE. A local step is project-scoped: it runs once per run,
+     * after every strip, and it is priced from the same registry the flow
+     * projection reads. Listed AND summed — a line that is listed and not
+     * summed is decoration, and the budget gate would not see a priced
+     * executor the day one arrives.
+     */
+    const film = Object.entries(LOCAL_STEP_COST).map(([step, spec]) => ({
+        step, scope: 'project', runs: 1,
+        projected_cost: Number(spec.cost.toFixed(6)),
+        executor: spec.executor, reason: spec.reason,
+    }));
+
+    const projected = Number((strips.reduce((n, s) => n + s.projected_cost, 0)
+        + film.reduce((n, f) => n + f.projected_cost, 0)).toFixed(6));
     const budget = budgetStatus(db, projectId, projected);
 
     /*
@@ -208,6 +227,9 @@ function buildRunPlan(projectId, options) {
         compliance: compliance.findings,
         blocked_by_compliance: blockedByCompliance,
         strips,
+        // The whole-film steps, after every strip. Not a strip: a strip is a
+        // model residency, and the conform loads no model.
+        film,
         total_items: wanted.length,
         projected_cost: projected,
         model_switches: switches,

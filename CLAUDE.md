@@ -3870,6 +3870,34 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Conform Is Projected, Not Omitted
+Both projections that feed the 402 gate — `projectedCost` for a flow graph and
+`buildRunPlan` for an orchestrated run — priced only the steps that call a
+provider. `assembly` calls none, so it appeared in **neither**: not as a line,
+not as a zero, not at all. Today that is free in provider credits, because
+ADR-007 made local ffmpeg the sole executor. The moment a priced executor
+arrives — a Gridlight endpoint, a provider stitch — the largest single
+operation in the product would be waved through the gate that exists to stop
+exactly that, and nothing would fail, because **an absent line is
+indistinguishable from a free one**.
+
+`LOCAL_STEP_COST` in `lib/flow-cost.js` prices every pipeline step that reaches
+no capability, with its executor and its reason, and refuses to boot with one
+left unpriced — the stance `COST_PER_CALL` already takes for a capability.
+`LOCAL_STEPS` is derived from `PIPELINE_STEPS` crossed with the node-type
+registry, so a second local step arrives priced or fails at load. The flow
+projection carries each as a `local` line multiplied along fan-out, and the run
+plan carries it as a `film` section — once per run, project-scoped, after every
+strip, and **summed into `projected_cost`** so the budget gate sees it. The
+run plan's `GENERATIVE_STEPS` is derived from the same registry rather than
+excluding `assembly` by name, which is how the film became the one operation
+the plan never mentioned.
+
+`tests/conform-cost.test.js` is set-based over the derived local steps and
+proves the gate **differentially**: pricing the conform moves the projection by
+exactly what was added and, with a budget set between, refuses the run. A line
+that is listed and not summed is decoration.
+
 ### A Missing Encoder Refuses the Run Before It Spends
 SHIP-001 declared that `assembly` depends on `ffmpeg` and the preflight probed
 it — through a resolver nothing could inject, so the one branch that turns *no
@@ -4681,6 +4709,7 @@ node --test backend/tests/conform-contract.test.js
 node --test backend/tests/project-master.test.js
 node --test backend/tests/assembly-once.test.js
 node --test backend/tests/qa-master-checks.test.js
+node --test backend/tests/conform-cost.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js
