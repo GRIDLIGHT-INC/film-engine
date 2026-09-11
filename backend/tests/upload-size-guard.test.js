@@ -83,6 +83,7 @@ const URLS = [
     '/props/p1/plate/import',
     '/projects/p1/mood-board/import',
     '/style-book/e1/media',                   // ends in `media`, not `import`
+    '/music-sessions/s1/stems',               // a batch of stems: files, not JSON
     '/music-cues/c1/audio',                   // ordinary JSON ceiling
     '/projects/p1/script',
 ];

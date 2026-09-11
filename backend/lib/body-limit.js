@@ -20,7 +20,10 @@
  */
 
 /** Last path segments that mean "this request carries a file". */
-const FILE_CARRYING_SEGMENTS = Object.freeze(['import', 'media']);
+// `stems` is a batch of audio files posted to a score session
+// (/film/music-sessions/:id/stems): a 24-bit 48 kHz stereo minute is ~17MB
+// raw, so a handful of stems clears the JSON default on the first real cue.
+const FILE_CARRYING_SEGMENTS = Object.freeze(['import', 'media', 'stems']);
 
 const JSON_LIMIT = 10 * 1024 * 1024;
 /*

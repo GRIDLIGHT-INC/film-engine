@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**299 tools, 69 families.** Everything the app can do, you can ask for in a
+**300 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -592,7 +592,8 @@ asset on the scene and cost money to make.
 `music_clip_list` · `music_clip_create` · `music_clip_update` · `music_clip_delete` ·
 `music_marker_list` · `music_marker_create` · `music_marker_update` · `music_marker_delete` ·
 `music_emotion_list` · `music_emotion_create` · `music_emotion_update` · `music_emotion_delete` ·
-`music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete`
+`music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete` ·
+`music_stem_import`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -620,6 +621,17 @@ accepts, so a refusal names the field rather than failing on save. Deleting
 anything here removes the arrangement row only; audio assets stay registered.
 `music_session_batch` writes several edits in order, atomically, with `$n`
 naming an earlier op's result — a track and the clips on it in one call.
+
+`music_stem_import` brings a composer's stems in **aligned**: every file lands
+as its own track and clip at one common start with a source offset of 0, so the
+leading silence — which IS the alignment — is never trimmed. The bytes decide
+the format (WAV/BWF, AIFF, FLAC, MP3, M4A), the original is stored
+byte-identical and hashed, the technical facts are read from the file, and BPM
+and key from tags or the filename are recorded as hints. Asking for 48k adds
+a 48 kHz working copy beside the original with its resampling written down. A
+rights row is recorded per file — `unknown` unless declared, never assumed
+cleared. One unreadable file refuses the whole batch and nothing is written.
+It spends nothing.
 
 ### Your own shots, kept across every film
 

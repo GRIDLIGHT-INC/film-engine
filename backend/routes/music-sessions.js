@@ -10,6 +10,7 @@
  *   GET    /film/music-sessions/:id/drift               FREE: what moved since the session was stamped; writes nothing
  *   POST   /film/music-sessions/:id/rebase              the explicit rebase
  *   POST   /film/music-sessions/:id/batch               ordered, atomic ops over the child kinds
+ *   POST   /film/music-sessions/:id/stems               aligned stem import: one or several files, one operation, one transaction
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -30,6 +31,7 @@
 const { db, generateId } = require('../db/database');
 const contracts = require('../lib/music-session');
 const context = require('../lib/music-context');
+const stems = require('../lib/music-stems');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -311,6 +313,12 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.ok ? 200 : 409, out);
         }
         if (sub === 'batch' && req.method === 'POST') { const r = runBatch(id, req.body); return json(res, r.status, r.body); }
+        if (sub === 'stems' && req.method === 'POST') {
+            // The importer is the whole rule (lib/music-stems.js); the route
+            // only turns its verdict into a status. A refusal wrote nothing.
+            const out = await stems.importStems(db, id, req.body);
+            return json(res, out.ok ? 201 : (out.status || 400), out);
+        }
 
         if (CHILD_KINDS[sub]) {
             const childId = urlParts[4];

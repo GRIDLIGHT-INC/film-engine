@@ -3550,6 +3550,7 @@ const PRODUCTION_TOOLS = [
 // the database will accept before it tries.
 const { handleMusicSessions, CHILD_KINDS: MUSIC_KINDS } = require('../routes/music-sessions');
 const musicContracts = require('./music-session');
+const musicStems = require('./music-stems');
 
 const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
 const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
@@ -3683,6 +3684,19 @@ function musicSessionTools() {
             required: ['session_id', 'ops'],
         },
     ];
+    tools.push({
+        name: 'music_stem_import', handler: H, method: 'POST',
+        description: 'Imports one or several composer stems into a score session, ALIGNED: every file lands as its own track and clip at the same start_ms with source_offset_ms 0, so leading silence is never trimmed — the alignment IS the leading silence. The bytes decide the format (WAV/BWF, AIFF, FLAC, MP3, M4A; the name is not trusted), the original is stored byte-identical and hashed, and duration, channels, sample rate, bit depth and codec are read from the file. BPM and key are read from tags or the filename as HINTS. normalize_48k writes a 48 kHz 24-bit working copy beside the original and records the resampling (a lossless file already at 48 kHz gets none). Writes one import operation, the assets, a rights row per file (status unknown unless declared) and the tracks and clips, in one transaction: one unreadable file refuses the whole batch and nothing is written. Spends nothing — no provider is called.',
+        path: a => `/film/music-sessions/${a.session_id}/stems`, body: dropIds('session_id'),
+        schema: {
+            ...S,
+            files: { type: 'array', description: 'The stems, in the order their tracks should appear. Each: { name: "drums.wav", data: "data:audio/wav;base64,…", role?: "drums" }. Sniffed by bytes; a name that lies is corrected.' },
+            start_ms: { type: 'integer', minimum: 0, description: 'Where every stem starts in the session clock. Default 0. One number for the whole batch: aligned stems share a start.' },
+            normalize_48k: { type: 'boolean', description: 'Also write a 48 kHz / 24-bit PCM working copy per stem, with lineage. The clip then plays the working copy; the original stays untouched.' },
+            rights: { type: 'object', description: `Who owns these and on what terms: { status: ${musicStems.RIGHTS_STATUSES.join('|')}, owner, source, license_url, territory, expires_on, restrictions, notes }. Omitted is recorded as status "unknown" — never assumed cleared.` },
+        },
+        required: ['session_id', 'files'],
+    });
     for (const [kind, spec] of Object.entries(MUSIC_KINDS)) {
         const one = MUSIC_SINGULAR[kind];
         const idArg = `${one}_id`;

@@ -111,6 +111,7 @@ film-engine/
 │   │   ├── music-sections.js     # A cue that changes over its own length
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
+│   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -3875,6 +3876,71 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Original Is Sacred; the Placement Is Aligned
+A composer hands over stems — several equal-length files sharing one start —
+and the one thing an importer must never do is help. `lib/music-stems.js`
+(MUS-006) is built around four refusals to help.
+
+**The bytes decide.** `STEM_FORMATS` sniffs WAV/BWF (`RIFF`/`RF64` + `WAVE`),
+AIFF (`FORM` + `AIFF`/`AIFC`), FLAC (`fLaC`), MP3 (ID3 or a frame sync) and
+M4A (an `ftyp` whose brands name M4A — `isom` alone is what a VIDEO carries),
+and the stored extension follows the bytes. A `.wav` that is an MP3 decodes as
+noise the day something reads it as PCM; a `take.bin` that is a BWF is a
+perfectly good stem. The declared name and MIME are recorded and trusted for
+nothing, which is the rule `media-imports.js` already follows for footage.
+
+**The original is stored byte-identical**, hashed with sha256, under a unique
+name so nothing ever overwrites it, and every technical fact — duration,
+channels, sample rate, bit depth, codec, bitrate — is read from the file by the
+encoder. Bit depth is a fact only about a lossless container: a lossy codec
+reconstructs its samples rather than storing them, so an MP3 reports `null`
+rather than a number somebody would budget a mix against.
+
+**The working copy is optional and recorded.** `normalize_48k` writes a
+48 kHz / 24-bit PCM derivative BESIDE the original with `derived_from` and the
+resampling (`{ from, to }`) in its metadata, and the clip plays the working
+copy so the session runs at one rate. A lossless file already at 48 kHz gets
+none and says so — resampling a file to itself is a copy with a lie attached.
+
+**The placement is aligned.** One track and one clip per file, every clip at
+the same `start_ms` with `source_offset_ms` **0** and the measured length, in
+the order the files were given. Leading silence survives because nothing
+touched the bytes; the validator's own comment on `source_offset_ms` says the
+same thing from the other side.
+
+**Rights are recorded, never assumed.** A `film_rights` row per original
+(`music` / `music_license`); no declaration is written as `unknown`, which is a
+recorded answer rather than an absence, and a status the register does not
+know is refused naming the field rather than stored as prose. **A stem is
+deliberately NOT put on a scene**: `film_assets.scene_id` is what the sound
+sheet and the timeline read to lay a scene's bed, and a stem with a scene id
+would be picked up as the scene's newest music and played under the cut. It
+belongs to its session through the clip and `metadata.session_id`, and reaches
+the film only through a bounce.
+
+**One operation, one transaction, or nothing.** A batch is one `import`
+operation and every row lands in one transaction; a refusal — one unreadable
+file, one illegal rights status — writes no rows and leaves no files, and names
+the file. The test plants a file that SNIFFS as a WAV and decodes as nothing,
+so the good file beside it is already on disk when the batch is refused —
+which is what makes the cleanup assertion real; a garbage file refused at the
+sniff never exercises it, and the first version of the test did exactly that.
+
+BPM and key are hints — from tags first, the filename second — stored as
+hints, so nothing paid rests on a `120bpm` somebody once typed into a name. A
+bare `C` in a filename is not read as C major: `take_C` is take C, and a hint
+that fires on every capital letter is one nobody trusts. A role is inferred
+from a short instrument vocabulary in the name and an explicit `role` wins.
+
+Served at `POST /film/music-sessions/:id/stems` (the path carries files, so it
+takes the file ceiling rather than the JSON one — added to
+`FILE_CARRYING_SEGMENTS` and to the page's mirror of it) and as
+`music_stem_import` (**300 tools**). `tests/music-stem-import.test.js` is
+set-based over `STEM_FORMATS`: every format is built for real with ffmpeg at
+44.1 kHz with 250 ms of leading silence, imported under a name that lies about
+it, and held to the same rules — byte-identical, true extension, measured,
+hashed, offset zero, common start.
+
 ### The Score Session Over MCP Is Derived, Not Typed
 Twenty-nine tools (**299 tools**) put the score session in front of an agent:
 nine for the session and, for **every** child kind the HTTP route exposes,
@@ -4970,6 +5036,7 @@ node --test backend/tests/music-session-contracts.test.js
 node --test backend/tests/music-context.test.js
 node --test backend/tests/music-sessions-routes.test.js
 node --test backend/tests/music-session-mcp.test.js
+node --test backend/tests/music-stem-import.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
