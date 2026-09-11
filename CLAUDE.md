@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (101 migrations)
+│   │   └── migrations/     # SQL migration files (102 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -3869,6 +3869,46 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Score Session Is a Schema, and the Schema Is Held to Itself
+`film_music_cues` models one cue: a type, a direction, a length, one generated
+asset. A soundtrack is not one cue. Migration 105 (numbered 105 rather than
+the epic's 103, which had landed under the pipeline work) adds the seven
+tables a score session needs — sessions, tracks, clips, emotion ranges,
+markers, automation, and an operation lineage — and three rules run through
+every one of them.
+
+**Every foreign key declares what happens on delete.** A key with no action is
+the `film_refsheet_jobs` trap of migration 067: a project delete that 500s the
+first time the project has real work in it. CASCADE where the child is
+meaningless without its parent (a track without its session); SET NULL where
+the child is work that cost money and must outlive a pointer. So a session
+whose picture sequence is deleted keeps its arrangement and its fingerprints,
+and a clip whose asset is deleted keeps its placement and says the source is
+gone — the arrangement is the work, the file is replaceable.
+
+**Every lifecycle value is a CHECK**, because a free-text status is three
+spellings of one state within a week. Session status, clip source kind (the
+three stem meanings the epic requires to stay explicit — native part, separated
+derivative, rendered delivery stem — plus a whole generated cue and an import),
+take status, emotion source and status, marker kind, automation parameter,
+operation kind and status. Ranges are CHECKs too: pan in −1..1, valence in
+−1..1, arousal, intensity and confidence in 0..1, and an emotion range that
+ends before it starts is refused at the row.
+
+**`film_assets` is not touched.** Its `asset_type` CHECK cannot be widened in
+place, so what a clip's audio *is* lives on the clip and in asset metadata, the
+way the 3D work types a mesh.
+
+`tests/music-workstation-schema.test.js` is set-based over the **migration
+file**: every table it creates gets a row built with its parents on demand,
+every `CHECK (col IN (...))` has each value accepted and an unlisted one
+refused, every range CHECK is probed at both ends and one past each, every
+foreign key is read from `PRAGMA foreign_key_list` and its declared rule is
+exercised by deleting the parent. A column added later is in the denominator
+with nothing to remember. The parser first read only quoted enum values, which
+would have left the numeric CHECKs — sample rate, the mute and solo flags —
+outside the set; it reads both now.
+
 ### A Capability With No Provider Is a Claim the Preflight Cannot Check
 `stock` sat in `CAPABILITIES` from the day the provider layer was written and
 **no adapter ever served it**: nothing searched a catalogue, nothing licensed a
@@ -4373,7 +4413,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (101 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (102 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -4421,6 +4461,13 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (101 migrations).
 - `film_backups` — Project backup metadata
 - `film_3d_jobs` — 3D asset generation jobs (text→mesh, image→mesh, rig, retexture, animate)
 - `film_video_attempts` — every video generation attempt: model, references, cost, acceptance
+- `film_music_sessions` — a score session attached to a picture sequence (or a scene), with fingerprints, tempo map and approved mix
+- `film_music_tracks` — lanes with a role and mixer state
+- `film_music_clips` — an immutable asset placed on a track: offset, fades, loop/warp policy, take, source kind
+- `film_music_emotion_ranges` — the emotional arc as time ranges; proposals until accepted
+- `film_music_markers` — shot boundaries, hit points, sections, sync points
+- `film_music_automation` — a parameter over time, per track or per clip
+- `film_music_operations` — every generate, separate, bounce, import, push, pull, rebase and approval, with lineage
 
 ## Epic Status
 
@@ -4780,6 +4827,7 @@ node --test backend/tests/conform-walk.test.js
 node --test backend/tests/music-workstation-epic-scope.test.js
 node --test backend/tests/music-workstation-research-brief.test.js
 node --test backend/tests/music-workstation-research.test.js
+node --test backend/tests/music-workstation-schema.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
