@@ -7,8 +7,8 @@ Instrument-render tickets GRD-3993..GRD-3996 are NOT part of this table: they wa
 |------|------|-------|------|
 | MUS-001 | GRD-3936 | DONE | Migration `105_music_workstation.sql` (103/104 were taken): seven tables, every FK with a deletion rule, every lifecycle and range a CHECK, film_assets untouched. `tests/music-workstation-schema.test.js` (9, set-based over the migration file). Full suite 4197/4197. Commit fc1caa6; GRD-3936 Done. |
 | MUS-002 | GRD-3937 | DONE | `lib/music-session.js`: VOCABULARY and RANGES held equal to migration 105's CHECKs in both directions; a validator per table (VALIDATORS), tempo-map and automation-point validation, lifecycle TRANSITIONS with every state present, toRow/fromRow over a JSON_COLUMNS registry, and `readScoreSession` as the one read model (SCORE_SESSION_SHAPE, project-scoped). `tests/music-session-contracts.test.js` (14, set-based over the migration's enums/ranges/JSON columns and every lifecycle). |
-| MUS-003 | GRD-3938 | TODO | Compile sequence score context — dependencies done; unblocked 2026-09-11. |
-| MUS-004 | GRD-3939 | WAITING ON MUS-002, MUS-003 | Add session HTTP API. |
+| MUS-003 | GRD-3938 | DONE | `lib/music-context.js`: `compileScoreContext` over a session, sequence or scene → neutral ScoreBrief (BRIEF_FIELDS registry: picture, screenplay, scenes, characters, dialogue, look, cues, emotion, motifs, length), provenance per field, per-field fingerprints plus script/picture/context; `compareContext`, `sessionDrift` (reports, never writes), `stampSessionContext` (the explicit rebase). `tests/music-context.test.js` (10, set-based over the registry: every drift field mutated, every non-input held still). |
+| MUS-004 | GRD-3939 | TODO | Add session HTTP API — dependencies done; unblocked 2026-09-11. |
 | MUS-005 | GRD-3940 | WAITING ON MUS-004 | Add session MCP workflow. |
 | MUS-006 | GRD-3941 | WAITING ON MUS-002, MUS-004 | Build aligned user stem import. |
 | MUS-007 | GRD-3942 | WAITING ON MUS-004, MUS-006 | Build native multitrack editor. |

@@ -109,6 +109,7 @@ film-engine/
 │   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
 │   │   ├── music-sections.js     # A cue that changes over its own length
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
+│   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -3870,6 +3871,48 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Score Brief Is Compiled Once, and Every Field Says Where It Came From
+`music_brief` reads a handful of scene facts. A score session is written
+against an **ordered sequence**: the exact screenplay version and passage of
+every scene it covers, the shots in the sequence's own order with their
+measured or written timings and the camera each is actually generated with,
+the cast and how much they talk, the film's look and optics, the cues already
+written with their sections, the accepted emotional arc, and the themes
+already made anywhere in the project. `lib/music-context.js` compiles all of
+it into one neutral `ScoreBrief` and decides nothing about what it should
+sound like — the connected agent is the model, and a brief is facts.
+
+**`BRIEF_FIELDS` is the registry.** Every field declares its source tables,
+what it is, and whether it bears drift; the compiler returns exactly those
+fields, a provenance entry per field naming the rows it was read from, and a
+fingerprint per field. Three coarse fingerprints sit over them — `script`,
+`picture`, `context` — so drift can say **which side moved**: a screenplay edit
+moves `script` and not `picture`; a reorder does the opposite.
+
+**A change that reaches no music does not move the fingerprint.** A project
+rename, a scene's status, a session's name, and above all an AI emotion
+**proposal nobody accepted** are non-inputs, and the test holds each of them
+to leaving the fingerprint alone. A warning that fires on work nobody needs to
+redo is one people learn to dismiss, and then the real one is dismissed with
+it. Ids and file names are identity, not content, and are hashed out: a motif
+re-registered under a new asset id is the same music.
+
+**Drift is reported, never applied.** `sessionDrift` compares what a session
+was stamped with against a fresh compile and writes nothing; a session with no
+fingerprints is `tracked: false` and not drifted, or the warning would fire on
+every session on the day this shipped. `stampSessionContext` is the explicit
+rebase, on the precedent `screenplay-drift/baseline` set. Durable generation
+reads **applied** previs blocking only; an experiment on the stage is not the
+camera a shot will be generated with.
+
+`tests/music-context.test.js` derives its denominator from the registry: every
+drift-bearing field has a real mutation — a new script version, a reorder, a
+new name on a card, a line of dialogue, a look change, a cue edit, an accepted
+range — that must move the field's own fingerprint and be named by
+`compareContext`, and every non-input must not. The first version's cast
+mutation added a name already in the cast through another shot, which moved
+nothing and would have passed as a defect in the compiler; it adds a stranger.
+
 ### The Music-Domain Contracts Are the Schema's Own Vocabulary, Read Once
 `lib/music-session.js` says what a session, a track, a clip, a tempo map, an
 emotion range, an automation curve and an operation *are*, provider-neutrally
@@ -4865,6 +4908,7 @@ node --test backend/tests/music-workstation-research-brief.test.js
 node --test backend/tests/music-workstation-research.test.js
 node --test backend/tests/music-workstation-schema.test.js
 node --test backend/tests/music-session-contracts.test.js
+node --test backend/tests/music-context.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
