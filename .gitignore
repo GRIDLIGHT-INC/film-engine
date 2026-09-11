@@ -9,3 +9,6 @@ xcuserdata/
 
 # Xcode archive and export output — the .ipa is a build artefact, not source
 build/
+
+# Session exports from the desktop client — not source
+Claude outputs/

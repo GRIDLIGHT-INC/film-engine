@@ -4777,6 +4777,9 @@ node --test backend/tests/assembly-once.test.js
 node --test backend/tests/qa-master-checks.test.js
 node --test backend/tests/conform-cost.test.js
 node --test backend/tests/conform-walk.test.js
+node --test backend/tests/music-workstation-epic-scope.test.js
+node --test backend/tests/music-workstation-research-brief.test.js
+node --test backend/tests/music-workstation-research.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
