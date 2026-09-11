@@ -108,6 +108,7 @@ film-engine/
 │   │   ├── dialogue-delivery.js   # How a line is SAID, and how long to hold after it
 │   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
 │   │   ├── music-sections.js     # A cue that changes over its own length
+│   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -3869,6 +3870,41 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Music-Domain Contracts Are the Schema's Own Vocabulary, Read Once
+`lib/music-session.js` says what a session, a track, a clip, a tempo map, an
+emotion range, an automation curve and an operation *are*, provider-neutrally
+— nothing in it knows ElevenLabs, Ableton or ffmpeg — and `readScoreSession`
+is the **one** read model every consumer receives: HTTP, MCP, the page, the
+bounce, bundles and DAW adapters. Two shapes of one thing is how the board
+and the viewer came to disagree about their own markup tools.
+
+**The vocabulary is not typed twice.** Migration 105 declares every lifecycle
+value as a CHECK and every bound as a range CHECK; the library's `VOCABULARY`
+and `RANGES` are the same sets, and `tests/music-session-contracts.test.js`
+reads the CHECKs out of the migration file and holds the two equal in **both
+directions**. A value the validator accepts and the database refuses is a 500
+on save; one the database accepts and the validator refuses is a row nobody
+can write through the API.
+
+**Lifecycles are transition tables, and every state is in them.** A session is
+signed off from review, never straight from a draft, and approval can be
+reopened — a lock nobody can get past is a lock nobody sets. A finished
+operation is terminal: a new attempt is a new row, with its own lineage. A
+refusal names both states and what the current one may become.
+
+Three rules the validators hold that the schema cannot. **A clip is whole
+milliseconds with a positive length and fades that fit inside it** — the cut
+is in milliseconds, never beats. **A tempo map starts at zero, is sorted, and
+has no two changes at one instant.** **An AI emotion proposal defaults to
+`proposed`, never `accepted`**: nothing paid may rest on a curve no person
+reviewed, and the default is exactly where that would slip through.
+
+Serialisation is one pair, `toRow` / `fromRow`, and `JSON_COLUMNS` is the
+registry of which columns hold JSON; the test derives every `*_json` column
+from the migration and round-trips each. A JSON column that will not parse
+reads as **empty and named** in `warnings`, never thrown — a corrupt tempo map
+must not take the whole session read down.
+
 ### The Score Session Is a Schema, and the Schema Is Held to Itself
 `film_music_cues` models one cue: a type, a direction, a length, one generated
 asset. A soundtrack is not one cue. Migration 105 (numbered 105 rather than
@@ -4828,6 +4864,7 @@ node --test backend/tests/music-workstation-epic-scope.test.js
 node --test backend/tests/music-workstation-research-brief.test.js
 node --test backend/tests/music-workstation-research.test.js
 node --test backend/tests/music-workstation-schema.test.js
+node --test backend/tests/music-session-contracts.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
