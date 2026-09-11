@@ -442,6 +442,87 @@ async function callElevenLabs(request, apiKey, opts) {
     return { ...second, error: `${second.error} (retried once after ${first.status})` };
 }
 
+/**
+ * STEM SEPARATION (MUS-011): the one ElevenLabs music endpoint that takes a
+ * FILE rather than words. Verified against the live API with a deliberately
+ * incomplete body (a 422 costs nothing): `POST /v1/music/stem-separation`,
+ * multipart, `file` required, `stem_variation_id` one of `two_stems_v1` /
+ * `six_stems_v1`, `output_format` in the query. It answers synchronously with
+ * a ZIP of stems, which is why `lib/music-separation.js` treats the bytes as
+ * untrusted and unpacks them itself.
+ *
+ * The output format is held to `mp3_*`: a `pcm_*` entry inside a ZIP may be
+ * headerless samples, and a stem the sniffer cannot identify is a stem the
+ * import refuses — the shape of that answer is unverified, so it is refused
+ * rather than guessed.
+ */
+const STEM_VARIATION_IDS = Object.freeze(['two_stems_v1', 'six_stems_v1']);
+const STEM_DEFAULT_OUTPUT = 'mp3_44100_128';
+
+function buildStemSeparationRequest(payload) {
+    const p = payload || {};
+    const baseUrl = (process.env.ELEVENLABS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const variation = String(p.stem_variation_id || '');
+    if (!STEM_VARIATION_IDS.includes(variation)) {
+        throw new Error(`elevenlabs: stem_variation_id must be one of ${STEM_VARIATION_IDS.join(', ')} (got '${variation}')`);
+    }
+    const file = p.file || {};
+    if (!file.bytes || !file.bytes.length) throw new Error('elevenlabs: stem separation needs the recording\'s bytes');
+    const outputFormat = /^mp3_\d+_\d+$/.test(String(p.output_format || '')) ? p.output_format : STEM_DEFAULT_OUTPUT;
+    const form = new FormData();
+    form.append('file', new Blob([file.bytes], { type: file.mime || 'application/octet-stream' }), file.name || 'source.wav');
+    form.append('stem_variation_id', variation);
+    return {
+        url: `${baseUrl}/music/stem-separation?output_format=${encodeURIComponent(outputFormat)}`,
+        multipart: true, form, model: variation, outputFormat, mimeType: 'application/zip', format: 'zip',
+    };
+}
+
+/** The multipart call, with the same retry-once rule as every other ElevenLabs request: 5xx and 429 only. */
+async function callElevenLabsMultipart(request, apiKey, opts) {
+    const o = opts || {};
+    const delay = o.retryDelayMs === undefined ? RETRY_DELAY_MS : o.retryDelayMs;
+    const first = await callMultipartOnce(request, apiKey, o);
+    if (first.ok || !RETRY_STATUS.has(first.status)) return first;
+    await new Promise(r => setTimeout(r, delay));
+    const second = await callMultipartOnce(request, apiKey, o);
+    if (second.ok) return second;
+    return { ...second, error: `${second.error} (retried once after ${first.status})` };
+}
+
+async function callMultipartOnce(request, apiKey, opts) {
+    const controller = new AbortController();
+    const timeout = (opts && opts.timeout) || 600000;
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+        // No Content-Type: fetch writes the multipart boundary itself, and a
+        // hand-set header without it is a body the server cannot split.
+        const response = await fetch(request.url, {
+            method: 'POST',
+            headers: { 'Accept': 'application/zip', 'xi-api-key': apiKey },
+            body: request.form,
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!response.ok) {
+            const body = await parseErrorResponse(response);
+            return { ok: false, status: response.status, error: normalizeError('elevenlabs', response.status, body) };
+        }
+        const data = Buffer.from(await response.arrayBuffer());
+        return {
+            ok: true, status: response.status, data,
+            mimeType: 'application/zip', contentType: 'application/zip',
+            provider: 'elevenlabs', provider_model: request.model,
+            provider_job_id: response.headers.get('request-id') || response.headers.get('x-request-id') || '',
+            meta: { output_format: request.outputFormat, format: 'zip', stem_variation_id: request.model },
+        };
+    } catch (err) {
+        clearTimeout(timer);
+        if (err.name === 'AbortError') return { ok: false, status: 504, error: `elevenlabs: stem separation timed out after ${timeout}ms` };
+        return { ok: false, status: 500, error: `elevenlabs: ${err.message}` };
+    }
+}
+
 async function callElevenLabsOnce(request, apiKey, opts) {
     const controller = new AbortController();
     const timeout = (opts && opts.timeout) || 300000;
@@ -591,7 +672,16 @@ const adapter = {
             limits: { min_ms: MUSIC_MIN_MS, max_ms: MUSIC_MAX_MS, models: ['music_v1', 'music_v2'], section_min_ms: 3000, section_max_ms: 120000 },
             source: 'https://elevenlabs.io/docs/api-reference/music/compose' },
         music_parts: { status: 'unsupported', reason: 'ElevenLabs Music returns one mixed cue; it has no native multi-part output' },
-        music_separate: { status: 'planned', reason: 'two- and six-stem separation is the next task (MUS-011); the endpoint is not wired here yet', limits: { stem_counts: [2, 6] } },
+        /*
+         * Separation (MUS-011). `max_input_ms` is null because ElevenLabs
+         * publishes no input-length ceiling for this endpoint; null is the
+         * stated absence, not an invented number. The input formats are the
+         * ones the stem importer sniffs, since the recording is always one of
+         * those by the time it is on a track.
+         */
+        music_separate: { status: 'available', models: ['two_stems_v1', 'six_stems_v1'], default_model: 'six_stems_v1',
+            limits: { stem_counts: [2, 6], max_input_ms: null, input_formats: ['wav', 'aiff', 'flac', 'mp3', 'm4a'] },
+            source: 'https://elevenlabs.io/docs/api-reference/music/separate-stems' },
         music_reference: { status: 'unsupported', reason: '/music takes a prompt or a composition plan and no reference audio or melody' },
         music_video: { status: 'unsupported', reason: '/music takes no picture; a cue is conditioned on words and a length only' },
         music_inpaint: { status: 'unsupported', reason: '/music regenerates a whole cue; it cannot regenerate a range of an existing one in context' },
@@ -609,6 +699,13 @@ const adapter = {
         }
         const { apiKey } = getCredential('elevenlabs');
         if (!apiKey) return missingKey();
+
+        if (capability === 'music' && payload && payload.workflow === 'music_separate') {
+            let sepRequest;
+            try { sepRequest = buildStemSeparationRequest(payload); }
+            catch (e) { return { ok: false, status: 400, error: e.message }; }
+            return callElevenLabsMultipart(sepRequest, apiKey, opts);
+        }
 
         let request;
         if (capability === 'voice') request = buildVoiceRequest(payload || {});
@@ -739,5 +836,7 @@ module.exports = {
     buildSfxRequest,
     buildMusicRequest,
     buildAmbientRequest,
-    normalizeOutputFormat,
+    buildStemSeparationRequest,
+    callElevenLabsMultipart,
+    STEM_VARIATION_IDS,
 };

@@ -18,6 +18,10 @@
  *   GET    /film/music-sessions/:id/emotion/brief        FREE: the brief, the accepted arc, the pending proposals, the schema, the rules — for the model to reason from
  *   GET|POST /film/music-sessions/:id/emotion/proposals  list proposals / store one (proposed, never accepted)
  *   POST   /film/music-sessions/:id/emotion/proposals/:pid/accept  the explicit acceptance, per range, with edits
+ *   GET    /film/music-sessions/:id/separations/plan     FREE: provider, variation, expected stems, placement and cost hint for separating a clip
+ *   POST   /film/music-sessions/:id/separations          separate a clip into 2 or 6 stems (SPENDS); answers at once with a running operation
+ *   GET    /film/music-sessions/:id/separations[/:opId]  every separation of the session, or one, with its stems or its failure
+ *   POST   /film/music-sessions/:id/separations/:opId/retry  a failed separation again, as a new operation naming the one it retries
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -41,6 +45,7 @@ const context = require('../lib/music-context');
 const stems = require('../lib/music-stems');
 const renderer = require('../lib/music-renderer');
 const emotion = require('../lib/music-emotion');
+const separation = require('../lib/music-separation');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -366,6 +371,36 @@ async function handleMusicSessions(req, res, urlParts, query) {
             if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid id' });
             const one = renderer.getBounce(db, id, urlParts[4]);
             return one ? json(res, 200, one) : json(res, 404, { error: 'Bounce not found' });
+        }
+        if (sub === 'separations') {
+            // The separation is the whole rule (lib/music-separation.js). A
+            // start answers at once with a RUNNING operation — the provider
+            // takes as long as it takes — unless the caller asked to wait.
+            const leaf = urlParts[4], verb = urlParts[5];
+            const wait = (v) => v === true || v === 1 || v === 'true';
+            if (leaf === 'plan' && req.method === 'GET') {
+                const plan = separation.planSeparation(db, id, { clip_id: query && query.clip_id, stems: query && query.stems, output_format: query && query.output_format });
+                return json(res, plan.ok ? 200 : (plan.status || 400), plan);
+            }
+            if (!leaf && req.method === 'GET') return json(res, 200, { session_id: id, separations: separation.listSeparations(db, id) });
+            if (!leaf && req.method === 'POST') {
+                const b = req.body || {};
+                const out = await separation.startSeparation(db, id, { clip_id: b.clip_id, stems: b.stems, output_format: b.output_format }, { wait: wait(b.wait) });
+                if (typeof out.status === 'number') return json(res, out.status, out);
+                const one = separation.getSeparation(db, id, out.operation_id);
+                return json(res, 202, { ...one, warnings: out.warnings || (one && one.warnings) || [] });
+            }
+            if (leaf && !UUID_RE.test(leaf)) return json(res, 400, { error: 'Invalid separation id' });
+            if (leaf && !verb && req.method === 'GET') {
+                const one = separation.getSeparation(db, id, leaf);
+                return one ? json(res, 200, one) : json(res, 404, { error: 'Separation not found' });
+            }
+            if (leaf && verb === 'retry' && req.method === 'POST') {
+                const out = await separation.retrySeparation(db, id, leaf, { wait: wait((req.body || {}).wait) });
+                if (typeof out.status === 'number') return json(res, out.status, out);
+                return json(res, 202, separation.getSeparation(db, id, out.operation_id));
+            }
+            return json(res, 405, { error: 'Method not allowed' });
         }
         if (sub === 'stems' && req.method === 'POST') {
             // The importer is the whole rule (lib/music-stems.js); the route

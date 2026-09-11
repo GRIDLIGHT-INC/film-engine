@@ -3559,6 +3559,7 @@ const { handleMusicSessions, CHILD_KINDS: MUSIC_KINDS } = require('../routes/mus
 const musicContracts = require('./music-session');
 const musicStems = require('./music-stems');
 const musicRenderer = require('./music-renderer');
+const musicSeparation = require('./music-separation');
 
 const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
 const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
@@ -3751,6 +3752,43 @@ function musicSessionTools() {
                 stems: { type: 'string', enum: musicRenderer.STEM_MODES, description: 'none (master only), instrument, family or bus.' },
                 force: { type: 'boolean', description: 'Render again even though nothing changed since the last bounce; the result is a new version that supersedes it.' } },
             required: ['session_id'],
+        },
+        {
+            name: 'music_separate_plan', handler: H, method: 'GET',
+            description: 'Free — spends nothing, writes nothing. What separating a clip of a score session WOULD do: the project\'s music provider, the variation (2 stems: vocals + instrumental; 6 stems: vocals, drums, bass, guitar, piano, other), the stems expected back, the recording that would be sent and its length, the placement every stem will take (the source clip\'s own start, offset and length), and a cost hint from the rate book. Refused with the reason when the provider cannot separate, the clip has no audio, or the file is missing. Read it before music_separate.',
+            path: a => `/film/music-sessions/${a.session_id}/separations/plan?clip_id=${encodeURIComponent(a.clip_id)}&stems=${encodeURIComponent(a.stems)}${a.output_format ? '&output_format=' + encodeURIComponent(a.output_format) : ''}`,
+            schema: { ...S, clip_id: { type: 'string', description: 'The clip whose recording would be separated.' },
+                stems: { type: 'integer', enum: Object.keys(musicSeparation.VARIATIONS).map(Number), description: 'How many stems: 2 or 6.' },
+                output_format: { type: 'string', description: 'mp3_<rate>_<kbps>; default mp3_44100_128.' } },
+            required: ['session_id', 'clip_id', 'stems'],
+        },
+        {
+            name: 'music_separate', handler: H, method: 'POST',
+            description: 'COSTS MONEY — sends a clip\'s recording to the project\'s music provider to be split into two or six stems (2: vocals + instrumental; 6: vocals, drums, bass, guitar, piano, other). The result is a DERIVATIVE: each returned stem becomes one asset (with lineage to the source and the operation), one track with a role, and one clip placed exactly where the source clip sits; the source recording, its asset and its clip are never touched, and the stems carry the source\'s rights. Answers at once with a running operation (wait: true to block until it finishes); read it with music_separation_status. A bad archive, a provider error or a stem that cannot be read leaves the operation failed with the reason and NOTHING registered — retry it with music_separation_retry. Read music_separate_plan first, and ask before spending.',
+            path: a => `/film/music-sessions/${a.session_id}/separations`, body: dropIds('session_id'),
+            schema: { ...S, clip_id: { type: 'string', description: 'The clip whose recording is separated.' },
+                stems: { type: 'integer', enum: Object.keys(musicSeparation.VARIATIONS).map(Number), description: 'How many stems: 2 or 6.' },
+                output_format: { type: 'string', description: 'mp3_<rate>_<kbps>; default mp3_44100_128.' },
+                wait: { type: 'boolean', description: 'Block until the separation has finished rather than answering with a running operation.' } },
+            required: ['session_id', 'clip_id', 'stems'],
+        },
+        {
+            name: 'music_separation_status', handler: H, method: 'GET',
+            description: 'Free. One separation: running, complete (with each stem\'s asset, track, clip and served url, and any warnings about stems that were not the ones expected) or failed (with the reason). Nothing is re-sent.',
+            path: a => `/film/music-sessions/${a.session_id}/separations/${a.operation_id}`,
+            schema: { ...S, operation_id: { type: 'string' } }, required: ['session_id', 'operation_id'],
+        },
+        {
+            name: 'music_separation_list', handler: H, method: 'GET',
+            description: 'Free. Every separation of a session, newest first, with its status, stems or failure, and the retry it came from.',
+            path: a => `/film/music-sessions/${a.session_id}/separations`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_separation_retry', handler: H, method: 'POST',
+            description: 'COSTS MONEY — tries a FAILED separation again as a new operation whose parent names the failed one (the failure stays in the lineage). Only a failed separation can be retried; a complete one is refused. Ask before spending.',
+            path: a => `/film/music-sessions/${a.session_id}/separations/${a.operation_id}/retry`, body: dropIds('session_id', 'operation_id'),
+            schema: { ...S, operation_id: { type: 'string' }, wait: { type: 'boolean', description: 'Block until the retry has finished.' } },
+            required: ['session_id', 'operation_id'],
         },
         {
             name: 'music_bounce_list', handler: H, method: 'GET',

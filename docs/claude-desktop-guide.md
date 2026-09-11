@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**308 tools, 69 families.** Everything the app can do, you can ask for in a
+**313 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -594,7 +594,8 @@ asset on the scene and cost money to make.
 `music_emotion_list` · `music_emotion_create` · `music_emotion_update` · `music_emotion_delete` ·
 `music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete` ·
 `music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities` ·
-`music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept`
+`music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept` ·
+`music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -644,6 +645,18 @@ stems grouped per instrument, family or production bus — registers every
 output with its render parameters, keeps every earlier version, and refuses an
 unchanged session unless forced. `music_bounce_list` lists every version with
 its files. None of the three reaches a provider.
+
+**Separating a recording costs money and never touches the recording.**
+`music_separate_plan` is free: the provider, the variation (two stems —
+vocals and instrumental — or six: vocals, drums, bass, guitar, piano, other),
+the stems expected back, the placement every stem will take and a cost hint.
+`music_separate` sends the clip's recording and answers at once with a running
+operation; each returned stem becomes its own asset, track and clip, placed
+exactly where the source clip sits, carrying the source's rights, with the
+source untouched. A bad archive or a provider error leaves the operation
+failed with nothing registered; `music_separation_retry` tries a failed one
+again as a new operation that names it. `music_separation_status` and
+`music_separation_list` read them for free.
 
 `music_capabilities` is free and answers, for the project's own music
 provider, which of the six music workflows it serves — compose a whole cue,

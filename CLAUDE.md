@@ -115,6 +115,7 @@ film-engine/
 │   │   ├── music-renderer.js     # The deterministic bounce: what the session says is what the file holds
 │   │   ├── music-capabilities.js # Six music workflows; every provider answers for each, and "no" has a reason
 │   │   ├── music-emotion.js      # The model proposes the arc, a person accepts it, nothing paid rests on a proposal
+│   │   ├── music-separation.js   # A recording split into stems: a derivative, aligned under its source, from an untrusted ZIP
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -602,6 +603,7 @@ film-engine/
 │       ├── music-bounce.test.js         # Every rendered file is measured: silence, overlap, fades, solo/mute, pan/gain, failures, versions
 │       ├── music-capabilities.test.js   # Six workflows, every music adapter answers for each, and a refusal names the reason
 │       ├── music-emotion-proposals.test.js # Every bound refused out of range, coverage validated, and a proposal reaches nothing until accepted
+│       ├── music-separation.test.js # Two and six stems land aligned with lineage; a bad ZIP or a provider error registers nothing
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -3933,6 +3935,63 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### Separating a Recording Makes a Derivative, and the Recording Is Kept
+A clip on a score session can be split into two stems (vocals, instrumental)
+or six (vocals, drums, bass, guitar, piano, other) by ElevenLabs — the only two
+`stem_variation_id` values the live endpoint accepts, established by a 422
+probe that costs nothing. `lib/music-separation.js` (MUS-011) is built around
+one rule: a separation ADDS beside the source and never edits it. The source
+file, its asset row and its clip are untouched; each returned stem becomes one
+asset (`kind: separated_stem`, `derived_from` the source, lineage naming the
+operation and variation), one track with a role, and one clip at the SOURCE
+CLIP'S placement — same start, same offset into the file, same length —
+because a separation is sample-aligned with what it came from and a stem
+placed anywhere else is the recording moved. Rights follow: the stem's asset
+takes the source's licence status and gets a rights row copied from the
+source's, noted as derived.
+
+**The provider answers with a ZIP, and a ZIP is untrusted bytes.** It is read
+by its own central directory, not by a library that would write where the
+archive says: an absolute or `..` entry name refuses the batch; an entry whose
+declared size passes the per-stem cap is refused before it is inflated, and
+inflation runs with a ceiling one byte past the declared size so a lying header
+cannot expand past it; a length or CRC that disagrees is refused; every
+entry's bytes decide what it is. A non-audio entry (a README) is ignored and
+named; an entry named as audio that is not refuses the batch and names it. A
+compression RATIO is deliberately not a refusal — a silent stem compresses a
+thousand to one, and a bomb check that fires on silence fires on every vocal
+stem with rests in it. A stem the variation did not promise is registered and
+named rather than dropped.
+
+**All or nothing, and retryable.** One `separate` operation per attempt. A
+provider error, a bad archive, a stem the encoder cannot read or a failed
+registration leaves it FAILED with the reason, with no asset rows, no tracks
+and no files. A retry is a new operation whose `parent_id` names the failed one,
+and only a failed separation can be retried. The start answers at once with a
+running operation — the provider takes as long as it takes — and the status
+catches up.
+
+`music_separate` flips from planned to **available** in the ElevenLabs
+contract with its limits: stem counts `[2, 6]`, `max_input_ms: null` because
+the provider publishes no input ceiling (null is the stated absence, not an
+invented number), and the formats the stem importer sniffs. The multipart call
+shares the adapter's retry-once rule (5xx and 429, never a 4xx) and is metered
+as music seconds at the variation's multiplier: two stems are documented at
+half a generation's cost, six are not separately priced and are held at the
+full rate, marked inferred. Output is held to `mp3_*`, because a `pcm_*` entry
+inside an archive may be headerless samples the sniffer cannot identify, and
+that shape is unverified.
+
+Served at `GET /film/music-sessions/:id/separations/plan` (free), `POST
+…/separations`, `GET …/separations[/:opId]` and `POST
+…/separations/:opId/retry`, and as five tools (**313 tools**).
+`tests/music-separation.test.js` is set-based over both variations and over
+the failure set — traversal, an absolute name, an inflation past the cap,
+a mislabelled non-audio entry, an empty archive, bytes that are not a ZIP, a
+provider 5xx — each of which must leave a failed operation, no assets, no
+tracks and no files. The adapter half runs against a stubbed fetch with the
+real endpoint contract, so nothing is bought to prove a ZIP is unpacked.
+
 ### Six Ways to Make Music, and "No" Is an Answer With a Reason
 The engine had one music capability — a whole cue from a prompt — and the
 workstation needs six ways of making music: compose a cue, generate its native
@@ -5270,6 +5329,7 @@ node --test backend/tests/music-workstation-editor.test.js
 node --test backend/tests/music-bounce.test.js
 node --test backend/tests/music-capabilities.test.js
 node --test backend/tests/music-emotion-proposals.test.js
+node --test backend/tests/music-separation.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

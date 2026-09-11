@@ -156,6 +156,7 @@ const MUSIC_CALL_SITES = Object.freeze([
     { file: 'routes/music-gen.js', fn: 'generateMusic', workflow: 'music_compose' },
     { file: 'routes/music-gen.js', fn: 'generateMusicStream', workflow: 'music_compose' },
     { file: 'routes/music-gen.js', fn: 'batchMusicStream', workflow: 'music_compose' },
+    { file: 'lib/music-separation.js', fn: 'resolveSeparator', workflow: 'music_separate' },
 ]);
 
 // ── Contracts ──────────────────────────────────────────────────────────────
