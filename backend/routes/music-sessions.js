@@ -12,6 +12,9 @@
  *   POST   /film/music-sessions/:id/rebase              the explicit rebase
  *   POST   /film/music-sessions/:id/batch               ordered, atomic ops over the child kinds
  *   POST   /film/music-sessions/:id/stems               aligned stem import: one or several files, one operation, one transaction
+ *   GET    /film/music-sessions/:id/bounce/plan         FREE: what a bounce would render, what it would leave out and why, the version it would become
+ *   POST   /film/music-sessions/:id/bounce              the deterministic bounce: master + delivery stems at 48 kHz, registered; 409 when unchanged
+ *   GET    /film/music-sessions/:id/bounces[/:opId]     every bounce of the session with its outputs, newest version first
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -33,6 +36,7 @@ const { db, generateId } = require('../db/database');
 const contracts = require('../lib/music-session');
 const context = require('../lib/music-context');
 const stems = require('../lib/music-stems');
+const renderer = require('../lib/music-renderer');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -325,6 +329,26 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.ok ? 200 : 409, out);
         }
         if (sub === 'batch' && req.method === 'POST') { const r = runBatch(id, req.body); return json(res, r.status, r.body); }
+        if (sub === 'bounce') {
+            // The renderer is the whole rule (lib/music-renderer.js); the route
+            // turns a verdict into a status. A plan writes nothing.
+            if (urlParts[4] === 'plan' && req.method === 'GET') {
+                const plan = renderer.planBounce(db, id, { stems: query && query.stems });
+                return json(res, plan.ok ? 200 : (plan.status || 409), plan);
+            }
+            if (!urlParts[4] && req.method === 'POST') {
+                const b = req.body || {};
+                const out = await renderer.runBounce(db, id, { stems: b.stems, force: b.force === true || b.force === 1 || b.force === 'true' });
+                return json(res, out.ok ? 201 : (out.status || 400), out);
+            }
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        if (sub === 'bounces' && req.method === 'GET') {
+            if (!urlParts[4]) return json(res, 200, { session_id: id, bounces: renderer.listBounces(db, id) });
+            if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid id' });
+            const one = renderer.getBounce(db, id, urlParts[4]);
+            return one ? json(res, 200, one) : json(res, 404, { error: 'Bounce not found' });
+        }
         if (sub === 'stems' && req.method === 'POST') {
             // The importer is the whole rule (lib/music-stems.js); the route
             // only turns its verdict into a status. A refusal wrote nothing.

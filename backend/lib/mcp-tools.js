@@ -3551,6 +3551,7 @@ const PRODUCTION_TOOLS = [
 const { handleMusicSessions, CHILD_KINDS: MUSIC_KINDS } = require('../routes/music-sessions');
 const musicContracts = require('./music-session');
 const musicStems = require('./music-stems');
+const musicRenderer = require('./music-renderer');
 
 const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
 const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
@@ -3697,6 +3698,29 @@ function musicSessionTools() {
         },
         required: ['session_id', 'files'],
     });
+    tools.push(
+        {
+            name: 'music_bounce_plan', handler: H, method: 'GET',
+            description: 'Free — writes nothing, renders nothing. What a bounce of this session WOULD do: the audible clips with their resolved gain, pan, fades, loop and automation, every clip left out with its reason (muted, another track soloed, take not selected, a reference track), the delivery stems the chosen mode would group, the fingerprint, the version it would become, and whether the session is unchanged since the last render. Read it before bouncing.',
+            path: a => `/film/music-sessions/${a.session_id}/bounce/plan${a.stems ? '?stems=' + encodeURIComponent(a.stems) : ''}`,
+            schema: { ...S, stems: { type: 'string', enum: musicRenderer.STEM_MODES, description: 'How to group the delivery stems: none (master only), instrument (one per track), family (one per family track the sources route to), bus (one per production bus).' } },
+            required: ['session_id'],
+        },
+        {
+            name: 'music_bounce', handler: H, method: 'POST',
+            description: 'The deterministic bounce: renders the session\'s selected takes, with track and clip gain, pan, fades, loops and gain/mute automation, into a 48 kHz / 24-bit stereo MASTER plus the chosen delivery stems (equal length, one file each), through the local encoder — spends nothing at any provider. Every output is registered as an asset with the render parameters and the operation that made it; earlier versions are kept, never overwritten. A session unchanged since its last bounce is refused (409, UNCHANGED) unless force is true, so the same inputs are not rendered twice by accident. Refused, with the clip named, when a clip\'s file is missing.',
+            path: a => `/film/music-sessions/${a.session_id}/bounce`, body: dropIds('session_id'),
+            schema: { ...S,
+                stems: { type: 'string', enum: musicRenderer.STEM_MODES, description: 'none (master only), instrument, family or bus.' },
+                force: { type: 'boolean', description: 'Render again even though nothing changed since the last bounce; the result is a new version that supersedes it.' } },
+            required: ['session_id'],
+        },
+        {
+            name: 'music_bounce_list', handler: H, method: 'GET',
+            description: 'Free. Every bounce of a session, newest version first: status, fingerprint, what it superseded, the master and each stem with its served url, what was left out and why. The newest complete one is marked current.',
+            path: a => `/film/music-sessions/${a.session_id}/bounces`, schema: S, required: ['session_id'],
+        },
+    );
     for (const [kind, spec] of Object.entries(MUSIC_KINDS)) {
         const one = MUSIC_SINGULAR[kind];
         const idArg = `${one}_id`;

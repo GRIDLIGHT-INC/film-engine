@@ -112,6 +112,7 @@ film-engine/
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
+│   │   ├── music-renderer.js     # The deterministic bounce: what the session says is what the file holds
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -596,6 +597,7 @@ film-engine/
 │       ├── docx-text.test.js             # DOCX text extraction
 │       ├── integration.test.js       # Integration test suite (43 tests)
 │       ├── music-workstation-editor.test.js # Every field the score validators accept has a control that saves; the mix is heard, not spent
+│       ├── music-bounce.test.js         # Every rendered file is measured: silence, overlap, fades, solo/mute, pan/gain, failures, versions
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -634,6 +636,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/{brief,drift}` (free), `POST /music-sessions/:id/{rebase,batch}` |
 | Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
 | Score Sessions | `POST /music-sessions/:id/stems` (aligned import), `GET /music-sessions/vocabulary` (free: enums, ranges, lifecycle) |
+| Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -3878,6 +3881,63 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### What the Session Says Is What the File Holds
+The browser monitors a score session through an audio context; the film is
+delivered from a **file**, and the two must not disagree. `lib/music-renderer.js`
+(MUS-008) renders the session's rows into one ffmpeg graph: a 48 kHz, 24-bit
+stereo master plus the chosen delivery stems, registered with the parameters
+that made them.
+
+**Planning is pure and separate from rendering**, the split the conform
+already makes. `planBounce` reads the read model, decides what is audible and
+why the rest is not, groups the stems, fingerprints everything, and touches no
+file — so `GET …/bounce/plan` and `music_bounce_plan` can say what a bounce
+WOULD do for nothing. `buildBounceArgs` turns the plan into an argument array
+(names come from the database, never a shell string) and `runBounce` runs it,
+validates every output before registering anything, and records it.
+
+**What is audible is one rule, and it is the page's rule.** Track and clip
+gain sum in dB along the routing chain; a mute anywhere on the chain silences
+the clip; a solo anywhere in the session silences everything not soloed; only
+the **selected** take plays; reference and picture tracks are guides that
+never reach the mix. Every clip left out is **named with its reason**, because
+a bounce that quietly dropped a muted track and one that quietly dropped a
+broken one look identical afterwards.
+
+**Nothing is normalised.** `amix` scales its inputs by their count by default,
+so two tones would come back 6 dB down and a lone clip's level would move
+whenever a clip was added beside it. `normalize=0`, and the session length is
+carried by a silent base input per output, so the master and every stem are
+exactly the session's length — the equal-length interchange baseline is a
+property of the graph rather than a check afterwards. Loops repeat the source
+region with `aloop`; fades are `afade` ramps inside the clip; a pan is a
+channel coefficient; gain and mute **automation** are rendered as per-frame
+`volume` expressions. Pan, send and filter curves have no per-frame filter
+here and are **reported as not rendered** with the static value used.
+
+**A bounce is a take.** Each render is a new operation with a new version and
+new files; earlier masters stay registered and on disk, and the new one names
+what it supersedes. The fingerprint covers everything the render reads —
+placements, levels, fades, loops, automation, the files' own identity — so an
+unchanged session is **refused with 409 `UNCHANGED`** rather than rendered
+again, and a changed one renders without anyone saying what changed. `force`
+renders it anyway as a new version. A failure leaves a **failed** operation
+naming why, registers nothing and deletes what it wrote.
+
+`tests/music-bounce.test.js` **produces a file and measures it** for every
+case the epic names — silence, overlap, fades, solo/mute, pan/gain, failures,
+rerender versioning — and is set-based over `STEM_MODES`: silence is a level
+below the noise floor, a fade is the head measured against the body, a pan is
+a channel that is silent while the other is not, and two equal tones sum to
++3 dB, which is what proves nothing is normalised. Its first "heard"
+threshold was typed from memory (−12 dB) and wrong: ffmpeg's sine source plays
+near −24 dB, so a heard clip measures −30 — the threshold now sits between
+what the fixture produces and what silence measures.
+
+Served at `GET /film/music-sessions/:id/bounce/plan`, `POST …/bounce`,
+`GET …/bounces[/:opId]`, and as `music_bounce_plan` / `music_bounce` /
+`music_bounce_list` (**303 tools**).
+
 ### The Score Has a Keyboard
 The score session had a route (MUS-004), thirty tools (MUS-005) and an
 importer (MUS-006), and no page: every track, clip, range and marker could be
@@ -5106,6 +5166,7 @@ node --test backend/tests/music-sessions-routes.test.js
 node --test backend/tests/music-session-mcp.test.js
 node --test backend/tests/music-stem-import.test.js
 node --test backend/tests/music-workstation-editor.test.js
+node --test backend/tests/music-bounce.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
