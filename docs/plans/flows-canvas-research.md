@@ -186,7 +186,7 @@ Full definitions in [`flows-canvas-node-taxonomy.json`](./flows-canvas-node-taxo
 - **Transforms (5):** Audio Mix, Stitch, Encode, Variants (fan-out), Select/Compare
 - **Outputs (3):** Assembly, Save Asset, Export
 
-\* `in.stock` is defined but disabled — no source adapter is registered today. It is in the palette so coverage is measured against the capability registry, not against what happens to be wired.
+The provider-backed input set contains only capabilities with a real adapter; a licensed-catalog node can return when a source adapter ships.
 
 The coverage claim is enforced by `backend/tests/flows-node-taxonomy.test.js`, which **iterates the live registries** rather than asserting examples. Add a capability to `CAPABILITIES` or a step to `PIPELINE_STEPS` and the test fails until the taxonomy grows with it.
 

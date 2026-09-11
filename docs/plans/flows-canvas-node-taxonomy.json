@@ -2,7 +2,7 @@
   "$comment": "Proposed node palette for a Flows-style visual canvas in Film Engine. Research artifact accompanying docs/plans/flows-canvas-research.md. Coverage is enforced by backend/tests/flows-node-taxonomy.test.js, which iterates the live CAPABILITIES and PIPELINE_STEPS registries \u2014 add a capability or a pipeline step and this file must grow with it.",
   "version": 1,
   "covers": {
-    "capabilities": 12,
+    "capabilities": 11,
     "pipeline_steps": 9
   },
   "port_types": [
@@ -278,25 +278,6 @@
       "pipeline_steps": [],
       "backed_by": "providers.resolve('world'); payload via lib/providers/worldlabs.js",
       "notes": "A place a camera can stand in, reconstructed from a location's own plates. NOT gen.model3d: that turns one SUBJECT into a mesh, this turns a PLACE into somewhere to shoot."
-    },
-    {
-      "id": "in.stock",
-      "label": "Licensed Catalog",
-      "kind": "input",
-      "inputs": [
-        "text"
-      ],
-      "outputs": [
-        "audio",
-        "video",
-        "image"
-      ],
-      "capabilities": [
-        "stock"
-      ],
-      "pipeline_steps": [],
-      "backed_by": "providers.resolve('stock').search/.license",
-      "notes": "No source adapter ships today, so this node is defined but disabled until one is registered. Included so the palette is complete against CAPABILITIES rather than against what happens to be wired."
     },
     {
       "id": "tf.mix",

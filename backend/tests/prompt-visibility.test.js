@@ -39,7 +39,7 @@ const ROOT = path.join(__dirname, '..');
  * The capabilities that build a provider payload, from the module itself.
  *
  * `describeCapability` covers eleven, but three of those are not a payload this
- * engine builds — `llm` runs in the MCP host, `stock` has no adapter, and
+ * engine builds — `llm` runs in the MCP host, and
  * `model3d` is built from a SUBJECT rather than a shot — so the set that must
  * have a per-generation preview is the eight with a builder.
  */

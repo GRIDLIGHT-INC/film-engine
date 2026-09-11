@@ -123,7 +123,7 @@
       "exports": [
         "handlers"
       ],
-      "contract": "Source nodes: in.prompt (literal + {{interpolation}} from upstream text), in.asset (film_assets lookup), in.subject (consistency profile -> subject port), in.scene (scene_card_yaml -> text + subject), in.stock (provider.search/.license; disabled while no source adapter is registered).",
+      "contract": "Source nodes: in.prompt (literal + {{interpolation}} from upstream text), in.asset (film_assets lookup), in.subject (consistency profile -> subject port), in.scene (scene_card_yaml -> text + subject).",
       "rationale": "Grouped by kind rather than one file per node because these five share context loading and none of them call a generator."
     },
     {
@@ -652,19 +652,6 @@
       "outputs": [
         "text",
         "subject"
-      ]
-    },
-    {
-      "node": "in.stock",
-      "handler": "backend/lib/node-handlers/input.js",
-      "capability": "stock",
-      "inputs": [
-        "text"
-      ],
-      "outputs": [
-        "audio",
-        "video",
-        "image"
       ]
     },
     {

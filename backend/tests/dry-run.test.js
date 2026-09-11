@@ -51,7 +51,6 @@ test('every capability is described, or says why it cannot be', () => {
      */
     const silent = [];
     for (const cap of providers.CAPABILITIES) {
-        if (cap === 'stock') continue;          // no adapter ships for it
         const r = describeCapability(cap, { project: { id: 'p', style_preset: 'noir' } }, {});
         const described = !!(r.outbound || r.payload);
         if (!described && !r.notes.length) silent.push(cap);

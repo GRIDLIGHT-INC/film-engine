@@ -74,7 +74,7 @@ function list() {
  *
  * This table existed, was consulted on every resolve, was documented, and was
  * EMPTY -- so it had never once fired. Every unconfigured capability fell to
- * DEFAULT_PROVIDER, meaning a project created today pointed all eleven at a
+ * DEFAULT_PROVIDER, meaning a project created today pointed every capability at a
  * local Gridlight service whether or not it was running and whether or not a
  * credentialed hosted adapter was sitting in the registry beside it. The only
  * symptom was a connection refused, at generation time, per capability.
@@ -84,10 +84,9 @@ function list() {
  * an unusable hosted one. An explicit per-project choice still wins over it,
  * including choosing Gridlight back.
  *
- * Only capabilities with a non-Gridlight adapter appear. lipsync, post and
- * stock have none, which is a gap in coverage rather than a gap in this table
- * -- tests/pipeline-readiness.test.js asserts that distinction from the
- * registry rather than from this comment.
+ * Only capabilities with a non-Gridlight adapter appear. A capability is not
+ * advertised until at least one adapter serves it; tests derive that invariant
+ * from the registry rather than from this comment.
  */
 const PREFERRED_WHEN_CONFIGURED = {
     // Text goes to Claude while Gridlight's /chat/intelligent is unusable: its

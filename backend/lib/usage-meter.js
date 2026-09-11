@@ -45,7 +45,6 @@ const COST_TYPE = {
     lipsync: 'lipsync_generation',
     post: 'post_production',
     model3d: 'model3d_generation',
-    stock: 'license',
 };
 
 let _rateOverrides = null;

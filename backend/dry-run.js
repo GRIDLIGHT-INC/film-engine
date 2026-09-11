@@ -60,7 +60,6 @@ function main() {
     }
 
     const rows = providers.CAPABILITIES
-        .filter(c => c !== 'stock')      // no adapter ships for it; nothing to describe
         .map(cap => describeCapability(cap, ctx, cfg));
 
     if (asJson) {

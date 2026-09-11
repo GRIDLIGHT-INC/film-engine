@@ -50,7 +50,7 @@ describe('providers/gridlight-adapter', () => {
     it('supports() reflects the endpoint map', () => {
         assert.equal(gridlightAdapter.supports('image'), true);
         assert.equal(gridlightAdapter.supports('llm'), true);
-        assert.equal(gridlightAdapter.supports('stock'), false);
+        assert.equal(gridlightAdapter.supports('teleport'), false);
     });
 
     it('is a generator that needs no per-provider key', () => {
@@ -60,7 +60,7 @@ describe('providers/gridlight-adapter', () => {
     });
 
     it('generate() rejects an unsupported capability without calling out', async () => {
-        const r = await gridlightAdapter.generate('stock', {});
+        const r = await gridlightAdapter.generate('teleport', {});
         assert.equal(r.ok, false);
         assert.match(r.error, /unsupported capability/);
     });
@@ -68,7 +68,7 @@ describe('providers/gridlight-adapter', () => {
 
 describe('providers/registry resolve', () => {
     it('falls back to gridlight only when nothing credentialed can serve the capability', () => {
-        // This used to assert gridlight for ALL eleven, which pinned the bug it
+        // This used to assert gridlight for every capability, which pinned the bug it
         // was meant to document: an unconfigured project pointed every
         // capability at a local service even when a credentialed hosted adapter
         // was registered beside it. PREFERRED_WHEN_CONFIGURED exists for

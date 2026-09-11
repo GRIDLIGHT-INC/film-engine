@@ -108,22 +108,6 @@ const handlers = {
             return { ok: true, outputs };
         },
     },
-
-    /**
-     * Licensed catalog search. Defined so the palette is complete against the
-     * capability registry, disabled until a source adapter is registered —
-     * `stock` currently resolves to no provider at all.
-     */
-    'in.stock': {
-        async execute(node, inputs, ctx) {
-            return {
-                ok: true,
-                skipped: true,
-                message: 'no licensed-catalog provider is configured for the stock capability',
-                outputs: {},
-            };
-        },
-    },
 };
 
 module.exports = { handlers, interpolate };

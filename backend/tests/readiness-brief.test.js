@@ -90,7 +90,7 @@ test('the capabilities with no hosted adapter are named as gaps, not omitted', (
     const md = brief();
     const gaps = CAPABILITIES.filter(c =>
         !providers.list().some(a => a.id !== 'gridlight' && a.supports && a.supports(c)));
-    assert.ok(gaps.length >= 2, `expected real gaps to exist, found ${gaps.length}`);
+    assert.ok(gaps.length >= 1, `expected a real gap to exist, found ${gaps.length}`);
 
     const section = md.slice(md.search(/^#{2,3}\s*Open Questions/m));
     const unnamed = gaps.filter(c => !md.includes(c));

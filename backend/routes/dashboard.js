@@ -66,7 +66,6 @@ function handleDashboard(req, res, urlParts, query) {
         }
         const cfg = providerConfigOf(project);
         const capabilities = providers.CAPABILITIES
-            .filter(c => c !== 'stock')
             .map(cap => describeCapability(cap, ctx, cfg));
 
         const spend = capabilities.reduce((n, c) =>

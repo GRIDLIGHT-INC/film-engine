@@ -19,8 +19,7 @@ const { PIPELINE_STEPS } = require('./pipeline-engine');
 
 /**
  * USD per generation call, per capability. Order-of-magnitude figures for
- * gating, not billing. `stock` licenses rather than generates, so it is priced
- * separately from inference.
+ * gating, not billing.
  */
 const COST_PER_CALL = {
     llm: 0.01,
@@ -37,7 +36,6 @@ const COST_PER_CALL = {
     // ~$0.20 and its most expensive model ~$2.48, and a gate that quotes the
     // draft would wave through a fan-out of the one that costs twelve times it.
     world: 2.50,
-    stock: 0.00,
 };
 
 // A capability with no entry would be silently free, and the guard would wave

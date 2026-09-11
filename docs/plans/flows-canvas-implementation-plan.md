@@ -94,7 +94,7 @@ backend/
 │   ├── flow-templates.js           NEW  ph5  built-in templates as data
 │   └── node-handlers/
 │       ├── index.js                NEW  ph2  filename autoload registry (mirrors providers/)
-│       ├── input.js                NEW  ph2  in.prompt, in.asset, in.subject, in.scene, in.stock
+│       ├── input.js                NEW  ph2  in.prompt, in.asset, in.subject, in.scene
 │       ├── generate.js             NEW  ph2  all 10 gen.* nodes, one generic execute()
 │       ├── transform.js            NEW  ph2  tf.mix, tf.stitch, tf.encode
 │       ├── control.js              NEW  ph3  tf.fanout, tf.select

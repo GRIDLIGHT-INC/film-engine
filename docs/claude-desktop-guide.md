@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**271 tools, 69 families.** Everything the app can do, you can ask for in a
+**270 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -394,7 +394,7 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_out_assembly` · `node_out_timeline` · `node_out_asset` · `node_tf_mix` ·
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
-`node_in_stock` · `run_plan` · `run_report` · `conform_plan` · `conform_run` · `export_preflight` · `export_package` ·
+`run_plan` · `run_report` · `conform_plan` · `conform_run` · `export_preflight` · `export_package` ·
 `deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
 `deliverable_delete` · `deliverable_check` · `brand_list` · `brand_get` ·
 `brand_create` · `brand_update` · `brand_delete` · `claim_list` · `claim_create` ·

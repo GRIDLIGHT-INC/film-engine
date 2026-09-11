@@ -34,7 +34,7 @@ The stated rabbit hole — *use MCPs wherever we can for AI queries* — resolve
 
 - **Silent fallback is the dominant failure mode.** Three variants surfaced in one session: deleted `artlist-*` providers resolving cleanly to a fallback, an empty preference table, and a project config that resolved without erroring. *Resolution succeeding is not evidence that anything works.*
 - **Tests can encode the bug.** `providers.test.js` asserted that all eleven capabilities default to `gridlight` — the exact behaviour that was broken. It read as coverage. (Precedent: an earlier test pinned `trackCount === 3` and hid a dropped audio lane.)
-- **The gaps are concentrated, not diffuse.** Ten capabilities have a hosted adapter. `lipsync`, `post` and `stock` do not — and Gridlight, the nominal fallback, implements none of the first two.
+- **The gaps are concentrated, not diffuse.** Ten of eleven capabilities have a hosted adapter. `lipsync` does not, and Gridlight, the nominal fallback, does not implement it in the deployment under test.
 - **MCP is for agents, not for plumbing.** Every source agrees MCP wraps REST for autonomous tool discovery; it does not replace REST for code that already knows which endpoint it wants.
 - **Vendor claims need checking at the source.** A GitHub repo and several summaries advertise Runway Act-Two and lip-sync "via API". That documentation belongs to a **third-party reseller**, not Runway.
 - **A readiness check that audits one project is a readiness check that lies.** `preflight.js` silently picked the most-recently-updated project, so a seeded demo reported 7 blocked stages while the configured project reported 1.
@@ -80,9 +80,9 @@ Current resolution with the credentials on this machine:
 | `video` | `seedance` → `runway` | `seedance` (Seedance 2.5, via MuAPI) leads when keyed — its omni-reference workflow takes 30 reference images where Runway's gen4.5 takes two |
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
 | `model3d` | `meshy` | keyed |
-| `lipsync`, `post` | `gridlight` | no hosted adapter; handed to the NLE |
+| `lipsync` | `gridlight` | no hosted adapter; handed to the NLE |
+| `post` | `seedance` | hosted video-edit finishing pass |
 | `world` | `worldlabs` | keyed — World Labs Marble, spatial worlds for previs. Draft (`marble-1.0-draft`) is the default and costs 250 credits ≈ $0.20; a standard world is 1,600 ≈ $1.28. Async like `meshy`: the operation id is written through `onHandle` before polling, so a world the host abandons is collectable. Verified live — a two-plate draft world returned in 37s and its collider mesh parsed with the existing `glb-parser` at 53,841 triangles across 39.6 × 9.0 × 47.9 world units |
-| `stock` | — | no adapter at all; nothing writes `licensed_catalog` |
 
 **Quality tiers.** Image generation is chosen as **Draft / Standard / Precision** rather than by provider name, resolved by `lib/quality-tiers.js` inside `resolveId()` so every path inherits it. Draft routes to FLUX.2 Klein, Standard to Nano Banana 2 (`google`), Precision to Nano Banana Pro; each tier names an ordered fallback so a tier whose preferred provider holds no key still generates rather than failing at spend time. An explicit per-project provider, and an explicit `image_model`, both outrank the table.
 
@@ -96,9 +96,8 @@ Current resolution with the credentials on this machine:
 
 1. **Does `character_performance` actually satisfy our `lipsync` contract?** Runway's own *Characters* documentation describes real-time WebRTC avatars — `gwm1_avatars`, five-minute sessions — which is **not** batch lip-sync-this-clip. The `character_performance` endpoint is confirmed official and separate, but its inputs, duration limits and output shape need reading against the API reference before any adapter work. The Act-Two/lip-sync endpoint lists circulating on `github.com/useapi/runway-api` are a **third-party reseller's** wrapper, not Runway's API, and must not be built against.
 2. **Should `post` be closed locally instead of in the NLE?** Upscale, face restore and grade are ffmpeg-shaped work. ffmpeg is not installed on this machine and is not a dependency of the backend, which currently has exactly one.
-3. **Is `stock` worth keeping as a capability?** It has no adapter, and the music-rights routes are built around a `license_source` nothing ever writes.
-4. **Does `solveShot` frame against the sensor or the delivered frame?** It uses the sensor, so a close-up solved for 0.45 m of subject delivers 0.25 m once a 2.39:1 extraction is taken. The viewer shows both numbers; changing the solver would change a phase-1 exit criterion, so it is a decision rather than a bug.
-5. **Where should the NLE handoff be visible to a user?** It is correct, documented and currently invisible outside the preflight.
+3. **Does `solveShot` frame against the sensor or the delivered frame?** It uses the sensor, so a close-up solved for 0.45 m of subject delivers 0.25 m once a 2.39:1 extraction is taken. The viewer shows both numbers; changing the solver would change a phase-1 exit criterion, so it is a decision rather than a bug.
+4. **Where should the NLE handoff be visible to a user?** It is correct, documented and currently invisible outside the preflight.
 
 ---
 

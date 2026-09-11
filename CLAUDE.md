@@ -157,7 +157,7 @@ film-engine/
 │   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
 │   │   │   ├── index.js          #   registry (mirrors lib/providers autoload)
 │   │   │   ├── port.js           #   the { type, value } envelope an edge carries
-│   │   │   ├── input.js          #   in.prompt, in.asset, in.subject, in.scene, in.stock
+│   │   │   ├── input.js          #   in.prompt, in.asset, in.subject, in.scene
 │   │   │   ├── generate.js       #   all 10 gen.* nodes, one implementation
 │   │   │   ├── transform.js      #   tf.mix, tf.stitch, tf.encode
 │   │   │   ├── control.js        #   tf.fanout, tf.select
@@ -3661,7 +3661,6 @@ Capability coverage as it stands:
 | music, voice, sfx, ambient | elevenlabs, gridlight |
 | lipsync, post | **gridlight only** |
 | model3d | meshy, gridlight |
-| stock | **none** |
 
 Test screenplay for an end-to-end run: `backend/tests/fixtures/thirty-second.fountain` — one location, one speaking character, ~30 seconds, sized to exercise every step at the lowest cost.
 
@@ -3690,7 +3689,7 @@ This is also how the LLM reaches the pipeline **without an API key**: an agent h
 **Env vars:** `FILM_DATA_DIR` — the database the server reads/writes; defaults to the HTTP server's, so both see one project set.
 
 ### Providers (pluggable generation backends)
-Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lipsync`, `post`, `model3d`, `stock`) each resolve to a provider adapter: per-project `provider_config` → `PROVIDER_<CAP>` env → **`PREFERRED_WHEN_CONFIGURED`** → Gridlight default.
+Capabilities (`llm`, `image`, `video`, `music`, `voice`, `sfx`, `ambient`, `lipsync`, `post`, `model3d`, `world`) each resolve to a provider adapter: per-project `provider_config` → `PROVIDER_<CAP>` env → **`PREFERRED_WHEN_CONFIGURED`** → Gridlight default.
 
 That preference table was consulted on every resolve, documented, and **empty**, so it never fired: a project created with no config pointed all eleven capabilities at a local Gridlight service whether or not it was running and whether or not a credentialed hosted adapter sat in the registry beside it. The only symptom was a connection refused at generation time, per capability. It is now populated for the eight capabilities that have a hosted adapter, applies only when that provider actually holds a credential, and is still overridden by an explicit per-project choice. `defaultProviderConfig()` writes the same choice into new projects so Provider Settings shows what generation will really use. Adapters live in `lib/providers/` and are auto-loaded by filename, so adding one never means editing the registry.
 
@@ -3708,7 +3707,7 @@ That preference table was consulted on every resolve, documented, and **empty**,
 
 Ambient is a **loop, not a full render**: `buildAmbientPrompt` asks for a bed of at most 30s (`duration_s`) and records the length it must cover (`bed_duration_s`), then `buildMixPayload` emits `loop`/`loop_until_ms`/`loop_crossfade_ms` so the mix service tiles it across the shot. A mix service that ignores those fields will play the bed once and leave the rest dry.
 
-No licensed-catalog *source* adapter ships today, so `stock` has no provider at all — nothing writes `film_assets.license_source = 'licensed_catalog'`, which the music-rights routes are built around. The `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
+No licensed-catalog *source* adapter ships, so `stock` is **not a capability** — see *A Capability With No Provider Is a Claim the Preflight Cannot Check* below. Nothing writes `film_assets.license_source = 'licensed_catalog'` today; the rights model keeps that vocabulary independently of any capability, and the `source` (search/license) contract and the OAuth/MCP connect flow both remain wired for the next provider that needs them.
 
 ### Live Runs & Orchestrator Persistence (Phase 6)
 `POST /film/flows/:id/run/stream` reports progress over SSE — `node_start` / `node_complete` per node, then a terminal event — because a fan-out is minutes of generation and a blocking response tells the user nothing until it is too late to stop. Same executor, callbacks wired to the response, so there is no second graph walk to drift. Every write is guarded on the client still being connected, and a client hanging up is treated as cancellation.
@@ -3869,6 +3868,34 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
+
+### A Capability With No Provider Is a Claim the Preflight Cannot Check
+`stock` sat in `CAPABILITIES` from the day the provider layer was written and
+**no adapter ever served it**: nothing searched a catalogue, nothing licensed a
+track, nothing wrote `license_source = 'licensed_catalog'`. It still reached
+twelve registries — a `$0.00` row in the cost gate, an `in.stock` node on the
+canvas that executed to a skip, a settings-panel label, a canvas colour, a
+readiness row, a dry-run line — and every one of them described a thing that
+did not exist. A capability the preflight reports as *configured: none* on
+every project forever is not a gap it can check; it is noise that teaches the
+reader to skip the row, and the real gap goes with it.
+
+The epic's choice was fill or remove. **Removed**, because the cheaper answer
+here is also the honest one: an adapter is a licensing relationship with a
+catalogue, and a capability should arrive with its first provider rather than
+wait years for one. `stock` is gone from `CAPABILITIES`, the cost table, the
+node types, the input handler, the dry-run, the dashboard filter that
+special-cased it, the page's label and colour maps, and the docs. What is
+deliberately **kept** is the rights model: `license_source` and
+`licensed_catalog` are facts about where a file's rights came from, not about
+which vendor generated it, and `tests/stock-capability.test.js` asserts they
+stay independent of any capability.
+
+That test is set-based over `CAPABILITIES` — every advertised capability must
+have at least one registered adapter, so the next capability declared without
+a provider fails at once — and its runtime scan is **derived** over every
+`lib/`, `routes/` and entry-point file plus the page. The first version listed
+two files by hand and passed while the page still carried two copies.
 
 ### A Failed Conform Says What Was Tried, What Was Not, and Why
 `lib/image-fallback.js` reports `_chain` on failure — every provider, tried or
@@ -4750,6 +4777,7 @@ node --test backend/tests/assembly-once.test.js
 node --test backend/tests/qa-master-checks.test.js
 node --test backend/tests/conform-cost.test.js
 node --test backend/tests/conform-walk.test.js
+node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js

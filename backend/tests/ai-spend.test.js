@@ -52,7 +52,6 @@ test('the registry is non-empty and covers every capability (guard)', () => {
     assert.ok(all.length >= 20, `only ${all.length} provider/capability pairs — the scans below would be near-vacuous`);
     const served = new Set(all.map(p => p.capability));
     for (const capability of CAPABILITIES) {
-        if (capability === 'stock') continue;   // no source adapter ships today
         assert.ok(served.has(capability), `no provider serves '${capability}'`);
     }
 });
@@ -159,7 +158,6 @@ test('a metered generation records one usage event and one cost entry, per capab
     db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Spend Test');
 
     for (const capability of CAPABILITIES) {
-        if (capability === 'stock') continue;
         const before = countRows(db, projectId);
 
         const stub = stubAdapter(capability);
@@ -190,8 +188,8 @@ test('a metered generation records one usage event and one cost entry, per capab
     }
 
     const spend = meter.projectSpend(projectId);
-    assert.ok(spend.total_usd > 0, 'total spend is zero after ten metered generations');
-    assert.strictEqual(Object.keys(spend.by_capability).length, CAPABILITIES.length - 1);
+    assert.ok(spend.total_usd > 0, 'total spend is zero after metered generations');
+    assert.strictEqual(Object.keys(spend.by_capability).length, CAPABILITIES.length);
 });
 
 test('a failed generation is not billed', () => {

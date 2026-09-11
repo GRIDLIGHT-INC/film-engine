@@ -73,7 +73,7 @@ test('setup: a project with no budget limit', () => {
 test('every generating capability has a cost estimate', () => {
     // Set-based: a capability with no estimate would be silently free, and the
     // guard would wave through exactly the flows it exists to stop.
-    const GENERATING = CAPABILITIES.filter(c => c !== 'stock');
+    const GENERATING = CAPABILITIES;
     const missing = GENERATING.filter(c => typeof COST_PER_CALL[c] !== 'number');
     assert.deepStrictEqual(missing, [], `capabilities with no cost estimate: ${missing.join(', ')}`);
 });

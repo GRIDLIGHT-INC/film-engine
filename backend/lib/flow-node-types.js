@@ -146,14 +146,6 @@ const NODE_TYPES = {
         capability: 'world',
         pipelineSteps: [],
     },
-    'in.stock': {
-        label: "Licensed Catalog",
-        kind: 'input',
-        inputs: ['text'],
-        outputs: ['audio', 'video', 'image'],
-        capability: 'stock',
-        pipelineSteps: [],
-    },
     'tf.mix': {
         multiInputs: ['audio'],
         label: "Audio Mix",
