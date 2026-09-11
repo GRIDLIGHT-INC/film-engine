@@ -1569,6 +1569,9 @@
         .mw-clip-handle:hover { background:rgba(255,255,255,.25); }
         .mw-side { min-width:0; }
         .mw-panel { border:1px solid var(--gl-border,rgba(255,255,255,.1)); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--gl-bg-surface,#1a1a2e); }
+        .mw-ai-row { padding:6px 0; border-top:1px solid var(--gl-border,rgba(255,255,255,.06)); }
+        .mw-ai-row .btn[disabled] { opacity:.45; cursor:not-allowed; }
+        .mw-ai-why { margin-top:3px; }
         .mw-panel h4 { margin:0 0 8px; }
         .mw-panel details { margin-top:8px; } .mw-panel summary { cursor:pointer; font-size:12px; color:var(--gl-text-secondary); }
         .mw-kv { display:flex; gap:8px; font-size:12px; margin-bottom:4px; } .mw-kv span:first-child { min-width:64px; }
@@ -35803,6 +35806,7 @@ ${fountainText.slice(0, 50000)}`;
         selection: null, playheadMs: 0, playing: false, pxPerSec: 40,
         audio: null, buffers: {}, timers: {}, pending: {}, saveNote: '',
         raf: null, ctxStart: 0, msStart: 0, drag: null, sources: [],
+        jobs: [], audition: null, emotionBox: '',
     };
     const MW_KIND_TABLE = { tracks: 'film_music_tracks', clips: 'film_music_clips', markers: 'film_music_markers',
         'emotion-ranges': 'film_music_emotion_ranges', automation: 'film_music_automation', session: 'film_music_sessions' };
@@ -35832,13 +35836,14 @@ ${fountainText.slice(0, 50000)}`;
     async function mwLoadSession(id) {
         const root = document.getElementById('mwRoot');
         try {
-            const [model, brief, drift, capabilities] = await Promise.all([
+            const [model, brief, drift, capabilities, jobsRead] = await Promise.all([
                 api('/music-sessions/' + id),
                 api('/music-sessions/' + id + '/brief').catch(e => ({ ok: false, brief: null, warnings: [e.message] })),
                 api('/music-sessions/' + id + '/drift').catch(e => ({ ok: false, tracked: false, drifted: false, error: e.message })),
                 api('/projects/' + state.currentProject.id + '/music/capabilities').catch(e => ({ error: e.message, workflows: [] })),
+                api('/music-sessions/' + id + '/jobs').catch(() => ({ jobs: [] })),
             ]);
-            MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift; MW.capabilities = capabilities;
+            MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift; MW.capabilities = capabilities; MW.jobs = jobsRead.jobs || [];
             if (MW.selection && !mwFindRow(MW.selection.kind, MW.selection.id)) MW.selection = null;
             mwRender();
         } catch (e) {
@@ -35919,6 +35924,8 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="mw-side">
                     <div id="mwInspector">${mwInspectorHtml()}</div>
                     ${mwContextHtml(MW.brief)}
+                    ${scoreAiPanelHtml(MW.capabilities)}
+                    ${scoreAiJobsHtml(MW.jobs)}
                     ${mwProviderHtml(MW.capabilities)}
                 </div>
             </div>`;
@@ -36437,6 +36444,335 @@ ${fountainText.slice(0, 50000)}`;
     // ── Playback: the audio graph the mix is heard through ─────────
 
     /** What one clip plays at: track and clip gain summed in dB, mute, solo across the session, pan, and the fades in seconds. */
+    // ══════════════════════════════════════════════════════════════
+    // AI WORKSTATION CONTROLS (MUS-014)
+    //
+    // Every AI action the workstation has, in one registry, each held to three
+    // rules: a spending action goes through the ONE shared confirmation, which
+    // reads the free plan first and shows the provider, the inputs, the length,
+    // the outputs, the cost and what happens to the takes already here; an
+    // action the project's provider cannot do is DISABLED WITH THAT PROVIDER'S
+    // OWN REASON, never hidden and never attempted; and an action that needs a
+    // selection says what to select.
+    //
+    // The spending functions are scoreAi*, never mw*: the editing and playback
+    // functions of the workstation spend nothing, and a test holds them to it.
+    // Proposing the emotional arc is the connected agent's job (the engine
+    // calls no model); what the page does is show the proposals and let a
+    // person accept or reject them.
+    // ══════════════════════════════════════════════════════════════
+    const SCORE_AI_ACTIONS = [
+        { id: 'emotion', label: 'Emotional arc: proposals', workflow: null, spends: false, needs: null, fn: 'scoreAiEmotion',
+          what: 'The connected agent proposes the arc from the free brief (music_emotion_brief, music_emotion_propose); you accept or reject it here. Nothing here calls a model.' },
+        { id: 'compose', label: 'Whole score', workflow: 'music_compose', spends: true, needs: null, fn: 'scoreAiCompose',
+          what: 'A whole cue for the session’s length, from the accepted arc, on a new track.' },
+        { id: 'section', label: 'Score the selection', workflow: 'music_compose', spends: true, needs: 'section', fn: 'scoreAiSection',
+          what: 'A cue for the selected track (as a new take on it), or for the selected emotion range’s span on a new track.' },
+        { id: 'parts', label: 'Native parts', workflow: 'music_parts', spends: true, needs: null, fn: 'scoreAiParts',
+          what: 'The provider’s own separate instrument parts, each on its own track at one start — never mistaken for separated stems.' },
+        { id: 'separate', label: 'Separate into stems', workflow: 'music_separate', spends: true, needs: 'clip', fn: 'scoreAiSeparate',
+          what: 'The selected clip’s recording split into stems, aligned under it; the recording is kept.' },
+        { id: 'reference', label: 'From this as a reference', workflow: 'music_reference', spends: true, needs: 'clip', fn: 'scoreAiReference',
+          what: 'A new cue conditioned on the selected clip’s audio, on a new track.' },
+        { id: 'video', label: 'From the picture', workflow: 'music_video', spends: true, needs: null, fn: 'scoreAiVideo',
+          what: 'A cue conditioned on the project’s conformed film, or its newest clip.' },
+        { id: 'inpaint', label: 'Inpaint at the playhead', workflow: 'music_inpaint', spends: true, needs: 'clip', fn: 'scoreAiInpaint',
+          what: 'Four seconds of the selected clip from the playhead, regenerated in context, as a candidate take over that range.' },
+        { id: 'regenerate', label: 'Regenerate as a new take', workflow: null, spends: true, needs: 'generated', fn: 'scoreAiRegenerate',
+          what: 'The generation that made the selected clip, run again with the input it recorded, landing as a candidate take; the clip is kept.' },
+        { id: 'audition', label: 'A/B audition', workflow: null, spends: false, needs: 'takes', fn: 'scoreAiAudition',
+          what: 'Hear the next take of the selected clip’s group in its place, without selecting or saving anything.' },
+        { id: 'approve', label: 'Approve this take', workflow: null, spends: false, needs: 'clip', fn: 'scoreAiApprove',
+          what: 'Make the selected clip the selected take of its group — the explicit act no generation ever does for you.' },
+    ];
+
+    /** Can the project's provider do this workflow, and if not, its own words for why. */
+    function scoreAiCapability(workflow, caps) {
+        if (!workflow) return { ok: true, reason: null };
+        const list = (caps && Array.isArray(caps.workflows)) ? caps.workflows : [];
+        const w = list.find(x => x.workflow === workflow);
+        const who = (caps && caps.provider && caps.provider.id) || 'the music provider';
+        if (!w) return { ok: false, reason: `${who} declares nothing about ${workflow.replace('music_', '')}${caps && caps.error ? ' (' + caps.error + ')' : ''}` };
+        if (w.status !== 'available') return { ok: false, reason: `${who} cannot ${workflow.replace('music_', '')} (${w.status}): ${w.reason || 'no reason given'}` };
+        return { ok: true, reason: null };
+    }
+
+    /** Null when the selection satisfies the action, otherwise what to select. */
+    function scoreAiNeed(a) {
+        const sel = MW.selection;
+        const clip = sel && sel.kind === 'clips' ? mwFindRow('clips', sel.id) : null;
+        if (a.needs === 'clip') return clip && clip.asset_id ? null : 'Select a clip with audio on a lane first.';
+        if (a.needs === 'section') return sel && ['tracks', 'clips', 'emotion-ranges'].includes(sel.kind) ? null : 'Select a track, a clip or an emotion range first.';
+        // Made by a GENERATION, not an import or a separation: only a generate
+        // job recorded an input that can be asked again.
+        if (a.needs === 'generated') return clip && clip.source_operation_id && (MW.jobs || []).some(j => j.operation_id === clip.source_operation_id && j.kind === 'generate')
+            ? null : 'Select a clip a generation made (an imported or separated clip has nothing to regenerate from).';
+        if (a.needs === 'takes') {
+            if (!clip || !clip.take_group) return 'Select a clip whose take group has more than one take.';
+            const takes = (MW.model.tracks || []).flatMap(t => t.clips || []).filter(x => x.take_group === clip.take_group);
+            return takes.length > 1 ? null : 'Select a clip whose take group has more than one take.';
+        }
+        return null;
+    }
+
+    function scoreAiPanelHtml(caps) {
+        const rows = SCORE_AI_ACTIONS.map(a => {
+            const cap = scoreAiCapability(a.workflow, caps);
+            const why = cap.ok ? scoreAiNeed(a) : cap.reason;
+            return `<div class="mw-ai-row">
+                <button class="btn btn-sm ${a.spends ? 'btn-primary' : 'btn-secondary'}" data-ai-action="${esc(a.id)}" ${why ? 'disabled' : ''} onclick="${esc(a.fn)}()" title="${esc(a.what)}">${esc(a.label)}</button>
+                <span class="text-sm text-muted">${a.spends ? 'spends — its plan is shown first' : 'free'}</span>
+                ${why ? `<div class="text-sm text-muted mw-ai-why">${esc(why)}</div>` : ''}
+            </div>`;
+        }).join('');
+        return `<section class="mw-panel mw-ai">
+            <h4>AI actions</h4>
+            <p class="text-sm text-muted">Nothing spends before you have read its plan: provider, inputs, length, outputs, cost, and what happens to the takes already here. Every result is a new take; nothing is replaced.</p>
+            <label class="text-sm">Direction<textarea id="scoreAiPrompt" class="form-control" rows="2" placeholder="Underscore for this picture, following the accepted arc"></textarea></label>
+            <div style="display:flex;gap:6px;margin:4px 0 8px;">
+                <label class="text-sm">Key <input id="scoreAiKey" class="form-control" style="width:110px;" placeholder="e.g. D minor"></label>
+                <label class="text-sm">Stems <select id="scoreAiStems" class="form-control" style="width:70px;"><option value="2">2</option><option value="6">6</option></select></label>
+            </div>
+            ${rows}
+            <div id="scoreAiEmotionBox">${MW.emotionBox || ''}</div>
+        </section>`;
+    }
+
+    function scoreAiSelectedClip() { const s = MW.selection; return s && s.kind === 'clips' ? mwFindRow('clips', s.id) : null; }
+    function scoreAiInputs() {
+        const p = document.getElementById('scoreAiPrompt'), k = document.getElementById('scoreAiKey');
+        return { prompt: (p && p.value.trim()) || 'Underscore for this picture, following the accepted emotional arc', key: (k && k.value.trim()) || undefined };
+    }
+
+    /** The one paid path for every generating action: free plan, confirmation, then the spend. */
+    async function scoreAiGenerate(workflow, input, title) {
+        if (!MW.session) return;
+        const sid = MW.session.id;
+        const body = { workflow, ...input };
+        return confirmPaidImage({
+            title, capability: 'music',
+            previewUrl: '/music-sessions/' + sid + '/generate/plan',
+            previewBody: body,
+            describe: scoreAiPlanHtml,
+            send: async () => {
+                setStatus(title + ' — generating…', true);
+                try {
+                    const out = await api('/music-sessions/' + sid + '/generate', { method: 'POST', body: JSON.stringify(body) });
+                    setStatus(`${title}: ${(out.outputs || []).length} new take(s); nothing was replaced`);
+                } catch (e) { setStatus('Error: ' + e.message); }
+                await mwLoadSession(sid);
+            },
+        });
+    }
+
+    function scoreAiCompose() { return scoreAiGenerate('music_compose', { ...scoreAiInputs(), duration_ms: mwLengthMs() }, 'Whole score'); }
+    function scoreAiSection() {
+        const sel = MW.selection; if (!sel) return;
+        const i = scoreAiInputs();
+        if (sel.kind === 'emotion-ranges') {
+            const r = mwFindRow('emotion-ranges', sel.id); if (!r) return;
+            return scoreAiGenerate('music_compose', { ...i, start_ms: r.start_ms, duration_ms: Math.max(3000, r.end_ms - r.start_ms) }, `Score ${r.label || 'the range'}`);
+        }
+        const track = sel.kind === 'tracks' ? mwFindRow('tracks', sel.id) : mwTrackOf(sel.id);
+        if (!track) return;
+        return scoreAiGenerate('music_compose', { ...i, track_id: track.id, duration_ms: mwLengthMs() }, `Score ${track.name || 'the track'}`);
+    }
+    function scoreAiParts() {
+        const w = ((MW.capabilities && MW.capabilities.workflows) || []).find(x => x.workflow === 'music_parts');
+        const lim = (w && w.limits) || {};
+        const roles = (lim.part_roles || []).slice(0, lim.max_parts || 4);
+        return scoreAiGenerate('music_parts', { ...scoreAiInputs(), parts: roles, duration_ms: mwLengthMs() }, 'Native parts');
+    }
+    function scoreAiReference() {
+        const clip = scoreAiSelectedClip(); if (!clip) return;
+        return scoreAiGenerate('music_reference', { ...scoreAiInputs(), reference_asset_id: clip.asset_id, reference_kind: 'audio', duration_ms: mwLengthMs() }, 'From a reference');
+    }
+    async function scoreAiVideo() {
+        let pic = null;
+        try {
+            for (const type of ['video_final', 'video_raw']) {
+                const r = await api('/projects/' + state.currentProject.id + '/assets?type=' + type);
+                pic = (r.assets || r || [])[0] || null;
+                if (pic) break;
+            }
+        } catch (_) { pic = null; }
+        if (!pic) { setStatus('There is no clip or conformed film in this project to condition on yet.'); return; }
+        return scoreAiGenerate('music_video', { ...scoreAiInputs(), video_asset_id: pic.id, duration_ms: mwLengthMs() }, 'From the picture');
+    }
+    function scoreAiInpaint() {
+        const clip = scoreAiSelectedClip(); if (!clip) return;
+        const start = Math.max(0, Math.min(clip.duration_ms - 1000, Math.round(MW.playheadMs - clip.start_ms)));
+        const end = Math.min(clip.duration_ms, start + 4000);
+        return scoreAiGenerate('music_inpaint', { prompt: scoreAiInputs().prompt, clip_id: clip.id, range: { start_ms: start, end_ms: end } }, `Inpaint ${mwTime(start)}–${mwTime(end)} of ${clip.name || 'the clip'}`);
+    }
+    async function scoreAiRegenerate() {
+        const clip = scoreAiSelectedClip(); if (!clip || !clip.source_operation_id) return;
+        let job = null;
+        try { job = await api('/music-sessions/' + MW.session.id + '/jobs/' + clip.source_operation_id); } catch (_) { job = null; }
+        if (!job || job.kind !== 'generate' || !job.workflow || !job.input) {
+            setStatus(job && job.kind === 'separate'
+                ? 'This clip came from a separation; separate the source recording again instead.'
+                : 'The generation that made this clip did not record its input, so it cannot be asked again; plan a new one.');
+            return;
+        }
+        const track = mwTrackOf(clip.id);
+        const again = { ...job.input };
+        if (job.workflow !== 'music_inpaint' && job.workflow !== 'music_parts' && track) again.track_id = track.id;
+        return scoreAiGenerate(job.workflow, again, 'Regenerate as a new take');
+    }
+
+    async function scoreAiSeparate() {
+        const clip = scoreAiSelectedClip(); if (!clip) return;
+        const sid = MW.session.id;
+        const stems = Number((document.getElementById('scoreAiStems') || {}).value) || 2;
+        return confirmPaidImage({
+            title: `Separate ${clip.name || 'the clip'} into ${stems} stems`, capability: 'music',
+            previewUrl: '/music-sessions/' + sid + '/separations/plan?clip_id=' + encodeURIComponent(clip.id) + '&stems=' + stems,
+            describe: scoreAiSeparationPlanHtml,
+            send: async () => {
+                setStatus('Separating…', true);
+                try {
+                    const out = await api('/music-sessions/' + sid + '/separations', { method: 'POST', body: JSON.stringify({ clip_id: clip.id, stems, wait: true }) });
+                    setStatus(out.status === 'complete' ? `Separated into ${(out.stems || []).length} stems; the recording is untouched` : `Separation ${out.status}${out.error_message ? ': ' + out.error_message : ''}`);
+                } catch (e) { setStatus('Error: ' + e.message); }
+                await mwLoadSession(sid);
+            },
+        });
+    }
+
+    /** A/B: hear the next take of the group in the selected take's place. Saves nothing. */
+    function scoreAiAudition() {
+        const clip = scoreAiSelectedClip(); if (!clip || !clip.take_group) return;
+        const takes = (MW.model.tracks || []).flatMap(t => t.clips || []).filter(x => x.take_group === clip.take_group);
+        if (takes.length < 2) return;
+        const heard = takes.findIndex(x => mwHeard(x));
+        const next = takes[(heard + 1) % takes.length];
+        MW.audition = next.take_status === 'selected' ? null : { group: clip.take_group, clipId: next.id };
+        mwNote(MW.audition ? `Auditioning ${next.name || 'the next take'} in place of the selected take — nothing saved` : 'Back to the selected take');
+        mwRestartAudio(); mwRepaint();
+    }
+    async function scoreAiApprove() {
+        const clip = scoreAiSelectedClip(); if (!clip) return;
+        MW.audition = null;
+        await mwChooseTake(clip.id);
+        mwNote(`Approved ${clip.name || 'the take'} as the selected take of its group`);
+    }
+
+    /** The arc is proposed by the connected agent; the page lists the proposals and takes the decision. */
+    async function scoreAiEmotion() {
+        const sid = MW.session.id;
+        try {
+            const r = await api('/music-sessions/' + sid + '/emotion/proposals');
+            const list = (r.proposals || []).filter(p => (p.ranges || []).some(x => x.status === 'proposed'));
+            MW.emotionBox = `<div class="mw-panel" style="margin-top:8px;">
+                <p class="text-sm">Ask your agent: <em>“run music_emotion_brief and music_emotion_propose for score session ${esc(sid)}”</em>. The engine calls no model; the proposal lands here, dashed on the Emotion lane, until you decide.</p>
+                ${list.length ? list.map(p => `<div class="mw-ai-row">
+                    <b class="text-sm">${esc((p.ranges || []).filter(x => x.status === 'proposed').map(x => x.label).join(' → '))}</b>
+                    <div class="text-sm text-muted">${esc((p.ranges || []).filter(x => x.status === 'proposed').map(x => x.rationale || '').filter(Boolean).join(' · '))}</div>
+                    <button class="btn btn-sm btn-primary" onclick="scoreAiAcceptProposal('${esc(p.proposal_id)}')">Accept</button>
+                    <button class="btn btn-sm btn-secondary" onclick="scoreAiRejectProposal('${esc(p.proposal_id)}')">Reject</button>
+                </div>`).join('') : '<p class="text-sm text-muted">No proposal is waiting.</p>'}
+            </div>`;
+        } catch (e) { MW.emotionBox = `<p class="text-sm text-muted">The proposals could not be read: ${esc(e.message)}</p>`; }
+        mwRender();
+    }
+    async function scoreAiAcceptProposal(pid) {
+        try { await api('/music-sessions/' + MW.session.id + '/emotion/proposals/' + pid + '/accept', { method: 'POST', body: JSON.stringify({}) }); mwNote('Accepted: generation now reads this arc'); }
+        catch (e) { mwNote('Accept failed: ' + e.message); }
+        MW.emotionBox = ''; await mwLoadSession(MW.session.id);
+    }
+    async function scoreAiRejectProposal(pid) {
+        const ops = (MW.model.emotion_ranges || []).filter(r => r.proposal_id === pid && r.status === 'proposed')
+            .map(r => ({ op: 'update', kind: 'emotion-ranges', id: r.id, data: { status: 'rejected' } }));
+        try { if (ops.length) await api('/music-sessions/' + MW.session.id + '/batch', { method: 'POST', body: JSON.stringify({ ops }) }); mwNote('Rejected; the ranges stay, faded, for the lineage'); }
+        catch (e) { mwNote('Reject failed: ' + e.message); }
+        MW.emotionBox = ''; await mwLoadSession(MW.session.id);
+    }
+
+    // ── What the director reads before spending ─────────────────────
+
+    function scoreAiUsd(c) { if (!c || c.usd == null) return null; const n = Number(c.usd); return '$' + n.toFixed(n < 0.01 ? 4 : 2); }
+
+    function scoreAiPlanHtml(d) {
+        const p = d.provider || {}, c = d.context || {}, o = d.outputs || {}, pl = d.placement || {}, s = d.sources || {};
+        const line = (k, v) => v ? `<div class="text-sm"><span class="text-muted">${esc(k)}</span> ${v}</div>` : '';
+        return `
+            ${line('Provider', esc(p.id || '?') + (p.model ? ' · ' + esc(p.model) : '') + (p.note ? ' <span class="text-muted">(' + esc(p.note) + ')</span>' : ''))}
+            ${line('Workflow', esc((d.workflow || '').replace('music_', '')))}
+            ${line('Direction', d.prompt ? esc(d.prompt) : '')}
+            ${line('Context', [c.tempo_bpm ? esc(c.tempo_bpm) + ' BPM' : '', c.time_signature ? esc(c.time_signature) : '', c.key ? 'key ' + esc(c.key) : ''].filter(Boolean).join(' · ') || 'no tempo or key')}
+            ${line('Emotional arc', (c.emotion || []).length ? (c.emotion || []).map(r => esc(r.label) + ' ' + mwTime(r.start_ms) + '–' + mwTime(r.end_ms)).join(' → ') : 'none — generating without an accepted arc')}
+            ${d.sections ? line('Sections', d.sections.map(x => esc(x.section_name) + ' ' + mwTime(x.duration_ms)).join(' · ')) : ''}
+            ${line('Made from', [s.reference ? 'reference ' + esc(s.reference.file_name) + ' (' + esc(s.reference.kind) + ')' : '', s.video ? 'picture ' + esc(s.video.file_name) : '', s.source ? 'range ' + mwTime(s.source.range.start_ms) + '–' + mwTime(s.source.range.end_ms) + ' of the source' : ''].filter(Boolean).join(' · '))}
+            ${line('Length', mwTime(d.duration_ms) + ` (${Math.round(Number(d.duration_ms) / 100) / 10} s)`)}
+            ${line('Outputs', esc(o.count) + ' × ' + esc(o.kind) + ' (' + esc(o.source_kind) + ')' + (o.parts ? ': ' + esc(o.parts.join(', ')) : ''))}
+            ${line('Lands', pl.new_track ? 'on a new track at ' + mwTime(pl.start_ms) : 'on the existing track at ' + mwTime(pl.start_ms))}
+            ${line('Cost', scoreAiUsd(d.cost_hint) ? '<strong>' + scoreAiUsd(d.cost_hint) + '</strong>' + (d.cost_hint.inferred ? ' (inferred)' : '') : esc(d.cost_note || 'not priced'))}
+            <p class="text-sm" style="margin-top:8px;">${esc(d.takes || '')}</p>
+            ${(d.warnings || []).map(w => `<p class="text-sm" style="color:var(--warning,#b8860b);">${esc(w)}</p>`).join('')}`;
+    }
+
+    function scoreAiSeparationPlanHtml(d) {
+        const p = d.provider || {}, v = d.variation || {}, src = d.source || {}, pl = d.placement || {}, c = d.cost_hint || {};
+        return `
+            <div class="text-sm"><span class="text-muted">Provider</span> ${esc(p.id || '?')} · ${esc(p.model || v.id || '')}</div>
+            <div class="text-sm"><span class="text-muted">Variation</span> ${esc(v.id)} — ${esc(v.stems)} stems</div>
+            <div class="text-sm"><span class="text-muted">Stems expected</span> ${esc((d.expected_stems || []).join(', '))}</div>
+            <div class="text-sm"><span class="text-muted">Recording sent</span> ${esc(src.file_name || '')} (${mwTime(src.duration_ms)})</div>
+            <div class="text-sm"><span class="text-muted">Lands</span> each stem on its own track at ${mwTime(pl.start_ms)}, offset ${mwTime(pl.source_offset_ms)}, for ${mwTime(pl.duration_ms)} — under the source clip</div>
+            <div class="text-sm"><span class="text-muted">Cost</span> ${scoreAiUsd(c) ? '<strong>' + scoreAiUsd(c) + '</strong>' : 'not priced'}${c.note ? ' — ' + esc(c.note) : ''}</div>
+            <p class="text-sm" style="margin-top:8px;">The recording is untouched: its file, its asset and its clip stay exactly as they are. A bad archive or a provider error registers nothing.</p>`;
+    }
+
+    function scoreAiRetryHtml(job) {
+        return `
+            <p class="text-sm">Runs this ${esc((job.workflow || job.kind || '').replace('music_', ''))} again as attempt ${Number(job.attempt || 1) + 1}, with the input it recorded, on ${esc(job.provider || 'the same provider')}. The failed attempt stays in the lineage.</p>
+            ${job.reason ? `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">${esc(job.reason)}</p>` : ''}
+            ${(job.children || []).map(c => `<div class="text-sm text-muted">#${esc(c.seq)} ${esc(c.label || '')} · ${esc(c.status)}${c.error_message ? ' — ' + esc(c.error_message) : ''}</div>`).join('')}
+            <p class="text-sm" style="margin-top:8px;">Every output is a new take; nothing already on the session is replaced.</p>`;
+    }
+
+    // ── Jobs ─────────────────────────────────────────────────────────
+
+    function scoreAiJobsHtml(jobs) {
+        const list = Array.isArray(jobs) ? jobs : [];
+        if (!list.length) return '<section class="mw-panel"><h4>Jobs</h4><p class="text-sm text-muted">No generation or separation has run on this session yet.</p></section>';
+        return `<section class="mw-panel"><h4>Jobs</h4>${list.map(j => `<div class="mw-ai-row">
+            <div class="text-sm"><b>${esc((j.workflow || j.kind || '').replace('music_', ''))}</b> · ${esc(j.status)} · attempt ${esc(j.attempt)}${j.cost_usd ? ' · $' + Number(j.cost_usd).toFixed(3) : ''}${j.consistent === false ? ' · <em>stored status disagreed</em>' : ''}</div>
+            ${(j.children || []).map(c => `<div class="text-sm text-muted">#${esc(c.seq)} ${esc(c.label || '')} · ${esc(c.status)}${c.take_number ? ' · take ' + esc(c.take_number) : ''}${c.acceptance ? ' · ' + esc(c.acceptance) : ''}</div>`).join('')}
+            ${j.status === 'failed' ? `<div class="text-sm" style="color:var(--gl-danger,#ef4444);">${esc(j.reason || 'failed')}</div><button class="btn btn-sm btn-secondary" onclick="scoreAiRetry('${esc(j.operation_id)}')">Retry (spends)</button>` : ''}
+            ${j.status === 'running' ? `<button class="btn btn-sm btn-secondary" onclick="scoreAiPoll('${esc(j.operation_id)}')">Check</button>` : ''}
+        </div>`).join('')}</section>`;
+    }
+
+    async function scoreAiPoll(opId) {
+        try { await api('/music-sessions/' + MW.session.id + '/jobs/' + opId + '/poll', { method: 'POST', body: JSON.stringify({}) }); }
+        catch (e) { mwNote('Could not check the job: ' + e.message); }
+        await mwLoadSession(MW.session.id);
+    }
+    async function scoreAiRetry(opId) {
+        const sid = MW.session.id;
+        return confirmPaidImage({
+            title: 'Retry a failed job', capability: 'music',
+            previewUrl: '/music-sessions/' + sid + '/jobs/' + opId,
+            describe: scoreAiRetryHtml,
+            send: async () => {
+                setStatus('Retrying…', true);
+                try {
+                    const out = await api('/music-sessions/' + sid + '/jobs/' + opId + '/retry', { method: 'POST', body: JSON.stringify({ wait: true }) });
+                    setStatus(`Retry ${out.status || 'sent'}${out.reason ? ': ' + out.reason : ''}`);
+                } catch (e) { setStatus('Error: ' + e.message); }
+                await mwLoadSession(sid);
+            },
+        });
+    }
+
+    /** Which take is heard: the selected one, or the one being auditioned in its group's place. */
+    function mwHeard(c) {
+        if (MW.audition && c.take_group && c.take_group === MW.audition.group) return c.id === MW.audition.clipId;
+        return c.take_status === 'selected';
+    }
+
     function mwClipLevel(track, clip, tracks) {
         const anySolo = (tracks || []).some(t => t.soloed);
         const silent = !!track.muted || (anySolo && !track.soloed);
@@ -36477,7 +36813,7 @@ ${fountainText.slice(0, 50000)}`;
         mwStopSources();
         const ctx = MW.audio;
         const tracks = MW.model.tracks || [];
-        const clips = tracks.flatMap(t => (t.clips || []).filter(c => c.asset_id && c.take_status === 'selected').map(c => ({ t, c })));
+        const clips = tracks.flatMap(t => (t.clips || []).filter(c => c.asset_id && mwHeard(c)).map(c => ({ t, c })));
         const ready = await Promise.all(clips.map(async ({ t, c }) => { try { return { t, c, buf: await mwBuffer(c.asset_id) }; } catch (e) { return null; } }));
         const t0 = ctx.currentTime + 0.05;
         const from = MW.playheadMs / 1000;
@@ -40465,7 +40801,11 @@ ${fountainText.slice(0, 50000)}`;
 
         let d = null;
         try {
-            d = await api(o.previewUrl);
+            // A plan whose input is structured (a range, a list of parts) is
+            // read with a POST; it is still free and still writes nothing.
+            d = o.previewBody
+                ? await api(o.previewUrl, { method: 'POST', body: JSON.stringify(o.previewBody) })
+                : await api(o.previewUrl);
         } catch (err) {
             // A gate that permits the spend when its own inspection failed is
             // worse than no gate: it teaches people the check happened.
@@ -40474,6 +40814,21 @@ ${fountainText.slice(0, 50000)}`;
             confirmGenArm(false);
             await decision;
             return;
+        }
+
+        /*
+         * A caller that knows what its plan says describes it itself: the
+         * music workstation's plans carry the provider, the inputs, the
+         * length, the outputs, the cost and the take behaviour, none of which
+         * is an image prompt, and offering image dials there would be a
+         * control that reaches nothing.
+         */
+        if (typeof o.describe === 'function') {
+            body.innerHTML = `${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}${o.describe(d)}`;
+            confirmGenArm(true);
+            const agreed = await decision;
+            if (!agreed) return;
+            return o.send({});
         }
 
         /*

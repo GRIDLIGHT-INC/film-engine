@@ -265,7 +265,7 @@ function planGeneration(db, sessionId, workflow, input, opts) {
     const cost = caps.costHint(p.id, workflow, p.decl);
     const seconds = durationMs / 1000;
     return {
-        ok: true, free: true, writes_nothing: true, workflow,
+        ok: true, free: true, writes_nothing: true, workflow, prompt: i.prompt || null,
         provider: { id: p.id, model: i.model || p.decl.default_model || (Array.isArray(p.decl.models) && p.decl.models[0]) || null, resolved: p.resolved, note: p.note },
         duration_ms: durationMs,
         outputs: { kind, source_kind: caps.OUTPUT_KINDS[kind].source_kind, count, what: caps.OUTPUT_KINDS[kind].what,

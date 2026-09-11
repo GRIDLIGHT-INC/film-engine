@@ -608,6 +608,7 @@ film-engine/
 │       ├── music-separation.test.js # Two and six stems land aligned with lineage; a bad ZIP or a provider error registers nothing
 │       ├── music-generation.test.js # Five workflows: the contract decides, no unaccepted arc, every output a new take, parts are not stems
 │       ├── music-jobs.test.js # A truth table over child states: no parent is complete over a failed or missing child
+│       ├── music-ai-controls.test.js # Every AI action: plan first, one confirmation, the provider's own "no", free ones spend nothing
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -3939,6 +3940,43 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### Every AI Action on the Score Page Shows Its Plan, and "No" Names the Provider's Reason
+The workstation could generate, separate, inpaint and regenerate over HTTP and
+MCP, and a director at the Score page could do none of it. MUS-014 adds an **AI
+actions** panel and a **Jobs** panel. `SCORE_AI_ACTIONS` is the one registry:
+the arc proposals, a whole score, the selection (a track, or an emotion range's
+span), native parts, separation, a cue from a reference, a cue from the
+picture, inpainting at the playhead, regenerate-as-a-new-take, A/B audition and
+take approval. Each entry says what it does, whether it spends, and what it
+needs selected.
+
+**Three rules, held set-wise by `tests/music-ai-controls.test.js`.** A spending
+action goes through the **one shared confirmation**. That confirmation reads the
+free plan first and shows the provider and model, the direction, tempo, meter,
+key and accepted arc, the length, the outputs and their kind, where they land,
+the cost, and the take behaviour. `confirmPaidImage` learned two things to do it:
+a plan whose input is structured is read with a POST (`previewBody`), and a
+caller can `describe` its plan instead of being offered image dials that would
+reach nothing. A failed plan read still leaves the gate disarmed, which is how an
+unaccepted arc or an unsupported workflow is refused before any spend. An action
+the project's provider cannot do is **disabled with that provider's own reason**,
+never hidden and never attempted; one that needs a selection says what to
+select. A free action reaches no paid endpoint.
+
+**Proposing the arc stays the agent's job.** The panel lists pending
+proposals with their rationale, and a person accepts or rejects them there. The
+engine calls no model. **A/B audition changes what is heard, not what is
+saved**: `mwHeard` plays the auditioned take in its group's place, and nothing
+is written until a take is approved. Regenerating reads the recorded input of
+the job that made the clip and lands the result as a candidate on the same
+track. The jobs panel shows each job's children with take number and
+acceptance, offers **Check** on a running job and **Retry** (through the same
+confirmation) on a failed one.
+
+The spending functions are `scoreAi*`, never `mw*`. The MUS-007 rule that the
+workstation's editing and playback functions reach no paid endpoint still holds
+over every `mw*` function, and the new test re-asserts it.
+
 ### A Job Is a Parent With Ordered Children, and the Parent Cannot Lie
 A generation that makes three parts, or a separation that returns six stems,
 used to be one operation row with its outputs folded into a JSON blob. That
@@ -5432,6 +5470,7 @@ node --test backend/tests/music-emotion-proposals.test.js
 node --test backend/tests/music-separation.test.js
 node --test backend/tests/music-generation.test.js
 node --test backend/tests/music-jobs.test.js
+node --test backend/tests/music-ai-controls.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

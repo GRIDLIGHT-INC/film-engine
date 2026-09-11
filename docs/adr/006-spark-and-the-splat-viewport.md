@@ -20,7 +20,7 @@ Three facts about this codebase decide whether that flag can be turned on.
 devDependencies, which is ADR-002 taken to its conclusion: the whole front end
 is one file that a browser opens. Anything a page needs is *in* that file.
 
-That file is **2.7 MB**, and it is that size because of the last time this
+That file is **2.8 MB**, and it is that size because of the last time this
 question was asked. The previs stage needed to show whether a generated `.glb`
 was actually the character, a flat projection could not answer it, and three.js
 **r149** plus GLTFLoader were vendored inline — GLTFLoader mechanically

@@ -191,6 +191,8 @@ function presentJob(db, p) {
         status: d.status, stored_status: p.status, consistent: d.status === p.status, reason: d.reason || p.error_message || null,
         live: isLive(p.id), attempt: p.attempt, parent_id: p.parent_id, provider: p.provider, model: p.model,
         expected: params.expected == null ? null : params.expected,
+        // What it was asked, so a regeneration can ask again (MUS-014).
+        input: params.input || null,
         cost_usd: kids.length ? kids.reduce((s, c) => s + (Number(c.cost_usd) || 0), 0) : Number(p.cost_usd) || 0,
         source_fingerprint: p.source_fingerprint, context_fingerprint: p.context_fingerprint,
         children: kids.map(c => presentChild(db, c)),
