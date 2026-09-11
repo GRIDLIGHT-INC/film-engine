@@ -578,6 +578,24 @@ const adapter = {
     label: 'ElevenLabs',
     requiresKey: true,
     capabilities: ['voice', 'sfx', 'ambient', 'music'],
+    /*
+     * THE MUSIC WORKFLOWS (MUS-009), declared rather than assumed. /music
+     * composes a whole cue from a prompt or a composition plan; it returns ONE
+     * mixed file, takes no reference audio, no picture and no range, so those
+     * are unsupported with the reason. Separation is PLANNED: the epic's next
+     * task wires it, and declaring it available before it is would put a
+     * button on the page that fails at the provider.
+     */
+    music: {
+        music_compose: { status: 'available', models: ['music_v1', 'music_v2'], default_model: DEFAULT_MUSIC_MODEL,
+            limits: { min_ms: MUSIC_MIN_MS, max_ms: MUSIC_MAX_MS, models: ['music_v1', 'music_v2'], section_min_ms: 3000, section_max_ms: 120000 },
+            source: 'https://elevenlabs.io/docs/api-reference/music/compose' },
+        music_parts: { status: 'unsupported', reason: 'ElevenLabs Music returns one mixed cue; it has no native multi-part output' },
+        music_separate: { status: 'planned', reason: 'two- and six-stem separation is the next task (MUS-011); the endpoint is not wired here yet', limits: { stem_counts: [2, 6] } },
+        music_reference: { status: 'unsupported', reason: '/music takes a prompt or a composition plan and no reference audio or melody' },
+        music_video: { status: 'unsupported', reason: '/music takes no picture; a cue is conditioned on words and a length only' },
+        music_inpaint: { status: 'unsupported', reason: '/music regenerates a whole cue; it cannot regenerate a range of an existing one in context' },
+    },
     connection: {
         instructions: 'ElevenLabs has no OAuth for API access — paste an API key. Click "Get your key" to open your ElevenLabs API keys page.',
         helpUrl: 'https://elevenlabs.io/app/settings/api-keys',

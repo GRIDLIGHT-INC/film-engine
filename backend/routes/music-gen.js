@@ -340,6 +340,15 @@ function handleMusicGen(req, res, urlParts, query) {
             return batchMusic(req, res, projectId);
         }
         if (sub === 'jobs' && req.method === 'GET') return listMusicJobs(req, res, projectId, query);
+        if (sub === 'capabilities' && req.method === 'GET') {
+            // Free. What this project's music provider can and cannot do, per
+            // workflow, with limits, cost hints and the reason for every "no".
+            const project = db.prepare('SELECT id, provider_config FROM film_projects WHERE id = ?').get(projectId);
+            if (!project) return json(res, 404, { error: 'Project not found' });
+            const { discoverMusicCapabilities } = require('../lib/music-capabilities');
+            const { providerConfigOf } = require('../lib/provider-config');
+            return json(res, 200, { project_id: projectId, ...discoverMusicCapabilities(providerConfigOf(project)) });
+        }
         if (sub === 'mix' && req.method === 'POST') return mixProjectAudio(req, res, projectId);
         if (sub === 'stems' && req.method === 'POST') return exportStems(req, res, projectId);
         if (sub === 'srt' && req.method === 'GET') return exportSRT(req, res, projectId);

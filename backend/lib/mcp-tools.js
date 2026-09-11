@@ -2511,6 +2511,13 @@ const PRODUCTION_TOOLS = [
         schema: { scene_id: { type: 'string' } }, required: ['scene_id'],
     },
     {
+        name: 'music_capabilities',
+        handler: handleMusicGen, method: 'GET',
+        description: 'Free — spends nothing. What this project\'s music provider can and cannot do, per workflow: compose a whole cue, generate native parts, separate a recording into stems, condition on a reference, condition on the picture, regenerate a selected range. Each is available, planned or unsupported WITH THE REASON, its limits (lengths, models, stem counts), a cost hint from the rate book when one exists, the neutral plan and result schemas, and which other providers could do it. Read it before asking for any of these: a workflow the provider does not serve is refused, never attempted.',
+        path: a => `/film/projects/${a.project_id}/music/capabilities`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'music_cue_create',
         handler: handleAssets, method: 'POST',
         description: 'Write the brief for a piece of music \u2014 the direction, not the generation. '

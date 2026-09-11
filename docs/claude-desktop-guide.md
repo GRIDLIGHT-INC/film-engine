@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**303 tools, 69 families.** Everything the app can do, you can ask for in a
+**304 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -593,7 +593,7 @@ asset on the scene and cost money to make.
 `music_marker_list` · `music_marker_create` · `music_marker_update` · `music_marker_delete` ·
 `music_emotion_list` · `music_emotion_create` · `music_emotion_update` · `music_emotion_delete` ·
 `music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete` ·
-`music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list`
+`music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -643,6 +643,15 @@ stems grouped per instrument, family or production bus — registers every
 output with its render parameters, keeps every earlier version, and refuses an
 unchanged session unless forced. `music_bounce_list` lists every version with
 its files. None of the three reaches a provider.
+
+`music_capabilities` is free and answers, for the project's own music
+provider, which of the six music workflows it serves — compose a whole cue,
+generate native parts, separate a recording into stems, condition on a
+reference, condition on the picture, regenerate a selected range — each
+available, planned or unsupported **with the reason**, its limits, a cost hint
+from the rate book, the neutral plan and result schemas, and which other
+providers could do it. A workflow the provider does not serve is refused with
+that answer, never attempted.
 
 ### Your own shots, kept across every film
 

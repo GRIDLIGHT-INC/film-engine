@@ -1577,6 +1577,10 @@
         .mw-field-name { display:block; color:var(--gl-text-muted); margin-bottom:2px; text-transform:capitalize; }
         .mw-field .form-control { width:100%; }
         .mw-sub { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:12px; }
+        .mw-cap { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:12px; }
+        .mw-cap-glyph { width:14px; text-align:center; } .mw-cap-available .mw-cap-glyph { color:#34d399; } .mw-cap-planned .mw-cap-glyph { color:#fbbf24; } .mw-cap-unsupported .mw-cap-glyph { color:#9ca3af; }
+        .mw-cap-name { text-transform:capitalize; }
+        .mw-cap-reason { flex-basis:100%; padding-left:20px; }
         .snd-play { position:absolute; inset:0; margin:auto; width:30px; height:30px; border-radius:50%;
                     border:0; cursor:pointer; background:rgba(0,0,0,.55); color:#fff; font-size:12px;
                     line-height:1; display:flex; align-items:center; justify-content:center; }
@@ -35827,12 +35831,13 @@ ${fountainText.slice(0, 50000)}`;
     async function mwLoadSession(id) {
         const root = document.getElementById('mwRoot');
         try {
-            const [model, brief, drift] = await Promise.all([
+            const [model, brief, drift, capabilities] = await Promise.all([
                 api('/music-sessions/' + id),
                 api('/music-sessions/' + id + '/brief').catch(e => ({ ok: false, brief: null, warnings: [e.message] })),
                 api('/music-sessions/' + id + '/drift').catch(e => ({ ok: false, tracked: false, drifted: false, error: e.message })),
+                api('/projects/' + state.currentProject.id + '/music/capabilities').catch(e => ({ error: e.message, workflows: [] })),
             ]);
-            MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift;
+            MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift; MW.capabilities = capabilities;
             if (MW.selection && !mwFindRow(MW.selection.kind, MW.selection.id)) MW.selection = null;
             mwRender();
         } catch (e) {
@@ -35913,6 +35918,7 @@ ${fountainText.slice(0, 50000)}`;
                 <div class="mw-side">
                     <div id="mwInspector">${mwInspectorHtml()}</div>
                     ${mwContextHtml(MW.brief)}
+                    ${mwProviderHtml(MW.capabilities)}
                 </div>
             </div>`;
         paintWaveforms(root);
@@ -35985,6 +35991,29 @@ ${fountainText.slice(0, 50000)}`;
                 ${emotion.map(e => `<div class="text-sm">${mwTime(e.start_ms)}–${mwTime(e.end_ms)} <b>${esc(e.label || '')}</b> <span class="text-muted">v ${e.valence} · a ${e.arousal}</span></div>`).join('') || '<p class="text-sm text-muted">Nothing accepted yet.</p>'}
             </details>
             ${(out.warnings || []).length ? `<p class="text-sm text-muted">${esc(out.warnings.join(' · '))}</p>` : ''}
+        </section>`;
+    }
+
+    /**
+     * What the project's music provider can do, per workflow — and for every
+     * "no", why. Read-only: the generating controls are MUS-014's; this says
+     * which of them will exist, before anyone reaches for one.
+     */
+    function mwProviderHtml(caps) {
+        if (!caps || !Array.isArray(caps.workflows) || !caps.workflows.length) {
+            return `<section class="mw-panel"><h4>Provider</h4><p class="text-sm text-muted">${esc(caps && caps.error ? 'Could not read the provider\u2019s capabilities: ' + caps.error : 'No music provider resolved for this project.')}</p></section>`;
+        }
+        const p = caps.provider || {};
+        const glyph = { available: '\u2713', planned: '\u25CB', unsupported: '\u2717' };
+        return `<section class="mw-panel">
+            <h4>Provider · ${esc(p.id || '?')}</h4>
+            <p class="text-sm text-muted">${p.explicit ? 'pinned by this project' : 'not pinned — resolved from ' + esc(p.source || 'the defaults')}${p.serves_music === false ? ' · serves no music' : ''}</p>
+            ${caps.workflows.map(w => `<div class="mw-cap mw-cap-${esc(w.status)}" title="${esc(w.what)}">
+                <span class="mw-cap-glyph">${glyph[w.status] || '?'}</span>
+                <span class="mw-cap-name">${esc(w.workflow.replace('music_', ''))}</span>
+                <span class="text-sm text-muted">${esc(w.status)}${w.cost_hint ? ' · $' + Number(w.cost_hint.usd_per_unit * 60).toFixed(2) + '/min' : ''}</span>
+                ${w.reason ? `<div class="text-sm text-muted mw-cap-reason">${esc(w.reason)}${w.alternatives && w.alternatives.length ? ' · could: ' + esc(w.alternatives.map(a => a.id).join(', ')) : ''}</div>` : ''}
+            </div>`).join('')}
         </section>`;
     }
 

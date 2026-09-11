@@ -113,6 +113,7 @@ film-engine/
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
 │   │   ├── music-renderer.js     # The deterministic bounce: what the session says is what the file holds
+│   │   ├── music-capabilities.js # Six music workflows; every provider answers for each, and "no" has a reason
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -598,6 +599,7 @@ film-engine/
 │       ├── integration.test.js       # Integration test suite (43 tests)
 │       ├── music-workstation-editor.test.js # Every field the score validators accept has a control that saves; the mix is heard, not spent
 │       ├── music-bounce.test.js         # Every rendered file is measured: silence, overlap, fades, solo/mute, pan/gain, failures, versions
+│       ├── music-capabilities.test.js   # Six workflows, every music adapter answers for each, and a refusal names the reason
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -659,7 +661,7 @@ All routes prefixed with `/film`:
 | Lipsync | `GET /shots/:id/lipsync`, `GET /projects/:id/lipsync` |
 | Music | `POST /scenes/:id/music/generate[/stream]`, `POST /shots/:id/sfx/generate` |
 | Music | `POST /scenes/:id/ambient/generate`, `POST /projects/:id/music/batch[/stream]` |
-| Music | `GET /projects/:id/music/jobs`, `GET /music/:pid/:file` |
+| Music | `GET /projects/:id/music/jobs`, `GET /music/:pid/:file`, `GET /projects/:id/music/capabilities` (free) |
 | Post | `POST /shots/:id/post/[upscale\|face-restore\|color-grade\|composite]` |
 | Post | `POST /projects/:id/post/batch[/stream]`, `GET /shots/:id/post`, `GET /projects/:id/post` |
 | Pipeline | `POST /shots/:id/pipeline/run[/stream]`, `POST /scenes/:id/pipeline/run` |
@@ -3881,7 +3883,56 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
-### What the Session Says Is What the File Holds
+### Six Ways to Make Music, and "No" Is an Answer With a Reason
+The engine had one music capability — a whole cue from a prompt — and the
+workstation needs six ways of making music: compose a cue, generate its native
+parts, separate a recording into stems, condition on a reference, condition on
+the picture, regenerate a selected range. Which of those a provider serves is a
+**fact about the provider**, and it has to be discoverable before anything
+spends: a workflow silently unsupported is a button that fails at the provider
+with a message that reads like a credential problem.
+
+**They are workflows of the `music` capability, not six new capabilities**
+(`lib/music-capabilities.js`, MUS-009). A capability here is twelve registries
+— the cost gate, the canvas node types, the taxonomy, the rate book, the
+readiness brief and four derived denominators — and five of these six have no
+provider serving them today; adding them there would put five nodes on the
+canvas and five rate rows describing things that do not exist, which is the
+`stock` mistake already paid to undo. Instead every adapter that serves
+`music` declares a contract answering for **all six**: `available` with its
+limits and their source, `planned` (the provider offers it, the adapter has
+not wired it — the next task, named) or `unsupported`, each with a reason.
+`validateContract` refuses a seventh workflow, an unknown status, or an
+available workflow with no limits, and `tests/music-capabilities.test.js`
+derives the adapters from `providers.list()` so a music adapter added later
+must answer or fail.
+
+**Discovery is per project and free** — `GET /projects/:id/music/capabilities`,
+`music_capabilities`, and a Provider panel on the Score page. For the
+project's own provider it answers every workflow with status, limits, a cost
+hint that is the rate book's own row (or an honest null with the reason — a
+self-hosted gateway bills nothing, a planned workflow is not priced), the
+neutral plan and result schemas, and which other providers could do it. A
+pinned provider that does not resolve today (the local gateway is opt-in) is
+still the one answered for, and the answer says it did not resolve.
+`unsupported()` is the one refusal shape every caller returns: workflow,
+provider, status, reason, alternatives — and `null` for a workflow the
+provider serves.
+
+**The schemas are neutral and the taxonomy is the clip table's own.** A plan
+speaks in the session's terms — a session, a track, a length in milliseconds,
+a range, an asset — never a provider's field names. Every output kind lands
+as one of `film_music_clips.source_kind`, held equal in both directions: a
+generated part, a separated stem and a rendered delivery stem are three
+different things and must stay three words. `validatePlan` refuses a plan
+outside the provider's own limits with the field named — a cue past `max_ms`,
+a stem count the provider does not offer, an inverted inpaint range.
+
+**Every call site of the music capability is named.** `MUSIC_CALL_SITES`
+lists each place that resolves `music` with the workflow it performs, and the
+test derives the set from the source in both directions, so a fifth call site
+arrives named or fails — the gap-named-is-work rule.
+
 The browser monitors a score session through an audio context; the film is
 delivered from a **file**, and the two must not disagree. `lib/music-renderer.js`
 (MUS-008) renders the session's rows into one ffmpeg graph: a 48 kHz, 24-bit
@@ -5167,6 +5218,7 @@ node --test backend/tests/music-session-mcp.test.js
 node --test backend/tests/music-stem-import.test.js
 node --test backend/tests/music-workstation-editor.test.js
 node --test backend/tests/music-bounce.test.js
+node --test backend/tests/music-capabilities.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

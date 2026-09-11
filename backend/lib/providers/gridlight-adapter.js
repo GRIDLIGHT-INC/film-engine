@@ -171,6 +171,17 @@ const gridlightAdapter = {
     supportsNegativePrompt: 'native',
     supportsSeed: true,
     capabilities: Object.keys(ENDPOINTS),
+    // The music workflows (MUS-009). A swappable local agent: only whole-cue
+    // composition reaches an endpoint here, and nothing about the agent behind
+    // it can be assumed, so the rest are unsupported until an endpoint exists.
+    music: {
+        music_compose: { status: 'available', models: [], limits: { min_ms: 1000, max_ms: 600000, models: [] }, source: 'https://github.com/gridlight/film-engine#providers' },
+        music_parts: { status: 'unsupported', reason: 'the local gateway exposes /music for a whole cue and no endpoint for native parts' },
+        music_separate: { status: 'unsupported', reason: 'the local gateway has no separation endpoint' },
+        music_reference: { status: 'unsupported', reason: 'the local gateway\'s /music takes no reference audio or melody' },
+        music_video: { status: 'unsupported', reason: 'the local gateway\'s /music takes no picture' },
+        music_inpaint: { status: 'unsupported', reason: 'the local gateway has no in-context regeneration endpoint' },
+    },
 
     /*
      * Named so the draft path can find a floor for it.
