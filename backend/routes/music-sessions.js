@@ -76,6 +76,13 @@ const musicHealth = require('../lib/music-health');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
+/**
+ * A refusal a person can act on: the page shows `error` and nothing else, so
+ * the field and the rule go in it. "Invalid clip" alone reads as saving being
+ * broken; "gain_db must be between -96 and 24 dB" says what to change.
+ */
+const explain = errors => (errors || []).map(e => (e && typeof e === 'object' ? e.message || e.field : String(e))).join('; ');
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(res, status, data) {
@@ -161,7 +168,7 @@ function createSession(projectId, body) {
     const picture = pictureFor(projectId, body);
     if (picture.error) return picture.error;
     const v = VALIDATORS.film_music_sessions({ ...(body || {}), ...picture });
-    if (!v.ok) return reply(400, { error: 'Invalid session', errors: v.errors });
+    if (!v.ok) return reply(400, { error: `Invalid session: ${explain(v.errors)}`, errors: v.errors });
     const row = toRow('film_music_sessions', v.value);
     const id = generateId();
     const cols = Object.keys(row).filter(k => !NEVER_FROM_BODY.has(k));
@@ -193,7 +200,7 @@ function updateSession(session, body) {
         picture = p;
     }
     const v = VALIDATORS.film_music_sessions({ ...current, ...b, ...picture });
-    if (!v.ok) return reply(400, { error: 'Invalid session', errors: v.errors });
+    if (!v.ok) return reply(400, { error: `Invalid session: ${explain(v.errors)}`, errors: v.errors });
     const row = toRow('film_music_sessions', v.value);
     const cols = Object.keys(row).filter(k => !NEVER_FROM_BODY.has(k));
     db.prepare(`UPDATE film_music_sessions SET ${cols.map(k => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`)
@@ -217,7 +224,7 @@ function createChild(kind, sessionId, body) {
         if (!owner) return reply(404, { error: `track_id must name a track in this session`, field: 'track_id' });
     }
     const v = VALIDATORS[spec.table](b);
-    if (!v.ok) return reply(400, { error: `Invalid ${kind.replace(/s$/, '')}`, errors: v.errors });
+    if (!v.ok) return reply(400, { error: `Invalid ${kind.replace(/s$/, '')}: ${explain(v.errors)}`, errors: v.errors });
     const row = toRow(spec.table, v.value);
     const cols = Object.keys(row).filter(k => !NEVER_FROM_BODY.has(k) && k !== 'track_id');
     const id = generateId();
@@ -242,7 +249,7 @@ function updateChild(kind, sessionId, id, body) {
     const current = fromRow(spec.table, existing);
     delete current.warnings;
     const v = VALIDATORS[spec.table]({ ...current, ...b });
-    if (!v.ok) return reply(400, { error: `Invalid ${kind.replace(/s$/, '')}`, errors: v.errors });
+    if (!v.ok) return reply(400, { error: `Invalid ${kind.replace(/s$/, '')}: ${explain(v.errors)}`, errors: v.errors });
     const row = toRow(spec.table, v.value);
     const cols = Object.keys(row).filter(k => !NEVER_FROM_BODY.has(k) && k !== 'track_id');
     const hasUpdatedAt = spec.table !== 'film_music_markers';

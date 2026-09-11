@@ -228,6 +228,10 @@ test('the health report: every area by status, what is stalled, what failed and 
     const f = fixture();
     const failed = f.op('bounce', 'failed', { error: `the encoder failed (${resolveFfmpeg().bin}: 1): ${DATA_DIR}/music/${f.projectId}/x_master.wav: No such file (token ${TOKEN})` });
     const orphan = f.op('generate', 'running', { provider: 'elevenlabs', age: '-2 hours' });
+    // A job with a failed child is ONE failure: the child folds into its parent.
+    const job = f.op('separate', 'failed', { error: 'child #0 (vocals) failed: provider 500' });
+    const child = f.op('separate', 'failed', { error: 'provider 500' });
+    db.prepare('UPDATE film_music_operations SET group_id = ?, seq = 0 WHERE id = ?').run(job, child);
     const stuck = f.op('bounce', 'running', { age: '-3 hours' });
     const fresh = f.op('bounce', 'running', { age: '-5 seconds' });
     f.op('push', 'complete', { params: { kind: 'package' } });
@@ -243,6 +247,9 @@ test('the health report: every area by status, what is stalled, what failed and 
     assert.strictEqual(rep.areas.render.counts.failed, 1);
     assert.strictEqual(rep.areas.render.counts.running, 2);
     assert.strictEqual(rep.areas.package.counts.complete, 1);
+    assert.strictEqual(rep.areas.separation.counts.failed, 1, 'a failed job and its failed child were counted as two failures');
+    assert.deepStrictEqual(rep.areas.separation.recent_failures.map(x => x.id), [job], 'the failure listed is not the job that can be retried');
+    void child;
     assert.strictEqual(rep.areas.daw.counts.failed, 1);
     const stalled = Object.values(rep.areas).flatMap(a => a.stalled.map(x => x.id));
     assert.ok(stalled.includes(orphan), 'a running generation no process owns is not reported stalled');

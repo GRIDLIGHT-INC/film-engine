@@ -19,6 +19,11 @@
  * the request that started it, under a ceiling far below STALL_AFTER_MS, so a
  * row still `running` past that has lost its process.
  *
+ * A JOB IS ONE ENTRY. A generation or separation is a parent with ordered
+ * children (MUS-013); the parent's status is derived from them and its reason
+ * names the child that failed. Counting the children too reported one failed
+ * generation as two failures, and listed an operation id nobody can retry.
+ *
  * NOTHING LEAVES WITH A SECRET OR A PATH IN IT. A health report is what gets
  * pasted into a ticket. Error text is kept — it is the only thing that says
  * what went wrong — with every absolute path cut to its file name and every
@@ -185,6 +190,9 @@ async function musicHealth(db, opts) {
         counts: Object.fromEntries(STATUSES.map(s => [s, 0])), running: [], stalled: [], recent_failures: [] });
     for (const id of Object.keys(HEALTH_AREAS)) areas[id] = blank(id);
     for (const r of rows) {
+        // A job's children are the job: its status is derived from them and its
+        // reason names the child that failed, so a child is never a second entry.
+        if (r.group_id) continue;
         const area = areaOf(r);
         if (!areas[area]) areas[area] = blank(area);
         const a = areas[area];

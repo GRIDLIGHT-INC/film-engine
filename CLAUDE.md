@@ -546,6 +546,7 @@ film-engine/
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── e2e-first-film-plan.test.js    # The plan for the first finished film, held to the stage registry
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
+│       ├── fixtures/thirty-second.score.json # ...and its score: shots, the arc, the cue, the stems, the Live return
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
 │       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
 │       ├── flow-templates.test.js        # Every template validates (Phase 5)
@@ -631,6 +632,8 @@ film-engine/
 │       ├── music-bundle.test.js # A scored project carried to a clean machine: every table, every id new, every file hashed, then reopened, played, rebounced and reassembled
 │       ├── music-rights.test.js # Every origin, every derivative writer, every gate × status: rights follow the music and the policy acts where it is stated
 │       ├── music-docs-ops.test.js # The workstation documented from its own registries; health readable without a secret or a path
+│       ├── music-e2e.test.js # Screenplay → final movie, scored, through MCP: once with no DAW, once through Ableton; recovery, bundle, opt-in real Live
+│       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -4240,6 +4243,62 @@ what gets pasted into a ticket.
 Three mutations each fail the test: dropping the path cut, dropping the secret
 cut, and treating an orphaned job as live.
 
+### The Whole Film, Scored, Twice — and Every Vocabulary Held to Its Consumers
+MUS-024 is the proof, and it runs only through the MCP tools, the path this
+engine's reasoning takes. `tests/music-e2e.test.js` takes the 30-second
+fixture, extended by `fixtures/thirty-second.score.json`, from screenplay to
+a final movie:
+1. The screenplay is written and cut into shots.
+2. A picture sequence is made over the shots, and footage is uploaded for
+   each.
+3. A score session is created. Its brief names the exact screenplay version
+   and passage.
+4. An arc is proposed and explicitly accepted. Nothing generates before that.
+5. A cue is generated through a registered fake provider, and two stems are
+   uploaded.
+6. The session is bounced, approved and conformed.
+
+**Path A** never touches a DAW. **Path B** takes the same project through
+Ableton. A fake Live speaking AbletonOSC over real UDP sits behind the real
+sidecar, found through the registry's own environment. The session is planned
+and pushed. The pull plan says AbletonOSC exports nothing, so the Live mix
+comes back as a stem import, and the film is re-approved and conformed. Both
+masters are **measured**: 30 seconds, with the score in them, and the tone
+that came back from Live is in path B's master and not in path A's. The same
+file covers two more things:
+- a provider failure named once by the health report and retried to a
+  candidate take;
+- a bundle round trip whose imported film still consumes its approved score.
+
+An opt-in test runs against a real Live 12.4 when `FILM_LIVE_SMOKE=1` is set,
+and skips with its reason otherwise.
+
+`tests/music-registries.test.js` walks each registry, derived from the code,
+through each consumer that has to handle it:
+- track roles: storage, rendering (audible, or a guide with its reason),
+  bundle, docs;
+- clip kinds: storage, rendering, rights lineage, bundle, docs;
+- the file kinds the writers stamp: docs;
+- workflows: discovery, and a refusal carrying the provider's own reason;
+- every score tool: a route the router names and the API reference documents;
+- package manifest sections: a built manifest, and docs;
+- the three DAW mutations: an agent tool, a page control with its portable
+  twin, an audit record, and docs.
+
+**Synchronized editing is executed, not grepped.** The Score page's own save
+and reload functions run against the real route while an agent edits the same
+clip over MCP. Neither edit is lost, a refused value reloads the truth, and a
+clip the agent deletes is let go of on the next reload.
+
+**It found two defects.**
+- **A refused save named nothing.** The route put the field and the rule in
+  `errors`, and the page shows only `error`, so a person read "Save failed:
+  Invalid clip". Every session and child refusal now carries the rule in
+  `error` itself, for example "gain_db must be between -96 and 24 dB".
+- **MUS-023's health report counted a failed generation twice**, once as the
+  job and once as its child, and listed the child's operation id, which
+  nobody can retry. A child now folds into its job.
+
 ### A Scored Project Travels Whole
 The project bundle (MUS-021) carries every score-session table: sessions,
 tracks, clips, emotion ranges, markers, automation, operations with their job
@@ -5857,6 +5916,8 @@ node --test backend/tests/approved-score.test.js
 node --test backend/tests/music-bundle.test.js
 node --test backend/tests/music-rights.test.js
 node --test backend/tests/music-docs-ops.test.js
+node --test backend/tests/music-e2e.test.js
+node --test backend/tests/music-registries.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

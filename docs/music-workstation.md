@@ -62,6 +62,65 @@ you mix in Live; `ableton_mix_pull_plan` then `ableton_mix_pull` brings the
 render back as candidate takes. Anything the DAW can do, the portable package
 can also do, so the whole workflow also runs without Ableton.
 
+## Vocabulary
+
+Every word below comes from the schema or a writer's own code, and
+`backend/tests/music-registries.test.js` checks that this page names each one.
+
+**Track roles.** A track's `role_kind` decides how it reaches the mix:
+
+| Role | In the bounce |
+|---|---|
+| `instrument` | Audible. It is the stem in `instrument` mode. |
+| `family` | Audible. It groups instruments into one stem in `family` mode. |
+| `bus` | Audible. It groups tracks into one stem in `bus` mode. |
+| `reference` | Never mixed. A guide for the ear, and the bounce says so. |
+| `picture` | Never mixed. The cut, and the bounce says so. |
+
+**Clip kinds.** A clip's `source_kind` says where its audio came from:
+
+- `generated`: a take a provider made.
+- `native_part`: one of the parts a provider made together.
+- `separated`: a stem split out of an existing recording.
+- `rendered`: a delivery stem bounced from the session itself.
+- `imported`: a file a composer handed over.
+
+Every kind can be selected and heard, and the rights lineage follows every
+kind back to its sources.
+
+**File kinds.** Each file the workstation registers carries a
+`metadata.kind`:
+
+| Kind | What it is |
+|---|---|
+| `stem_original` | A composer's stem, stored byte-identical and hashed. |
+| `stem_working` | The optional 48 kHz / 24-bit working copy of a stem, with its lineage. |
+| `separated_stem` | One stem of a separation. It derives from the source recording. |
+| `bounce_master` | A bounce's master. The conform never mistakes it for the film's project mix. |
+| `bounce_stem` | A bounce's delivery stem. |
+| `score_package` | A portable score package archive. |
+| `package_stem` | A stem that came back in an imported package. |
+
+A generated take is also stamped with its output kind (see
+[Provider capabilities](#provider-capabilities)).
+
+**Package manifest sections.** A score package's `manifest.json` always has
+all sixteen: `format`, `version`, `package`, `session`, `operations`,
+`picture`, `timing`, `markers`, `tracks`, `stems`, `master`, `emotion`,
+`rights`, `provenance`, `files` and `matching`. A package missing any one is
+refused by name.
+
+**DAW operations.** There are seven. Three of them change the DAW: `push`,
+`pull` and `transport`. Each of the three:
+
+- has an agent tool;
+- has a control on the Score page, beside the portable-package action that
+  does the same job without a DAW;
+- leaves an audit record that `music_daw_audit` reads.
+
+The other four are reads and plans: `status`, `session_read`, `push_plan`
+and `pull_plan`.
+
 ## Configuration
 
 | Variable | Read by | Default | What it does |
@@ -220,3 +279,55 @@ starting a server that will apply a new migration to live data.
 | `107_music_job_children.sql` | `group_id`, `seq`, `attempt`, `take_number`, `output_clip_id`, fingerprints on operations | Existing operations become parents with no children. |
 | `108_music_daw_links.sql` | `film_music_daw_links` | One DAW item per Film Engine key per adapter. |
 | `109_rights_origin.sql` | `origin` on `film_rights` | Existing rows read `unknown`, a recorded answer rather than a guess. |
+
+## Proving it end to end
+
+`backend/tests/music-e2e.test.js` takes the 30-second fixture
+(`tests/fixtures/thirty-second.fountain`, extended by
+`tests/fixtures/thirty-second.score.json`) all the way to a final movie. Every
+step goes through the MCP tools an agent host calls. It runs the film twice:
+
+- **Path A, with no DAW:**
+  1. The screenplay is written and cut into shots.
+  2. A picture sequence is made over the shots, and footage is uploaded for
+     each one.
+  3. A session is created. Its brief names the exact screenplay version and
+     passage.
+  4. An arc is proposed and then accepted.
+  5. One cue is generated and two stems are uploaded.
+  6. The session is bounced, approved and conformed.
+- **Path B, the same film through Ableton:**
+  1. A fake Live speaking AbletonOSC over real UDP sits behind the real
+     sidecar, reached through `ABLETON_SIDECAR_URL` and
+     `ABLETON_SIDECAR_TOKEN`.
+  2. The session is planned and pushed.
+  3. The pull plan says that AbletonOSC exports nothing.
+  4. The Live mix comes back as a stem import.
+  5. The session is re-approved and conformed again.
+
+Both movies are measured: 30 seconds long, with the score in them. Path B's
+master carries the tone that came back from Live, and path A's does not. The
+same file also covers two more things:
+
+- A provider failure that the health report names once, and whose retry lands
+  a candidate take.
+- A bundle round trip, after which the imported film still consumes its
+  approved score and the bounce still refuses as `UNCHANGED`.
+
+Nothing in it spends: the music provider is a registered fake, and the render
+uses local ffmpeg.
+
+**A real Live, opt in.** The last test in that file runs against a real
+Ableton Live 12.4. First start AbletonOSC and the sidecar as described in
+[`ableton-sidecar.md`](ableton-sidecar.md), then run:
+
+```bash
+FILM_LIVE_SMOKE=1 ABLETON_SIDECAR_URL=http://127.0.0.1:3190 ABLETON_SIDECAR_TOKEN=<the sidecar's token> \
+  node --test backend/tests/music-e2e.test.js
+```
+
+The test checks that Live is connected and is the reviewed version, reads the
+set, pushes the fixture session, and checks that the marked tracks arrived.
+There is no delete operation, so the tracks stay: run the test against a
+scratch set. Without `FILM_LIVE_SMOKE=1` the test is skipped and says so. The
+fake-Live path is the mandatory suite either way.

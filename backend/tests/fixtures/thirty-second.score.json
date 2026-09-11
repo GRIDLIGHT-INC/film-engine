@@ -1,0 +1,29 @@
+{
+  "_what": "The score half of the 30-second fixture (thirty-second.fountain). The screenplay is written, broken into these three shots, a picture sequence is made over them, each shot gets footage, and the scene is scored: an accepted emotional arc, one generated cue and two uploaded stems, bounced, approved and conformed into the final movie. tests/music-e2e.test.js runs it twice through the MCP tools: once with no DAW, once through Ableton (push, pull plan, and the portable package back).",
+  "screenplay": "thirty-second.fountain",
+  "shots": [
+    { "shot_code": "1A", "duration_ms": 10000, "description": "Rain on the diner window; MAYA wipes the counter in slow circles.",
+      "camera": { "shot_type": "wide", "movement": "static", "lens": "35mm" }, "lighting": { "type": "neon" }, "characters": ["MAYA"],
+      "dialogue": [{ "character": "MAYA", "line": "We're closed." }], "duration_seconds": 10 },
+    { "shot_code": "1B", "duration_ms": 10000, "description": "MAYA looks up at the door. It is still shut; the bell has not moved.",
+      "camera": { "shot_type": "close-up", "movement": "static", "lens": "85mm" }, "lighting": { "type": "neon" }, "characters": ["MAYA"],
+      "dialogue": [{ "character": "MAYA", "line": "I said we're closed." }], "duration_seconds": 10 },
+    { "shot_code": "1C", "duration_ms": 10000, "description": "The sign settles to a steady red. MAYA sets down the cloth.",
+      "camera": { "shot_type": "medium", "movement": "static", "lens": "50mm" }, "lighting": { "type": "neon" }, "characters": ["MAYA"], "duration_seconds": 10 }
+  ],
+  "passage_marker": "We're closed.",
+  "arc": [
+    { "start_ms": 0, "end_ms": 10000, "label": "closing time", "valence": -0.2, "arousal": 0.2, "intensity": 0.3, "confidence": 0.8,
+      "rationale": "1A: rain, an empty diner, slow circles on the counter — tired, not yet uneasy." },
+    { "start_ms": 10000, "end_ms": 20000, "label": "someone is there", "valence": -0.6, "arousal": 0.6, "intensity": 0.6, "confidence": 0.7,
+      "rationale": "1B: she answers a door that has not opened; the bell has not moved." },
+    { "start_ms": 20000, "end_ms": 30000, "label": "she decides", "valence": -0.4, "arousal": 0.5, "intensity": 0.7, "confidence": 0.7,
+      "rationale": "1C: the sign steadies and she puts the cloth down — the unease settles into resolve." }
+  ],
+  "generate": { "workflow": "music_compose", "prompt": "sparse low strings under rain, uneasy, resolving", "duration_ms": 30000 },
+  "stems": [
+    { "name": "pad.wav", "role": "pad", "hz": 220, "rights": { "origin": "original", "status": "cleared", "owner": "the composer" } },
+    { "name": "pulse.wav", "role": "percussion", "hz": 110, "rights": { "origin": "original", "status": "cleared", "owner": "the composer" } }
+  ],
+  "live_return": { "name": "strings_live.wav", "role": "strings", "hz": 660 }
+}
