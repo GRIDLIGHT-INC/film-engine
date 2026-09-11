@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (102 migrations)
+│   │   └── migrations/     # SQL migration files (103 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -114,6 +114,7 @@ film-engine/
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
 │   │   ├── music-renderer.js     # The deterministic bounce: what the session says is what the file holds
 │   │   ├── music-capabilities.js # Six music workflows; every provider answers for each, and "no" has a reason
+│   │   ├── music-emotion.js      # The model proposes the arc, a person accepts it, nothing paid rests on a proposal
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -600,6 +601,7 @@ film-engine/
 │       ├── music-workstation-editor.test.js # Every field the score validators accept has a control that saves; the mix is heard, not spent
 │       ├── music-bounce.test.js         # Every rendered file is measured: silence, overlap, fades, solo/mute, pan/gain, failures, versions
 │       ├── music-capabilities.test.js   # Six workflows, every music adapter answers for each, and a refusal names the reason
+│       ├── music-emotion-proposals.test.js # Every bound refused out of range, coverage validated, and a proposal reaches nothing until accepted
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -639,6 +641,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
 | Score Sessions | `POST /music-sessions/:id/stems` (aligned import), `GET /music-sessions/vocabulary` (free: enums, ranges, lifecycle) |
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
+| Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -3883,6 +3886,53 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### The Model Proposes the Arc; a Person Accepts It
+The emotional arc of a picture is the judgement the whole score hangs on, and
+the connected agent **is** the model here — so MUS-010 is not a "run the
+proposer" route that hands the brief to a server-side LLM
+(`tests/mcp-no-server-llm.test.js` exists to refuse exactly that). It is the
+screenplay-analysis precedent pointed at music (`lib/music-emotion.js`):
+`music_emotion_brief` hands over the ScoreBrief, the arc already accepted,
+the proposals still waiting, the range schema with the contract's own bounds,
+the coverage rule and the instructions, for nothing; the model reasons;
+`music_emotion_propose` writes what came back.
+
+**A proposal is proposed, never accepted.** It lands as ranges with
+`status: proposed`, `source: ai_proposal`, one proposal id for the batch, a
+confidence, and a **rationale** per range naming what in the picture or the
+screenplay earns it — a range with no rationale is refused, because a number
+nobody can argue with is a number nobody should accept (migration 106 adds
+`rationale` and `proposal_id`). Proposals and the director's arc share one
+table and are kept apart by status and source: the brief, the bounce and
+generation read `status = 'accepted'` only, so a proposal cannot reach
+anything paid by being in the wrong list, only by being accepted.
+`emotionForGeneration` is the gate a generator reads: the accepted arc, or
+`EMOTION_NOT_ACCEPTED` naming what is still only proposed.
+
+**Bounds and coverage are validated with the field named.** Every bounded
+field in the contract's `RANGES` is refused out of range; a range past the
+picture is refused with the length named; overlapping ranges are refused
+naming both; a proposal covering under 80% of the picture is refused; a gap
+is reported, not refused — music genuinely stops sometimes. A new proposal
+supersedes the last one's still-proposed ranges (retired to `rejected`, not
+deleted, so the lineage reads) and leaves accepted ranges alone.
+
+**Acceptance is explicit and per range** (`music_emotion_accept`): the named
+ranges move to accepted with edits applied on the way in, the rest are
+rejected on request, an edit outside the bounds refuses the whole acceptance,
+and the operation records what was accepted, rejected and edited. The
+workstation's emotion lane draws a proposal dashed, counts the pending ones
+in its own head, carries the rationale in the range's tooltip, and gives the
+inspector a rationale control beside the status picker — the only way from
+proposed to accepted on the page is a person changing that picker.
+
+Served at `GET /film/music-sessions/:id/emotion/brief`, `GET|POST
+…/emotion/proposals`, `POST …/emotion/proposals/:pid/accept`, and as four tools
+(**308 tools**). `tests/music-emotion-proposals.test.js` is set-based over the
+contract's `RANGES` (every bound refused both sides, naming the field) and
+over the lifecycle in both directions: what a proposal must not reach, and
+what an acceptance must.
+
 ### Six Ways to Make Music, and "No" Is an Answer With a Reason
 The engine had one music capability — a whole cue from a prompt — and the
 workstation needs six ways of making music: compose a cue, generate its native
@@ -4796,7 +4846,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (102 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (103 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5219,6 +5269,7 @@ node --test backend/tests/music-stem-import.test.js
 node --test backend/tests/music-workstation-editor.test.js
 node --test backend/tests/music-bounce.test.js
 node --test backend/tests/music-capabilities.test.js
+node --test backend/tests/music-emotion-proposals.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

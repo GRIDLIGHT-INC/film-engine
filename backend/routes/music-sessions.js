@@ -15,6 +15,9 @@
  *   GET    /film/music-sessions/:id/bounce/plan         FREE: what a bounce would render, what it would leave out and why, the version it would become
  *   POST   /film/music-sessions/:id/bounce              the deterministic bounce: master + delivery stems at 48 kHz, registered; 409 when unchanged
  *   GET    /film/music-sessions/:id/bounces[/:opId]     every bounce of the session with its outputs, newest version first
+ *   GET    /film/music-sessions/:id/emotion/brief        FREE: the brief, the accepted arc, the pending proposals, the schema, the rules — for the model to reason from
+ *   GET|POST /film/music-sessions/:id/emotion/proposals  list proposals / store one (proposed, never accepted)
+ *   POST   /film/music-sessions/:id/emotion/proposals/:pid/accept  the explicit acceptance, per range, with edits
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -37,6 +40,7 @@ const contracts = require('../lib/music-session');
 const context = require('../lib/music-context');
 const stems = require('../lib/music-stems');
 const renderer = require('../lib/music-renderer');
+const emotion = require('../lib/music-emotion');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -340,6 +344,20 @@ async function handleMusicSessions(req, res, urlParts, query) {
                 const b = req.body || {};
                 const out = await renderer.runBounce(db, id, { stems: b.stems, force: b.force === true || b.force === 1 || b.force === 'true' });
                 return json(res, out.ok ? 201 : (out.status || 400), out);
+            }
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+        if (sub === 'emotion') {
+            // The proposal flow (lib/music-emotion.js). No route here calls a
+            // model: the brief goes OUT to the connected agent and the proposal
+            // comes BACK as rows that stay proposed until a person accepts.
+            const leaf = urlParts[4], pid = urlParts[5], verb = urlParts[6];
+            if (leaf === 'brief' && !pid && req.method === 'GET') { const out = emotion.emotionBrief(db, id); return json(res, out.ok ? 200 : (out.status || 400), out); }
+            if (leaf === 'proposals' && !pid && req.method === 'GET') return json(res, 200, { session_id: id, proposals: emotion.listProposals(db, id) });
+            if (leaf === 'proposals' && !pid && req.method === 'POST') { const out = emotion.propose(db, id, req.body); return json(res, out.ok ? 201 : (out.status || 400), out); }
+            if (leaf === 'proposals' && pid && verb === 'accept' && req.method === 'POST') {
+                if (!UUID_RE.test(pid)) return json(res, 400, { error: 'Invalid proposal id' });
+                const out = emotion.accept(db, id, pid, req.body); return json(res, out.ok ? 200 : (out.status || 400), out);
             }
             return json(res, 405, { error: 'Method not allowed' });
         }

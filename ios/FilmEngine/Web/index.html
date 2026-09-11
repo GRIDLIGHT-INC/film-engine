@@ -1555,6 +1555,7 @@
         .mw-emotion .mw-lane-body { height:34px; }
         .mw-range { position:absolute; top:6px; height:22px; line-height:22px; font-size:11px; padding:0 6px; overflow:hidden; white-space:nowrap; border-radius:4px; cursor:pointer; color:#fff; box-sizing:border-box; }
         .mw-range.proposed { border:1px dashed rgba(255,255,255,.7); }
+        .mw-range.rejected { opacity:.25; }
         .mw-range.selected { outline:2px solid #fff; }
         .mw-clip { position:absolute; top:6px; height:52px; border-radius:6px; background:rgba(99,102,241,.25); border:1px solid rgba(129,140,248,.6); overflow:hidden; cursor:grab; box-sizing:border-box; user-select:none; }
         .mw-clip.selected { border-color:#fff; box-shadow:0 0 0 1px #fff inset; }
@@ -36038,15 +36039,19 @@ ${fountainText.slice(0, 50000)}`;
     /** The emotional arc as ranges on the same ruler; a proposal is a dashed range until somebody accepts it. */
     function mwEmotionHtml(m) {
         const ranges = m.emotion_ranges || [];
+        // A proposal is drawn dashed and counted here, because a range that
+        // looks accepted and is not is how a score gets generated from an arc
+        // nobody reviewed. Rejected ranges stay, faded: the lineage is readable.
+        const pending = ranges.filter(r => r.status === 'proposed').length;
         return `<div class="mw-lane mw-emotion" title="Emotion: click a range to edit it">
-            <div class="mw-lane-head"><b>Emotion</b><span class="text-sm text-muted">valence / arousal</span></div>
+            <div class="mw-lane-head"><b>Emotion</b><span class="text-sm text-muted">${pending ? pending + ' proposal' + (pending > 1 ? 's' : '') + ' pending — accept in the inspector' : 'valence / arousal'}</span></div>
             <div class="mw-lane-body">
                 ${ranges.map(r => {
                     const hue = Math.round(120 + (Number(r.valence) || 0) * 120);
                     const alpha = 0.25 + (Number(r.intensity) || 0) * 0.5;
-                    return `<div class="mw-range ${r.status === 'proposed' ? 'proposed' : ''} ${MW.selection && MW.selection.id === r.id ? 'selected' : ''}"
+                    return `<div class="mw-range ${r.status === 'proposed' ? 'proposed' : ''} ${r.status === 'rejected' ? 'rejected' : ''} ${MW.selection && MW.selection.id === r.id ? 'selected' : ''}"
                         style="left:${mwX(r.start_ms)}px;width:${Math.max(6, mwX(r.end_ms) - mwX(r.start_ms))}px;background:hsla(${hue},70%,55%,${alpha});"
-                        title="${esc(r.label)} · v ${r.valence} · a ${r.arousal} · ${esc(r.status)}${r.source === 'ai_proposal' ? ' (AI proposal)' : ''}"
+                        title="${esc(r.label)} · v ${r.valence} · a ${r.arousal} · ${esc(r.status)}${r.source === 'ai_proposal' ? ' (AI proposal)' : ''}${r.rationale ? ' — ' + esc(r.rationale) : ''}"
                         onclick="mwSelect('emotion-ranges', '${esc(r.id)}')">${esc(r.label || '')}</div>`;
                 }).join('')}
             </div>
@@ -36171,6 +36176,8 @@ ${fountainText.slice(0, 50000)}`;
             body = c('label', row.label) + c('start_ms', row.start_ms, { type: 'number', min: 0, step: 1 }) + c('end_ms', row.end_ms, { type: 'number', min: 1, step: 1 })
                 + c('valence', row.valence, { step: 0.05 }) + c('arousal', row.arousal, { step: 0.05 }) + c('intensity', row.intensity, { step: 0.05 })
                 + c('confidence', row.confidence, { step: 0.05 }) + c('source', row.source)
+                + c('rationale', row.rationale, { type: 'text', note: 'Why this range: a proposal\u2019s argument, kept when it is accepted.' })
+                + c('proposal_id', row.proposal_id, { label: 'proposal', note: 'Which proposal it came from; empty for a range a person wrote.' })
                 + c('status', row.status, { note: 'A proposal stays proposed until a person accepts it here; nothing paid rests on a proposal.' });
         } else if (sel.kind === 'markers') {
             title = 'Marker';

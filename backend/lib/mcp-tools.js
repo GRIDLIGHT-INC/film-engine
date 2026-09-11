@@ -3707,6 +3707,36 @@ function musicSessionTools() {
     });
     tools.push(
         {
+            name: 'music_emotion_brief', handler: H, method: 'GET',
+            description: 'Free — spends nothing. Everything needed to propose the emotional arc of a score session: the ScoreBrief (the shots with real timings and cameras, the exact screenplay passages, the cast, the look, the cues written), the arc a person has already accepted, the proposals still waiting, the range schema with the exact bounds the database enforces, the coverage rule and the instructions. YOU are the model: read it, decide the arc, then write it with music_emotion_propose. No tool here calls a server-side model.',
+            path: a => `/film/music-sessions/${a.session_id}/emotion/brief`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_emotion_propose', handler: H, method: 'POST',
+            description: 'Writes your proposed emotional arc as time ranges — each with start_ms, end_ms, a label a composer can act on, valence (−1..1), arousal (0..1), intensity (0..1), confidence (0..1) and a RATIONALE naming what in the picture or screenplay earns it (a range with no rationale is refused). Ranges must not overlap, must sit inside the picture and must cover most of it; bounds and coverage are validated with the field named. Stored as PROPOSED, source ai_proposal, under one proposal id; NOT accepted — nothing paid rests on a proposal until a person accepts it with music_emotion_accept. A new proposal supersedes the last one\'s still-proposed ranges and leaves accepted ones alone. Read music_emotion_brief first.',
+            path: a => `/film/music-sessions/${a.session_id}/emotion/proposals`, body: dropIds('session_id'),
+            schema: { ...S,
+                ranges: { type: 'array', description: 'The ranges, in order: [{ start_ms, end_ms, label, valence, arousal, intensity, confidence, rationale }].' },
+                model: { type: 'string', description: 'Which model reasoned — recorded on the operation.' },
+                notes: { type: 'string', description: 'Anything about the arc as a whole.' } },
+            required: ['session_id', 'ranges'],
+        },
+        {
+            name: 'music_emotion_proposals', handler: H, method: 'GET',
+            description: 'Free. Every emotion proposal made for a session, newest first: its ranges with what became of each (proposed, accepted, rejected), its coverage, which proposal it superseded, and which is current.',
+            path: a => `/film/music-sessions/${a.session_id}/emotion/proposals`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_emotion_accept', handler: H, method: 'POST',
+            description: 'The explicit acceptance — a person\'s decision, never the model\'s default: moves the named ranges of a proposal (all of its proposed ranges when range_ids is omitted) from proposed to accepted, applying edits on the way in (edits: { <range_id>: { label, valence, arousal, intensity, confidence, start_ms, end_ms, rationale } }), and rejects the rest when reject_rest is true. An edit outside the bounds refuses the whole acceptance naming the field. Only accepted ranges reach the brief, the bounce and generation. Call this only when the director has said so.',
+            path: a => `/film/music-sessions/${a.session_id}/emotion/proposals/${a.proposal_id}/accept`, body: dropIds('session_id', 'proposal_id'),
+            schema: { ...S, proposal_id: { type: 'string' },
+                range_ids: { type: 'array', description: 'Which ranges to accept; all of the proposal\'s proposed ranges when omitted.' },
+                edits: { type: 'object', description: 'Corrections per range id, applied as they are accepted.' },
+                reject_rest: { type: 'boolean', description: 'Retire the proposal\'s other still-proposed ranges.' } },
+            required: ['session_id', 'proposal_id'],
+        },
+        {
             name: 'music_bounce_plan', handler: H, method: 'GET',
             description: 'Free — writes nothing, renders nothing. What a bounce of this session WOULD do: the audible clips with their resolved gain, pan, fades, loop and automation, every clip left out with its reason (muted, another track soloed, take not selected, a reference track), the delivery stems the chosen mode would group, the fingerprint, the version it would become, and whether the session is unchanged since the last render. Read it before bouncing.',
             path: a => `/film/music-sessions/${a.session_id}/bounce/plan${a.stems ? '?stems=' + encodeURIComponent(a.stems) : ''}`,

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**304 tools, 69 families.** Everything the app can do, you can ask for in a
+**308 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -593,7 +593,8 @@ asset on the scene and cost money to make.
 `music_marker_list` · `music_marker_create` · `music_marker_update` · `music_marker_delete` ·
 `music_emotion_list` · `music_emotion_create` · `music_emotion_update` · `music_emotion_delete` ·
 `music_automation_list` · `music_automation_create` · `music_automation_update` · `music_automation_delete` ·
-`music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities`
+`music_stem_import` · `music_bounce_plan` · `music_bounce` · `music_bounce_list` · `music_capabilities` ·
+`music_emotion_brief` · `music_emotion_propose` · `music_emotion_proposals` · `music_emotion_accept`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -652,6 +653,16 @@ available, planned or unsupported **with the reason**, its limits, a cost hint
 from the rate book, the neutral plan and result schemas, and which other
 providers could do it. A workflow the provider does not serve is refused with
 that answer, never attempted.
+
+**The emotional arc is yours to propose and the director's to accept.**
+`music_emotion_brief` is free: the ScoreBrief, the arc already accepted, the
+proposals waiting, the range schema with the exact bounds, the coverage rule
+and the instructions — you are the model, so read it and decide.
+`music_emotion_propose` writes your arc as ranges with a label, valence,
+arousal, intensity, confidence and a rationale each; they land PROPOSED, never
+accepted, and nothing paid rests on them. `music_emotion_proposals` lists
+every proposal and what became of it. `music_emotion_accept` is the director's
+explicit act, per range, with edits — call it only when they have said so.
 
 ### Your own shots, kept across every film
 

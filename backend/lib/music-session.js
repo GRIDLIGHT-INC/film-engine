@@ -325,6 +325,10 @@ function validateEmotionRange(input) {
         // rest on an emotion curve no person reviewed.
         status: enumField(errors, 'film_music_emotion_ranges', 'status', i.status, source === 'ai_proposal' ? 'proposed' : 'accepted'),
         confidence: rangeField(errors, 'film_music_emotion_ranges', 'confidence', i.confidence, 1),
+        // Why this range (a proposal's argument, kept when it is accepted) and
+        // which proposal it came from: lineage, not lifecycle (migration 106).
+        rationale: text(i.rationale, ''),
+        proposal_id: text(i.proposal_id, ''),
     };
     if (i.end_ms === undefined || i.end_ms === null) errors.push({ field: 'end_ms', message: 'end_ms is required' });
     if (isInt(value.start_ms) && isInt(value.end_ms)) {
