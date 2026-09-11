@@ -484,6 +484,40 @@ async function runProjectSteps(steps, { project, opts, hooks, offset }) {
 }
 
 /**
+ * Refuse a run that would make the film on a machine that cannot.
+ *
+ * The preflight is a CLI a person may not run. The runner itself spent every
+ * generation step and found out at the END — at assembly, the last step —
+ * that no encoder existed, which is the most expensive possible moment to
+ * learn it. So a run that WILL execute a whole-film step asks that step's
+ * declared dependency first, through the same checker the preflight uses, and
+ * refuses before the run row exists. A run that will not make the film — a
+ * shot run that did not ask for it — has nothing to preflight.
+ *
+ * Overridable with `ignore_preflight`, the way every other gate here is: the
+ * generation is still worth having, and the conform can happen later on a
+ * machine that has the encoder. The refusal then arrives from the step
+ * itself, honestly, at the end.
+ */
+function preflightProjectSteps(projectSteps, body, willRun) {
+    if (!willRun || !projectSteps.length || (body && body.ignore_preflight)) return null;
+    const { checkStageDependency } = require('../lib/e2e-preflight');
+    for (const step of projectSteps) {
+        const verdict = checkStageDependency(step.id);
+        if (verdict && verdict.verdict === 'blocked') {
+            return {
+                error: `${step.id} cannot run on this machine: ${verdict.reasons[0] || 'its dependency is missing'}`,
+                code: 'PREFLIGHT_BLOCKED', step: step.id, dependency: verdict.dependency,
+                reasons: verdict.reasons, fixes: verdict.fixes,
+                hint: 'Fix the dependency, pass ignore_preflight to generate now and conform later, '
+                    + `or skip_steps: ["${step.id}"].`,
+            };
+        }
+    }
+    return null;
+}
+
+/**
  * Run a step plan for ONE shot.
  *
  * Extracted because three runners needed it and two of them had their own copy
@@ -572,6 +606,9 @@ async function runShotPipeline(req, res, shotId) {
     const skipSteps = autoSkipSteps(sceneCard, req.body);
     const plan = buildStepPlan({ skip_steps: skipSteps, ...(req.body || {}) });
     const { perShot, project: projectSteps } = splitPlan(plan);
+
+    const gate = preflightProjectSteps(projectSteps, req.body, !!(req.body && req.body.include_project_steps));
+    if (gate) return json(res, 409, gate);
 
     const runId = generateId();
     db.prepare(
@@ -676,6 +713,11 @@ async function runShotPipelineStream(req, res, shotId) {
     const skipSteps = autoSkipSteps(sceneCard, req.body);
     const plan = buildStepPlan({ skip_steps: skipSteps, ...(req.body || {}) });
     const { perShot, project: projectSteps } = splitPlan(plan);
+
+    // Before the stream opens: a 409 is an answer, a stream that ends in one
+    // event is a run that looks like it started.
+    const gate = preflightProjectSteps(projectSteps, req.body, !!(req.body && req.body.include_project_steps));
+    if (gate) return json(res, 409, gate);
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',
@@ -903,6 +945,10 @@ async function runScenePipeline(req, res, sceneId) {
         return json(res, 409, { error: 'Consistency check blocked the scene run (strict mode).', readiness: sceneReadiness });
     }
 
+    const gate = preflightProjectSteps(splitPlan(buildStepPlan(req.body || {})).project, req.body,
+        !!(req.body && req.body.include_project_steps));
+    if (gate) return json(res, 409, gate);
+
     const runId = generateId();
     db.prepare(
         `INSERT INTO film_pipeline_runs (id, project_id, scene_id, run_type, status, total_steps, progress_pct)
@@ -939,6 +985,11 @@ async function runProjectPipeline(req, res, projectId) {
     if (!!(req.body && req.body.strict) && !readiness.ready) {
         return json(res, 409, { error: 'Consistency check blocked the project run (strict mode).', readiness });
     }
+
+    // A project run makes the film, so its dependency is asked for FIRST —
+    // before a single generation step has been paid for.
+    const gate = preflightProjectSteps(splitPlan(buildStepPlan(req.body || {})).project, req.body, true);
+    if (gate) return json(res, 409, gate);
 
     const runId = generateId();
     db.prepare(

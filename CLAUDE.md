@@ -3870,6 +3870,39 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### A Missing Encoder Refuses the Run Before It Spends
+SHIP-001 declared that `assembly` depends on `ffmpeg` and the preflight probed
+it — through a resolver nothing could inject, so the one branch that turns *no
+encoder* into a blocked stage was never exercised: replacing its verdict with
+`go` failed no test, and the branch was keyed on the literal `'ffmpeg'`, so a
+second declared dependency would have fallen through to `go` with nothing to
+say otherwise. And the preflight is a CLI a person may not run. The runner
+itself spent every generation step and found out at the **end**, at assembly,
+that the film could not be joined — the most expensive moment to learn it.
+
+`DEPENDENCY_CHECKS` in `lib/e2e-preflight.js` is the registry: how each
+declared dependency is checked, and how its presence is resolved. A dependency
+declared in `STEP_EXTERNAL_DEPENDENCY` and absent from it reads as **blocked**,
+never ready. `preflight({ resolvers })` injects a resolver per dependency, which
+is the only way to exercise the blocked path on a machine that has the encoder,
+because the probe caches an available answer for the life of the process.
+
+**The runner asks first.** A run that will execute a whole-film step — a project
+run, or a shot or scene run that passed `include_project_steps` — checks that
+step's dependency through the same `checkStageDependency` the preflight uses and
+answers **409 `PREFLIGHT_BLOCKED`** before the run row exists, carrying the
+probe's reason and the three remedies. A run that will not make the film has
+nothing to preflight. `ignore_preflight` gets past it, the way every other gate
+here does: the generation is still worth having, the conform can happen later on
+a machine with an encoder, and the refusal then arrives from the step itself,
+honestly, at the end. On the SSE runner the gate sits before the stream opens,
+because a stream that ends in one event is a run that looks like it started.
+
+`tests/e2e-readiness.test.js` is extended set-based over the stages that declare
+a dependency and over the four run entry points derived from the router: blocked
+with the remedies named, go when present, refused before a run row is written,
+and not refused when the film was not asked for.
+
 ### A Deliverable Is One Artefact, Not a Count of Pieces
 The broadcast QC's `video_master` once passed by counting per-shot video rows
 — green on shot 1 of N — and was corrected to read the conformed film.

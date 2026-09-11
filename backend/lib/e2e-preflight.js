@@ -66,6 +66,45 @@ const STEP_EXTERNAL_DEPENDENCY = {
 };
 
 /**
+ * How each declared dependency is checked, and how its presence is resolved.
+ *
+ * A dependency declared above and absent here must read as BLOCKED, never as
+ * ready: the preflight used to key its one dependency branch on the literal
+ * 'ffmpeg', so a second declared dependency would have fallen through to the
+ * default verdict of 'go' with nothing to say otherwise. `resolve` is what a
+ * test swaps to make the encoder disappear on a machine that has one — the
+ * probe caches an available answer for the life of the process, so there is
+ * no other way to exercise the blocked path.
+ */
+const DEPENDENCY_CHECKS = {
+    ffmpeg: {
+        what: 'an encoder to join the shot masters into one film',
+        resolve: () => require('./ffmpeg').resolveFfmpeg(),
+        check: resolve => checkConformDependency(resolve),
+    },
+};
+
+/** The verdict for one declared dependency. Never throws. */
+function checkDependency(dependency, resolvers) {
+    const entry = DEPENDENCY_CHECKS[dependency];
+    if (!entry) {
+        return {
+            dependency, verdict: 'blocked',
+            reasons: [`'${dependency}' is declared as a runtime dependency and nothing knows how to check it`],
+            fixes: [`register a checker for '${dependency}' in lib/e2e-preflight.js DEPENDENCY_CHECKS`],
+        };
+    }
+    const resolve = (resolvers && resolvers[dependency]) || entry.resolve;
+    return { dependency, ...entry.check(resolve) };
+}
+
+/** The verdict for a stage's declared dependency, or null when it has none. */
+function checkStageDependency(stageId, resolvers) {
+    const dependency = STEP_EXTERNAL_DEPENDENCY[stageId];
+    return dependency ? checkDependency(dependency, resolvers) : null;
+}
+
+/**
  * The complete ordered stage list.
  *
  * @param {object} projectConfig  the project's provider_config
@@ -251,6 +290,9 @@ async function checkCapability(capability, projectConfig, cache) {
  * @param {boolean} opts.hasDialogue   whether the test screenplay has dialogue;
  *                                     without it voice+lipsync auto-skip and
  *                                     stop being blockers
+ * @param {object}  [opts.resolvers]   per-dependency resolver overrides, so the
+ *                                     blocked path can be exercised on a machine
+ *                                     that has the dependency
  * @returns {{ ready: boolean, stages: object[], blocked: object[], summary: object }}
  */
 async function preflight(opts) {
@@ -288,9 +330,10 @@ async function preflight(opts) {
                 row.reasons.push(`${stage.endpoint} is served by Gridlight at ${GRIDLIGHT_URL}, which is not answering (${cache.gridlight.reason})`);
                 row.fixes.push('start Gridlight');
             }
-        } else if (stage.externalDependency === 'ffmpeg') {
-            const dependency = checkConformDependency();
+        } else if (stage.externalDependency) {
+            const dependency = checkDependency(stage.externalDependency, options.resolvers);
             row.verdict = dependency.verdict;
+            row.dependency = dependency.dependency;
             row.reasons.push(...dependency.reasons);
             row.fixes.push(...dependency.fixes);
         }
@@ -314,7 +357,7 @@ async function preflight(opts) {
 }
 
 module.exports = {
-    preflight, stages, checkCapability, checkConformDependency, reachable,
-    HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, STEP_EXTERNAL_DEPENDENCY,
+    preflight, stages, checkCapability, checkConformDependency, checkDependency, checkStageDependency, reachable,
+    HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, STEP_EXTERNAL_DEPENDENCY, DEPENDENCY_CHECKS,
     GRIDLIGHT_URL,
 };
