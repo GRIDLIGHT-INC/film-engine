@@ -27,7 +27,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (104 migrations)
+│   │   └── migrations/     # SQL migration files (105 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -119,6 +119,9 @@ film-engine/
 │   │   ├── music-generation.js   # Compose, parts, reference, picture, inpaint: every output a new take, nothing replaced
 │   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
+│   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
+│   │   ├── daw/                  # DAW adapters behind the contract
+│   │   │   └── memory.js         #   the reference DAW, in memory, that can be told to misbehave
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
@@ -611,6 +614,7 @@ film-engine/
 │       ├── music-jobs.test.js # A truth table over child states: no parent is complete over a failed or missing child
 │       ├── music-ai-controls.test.js # Every AI action: plan first, one confirmation, the provider's own "no", free ones spend nothing
 │       ├── music-package.test.js # Every manifest section, every broken arrival refused by name, the same bytes twice, and the round trip
+│       ├── daw-adapter.test.js # Seven operations, every misbehaviour a recorded failure, and nothing outside Film Engine's own tracks
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -3943,6 +3947,53 @@ contract's `RANGES` (every bound refused both sides, naming the field) and
 over the lifecycle in both directions: what a proposal must not reach, and
 what an acceptance must.
 
+### A DAW Is an Editor Film Engine Talks To, Never the Place the Score Lives
+MUS-016 defines the contract every DAW integration implements, and the
+engine-side driver that holds each adapter to it whatever the transport. An
+adapter implements six methods (`status`, `sessionRead`, `push`,
+`pullAvailable`, `pull`, `transport`), and `lib/daw-adapter.js` turns them into
+the seven operations of `DAW_OPERATIONS`: status, session read, push plan,
+push, pull plan, pull and supervised transport. Each operation declares its
+ceiling, whether it mutates, and, for mutations, that it needs an
+acknowledgement and leaves an audit record.
+
+**Seven rules, enforced by the driver rather than trusted to the adapter.**
+- **Acknowledged.** A mutation is confirmed only by an acknowledgement that
+  echoes the request id; no answer, a wrong id or a refusal is a failure.
+- **Idempotent.** A push is keyed by adapter and plan, a pull by adapter and
+  the hash of the render. The same key returns the recorded result without
+  reaching the DAW, and the key travels to the adapter so a retry after a
+  timeout cannot apply twice.
+- **Stable external ids.** `film_music_daw_links` (migration 108) maps each
+  Film Engine key to one DAW item per adapter in both directions, written only
+  from an acknowledged write, so a second push updates what the first created.
+- **Conflicts reported, not resolved.** A Film Engine track whose DAW revision
+  moved since the last write was edited in the DAW. The plan names it and the
+  push refuses with `CONFLICTS` until each is decided, `overwrite` or
+  `keep_daw`. A push against a plan the session or the DAW has moved past is
+  refused with `STALE_PLAN`.
+- **Bounded.** A plan never names a track Film Engine does not own. A Film
+  Engine track the DAW no longer attributes to Film Engine is a conflict that
+  cannot be overwritten, and an acknowledgement claiming a change to a foreign
+  track fails the push as a boundary violation with no links written.
+- **Timed and audited.** Every operation has a ceiling. A mutation that times
+  out is recorded as failed with an unknown outcome and the key to retry it by.
+  Every mutation is an operation row (`push` or `pull`, `params.kind: 'daw'`)
+  with the adapter, request id, key, outcome and duration. Reads leave no
+  record.
+- **Supervised transport.** Play, stop and locate only, and only when the
+  caller says a person asked for it.
+
+The push carries the portable score package (MUS-015), and a pull brings a DAW
+render back as a package that is validated by hash and alignment and imported
+as candidate takes. So every DAW action has a portable-package equivalent by
+construction. `lib/daw/memory.js` is the reference DAW: the contract in memory,
+with no transport, which `tests/daw-adapter.test.js` tells to misbehave in each
+way a real one can. It answers without an acknowledgement, echoes the wrong
+request, hangs, touches a foreign track, or returns bytes other than those it
+advertised. There is no route or tool yet: the Ableton sidecar (MUS-017), its
+MCP tools (MUS-018) and the sync UI (MUS-019) are the surfaces built on this.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5089,7 +5140,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (104 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (105 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5144,6 +5195,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (104 migrations).
 - `film_music_markers` — shot boundaries, hit points, sections, sync points
 - `film_music_automation` — a parameter over time, per track or per clip
 - `film_music_operations` — every generate, separate, bounce, import, push, pull, rebase and approval, with lineage
+- `film_music_daw_links` — one DAW item per Film Engine key per adapter, with the DAW revision last written
 
 ## Epic Status
 
@@ -5518,6 +5570,7 @@ node --test backend/tests/music-generation.test.js
 node --test backend/tests/music-jobs.test.js
 node --test backend/tests/music-ai-controls.test.js
 node --test backend/tests/music-package.test.js
+node --test backend/tests/daw-adapter.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
