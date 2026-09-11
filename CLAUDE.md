@@ -121,6 +121,7 @@ film-engine/
 │   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
 │   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
+│   │   ├── daw-registry.js       # Which DAW adapters the engine can reach, how each is configured, and the seven Ableton tools
 │   │   ├── daw/                  # DAW adapters behind the contract
 │   │   │   ├── memory.js         #   the reference DAW, in memory, that can be told to misbehave
 │   │   │   ├── ableton.js        #   Ableton Live through the sidecar: marker-named tracks, tempo, supervised transport
@@ -621,6 +622,7 @@ film-engine/
 │       ├── music-package.test.js # Every manifest section, every broken arrival refused by name, the same bytes twice, and the round trip
 │       ├── daw-adapter.test.js # Seven operations, every misbehaviour a recorded failure, and nothing outside Film Engine's own tracks
 │       ├── ableton-sidecar.test.js # Over real UDP: correlation, timeouts, reconnect, the allowlist, and the DAW contract through the sidecar
+│       ├── ableton-mcp.test.js # One tool per DAW operation, none that can set anything else in Live, and the pull gate through the tools
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -663,6 +665,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
+| DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}` |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -4046,6 +4049,22 @@ milliseconds to beats at Live's tempo.
 out of order, drop a reply, report another version and restart on the same
 port. It proves the protocol, not Live: no real Live was in the loop.
 
+**Seven tools, one per operation of the contract** (MUS-018): `ableton_status`,
+`ableton_session_read`, `ableton_score_push_plan`, `ableton_score_push`,
+`ableton_mix_pull_plan`, `ableton_mix_pull` and `ableton_transport`
+(**331 tools**). `lib/daw-registry.js` holds the map from tool to operation and
+is the one place that knows where the sidecar is: `ABLETON_SIDECAR_URL`
+(loopback only, `http://127.0.0.1:3190` by default) and `ABLETON_SIDECAR_TOKEN`,
+read from the Film Engine process's environment and never stored, because the
+token is a secret. An unconfigured adapter answers 503 with what to set and the
+guide, never with a connection error that reads like Live being broken. The
+tools dispatch through `routes/music-sessions.js` into the driver, so an agent
+gets the driver's rules and nothing more. No tool takes an OSC address or a
+Live property, and `tests/ableton-mcp.test.js` holds that set-wise. It also
+proves the pull gate through the tools with the reference DAW standing in,
+because Ableton itself has no render to pull: bytes that fail the hash import
+nothing, and the same render is fetched once.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5624,6 +5643,7 @@ node --test backend/tests/music-ai-controls.test.js
 node --test backend/tests/music-package.test.js
 node --test backend/tests/daw-adapter.test.js
 node --test backend/tests/ableton-sidecar.test.js
+node --test backend/tests/ableton-mcp.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

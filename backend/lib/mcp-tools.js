@@ -3891,6 +3891,54 @@ function musicSessionTools() {
                 session_id: { type: 'string', description: 'Import back into this session: matched stems land as candidate takes.' } },
             required: ['project_id'],
         },
+        // ── Ableton, through the DAW contract (MUS-018) ─────────────────────
+        // One tool per operation of DAW_OPERATIONS (lib/daw-registry.js holds
+        // the map). None takes an OSC address or a Live property: the most an
+        // agent reaches is the sidecar's allowlist, through the driver's rules.
+        {
+            name: 'ableton_status', handler: H, method: 'GET',
+            description: 'Free — changes nothing. Is Ableton Live reachable through the local sidecar, which Live version answered, and is it the reviewed one (12.4; AbletonOSC cannot report the 12.4.5 bugfix). A Live that is not the reviewed version can be read and cannot be changed. Unconfigured, it says what to set and where the setup guide is.',
+            path: () => '/film/daw/ableton/status', schema: {}, required: [],
+        },
+        {
+            name: 'ableton_session_read', handler: H, method: 'GET',
+            description: 'Free — changes nothing. The Live set as it is: every track with its owner (film-engine for a track carrying a Film Engine marker ⟨fe:…⟩, live for everything else), its revision and the tempo. Read before planning a push.',
+            path: () => '/film/daw/ableton/session', schema: {}, required: [],
+        },
+        {
+            name: 'ableton_score_push_plan', handler: H, method: 'GET',
+            description: 'Free — changes nothing in Live; at most builds the portable score package locally. What pushing this score session to Ableton would do: the Film Engine tracks it would create and update, the tracks that are not Film Engine\'s and are left alone, every conflict (a Film Engine track edited in Live since the last push), and a plan_fingerprint to push exactly this plan.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/ableton/push/plan`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'ableton_score_push', handler: H, method: 'POST',
+            description: 'Changes Live — carries out a push plan into Film Engine\'s own tracks in the Live set (created at the end, named with their ⟨fe:…⟩ marker; nothing else in the set is touched) and sets the song tempo. Pass the plan_fingerprint from ableton_score_push_plan; a plan the session or Live has moved past is refused (STALE_PLAN), and every conflict must be decided (overwrite or keep_daw) first. Idempotent: the same plan pushed again returns the recorded result without reaching Live. AbletonOSC cannot place audio from a file, so each acknowledged track names the stem a person drags in at bar 1.1.1. Spends no provider credits.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/ableton/push`, body: dropIds('session_id'),
+            schema: { ...S, plan_fingerprint: { type: 'string', description: 'From ableton_score_push_plan.' },
+                resolutions: { type: 'object', description: 'fe_key → "overwrite" or "keep_daw", one per conflict in the plan.' },
+                idempotency_key: { type: 'string', description: 'Retry a push whose outcome is unknown (a timeout) with the key it reported; it cannot apply twice.' } },
+            required: ['session_id', 'plan_fingerprint'],
+        },
+        {
+            name: 'ableton_mix_pull_plan', handler: H, method: 'GET',
+            description: 'Free — changes nothing. What Live has rendered that could come back into the session, with hashes, and which already has. AbletonOSC exports no render, so from Live this is empty with the reason: export stems from Live and bring them back with music_package_import.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/ableton/pull/plan`, schema: S, required: ['session_id'],
+        },
+        {
+            name: 'ableton_mix_pull', handler: H, method: 'POST',
+            description: 'Changes the session, not Live — brings one render back from Live as an immutable package, imported only after its sha256 hash matches what was advertised and every stem is aligned, landing as CANDIDATE takes beside what the tracks hold. Idempotent per render hash. From Ableton this is refused with the reason (AbletonOSC exports nothing in Live); use music_package_import for stems exported by hand.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/ableton/pull`, body: dropIds('session_id'),
+            schema: { ...S, item_id: { type: 'string', description: 'From ableton_mix_pull_plan.' }, idempotency_key: { type: 'string' } },
+            required: ['session_id', 'item_id'],
+        },
+        {
+            name: 'ableton_transport', handler: H, method: 'POST',
+            description: 'Changes Live\'s transport — play, stop, or locate to a position in milliseconds (converted to beats at Live\'s tempo). Supervised: pass supervised: true ONLY when a person asked for it in this conversation; an agent never starts or moves Live on its own, and without it the call is refused. Recorded in the session\'s audit.',
+            path: a => `/film/music-sessions/${a.session_id}/daw/ableton/transport`, body: dropIds('session_id'),
+            schema: { ...S, command: { type: 'string', enum: ['play', 'stop', 'locate'] }, position_ms: { type: 'integer', minimum: 0, description: 'locate only.' },
+                supervised: { type: 'boolean', description: 'true only when a person asked for this.' } },
+            required: ['session_id', 'command'],
+        },
         {
             name: 'music_bounce_list', handler: H, method: 'GET',
             description: 'Free. Every bounce of a session, newest version first: status, fingerprint, what it superseded, the master and each stem with its served url, what was left out and why. The newest complete one is marked current.',

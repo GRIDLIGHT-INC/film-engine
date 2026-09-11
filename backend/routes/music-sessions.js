@@ -31,6 +31,12 @@
  *   POST   /film/music-sessions/:id/package              FREE (a local render at most): the portable score package — manifest, aligned BWF stems, master, picture
  *   GET    /film/music-sessions/:id/packages             every package built from the session
  *   POST   /film/projects/:id/music-packages/import      validate (validate_only) or import a package; into session_id as candidate takes, or a new session
+ *   GET    /film/daw/:adapter/{status,session}           FREE: is the DAW reachable and compatible; the DAW session as it is (MUS-018)
+ *   GET    /film/music-sessions/:id/daw/:adapter/push/plan   FREE: what a push would create, update, leave alone, and every conflict
+ *   POST   /film/music-sessions/:id/daw/:adapter/push    carry out a fingerprinted push plan (changes the DAW; idempotent)
+ *   GET    /film/music-sessions/:id/daw/:adapter/pull/plan   FREE: what the DAW has rendered that could come back
+ *   POST   /film/music-sessions/:id/daw/:adapter/pull    bring a render back, validated by hash and alignment, as candidate takes
+ *   POST   /film/music-sessions/:id/daw/:adapter/transport   play / stop / locate, only when a person asked (supervised)
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -58,6 +64,8 @@ const separation = require('../lib/music-separation');
 const generation = require('../lib/music-generation');
 const musicJobs = require('../lib/music-jobs');
 const musicPackage = require('../lib/music-package');
+const dawDriver = require('../lib/daw-adapter');
+const dawRegistry = require('../lib/daw-registry');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -341,6 +349,17 @@ async function handleMusicSessions(req, res, urlParts, query) {
         });
     }
 
+    if (urlParts[1] === 'daw' && urlParts[2]) {
+        // The DAW contract's two reads that belong to no session (MUS-018).
+        // The adapter comes from lib/daw-registry.js; the rules from the driver.
+        const got = dawRegistry.adapterFor(urlParts[2]);
+        if (!got.ok) return json(res, got.status, { error: got.error, guide: got.guide });
+        const leaf = urlParts[3];
+        if (leaf === 'status' && req.method === 'GET') { const out = await dawDriver.status(got.adapter); return json(res, out.ok ? 200 : 502, out); }
+        if (leaf === 'session' && req.method === 'GET') { const out = await dawDriver.readSession(got.adapter); return json(res, out.ok ? 200 : 502, out); }
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
     if (urlParts[1] === 'music-sessions' && urlParts[2]) {
         const id = urlParts[2];
         if (!UUID_RE.test(id)) return json(res, 400, { error: 'Invalid session ID' });
@@ -408,6 +427,33 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.reused ? 200 : 201, { ...rest, manifest: { format: manifest.format, version: manifest.version, package: manifest.package, stems: manifest.stems, picture: manifest.picture, timing: manifest.timing } });
         }
         if (sub === 'packages' && req.method === 'GET') return json(res, 200, { session_id: id, packages: musicPackage.listPackages(db, id) });
+        if (sub === 'daw' && urlParts[4]) {
+            // Push, pull and transport through the MUS-016 driver (MUS-018): the
+            // driver holds every adapter to acknowledgement, idempotency, the
+            // ownership boundary, conflicts, hash-validated pulls and supervision.
+            const got = dawRegistry.adapterFor(urlParts[4]);
+            if (!got.ok) return json(res, got.status, { error: got.error, guide: got.guide });
+            const adapter = got.adapter, leaf = urlParts[5], plan = urlParts[6] === 'plan', b = req.body || {};
+            const reply = (out, okStatus) => json(res, out.ok ? (okStatus || 200) : (out.status || 502), out);
+            if (leaf === 'push' && plan && req.method === 'GET') return reply(await dawDriver.planPush(db, id, adapter));
+            if (leaf === 'push' && !plan && req.method === 'POST') {
+                return reply(await dawDriver.push(db, id, adapter, { plan_fingerprint: b.plan_fingerprint, resolutions: b.resolutions, idempotency_key: b.idempotency_key }));
+            }
+            if (leaf === 'pull' && plan && req.method === 'GET') {
+                const out = await dawDriver.planPull(db, id, adapter);
+                if (out.ok && adapter.pullReason) out.unavailable = adapter.pullReason;
+                return reply(out);
+            }
+            if (leaf === 'pull' && !plan && req.method === 'POST') {
+                const out = await dawDriver.pull(db, id, adapter, { item_id: b.item_id, idempotency_key: b.idempotency_key });
+                if (!out.ok && adapter.pullReason && out.status === 404) out.error = `${out.error}. ${adapter.pullReason}`;
+                return reply(out);
+            }
+            if (leaf === 'transport' && req.method === 'POST') {
+                return reply(await dawDriver.transport(db, id, adapter, { command: b.command, position_ms: b.position_ms, supervised: b.supervised === true }));
+            }
+            return json(res, 405, { error: 'Method not allowed' });
+        }
         if (sub === 'jobs') {
             // Grouped jobs (lib/music-jobs.js): a parent's status is derived
             // from its children, so what is read here cannot claim a finished

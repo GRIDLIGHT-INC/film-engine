@@ -485,7 +485,8 @@ const server = http.createServer(async (req, res) => {
         // /film/locations/:id already cost once: a handler that exists and is
         // never reached looks exactly like a missing feature.
         if ((parts[1] === 'projects' && parts[2] && (parts[3] === 'music-sessions' || parts[3] === 'music-packages'))
-            || (parts[1] === 'music-sessions' && parts[2])) {
+            || (parts[1] === 'music-sessions' && parts[2])
+            || (parts[1] === 'daw' && parts[2])) {
             const handled = await handleMusicSessions(req, res, parts, query);
             if (handled !== false) return handled;
         }

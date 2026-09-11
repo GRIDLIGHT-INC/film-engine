@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**324 tools, 69 families.** Everything the app can do, you can ask for in a
+**331 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -665,6 +665,24 @@ reference picture. `music_package_validate` checks a package and writes nothing.
 `music_package_import` brings one back. Into the session it came from, each stem
 lands on its own track as a candidate take; otherwise a new session is made with
 the tempo map, markers and arc restored.
+
+**Ableton Live, through the sidecar you start yourself.**
+`ableton_status` · `ableton_session_read` · `ableton_score_push_plan` · `ableton_score_push` ·
+`ableton_mix_pull_plan` · `ableton_mix_pull` · `ableton_transport`
+
+Each tool is one operation of the DAW contract, and none of them can reach into
+Live any other way: there is no tool that takes an OSC address or a Live
+property. `ableton_status` and `ableton_session_read` are free and say whether
+Live is reachable, which version answered, and which tracks are Film Engine's.
+`ableton_score_push_plan` is free and shows what a push would create, update and
+leave alone, with every conflict. `ableton_score_push` pushes exactly the plan
+you read, into Film Engine's own marked tracks, and pushing the same plan twice
+does nothing the second time. Live cannot load audio from a file over OSC, so
+each pushed track names the stem to drag in at bar 1.1.1. Live cannot export a
+render over OSC either, so `ableton_mix_pull_plan` is empty with the reason, and
+stems exported by hand come back with `music_package_import`. `ableton_transport`
+plays, stops or locates Live only when a person asked for it. Setup is in
+docs/ableton-sidecar.md.
 
 **Every generation and separation is one job with its outputs in order.**
 `music_job_list` and `music_job_get` are free. They show each job's outputs with
