@@ -154,39 +154,61 @@ function runBroadcastQC(req, res, projectId) {
     });
 }
 
+/**
+ * The deliverables a broadcast QC certifies, and what each one IS.
+ *
+ * A deliverable is ONE project-level artefact, never a count of shot pieces.
+ * `video_master` used to pass by counting per-shot video rows — green on shot
+ * 1 of N — and was corrected; `audio_master` was left counting, so any line
+ * of generated dialogue reported an audio deliverable registered. Each entry
+ * names its asset type, the finder it shares with the conform, and the
+ * verdict for absence: a missing film FAILS, while a missing project mix only
+ * WARNS, because finishing happens in the NLE and the master ships with the
+ * clips' own audio until a mix exists. Iterated, so a third deliverable is
+ * checked the same way with nothing to remember.
+ */
+const { findProjectMaster, findProjectMix } = require('../lib/conform');
+const PROJECT_DELIVERABLES = {
+    video_master: {
+        key: 'video_master', label: 'Final video master registered',
+        asset_type: 'video_final', metadata_kind: 'project_master',
+        find: findProjectMaster, missing_status: 'fail',
+        present: a => `Conformed film registered (${a.file_name}).`,
+        absent: n => `No conformed film. ${n} per-shot video_final asset(s) exist; run the conform to produce the master.`,
+    },
+    audio_master: {
+        key: 'audio_master', label: 'Audio deliverable registered',
+        asset_type: 'audio_mix', metadata_kind: null,
+        find: findProjectMix, missing_status: 'warning',
+        present: a => `Project mix registered (${a.file_name}); run external loudness/waveform QC before broadcast delivery.`,
+        absent: n => `No project-level mix. ${n} per-shot audio_mix asset(s) exist, and a mix that belongs to one shot `
+            + 'is not the film\'s; the master ships with the clips\' own audio until a project mix is registered.',
+    },
+};
+
 function buildBroadcastChecks(projectId, project) {
-    const videoCount = db.prepare("SELECT COUNT(*) AS count FROM film_assets WHERE project_id = ? AND asset_type IN ('video_final', 'video_synced')").get(projectId).count || 0;
-    const audioCount = db.prepare("SELECT COUNT(*) AS count FROM film_assets WHERE project_id = ? AND asset_type IN ('audio_mix', 'audio_dialogue', 'audio_music')").get(projectId).count || 0;
     const subtitleLanguages = db.prepare('SELECT language, COUNT(*) AS count FROM film_subtitles WHERE project_id = ? GROUP BY language').all(projectId);
     const colorPipeline = db.prepare('SELECT * FROM film_color_pipelines WHERE project_id = ?').get(projectId);
     const provenanceRows = db.prepare('SELECT COUNT(*) AS count FROM film_provenance_manifests WHERE project_id = ?').get(projectId).count || 0;
     const blockedRights = db.prepare("SELECT COUNT(*) AS count FROM film_rights WHERE project_id = ? AND status IN ('blocked', 'expired', 'restricted', 'unknown')").get(projectId).count || 0;
 
-    // The conformed film, distinguished by metadata.kind because
-    // film_assets.asset_type could not be widened in place (migration 042).
-    const projectMaster = db.prepare(
-        `SELECT file_name FROM film_assets
-          WHERE project_id = ? AND asset_type = 'video_final' AND metadata LIKE '%"kind":"project_master"%'
-       ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId);
+    // The PROJECT artefacts, through the registry. A count of per-shot pieces
+    // is reported in the detail so the reader knows what was declined, and
+    // never counts toward the verdict.
+    const deliverables = Object.values(PROJECT_DELIVERABLES).map(spec => {
+        const found = spec.find(db, projectId);
+        const pieces = db.prepare(
+            'SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ? AND asset_type = ? AND shot_id IS NOT NULL')
+            .get(projectId, spec.asset_type).n || 0;
+        return {
+            key: spec.key, label: spec.label,
+            status: found ? 'pass' : spec.missing_status,
+            detail: found ? spec.present(found) : spec.absent(pieces),
+        };
+    });
 
     return [
-        {
-            key: 'video_master',
-            label: 'Final video master registered',
-            // The PROJECT master, not a count of per-shot clips. Counting made
-            // this pass on shot 1 of N: a project with one finished shot and
-            // ninety-nine missing reported a registered master.
-            status: projectMaster ? 'pass' : 'fail',
-            detail: projectMaster
-                ? `Conformed film registered (${projectMaster.file_name}).`
-                : `No conformed film. ${videoCount} per-shot video asset(s) exist; run the conform to produce the master.`,
-        },
-        {
-            key: 'audio_master',
-            label: 'Audio deliverable registered',
-            status: audioCount > 0 ? 'pass' : 'warning',
-            detail: audioCount > 0 ? `${audioCount} audio asset(s) registered; run external loudness/waveform QC before broadcast delivery.` : 'No dialogue, music, or mix asset is registered.',
-        },
+        ...deliverables,
         {
             key: 'captions',
             label: 'Caption/subtitle language coverage',
@@ -258,4 +280,4 @@ function runShotQAEndpoint(req, res, shotId) {
     json(res, 200, { run_id: runId, ...result });
 }
 
-module.exports = { handleQA };
+module.exports = { handleQA, buildBroadcastChecks, PROJECT_DELIVERABLES };

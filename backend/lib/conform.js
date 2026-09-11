@@ -31,6 +31,35 @@ const VIDEO_PRECEDENCE = ['video_final', 'video_synced', 'video_raw'];
 function database() { return require('../db/database').db; }
 
 /**
+ * THE PROJECT-LEVEL ARTEFACTS, FOUND ONE WAY.
+ *
+ * The broadcast QC and the conform each asked "which mix is the film's" and
+ * each took ANY `audio_mix` on the project. Every mix the engine writes today
+ * carries a shot_id — it is one shot's mix — so the QC passed on a single
+ * mixed shot, and the conform would have laid that shot's sound under every
+ * other shot and reported success. The rule: the project mix is an `audio_mix`
+ * that belongs to NO shot; the project master is a `video_final` marked
+ * `kind: project_master` (the CHECK cannot be widened, so metadata carries the
+ * discriminator — the 3D precedent). Stated here and read by both.
+ */
+const PROJECT_MASTER_KIND = 'project_master';
+
+function findProjectMaster(db, projectId) {
+    return db.prepare(
+        `SELECT id, file_path, file_name, version, duration_ms FROM film_assets
+          WHERE project_id = ? AND shot_id IS NULL AND asset_type = 'video_final'
+            AND metadata LIKE ?
+       ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId, `%"kind":"${PROJECT_MASTER_KIND}"%`) || null;
+}
+
+function findProjectMix(db, projectId) {
+    return db.prepare(
+        `SELECT id, file_path, file_name, version FROM film_assets
+          WHERE project_id = ? AND shot_id IS NULL AND asset_type = 'audio_mix'
+       ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId) || null;
+}
+
+/**
  * Work out what the film is made of.
  *
  * Refuses rather than shortens. A film that renders successfully while missing
@@ -92,13 +121,11 @@ function planConform(projectId) {
         });
     }
 
-    // A finished mix is the master audio when one exists. Otherwise the clips
-    // keep their own audio — inventing a silent track would deliver a mute
-    // film that looks successful.
-    const mix = db.prepare(
-        `SELECT id, file_path, file_name FROM film_assets
-          WHERE project_id = ? AND asset_type = 'audio_mix'
-       ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId);
+    // A finished PROJECT mix is the master audio when one exists. Otherwise
+    // the clips keep their own audio — inventing a silent track would deliver
+    // a mute film that looks successful. A per-shot mix is not the film's:
+    // laid under the whole picture it plays one shot's sound over every other.
+    const mix = findProjectMix(db, projectId);
 
     const plan = {
         ok: missing.length === 0,
@@ -338,4 +365,7 @@ async function runConform(projectId, options) {
     };
 }
 
-module.exports = { planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE };
+module.exports = {
+    planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE,
+    findProjectMaster, findProjectMix, PROJECT_MASTER_KIND,
+};

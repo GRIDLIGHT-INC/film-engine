@@ -3870,6 +3870,36 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### A Deliverable Is One Artefact, Not a Count of Pieces
+The broadcast QC's `video_master` once passed by counting per-shot video rows
+— green on shot 1 of N — and was corrected to read the conformed film.
+`audio_master` was left counting: any dialogue line, any cue, any per-shot mix
+made it pass, so a project with one line of generated speech reported an audio
+deliverable registered.
+
+**And the conform read the mix the same loose way.** `planConform` took any
+`audio_mix` on the project, and every mix the engine writes today carries a
+`shot_id` — it is one shot's mix. Laid under the whole film it would play that
+shot's sound over every other shot, and nothing would error. The project mix
+route itself is a stub that lists eligible shots and produces nothing, which is
+why no project-level mix exists on any real project: finishing happens in the
+NLE, and the master ships with the clips' own audio until one is registered.
+
+**The rule is stated once and read twice.** `findProjectMaster` and
+`findProjectMix` in `lib/conform.js` say what the project-level artefacts ARE —
+a `video_final` marked `kind: project_master`, an `audio_mix` belonging to **no
+shot** — and both the QC and the conform find them through those two functions,
+so the two cannot disagree about which file is the film's. `PROJECT_DELIVERABLES`
+in `routes/qa.js` is the registry the broadcast checks iterate; each entry names
+its asset type, its finder, and its verdict for absence: a missing film
+**fails**, a missing project mix **warns**. The per-shot pieces are counted in
+the detail so the reader knows what was declined, and never toward the verdict.
+
+`tests/qa-master-checks.test.js` is set-based over that registry — absent,
+decoyed by three per-shot pieces, present — because this arrived with exactly
+one of two fixed. It also holds the QC's finder and the conform's to be the
+**same function object**, not two queries that happen to agree today.
+
 ### The Film Is Made Once, at the End
 `assembly` stopped returning `use export endpoints to finalize` and started
 calling the conform. That closed the lie in the step and opened three more one
@@ -4617,6 +4647,7 @@ node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/conform-contract.test.js
 node --test backend/tests/project-master.test.js
 node --test backend/tests/assembly-once.test.js
+node --test backend/tests/qa-master-checks.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js
