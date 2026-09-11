@@ -624,6 +624,7 @@ All routes prefixed with `/film`:
 | Notes | `GET/POST /shots/:id/notes`, `PUT/DELETE /notes/:id`, `POST /shots/:id/review` |
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
+| Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
 | A/B Compare | `GET /shots/:id/versions/compare?a=X&b=Y` |
@@ -4564,6 +4565,7 @@ node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
 node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/conform-contract.test.js
+node --test backend/tests/project-master.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
 node --test backend/tests/previs-plan.test.js

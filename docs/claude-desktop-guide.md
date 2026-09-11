@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**269 tools, 68 families.** Everything the app can do, you can ask for in a
+**271 tools, 69 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -394,7 +394,7 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_out_assembly` · `node_out_timeline` · `node_out_asset` · `node_tf_mix` ·
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
-`node_in_stock` · `run_plan` · `run_report` · `export_preflight` · `export_package` ·
+`node_in_stock` · `run_plan` · `run_report` · `conform_plan` · `conform_run` · `export_preflight` · `export_package` ·
 `deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
 `deliverable_delete` · `deliverable_check` · `brand_list` · `brand_get` ·
 `brand_create` · `brand_update` · `brand_delete` · `claim_list` · `claim_create` ·
@@ -425,6 +425,16 @@ file will be a crop of the master — invisible until the client sees the cut.
 
 `run_plan` orders the work to minimise model swaps and reports the cost
 **before** anything generates.
+
+**The film is one file, and `conform_run` is what makes it.** Every shot's best
+cut — graded over synced over raw — joined in running order, with the project
+audio mix laid under it when one exists and the clips' own sound when it does
+not, registered as the project master and served at the `url` it returns. It
+spends no provider credits (local ffmpeg does the work) and it REFUSES rather
+than shortens: a shot with no footage stops the conform and is named, because a
+film missing shot 7 plays fine and is wrong. `conform_plan` is free and shows
+all of that first. Conforming again replaces the previous master; nothing
+accumulates.
 
 **Read `export_preflight` before you hand anyone an export.** It is free, and it
 catches the failure that looks most like success: a perfectly well-formed
@@ -533,7 +543,7 @@ These resolve a provider and bill you:
 `plate_generate_all` · `flow_run`
 
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
-`flow_estimate` (projected cost), `run_plan` (cost of a whole batch),
+`flow_estimate` (projected cost), `run_plan` (cost of a whole batch), `conform_plan`,
 `beats_get`, `script_stats`, `scene_history`, `outline_get`, `shot_frames`.
 
 ### Telling it what the music should be

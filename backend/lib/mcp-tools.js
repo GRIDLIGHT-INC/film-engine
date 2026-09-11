@@ -2453,6 +2453,25 @@ const PRODUCTION_TOOLS = [
         required: ['project_id'],
     },
     {
+        name: 'conform_plan',
+        handler: handleProductionReports, method: 'GET',
+        description: 'FREE. What conforming the film would do: which cut of each shot ships (video_final over video_synced over video_raw), in running order, whether the project audio mix or the clips\u2019 own audio is the master audio, the total length, and which shots have NO footage \u2014 a missing shot refuses the conform rather than shortening the film. Also which executor is available (local ffmpeg). Read it before conform_run.',
+        path: a => `/film/projects/${a.project_id}/conform`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'conform_run',
+        handler: handleProductionReports, method: 'POST',
+        description: 'Turn the shot masters into ONE film file: every shot\u2019s best cut joined in running order, the project audio mix laid under it when one exists, registered as the project master (asset_type video_final, metadata.kind project_master) and served at the returned url. Spends no provider credits \u2014 it runs local ffmpeg \u2014 but takes as long as the film is long. Running it again REPLACES the previous master rather than adding a second one. Refuses (409) when a shot has no footage or the cut misses a target runtime; run conform_plan first to see why.',
+        path: a => `/film/projects/${a.project_id}/conform`,
+        body: a => (a.filename ? { filename: a.filename } : {}),
+        schema: {
+            project_id: { type: 'string' },
+            filename: { type: 'string', description: 'Master filename without extension. Default film_master. A different name writes a second master beside the first rather than replacing it.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'board_groups',
         handler: handleProductionReports, method: 'GET',
         description: 'Read the storyboard grouped by scene, location or time of day instead of as a flat grid. Every frame lands in exactly one group; frames missing the axis value collect under an explicit "(no location)" rather than vanishing.',

@@ -257,20 +257,39 @@ async function runConform(projectId, options) {
 
     const path = require('path');
     const fs = require('fs');
-    const { getProjectDir } = require('./file-storage');
-    const dir = typeof getProjectDir === 'function'
-        ? getProjectDir('video', projectId)
-        : path.join(process.env.FILM_DATA_DIR || 'data', 'video', projectId);
-    fs.mkdirSync(dir, { recursive: true });
+    const { ensureDir, getFileUrl } = require('./file-storage');
+    const { stitchClips, inspectMedia } = require('./ffmpeg');
 
-    const outputPath = path.join(dir, `${opts.filename || 'film_master'}.mp4`);
-    const cmd = buildFfmpegArgs(plan, outputPath);
+    /*
+     * WHERE THE SERVING ROUTE WILL LOOK. This wrote to `data/video/<project>`
+     * relative to the process cwd, through a `getProjectDir` that file-storage
+     * has never exported, while `/film/video/:project/:file` reads from
+     * DATA_DIR. With FILM_DATA_DIR unset those are different directories: the
+     * conform reported success and the master 404'd.
+     */
+    const dir = ensureDir(projectId, 'video');
+    const filename = `${opts.filename || 'film_master'}.mp4`;
+    const outputPath = path.join(dir, filename);
 
-    try {
-        execFileSync(cmd.bin, cmd.args, { stdio: 'pipe', timeout: opts.timeoutMs || 30 * 60 * 1000 });
-    } catch (err) {
-        return { ok: false, state: 'failed', plan, error: `ffmpeg failed: ${String(err.stderr || err.message).slice(0, 400)}` };
+    /*
+     * THROUGH THE ONE JOIN. Running buildFfmpegArgs directly skipped the clip
+     * inspection the sequence stitch does, so the concat graph asked every
+     * input for an audio stream — and a generated clip has none. Any film
+     * containing one silent clip failed to conform at all, with an error that
+     * quoted the ffmpeg banner rather than the line that said why.
+     */
+    const joined = await stitchClips(plan.clips, outputPath, {
+        fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
+    });
+    if (!joined.ok) {
+        return { ok: false, state: joined.state === 'no_executor' ? 'no_executor' : 'failed', plan, error: joined.error };
     }
+
+    // Measured from the file, never copied from the plan: a master registered
+    // from a broken encode must not look identical to a good one.
+    const seen = inspectMedia(outputPath);
+    const durationMs = seen.ok ? Math.round(seen.durationSeconds * 1000) : null;
+    const sizeBytes = fs.statSync(outputPath).size;
 
     const db = database();
     const { generateId } = require('../db/database');
@@ -278,13 +297,42 @@ async function runConform(projectId, options) {
     // asset_type must be a value the CHECK permits; the project master is
     // distinguished by metadata.kind, the same discriminator the 3D work uses
     // because the CHECK cannot be widened in place.
-    db.prepare(
-        `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, version, metadata)
-         VALUES (?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?)`)
-        .run(assetId, projectId, outputPath, path.basename(outputPath),
-            JSON.stringify({ kind: 'project_master', clips: plan.clips.length, duration_ms: plan.total_duration_ms }));
+    const KIND = '%"kind":"project_master"%';
+    const prior = db.prepare(
+        `SELECT id, file_path, version FROM film_assets
+          WHERE project_id = ? AND asset_type = 'video_final' AND metadata LIKE ?`).all(projectId, KIND);
+    const version = prior.reduce((n, r) => Math.max(n, Number(r.version) || 0), 0) + 1;
+    /*
+     * REPLACES, NEVER ACCUMULATES. The file is written to the same name and
+     * overwrites, so a row that pointed at it now describes bytes that no
+     * longer exist — a folder of near-identical masters is how the wrong one
+     * gets delivered, and a row whose metadata lies about its own file is
+     * worse than no row. A master written under ANOTHER filename still exists
+     * on disk and keeps its row.
+     */
+    const replaced = prior.filter(r => r.file_path === outputPath).map(r => r.id);
+    const write = db.transaction(() => {
+        for (const id of replaced) db.prepare('DELETE FROM film_assets WHERE id = ?').run(id);
+        db.prepare(
+            `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type,
+                                      size_bytes, duration_ms, width, height, version, metadata)
+             VALUES (?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', ?, ?, ?, ?, ?, ?)`)
+            .run(assetId, projectId, outputPath, filename, sizeBytes, durationMs,
+                seen.ok ? seen.width : null, seen.ok ? seen.height : null, version,
+                JSON.stringify({
+                    kind: 'project_master', clips: plan.clips.length,
+                    duration_ms: durationMs === null ? plan.total_duration_ms : durationMs,
+                    audio: plan.audio ? 'project_mix' : 'clip_audio',
+                }));
+    });
+    write();
 
-    return { ok: true, state: 'produced', plan, asset_id: assetId, output: outputPath, executor: executor.id };
+    return {
+        ok: true, state: 'produced', plan, asset_id: assetId, output: outputPath,
+        url: getFileUrl('video', projectId, filename, version),
+        version, replaced, duration_ms: durationMs, size_bytes: sizeBytes,
+        executor: executor.id,
+    };
 }
 
 module.exports = { planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE };
