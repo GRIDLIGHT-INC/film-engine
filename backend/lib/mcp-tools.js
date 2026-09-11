@@ -3940,6 +3940,24 @@ function musicSessionTools() {
             required: ['session_id', 'command'],
         },
         {
+            name: 'music_session_approve', handler: H, method: 'POST',
+            description: 'Spends nothing. Approves a score session by SELECTING a bounce as its mix — the newest complete one, or bounce_operation_id. Only a session in review (or already approved, to reselect) can be approved, and a bounce rendered before the session last changed is refused as STALE_MIX (ignore_stale overrides). From then on the timeline, playback, audio mix, pipeline, NLE exports and the conformed master consume that one mix at the start of the session\'s picture, and the scene music under it is dropped. Only a person\'s decision should drive this: ask before approving.',
+            path: a => `/film/music-sessions/${a.session_id}/approve`, body: dropIds('session_id'),
+            schema: { ...S, bounce_operation_id: { type: 'string', description: 'Which bounce to approve (from music_bounce_list); default the newest complete one.' },
+                ignore_stale: { type: 'boolean', description: 'Approve a bounce made before the session last changed.' } },
+            required: ['session_id'],
+        },
+        {
+            name: 'music_session_unapprove', handler: H, method: 'POST',
+            description: 'Spends nothing. Takes an approval back: the session returns to review, its mix is no longer consumed by anything, and the scene music it replaced comes back.',
+            path: a => `/film/music-sessions/${a.session_id}/unapprove`, body: dropIds('session_id'), schema: S, required: ['session_id'],
+        },
+        {
+            name: 'music_score_report', handler: H, method: 'GET',
+            description: 'Free. Which approved score mixes the film consumes and where each sits on the timeline, and every session that is not consumed and why: unapproved, stale (still used, but the session or the picture moved since), missing (no mix or no file), unplaced, overlapping another approved session, or shadowed by a finished project mix.',
+            path: a => `/film/projects/${a.project_id}/music-score`, schema: { project_id: { type: 'string' } }, required: ['project_id'],
+        },
+        {
             name: 'music_daw_audit', handler: H, method: 'GET',
             description: 'Free — needs no DAW connection. Every push, pull and transport a session has sent to a DAW, newest first: the operation, request id, idempotency key, outcome, duration and the error when it failed. A failed push whose outcome is unknown (a timeout) says so and names the key to retry it with.',
             path: a => `/film/music-sessions/${a.session_id}/daw/${a.adapter || 'ableton'}/audit`,

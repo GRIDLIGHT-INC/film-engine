@@ -546,12 +546,20 @@ function preflightProjectSteps(projectSteps, body, willRun) {
 async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
     const h = hooks || {};
     const completed = [], failed = [], skipped = [], failures = [];
+    const covered = coveredFor(project);
 
     for (let i = 0; i < plan.length; i++) {
         const step = plan[i];
 
         const stop = h.shouldStop && h.shouldStop();
         if (stop) return { completed, failed, skipped, failures, stopped: stop };
+
+        const scored = scoreGate(step.id, scene, covered);
+        if (!scored.run) {
+            skipped.push({ step_id: step.id, reason: scored.reason });
+            if (h.onSkip) h.onSkip(step, scored.reason, i);
+            continue;
+        }
 
         const gate = sceneScopeGate(step.id, scene, done, opts);
         if (!gate.run) {
@@ -581,6 +589,24 @@ async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
     }
 
     return { completed, failed, skipped, failures, stopped: null };
+}
+
+/**
+ * An approved score is the music of the scenes it covers (MUS-020). The
+ * scene music step would generate a second score to be layered under it, so
+ * for a covered scene it is skipped, and the skip names the session. Ambience
+ * and effects are not music and still run.
+ */
+const SCORE_REPLACES_STEPS = new Set(['music']);
+function scoreGate(stepId, scene, covered) {
+    if (!SCORE_REPLACES_STEPS.has(stepId) || !scene || !covered) return { run: true };
+    const sc = covered.get(scene.id);
+    if (!sc) return { run: true };
+    return { run: false, reason: `the approved score "${sc.name}" is this scene's music; no second score is generated under it — unapprove the session to score the scene on its own` };
+}
+function coveredFor(project) {
+    if (!project || !project.id) return new Map();
+    try { return require('../lib/music-approval').coveredScenes(db, project.id); } catch (_) { return new Map(); }
 }
 
 /**
@@ -1179,4 +1205,4 @@ function getLatestSchedule(req, res, projectId) {
     json(res, 200, { ...run, schedule, residency });
 }
 
-module.exports = { handlePipeline, persistStepResult, STEP_CAPABILITY, CONFORM_STATES, runStatus };
+module.exports = { handlePipeline, persistStepResult, STEP_CAPABILITY, CONFORM_STATES, runStatus, scoreGate };

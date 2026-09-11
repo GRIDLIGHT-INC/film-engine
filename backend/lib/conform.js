@@ -52,10 +52,18 @@ function findProjectMaster(db, projectId) {
        ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId, `%"kind":"${PROJECT_MASTER_KIND}"%`) || null;
 }
 
+/*
+ * A score session's bounce master is also an `audio_mix` belonging to no shot,
+ * and it is NOT the film's soundtrack: it is one session's music. Read as the
+ * project mix it replaced the whole film's audio — dialogue included — with a
+ * score, the moment any session was bounced. It reaches the film only through
+ * an approval (lib/music-approval.js), laid over the film's own audio.
+ */
 function findProjectMix(db, projectId) {
     return db.prepare(
         `SELECT id, file_path, file_name, version FROM film_assets
           WHERE project_id = ? AND shot_id IS NULL AND asset_type = 'audio_mix'
+            AND NOT (json_valid(COALESCE(metadata, '')) AND COALESCE(json_extract(metadata, '$.kind'), '') IN ('bounce_master', 'bounce_stem'))
        ORDER BY version DESC, created_at DESC LIMIT 1`).get(projectId) || null;
 }
 
@@ -139,6 +147,19 @@ function planConform(projectId) {
         fps: project.target_fps || 24,
         resolution: project.target_resolution || '1920x1080',
     };
+
+    /*
+     * THE APPROVED SCORE (MUS-020), laid once over the film's audio at the
+     * start of its picture's first shot in THIS running order. A finished
+     * project mix is the whole soundtrack and is taken to contain the score,
+     * so the score is not laid a second time over it — and the report says so.
+     */
+    const approval = require('./music-approval');
+    const scored = approval.approvedScores(db, projectId);
+    const placed = approval.placeScores(approval.entriesFromClips(clips), scored.scores);
+    const reports = [...scored.reports, ...placed.reports];
+    if (mix) reports.push(...approval.shadowedByProjectMix(placed.placements));
+    plan.score = { placements: mix ? [] : placed.placements, reports };
 
     if (missing.length) {
         plan.error = `Cannot conform: ${missing.length} shot(s) have no video — `
@@ -343,9 +364,14 @@ async function runConform(projectId, options) {
      * containing one silent clip failed to conform at all, with an error that
      * quoted the ffmpeg banner rather than the line that said why.
      */
-    const joined = await stitchClips(plan.clips, outputPath, {
+    let joined = await stitchClips(plan.clips, outputPath, {
         fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
     });
+    // The approved score over the joined film, once, at its offset (MUS-020).
+    if (joined.ok && plan.score && plan.score.placements.length) {
+        const mixed = require('./music-approval').mixScoreIntoFilm(outputPath, plan.score.placements, { timeoutMs: opts.timeoutMs });
+        if (!mixed.ok) joined = { ok: false, state: 'failed', error: mixed.error };
+    }
     if (!joined.ok) {
         const walk = walkFrom(probe.executors, executor, { ok: false, error: joined.error });
         return {
@@ -392,6 +418,7 @@ async function runConform(projectId, options) {
                     kind: 'project_master', clips: plan.clips.length,
                     duration_ms: durationMs === null ? plan.total_duration_ms : durationMs,
                     audio: plan.audio ? 'project_mix' : 'clip_audio',
+                    score: (plan.score && plan.score.placements || []).map(p => ({ session_id: p.session_id, asset_id: p.asset_id, offset_ms: p.offset_ms })),
                 }));
     });
     write();

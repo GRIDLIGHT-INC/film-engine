@@ -1250,8 +1250,16 @@ function collectShotAudioTracks(shotId, scene, shot) {
         });
     }
 
+    /*
+     * An approved score over this scene (MUS-020) IS the music: the shot takes
+     * its slice of the approved mix — from where this shot starts within the
+     * score's picture — and the scene's legacy music is not laid under it.
+     */
+    const scoreSlice = scene ? approvedScoreSlice(scene.project_id, shotId) : null;
+    if (scoreSlice) tracks.push(scoreSlice);
+
     // Scene-level music
-    if (scene) {
+    if (scene && !scoreSlice && !require('../lib/music-approval').coveredScenes(db, scene.project_id).has(scene.id)) {
         const musicAssets = db.prepare(
             "SELECT * FROM film_assets WHERE scene_id = ? AND asset_type = 'audio_music' ORDER BY created_at DESC LIMIT 1"
         ).all(scene.id);
@@ -1261,8 +1269,10 @@ function collectShotAudioTracks(shotId, scene, shot) {
                 start_ms: 0, duration_ms: a.duration_ms || 0, gain_db: -6,
             });
         }
+    }
 
-        // Scene-level ambient
+    // Scene-level ambient — ambience is not music, so an approved score leaves it alone.
+    if (scene) {
         const ambientAssets = db.prepare(
             "SELECT * FROM film_assets WHERE scene_id = ? AND asset_type = 'audio_ambient' ORDER BY created_at DESC LIMIT 1"
         ).all(scene.id);
@@ -1289,6 +1299,21 @@ function collectShotAudioTracks(shotId, scene, shot) {
     }
 
     return tracks;
+}
+
+/** This shot's slice of an approved score, when one covers it: the mix, from where the shot starts within the score. */
+function approvedScoreSlice(projectId, shotId) {
+    const score = require('../lib/music-approval').approvedScores(db, projectId).scores.find(sc => sc.shot_ids.includes(shotId));
+    if (!score) return null;
+    const tl = require('./timeline').loadTimeline(projectId);
+    const code = (db.prepare('SELECT shot_code FROM film_shots WHERE id = ?').get(shotId) || {}).shot_code;
+    const entry = tl.entries.find(e => e.shot_id === shotId || (e.covers || []).includes(code));
+    const placement = (tl.score.placements || []).find(p => p.session_id === score.session_id);
+    if (!entry || !placement) return null;
+    return { type: 'music', url: placement.file_path, start_ms: 0, duration_ms: entry.duration_ms,
+        // Where in the approved mix this shot's music begins. A mix service that
+        // ignores it plays the score from its top under every shot.
+        source_offset_ms: entry.start_ms - placement.offset_ms, gain_db: 0, score_session_id: placement.session_id };
 }
 
 async function mixShotAudio(req, res, shotId) {
@@ -1381,8 +1406,11 @@ async function mixProjectAudio(req, res, projectId) {
         }
     }
 
+    // The approved score (MUS-020): laid once at its offset, the scene music under it dropped.
+    const tl = require('./timeline').loadTimeline(projectId);
     json(res, 200, {
         project_id: projectId, eligible_shots: eligible.length, shots: eligible,
+        score: tl.score,
         hint: 'POST /film/shots/:id/audio/mix for per-shot mixing, or POST /film/projects/:id/music/stems for stem export.',
     });
 }
@@ -1472,4 +1500,5 @@ module.exports = {
      * perfectly good file.
      */
     _internal: { cueForScene, ambientOptions, cueOfKind, linkCueAsset, CUE_KIND_FOR, generateFromCue },
+    collectShotAudioTracks,
 };

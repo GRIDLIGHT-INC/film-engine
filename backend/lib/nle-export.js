@@ -80,6 +80,16 @@ function sceneBedsByShot(shots, assets) {
         if (shot.scene_id && !firstShotOfScene[shot.scene_id]) firstShotOfScene[shot.scene_id] = shot.id;
     }
     for (const a of assets) {
+        /*
+         * A bed that names its own shot — the approved score (MUS-020) sits on
+         * the first shot of its picture, which need not be the first shot of a
+         * scene — spans its own length from there, like any scene bed.
+         */
+        if (a.lay_on_shot_id) {
+            if (!shots.some(sh => sh.id === a.lay_on_shot_id)) continue;
+            (beds[a.lay_on_shot_id] ||= []).unshift(a);
+            continue;
+        }
         if (a.shot_id || !a.scene_id) continue;
         const shotId = firstShotOfScene[a.scene_id];
         // A bed for a scene with no shootable shot has nowhere to be laid. It is

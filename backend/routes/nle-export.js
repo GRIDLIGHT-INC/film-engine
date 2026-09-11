@@ -37,12 +37,33 @@ function getProjectShots(projectId) {
  */
 function getProjectAssets(projectId) {
     return db.prepare(`
-        SELECT id, shot_id, asset_type, file_path, file_name, format,
+        SELECT id, shot_id, scene_id, asset_type, file_path, file_name, format,
                mime_type, size_bytes, duration_ms, width, height, metadata
         FROM film_assets
         WHERE project_id = ?
         ORDER BY created_at
     `).all(projectId);
+}
+
+/**
+ * The approved score, laid once (MUS-020): scene MUSIC under a covered scene
+ * is dropped, and the approved mix is added as a bed on the first shot of its
+ * picture in this export's own running order. Ambience and effects are not
+ * music and stay. Every format folds from the same list, so all three agree.
+ */
+function withApprovedScore(projectId, shots, assets) {
+    const approval = require('../lib/music-approval');
+    const { scores } = approval.approvedScores(db, projectId);
+    if (!scores.length) return assets;
+    const entries = shots.map(sh => ({ shot_id: sh.id, shot_code: sh.shot_code, start_ms: 0, covers: sh.covers }));
+    const { placements } = approval.placeScores(entries, scores);
+    const covered = new Set(placements.flatMap(p => p.scene_ids));
+    const kept = assets.filter(a => !(a.asset_type === 'audio_music' && !a.shot_id && a.scene_id && covered.has(a.scene_id)));
+    for (const p of placements) {
+        kept.push({ id: p.asset_id, shot_id: null, scene_id: null, lay_on_shot_id: p.first_shot_id, asset_type: 'audio_music',
+            file_path: p.file_path, file_name: path.basename(p.file_path), format: 'wav', duration_ms: p.duration_ms, metadata: '{"kind":"approved_score"}' });
+    }
+    return kept;
 }
 
 /**
@@ -117,7 +138,7 @@ function handleNLEExport(req, res, urlParts, query) {
     const { coverageFor, foldShots, measuredDurations } = require('../lib/clip-coverage');
     const shots = foldShots(getProjectShots(projectId), coverageFor(db, projectId),
         measuredDurations(db, projectId)).shots;
-    const assets = getProjectAssets(projectId);
+    const assets = withApprovedScore(projectId, shots, getProjectAssets(projectId));
     const safeTitle = (project.title || 'timeline').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     // Build settings object from project row

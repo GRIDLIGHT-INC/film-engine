@@ -31,6 +31,8 @@
  *   POST   /film/music-sessions/:id/package              FREE (a local render at most): the portable score package — manifest, aligned BWF stems, master, picture
  *   GET    /film/music-sessions/:id/packages             every package built from the session
  *   POST   /film/projects/:id/music-packages/import      validate (validate_only) or import a package; into session_id as candidate takes, or a new session
+ *   POST   /film/music-sessions/:id/approve             select a bounce as the approved mix (refused when stale); POST …/unapprove takes it back (MUS-020)
+ *   GET    /film/projects/:id/music-score                FREE: the approved mixes the film consumes, their offsets, and every session not consumed and why
  *   GET    /film/daw/:adapter/{status,session}           FREE: is the DAW reachable and compatible; the DAW session as it is (MUS-018)
  *   GET    /film/music-sessions/:id/daw/:adapter/push/plan   FREE: what a push would create, update, leave alone, and every conflict
  *   POST   /film/music-sessions/:id/daw/:adapter/push    carry out a fingerprinted push plan (changes the DAW; idempotent)
@@ -67,6 +69,7 @@ const musicJobs = require('../lib/music-jobs');
 const musicPackage = require('../lib/music-package');
 const dawDriver = require('../lib/daw-adapter');
 const dawRegistry = require('../lib/daw-registry');
+const musicApproval = require('../lib/music-approval');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -91,7 +94,8 @@ const CHILD_KINDS = Object.freeze({
 });
 
 /** Columns the caller never sets: identity, ownership, timestamps. */
-const NEVER_FROM_BODY = new Set(['id', 'session_id', 'project_id', 'created_at', 'updated_at']);
+// approved_mix_asset_id and approved_at are written by the approval (lib/music-approval.js), never by a body.
+const NEVER_FROM_BODY = new Set(['id', 'session_id', 'project_id', 'created_at', 'updated_at', 'approved_mix_asset_id', 'approved_at']);
 
 const reply = (status, body) => ({ status, body });
 
@@ -176,6 +180,8 @@ function updateSession(session, body) {
     if (b.status !== undefined && b.status !== session.status) {
         const t = canTransition('film_music_sessions.status', session.status, b.status);
         if (!t.ok) return reply(409, { error: t.error, code: 'LIFECYCLE' });
+        // Approval selects a mix; a status write cannot (MUS-020).
+        if (b.status === 'approved') return reply(409, { code: 'USE_APPROVE', error: 'a session is approved by selecting a bounce: POST /film/music-sessions/:id/approve (music_session_approve), which refuses a bounce made before the session last changed' });
     }
     let picture = {};
     if (b.sequence_id !== undefined || b.scene_id !== undefined) {
@@ -189,9 +195,6 @@ function updateSession(session, body) {
     const cols = Object.keys(row).filter(k => !NEVER_FROM_BODY.has(k));
     db.prepare(`UPDATE film_music_sessions SET ${cols.map(k => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`)
         .run(...cols.map(k => row[k]), session.id);
-    if (b.status === 'approved' && session.status !== 'approved') {
-        db.prepare("UPDATE film_music_sessions SET approved_at = datetime('now') WHERE id = ?").run(session.id);
-    }
     return reply(200, { session: readScoreSession(db, session.id).session });
 }
 
@@ -322,6 +325,13 @@ async function handleMusicSessions(req, res, urlParts, query) {
         return json(res, 405, { error: 'Method not allowed' });
     }
 
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'music-score' && req.method === 'GET') {
+        // Which approved mixes the film consumes, where each sits, and every session that is not consumed and why.
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        const rep = musicApproval.approvedScores(db, urlParts[2]);
+        const tl = require('./timeline').loadTimeline(urlParts[2]);
+        return json(res, 200, { project_id: urlParts[2], scores: rep.scores, placements: (tl && tl.score && tl.score.placements) || [], reports: (tl && tl.score && tl.score.reports) || rep.reports });
+    }
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'music-packages') {
         // The portable score package (lib/music-package.js). `import` carries
         // a file, so it takes the file ceiling; validate_only answers the
@@ -387,6 +397,15 @@ async function handleMusicSessions(req, res, urlParts, query) {
             return json(res, out.ok ? 200 : 409, out);
         }
         if (sub === 'batch' && req.method === 'POST') { const r = runBatch(id, req.body); return json(res, r.status, r.body); }
+        if ((sub === 'approve' || sub === 'unapprove') && req.method === 'POST') {
+            // The explicit approval (lib/music-approval.js): select a bounce, or take it back.
+            const b = req.body || {};
+            const out = sub === 'approve'
+                ? musicApproval.approveMix(db, id, { bounce_operation_id: b.bounce_operation_id, ignore_stale: b.ignore_stale === true })
+                : musicApproval.revokeApproval(db, id);
+            if (!out.ok) return json(res, out.status || 409, out);
+            return json(res, 200, { ...out, session: readScoreSession(db, id).session });
+        }
         if (sub === 'bounce') {
             // The renderer is the whole rule (lib/music-renderer.js); the route
             // turns a verdict into a status. A plan writes nothing.

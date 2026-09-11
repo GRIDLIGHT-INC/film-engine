@@ -35894,6 +35894,7 @@ ${fountainText.slice(0, 50000)}`;
             <div class="mw-bar">
                 ${mwSessionListHtml()}
                 ${mwStatusHtml(m.session)}
+                ${mwApprovalHtml(m.session)}
                 <span class="mw-save text-sm text-muted" id="mwSaveNote">${esc(MW.saveNote)}</span>
             </div>
             ${mwDriftHtml(MW.drift)}
@@ -35948,11 +35949,38 @@ ${fountainText.slice(0, 50000)}`;
     /** The lifecycle, from the served transition table: the current state and where it may go. */
     function mwStatusHtml(session) {
         const table = (MW.vocab && MW.vocab.transitions && MW.vocab.transitions['film_music_sessions.status']) || {};
-        const next = table[session.status] || [];
+        // Approval selects a mix, so it is its own control, never a status write (MUS-020).
+        const next = (table[session.status] || []).filter(s => s !== 'approved');
         const options = [session.status, ...next].map(s => `<option value="${esc(s)}" ${s === session.status ? 'selected' : ''}>${esc(s)}</option>`).join('');
         return `<label class="mw-status text-sm">status
                     <select class="form-control" data-mw="film_music_sessions:status" data-kind="session" data-id="${esc(session.id)}" onchange="mwFieldChanged(this)">${options}</select>
                 </label>`;
+    }
+
+    /** The explicit approval: select the newest bounce as the film's score, or take it back. */
+    function mwApprovalHtml(session) {
+        if (session.status === 'approved') {
+            return `<span class="text-sm">approved${session.approved_at ? ' ' + esc(session.approved_at) : ''} \u00b7 the film plays this mix</span>
+                <button class="btn btn-secondary btn-sm" onclick="mwUnapprove()" title="The session returns to review and the scene music it replaced comes back">Take back approval</button>`;
+        }
+        if (session.status === 'review') {
+            return `<button class="btn btn-primary btn-sm" onclick="mwApprove()" title="Select the newest bounce as the film's score. A bounce made before the session last changed is refused.">Approve newest bounce</button>`;
+        }
+        return '<span class="text-sm text-muted">move to review to approve</span>';
+    }
+    async function mwApprove() {
+        if (!MW.session) return;
+        try {
+            const out = await api('/music-sessions/' + MW.session.id + '/approve', { method: 'POST', body: JSON.stringify({}) });
+            mwNote('Approved bounce v' + out.version + ((out.warnings || []).length ? ' \u00b7 ' + out.warnings.join('; ') : '') + ' \u2014 the film now plays this mix, once, and the scene music under it is dropped');
+        } catch (e) { mwNote('Not approved: ' + e.message); }
+        await mwLoadSession(MW.session.id);
+    }
+    async function mwUnapprove() {
+        if (!MW.session) return;
+        try { await api('/music-sessions/' + MW.session.id + '/unapprove', { method: 'POST', body: JSON.stringify({}) }); mwNote('Approval taken back'); }
+        catch (e) { mwNote('Could not take the approval back: ' + e.message); }
+        await mwLoadSession(MW.session.id);
     }
 
     function mwDriftHtml(drift) {

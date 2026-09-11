@@ -166,6 +166,12 @@ function loadTimeline(projectId) {
      * reads the timeline cannot come to different answers about the same move.
      */
     require('../lib/shot-motion').attachTracks(db, projectId, timeline);
+    /*
+     * The approved score (MUS-020): laid once at the start of its picture's
+     * first shot, with the scene music it replaces taken out, so playback and
+     * everything else reading this timeline hears it exactly once.
+     */
+    require('../lib/music-approval').applyToTimeline(db, projectId, timeline);
     return timeline;
 }
 

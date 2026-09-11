@@ -120,6 +120,7 @@ film-engine/
 │   │   ├── music-generation.js   # Compose, parts, reference, picture, inpaint: every output a new take, nothing replaced
 │   │   ├── music-jobs.js         # One parent, ordered children, and a parent status derived so it cannot lie
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
+│   │   ├── music-approval.js     # The approved score: selected once, placed once at its picture's offset, and no scene music under it
 │   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
 │   │   ├── daw-registry.js       # Which DAW adapters the engine can reach, how each is configured, and the seven Ableton tools
 │   │   ├── daw/                  # DAW adapters behind the contract
@@ -624,6 +625,7 @@ film-engine/
 │       ├── ableton-sidecar.test.js # Over real UDP: correlation, timeouts, reconnect, the allowlist, and the DAW contract through the sidecar
 │       ├── ableton-mcp.test.js # One tool per DAW operation, none that can set anything else in Live, and the pull gate through the tools
 │       ├── daw-sync-ui.test.js # Every DAW operation on the Score page with its portable twin, every connection state rendered, and an editor that never waits on Live
+│       ├── approved-score.test.js # The approved mix consumed once at its offset by all six assembly surfaces, measured in the master
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
@@ -666,6 +668,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/bounce/plan` (free), `POST /music-sessions/:id/bounce`, `GET /music-sessions/:id/bounces[/:opId]` |
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
+| Score Approval | `POST /music-sessions/:id/{approve,unapprove}`, `GET /projects/:id/music-score` (free) |
 | DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}`, `GET /music-sessions/:id/daw/:adapter/audit` (free, no connection needed) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
@@ -4087,6 +4090,49 @@ again", which is safe because a marked track is never created twice.
 `tests/daw-sync-ui.test.js` executes the renderers in every state rather than
 grepping them.
 
+### The Approved Score Reaches the Film Once, and Nothing Plays Under It
+A score session becomes the film's music by an **explicit act** (MUS-020):
+`POST /music-sessions/:id/approve` (`music_session_approve`) selects a bounce as
+the session's mix. It is allowed only from review, and a bounce rendered before
+the session last changed is refused with `STALE_MIX`, because approving a mix
+that no longer matches the lanes signs off something nobody is looking at. A
+plain status write can no longer approve: the PUT answers 409 `USE_APPROVE`.
+`approved_mix_asset_id` and `approved_at` are never taken from a request body.
+Unapproving returns the session to review and every consumer stops reading its
+mix.
+
+`lib/music-approval.js` is the **one reader** every consumer asks.
+`approvedScores` answers which mixes can be consumed and reports the rest by
+name: unapproved, stale (still the approved mix, and said so), missing (not
+consumed, so the scene music stays), unplaced, overlapping (only the newest
+approval is consumed, so a mix never plays twice) and shadowed. `placeScores`
+puts each mix at its **canonical offset**: the start of its picture's first
+shot, in each consumer's own running order and durations. Every scene the
+picture touches loses its legacy scene **music**; ambience and effects stay.
+`SCORE_CONSUMERS` names the six surfaces:
+- the timeline, with one bed at the offset;
+- playback, which plays those beds;
+- the audio mix, where the project plan names the score and a per-shot mix
+  takes the score's slice with `source_offset_ms`;
+- the pipeline, which skips the scene `music` step under a score and says why;
+- FCPXML and Premiere XML, where the mix is a bed laid on its first shot that
+  spans its own length;
+- the conform, which runs one ffmpeg pass that delays each mix to its offset
+  and sums it with nothing normalised.
+
+**It found a real defect in the conform.** A score bounce master is an
+`audio_mix` belonging to no shot, so `findProjectMix` read it as the film's
+finished soundtrack. The moment any session was bounced, the master's whole
+audio, dialogue included, was replaced with one session's music. Bounce masters
+and stems are now excluded, and a genuine project mix still shadows the score,
+which is taken to be inside it and reported as such. The NLE route also never
+selected `scene_id`, so no scene bed had ever reached an export through it; it
+does now.
+
+`tests/approved-score.test.js` runs one real film through all six consumers,
+iterating `SCORE_CONSUMERS`, and **measures** the conformed master: silent
+before the score, the score's tone after, and the film's length unchanged.
+
 ### A Score That Leaves Film Engine and Comes Back: the Portable Package
 The epic puts **portable interchange first**: before any DAW adapter there is a
 package any DAW, or any person, can open. `lib/music-package.js` (MUS-015)
@@ -5667,6 +5713,7 @@ node --test backend/tests/daw-adapter.test.js
 node --test backend/tests/ableton-sidecar.test.js
 node --test backend/tests/ableton-mcp.test.js
 node --test backend/tests/daw-sync-ui.test.js
+node --test backend/tests/approved-score.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**332 tools, 70 families.** Everything the app can do, you can ask for in a
+**335 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -598,7 +598,8 @@ asset on the scene and cost money to make.
 `music_separate_plan` · `music_separate` · `music_separation_status` · `music_separation_list` · `music_separation_retry` ·
 `music_generate_plan` · `music_generate` · `music_generation_list` ·
 `music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry` ·
-`music_package_build` · `music_package_list` · `music_package_validate` · `music_package_import`
+`music_package_build` · `music_package_list` · `music_package_validate` · `music_package_import` ·
+`music_session_approve` · `music_session_unapprove` · `music_score_report`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -657,6 +658,17 @@ the context sent (tempo, meter, key and the accepted arc, never a proposal) and
 the cost hint. `music_generate` spends: each output is a new asset and clip, a
 candidate take beside what a track already holds. It refuses when no arc is
 accepted unless you say to go without one (the ignore_emotion argument). `music_generation_list` reads them.
+
+**An approved score is the film's music, once.** `music_session_approve` selects
+a bounce as the session's mix: only from review, and a bounce made before the
+session last changed is refused. From then on the timeline, playback, the audio
+mix, the pipeline, the NLE exports and the conformed master each lay that one
+mix at the start of the session's picture, and the scene music under it is
+dropped. Ask before approving; it is the director's decision.
+`music_session_unapprove` takes it back. `music_score_report` is free: which
+mixes the film uses and where, and every session that is not used and why
+(unapproved, stale, missing, unplaced, overlapping, or shadowed by a finished
+project mix).
 
 **A score package takes the session to any DAW and back.**
 `music_package_build` spends nothing and builds one byte-stable archive. It holds
