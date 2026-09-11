@@ -1652,3 +1652,92 @@ GET  /film/projects/:id/models                  # jobs + registered models
 GET  /film/models/job/:jobId                     # single job status (+ model_url)
 GET  /film/3d/:projectId/:filename               # serve .glb/.gltf/.fbx/.obj/.usdz
 ```
+
+---
+
+## Score Sessions (Music Workstation)
+
+A score session is a soundtrack written against a picture sequence (or a scene): tracks, clips, an emotional arc, markers, automation and an operation lineage, rendered by a deterministic bounce and, once approved, consumed by the timeline, playback, the audio mix, the pipeline, NLE exports and the conformed master. The workflow, the provider capability table, the rights policy, the Ableton sidecar and backup/restore are in [`music-workstation.md`](music-workstation.md).
+
+**FREE** means the route reads, plans or renders locally and never reaches a paid provider. **SPENDS** means it does. Everything else writes to this engine's database only. Every route below also has an MCP tool (`music_*`, `ableton_*`); see [`claude-desktop-guide.md`](claude-desktop-guide.md).
+
+| Method | Path | What it does |
+|--------|------|--------------|
+| GET | `/film/projects/:id/music-sessions` | list |
+| POST | `/film/projects/:id/music-sessions` | create (stamped against the brief it was written to) |
+| GET | `/film/music-sessions/vocabulary` | FREE: every enum, range and lifecycle table the validators enforce |
+| GET | `/film/music-sessions/health` | FREE: every operation area by status, what is stalled or failed and how to recover, the encoder and each DAW — no secret, no path (MUS-023) |
+| GET | `/film/music-sessions/:id` | the ScoreSession read model |
+| PUT | `/film/music-sessions/:id` | update (lifecycle through the contract) |
+| GET | `/film/music-sessions/:id/brief` | FREE: the compiled ScoreBrief with provenance and fingerprints |
+| GET | `/film/music-sessions/:id/drift` | FREE: what moved since the session was stamped; writes nothing |
+| POST | `/film/music-sessions/:id/rebase` | the explicit rebase |
+| POST | `/film/music-sessions/:id/batch` | ordered, atomic ops over the child kinds |
+| POST | `/film/music-sessions/:id/stems` | aligned stem import: one or several files, one operation, one transaction |
+| GET | `/film/music-sessions/:id/bounce/plan` | FREE: what a bounce would render, what it would leave out and why, the version it would become |
+| POST | `/film/music-sessions/:id/bounce` | the deterministic bounce: master + delivery stems at 48 kHz, registered; 409 when unchanged |
+| GET | `/film/music-sessions/:id/bounces[/:opId]` | every bounce of the session with its outputs, newest version first |
+| GET | `/film/music-sessions/:id/emotion/brief` | FREE: the brief, the accepted arc, the pending proposals, the schema, the rules — for the model to reason from |
+| GET / POST | `/film/music-sessions/:id/emotion/proposals` | list proposals / store one (proposed, never accepted) |
+| POST | `/film/music-sessions/:id/emotion/proposals/:pid/accept` | the explicit acceptance, per range, with edits |
+| GET | `/film/music-sessions/:id/separations/plan` | FREE: provider, variation, expected stems, placement and cost hint for separating a clip |
+| POST | `/film/music-sessions/:id/separations` | separate a clip into 2 or 6 stems (SPENDS); answers at once with a running operation |
+| GET | `/film/music-sessions/:id/separations[/:opId]` | every separation of the session, or one, with its stems or its failure |
+| POST | `/film/music-sessions/:id/separations/:opId/retry` | a failed separation again, as a new operation naming the one it retries |
+| POST | `/film/music-sessions/:id/generate/plan` | FREE: compose, parts, reference, video or inpaint — provider, length, outputs, context, cost, take behaviour |
+| POST | `/film/music-sessions/:id/generate` | generate (SPENDS): new assets and new clips as candidate takes, nothing replaced |
+| GET | `/film/music-sessions/:id/generations[/:opId]` | every generation of the session, with its outputs or its failure |
+| GET | `/film/music-sessions/:id/jobs[/:opId]` | FREE: every generation and separation as a parent with its ordered children |
+| POST | `/film/music-sessions/:id/jobs/:opId/poll` | FREE: where a job has got to; one whose process is gone is reported interrupted |
+| POST | `/film/music-sessions/:id/jobs/:opId/retry` | a failed job again as the next attempt (SPENDS) |
+| POST | `/film/music-sessions/:id/package` | FREE (a local render at most): the portable score package — manifest, aligned BWF stems, master, picture |
+| GET | `/film/music-sessions/:id/packages` | every package built from the session |
+| POST | `/film/projects/:id/music-packages/import` | validate (validate_only) or import a package; into session_id as candidate takes, or a new session |
+| POST | `/film/music-sessions/:id/approve` | select a bounce as the approved mix (refused when stale); POST …/unapprove takes it back (MUS-020) |
+| GET | `/film/music-sessions/:id/lineage` | FREE: every clip and the mix walked to their sources — origin, status, owner, provider, hash — and every issue (MUS-022) |
+| GET | `/film/projects/:id/music-score` | FREE: the approved mixes the film consumes, their offsets, and every session not consumed and why |
+| GET | `/film/daw/:adapter/{status,session}` | FREE: is the DAW reachable and compatible; the DAW session as it is (MUS-018) |
+| GET | `/film/music-sessions/:id/daw/:adapter/push/plan` | FREE: what a push would create, update, leave alone, and every conflict |
+| POST | `/film/music-sessions/:id/daw/:adapter/push` | carry out a fingerprinted push plan (changes the DAW; idempotent) |
+| GET | `/film/music-sessions/:id/daw/:adapter/pull/plan` | FREE: what the DAW has rendered that could come back |
+| POST | `/film/music-sessions/:id/daw/:adapter/pull` | bring a render back, validated by hash and alignment, as candidate takes |
+| POST | `/film/music-sessions/:id/daw/:adapter/transport` | play / stop / locate, only when a person asked (supervised) |
+| GET | `/film/music-sessions/:id/daw/:adapter/audit` | FREE: every DAW push, pull and transport on the session, needing no connection (MUS-019) |
+| GET / POST | `/film/music-sessions/:id/:kind` | list / create a child |
+| PUT / DELETE | `/film/music-sessions/:id/:kind/:childId` | update / delete a child |
+| GET | `/film/projects/:id/music/capabilities` | FREE: every music workflow the project's provider serves (compose, parts, separate, reference, video, inpaint) — status, limits, cost hint, and who else could do it |
+
+`:kind` is one of `tracks`, `clips`, `markers`, `emotion-ranges`, `automation`. A row reached through another session's URL is **404**, never 403. The lifecycle goes through the contract: a draft cannot be approved (**409**), and `PUT` into `approved` is refused with `USE_APPROVE` — approval selects a bounce and is its own route.
+
+### Refusals worth knowing
+
+| Status | Code | When |
+|--------|------|------|
+| 409 | `UNCHANGED` | A bounce of a session whose fingerprint has not moved; `force: true` renders it anyway as a new version |
+| 409 | `STALE_MIX` | Approving a bounce rendered before the session last changed; `ignore_stale` overrides |
+| 409 | `RIGHTS_BLOCKED` | Approving a mix a source's rights block under the policy; `ignore_rights` overrides and is recorded |
+| 409 | `EMOTION_NOT_ACCEPTED` | Generating from an arc nobody accepted; `ignore_emotion` goes without one |
+| 409 | `CONFLICTS` / `STALE_PLAN` | A DAW push whose tracks were edited in the DAW, or whose plan the session or DAW has moved past |
+| 503 | — | A DAW adapter that is not configured; the body names what to set and the guide |
+
+### Health
+
+```
+GET /film/music-sessions/health?project_id=&session_id=&probe=true
+```
+
+Free. Every operation area — `render`, `generation`, `separation`, `package`, `daw`, `import`, `record` — with a count per status, what is running, what is **stalled** (a generation or separation no process owns, or anything else still running past 30 minutes), and the ten most recent failures, each with its session and how to recover. Also `encoder` (available, and where it came from) and `daw` (per adapter: configured, why not, and with `probe=true` whether it answers). Error text is kept with absolute paths cut to their file names; no token, key or local path appears in the report. MCP: `music_health`.
+
+**Response** `200`
+```json
+{
+  "ok": false, "attention": 2, "operations": 41, "stall_after_ms": 1800000,
+  "encoder": { "available": true, "source": "bundled", "reason": null },
+  "daw": { "ableton": { "configured": false, "reason": "the Ableton sidecar is not configured: …", "guide": "docs/ableton-sidecar.md", "status": null } },
+  "areas": {
+    "render": { "counts": { "planned": 0, "running": 0, "complete": 6, "failed": 1, "cancelled": 0 },
+                "running": [], "stalled": [],
+                "recent_failures": [{ "id": "…", "session_id": "…", "error": "the encoder failed (…/ffmpeg: 1): …/x_master.wav: No such file", "recovery": "Read GET …/bounce/plan …" }] }
+  }
+}
+```

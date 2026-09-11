@@ -4,6 +4,7 @@
  *   GET    /film/projects/:id/music-sessions            list
  *   POST   /film/projects/:id/music-sessions            create (stamped against the brief it was written to)
  *   GET    /film/music-sessions/vocabulary              FREE: every enum, range and lifecycle table the validators enforce
+ *   GET    /film/music-sessions/health                  FREE: every operation area by status, what is stalled or failed and how to recover, the encoder and each DAW — no secret, no path (MUS-023)
  *   GET    /film/music-sessions/:id                     the ScoreSession read model
  *   PUT    /film/music-sessions/:id                     update (lifecycle through the contract)
  *   DELETE /film/music-sessions/:id
@@ -71,6 +72,7 @@ const musicPackage = require('../lib/music-package');
 const dawDriver = require('../lib/daw-adapter');
 const dawRegistry = require('../lib/daw-registry');
 const musicApproval = require('../lib/music-approval');
+const musicHealth = require('../lib/music-health');
 
 const { VALIDATORS, canTransition, toRow, fromRow, readScoreSession } = contracts;
 
@@ -359,6 +361,16 @@ async function handleMusicSessions(req, res, urlParts, query) {
             vocabulary: contracts.VOCABULARY, ranges: contracts.RANGES,
             automation_ranges: contracts.AUTOMATION_RANGES, transitions: contracts.TRANSITIONS,
         });
+    }
+
+    if (urlParts[1] === 'music-sessions' && urlParts[2] === 'health') {
+        // What the workstation is doing and what is stuck, for nothing. The
+        // report itself redacts; the route only scopes it (MUS-023).
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const q = query || {};
+        for (const k of ['project_id', 'session_id']) if (q[k] && !UUID_RE.test(q[k])) return json(res, 400, { error: `Invalid ${k}` });
+        const probe = q.probe === true || q.probe === 'true' || q.probe === '1';
+        return json(res, 200, await musicHealth.musicHealth(db, { project_id: q.project_id || null, session_id: q.session_id || null, probe }));
     }
 
     if (urlParts[1] === 'daw' && urlParts[2]) {

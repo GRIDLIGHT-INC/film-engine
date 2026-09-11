@@ -3959,6 +3959,13 @@ function musicSessionTools() {
             path: a => `/film/music-sessions/${a.session_id}/lineage`, schema: S, required: ['session_id'],
         },
         {
+            name: 'music_health', handler: H, method: 'GET',
+            description: 'Free. The score workstation\'s operations, by area — render (bounces), generation, separation, package, DAW push/pull, stem import, records — with counts per status, what is running, what is STALLED (a job no process owns, or a render running far past its ceiling) and the recent failures, each with its session and how to recover. Also whether the encoder is available (and where it came from) and, per DAW adapter, whether it is configured and why not; probe: true also asks each configured DAW whether it answers. Scope with project_id or session_id. Nothing in it carries a token, a key or an absolute path: error text is kept with paths cut to their file names.',
+            path: a => `/film/music-sessions/health${(() => { const q = ['project_id', 'session_id'].filter(k => a[k]).map(k => `${k}=${encodeURIComponent(a[k])}`); if (a.probe) q.push('probe=true'); return q.length ? `?${q.join('&')}` : ''; })()}`,
+            schema: { project_id: { type: 'string' }, session_id: { type: 'string' }, probe: { type: 'boolean', description: 'Also ask each configured DAW whether it answers (a network call with a short ceiling).' } },
+            required: [],
+        },
+        {
             name: 'music_score_report', handler: H, method: 'GET',
             description: 'Free. Which approved score mixes the film consumes and where each sits on the timeline, and every session that is not consumed and why: unapproved, stale (still used, but the session or the picture moved since), missing (no mix or no file), unplaced, overlapping another approved session, or shadowed by a finished project mix.',
             path: a => `/film/projects/${a.project_id}/music-score`, schema: { project_id: { type: 'string' } }, required: ['project_id'],

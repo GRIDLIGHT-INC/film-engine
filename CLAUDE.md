@@ -122,6 +122,7 @@ film-engine/
 │   │   ├── music-package.js      # The portable score package: one byte-stable archive any DAW can open and Film Engine reads back
 │   │   ├── music-approval.js     # The approved score: selected once, placed once at its picture's offset, and no scene music under it
 │   │   ├── music-rights.js       # Origins declared not assumed, derivatives carry their sources, one lineage, one warn/block policy
+│   │   ├── music-health.js       # Every score operation by area, what is stalled and how to recover — no secret, no path
 │   │   ├── daw-adapter.js        # The DAW contract and the driver: acknowledged, idempotent, bounded to Film Engine's own tracks
 │   │   ├── daw-registry.js       # Which DAW adapters the engine can reach, how each is configured, and the seven Ableton tools
 │   │   ├── daw/                  # DAW adapters behind the contract
@@ -629,10 +630,12 @@ film-engine/
 │       ├── approved-score.test.js # The approved mix consumed once at its offset by all six assembly surfaces, measured in the master
 │       ├── music-bundle.test.js # A scored project carried to a clean machine: every table, every id new, every file hashed, then reopened, played, rebounced and reassembled
 │       ├── music-rights.test.js # Every origin, every derivative writer, every gate × status: rights follow the music and the policy acts where it is stated
+│       ├── music-docs-ops.test.js # The workstation documented from its own registries; health readable without a secret or a path
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── ableton-sidecar.md  # Installing AbletonOSC at the pinned commit, running the sidecar; nothing of Ableton's is bundled
+│   ├── music-workstation.md # The score workflow, configuration, provider capabilities, rights, health, backup/restore, migrations
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
 │   └── adr/                # Architecture decision records (7 ADRs)
@@ -672,6 +675,7 @@ All routes prefixed with `/film`:
 | Score Sessions | `GET /music-sessions/:id/emotion/brief` (free), `GET/POST …/emotion/proposals`, `POST …/emotion/proposals/:pid/accept` |
 | Score Packages | `POST /music-sessions/:id/package`, `GET /music-sessions/:id/packages`, `POST /projects/:id/music-packages/import` (`validate_only` is free) |
 | Score Approval | `POST /music-sessions/:id/{approve,unapprove}`, `GET /projects/:id/music-score` (free), `GET /music-sessions/:id/lineage` (free) |
+| Score Health | `GET /music-sessions/health[?project_id=&session_id=&probe=true]` (free: every operation area, stalled and failed with recovery, encoder, DAW adapters) |
 | DAW | `GET /daw/:adapter/{status,session}` (free), `GET /music-sessions/:id/daw/:adapter/{push,pull}/plan` (free), `POST /music-sessions/:id/daw/:adapter/{push,pull,transport}`, `GET /music-sessions/:id/daw/:adapter/audit` (free, no connection needed) |
 | Milestones | `GET/POST /projects/:id/milestones`, `PUT /projects/:id/milestones/:mid` |
 | Render | `POST /shots/:id/render`, `GET /shots/:id/renders`, `GET /shots/:id/versions` |
@@ -4183,6 +4187,59 @@ single silent clip) made the mix filter reference an audio input that did not
 exist, so the conform failed. The score is now laid over silence the film's own
 length.
 
+### The Workstation Is Documented From Its Own Registries, and Its Health Has No Secret in It
+MUS-023 adds two things: documentation that cannot drift from the code, and
+one report of what the workstation is doing.
+
+**The documentation is held to the code.** `docs/music-workstation.md` covers
+the production workflow, configuration, the provider capability table, rights,
+what consumes an approved score, health, backup and restore, and migration
+notes. `docs/api-film.md` gains the score-session section, and
+`docs/ableton-sidecar.md` gains a troubleshooting entry for every status code
+the sidecar can answer. `tests/music-docs-ops.test.js` derives every
+denominator from the code rather than from a list:
+- the routes the router's own header names;
+- the environment variables the music, DAW and sidecar source reads;
+- each music provider's live contract, checked cell by cell against the
+  capability table;
+- `DEFAULT_POLICY`, checked gate by status;
+- every origin, consumer and report state;
+- the score tables the bundle carries;
+- every migration of the epic that touches a score table.
+
+A table typed once goes stale the first time a provider wires a workflow, and
+this test makes that a failure. Writing the docs also recorded a real limit:
+the older JSON backup (`/projects/:id/backups`) does not include score
+sessions. The bundle and a database snapshot do, and the guide now says so.
+
+**Health (`lib/music-health.js`, `GET /music-sessions/health`, `music_health`,
+337 tools).** It reports every score operation by area:
+- `render`, `generation`, `separation`, `package`, `daw`, `import`, `record`;
+- counts per status;
+- what is running and what is stalled;
+- recent failures, each with its session and how to recover;
+- the encoder's availability and source;
+- each DAW adapter: configured or not, and why.
+
+`probe=true` also asks each configured DAW whether it responds. An area claims
+operations by `kind:params.kind` first and `kind:*` second, so a package (a
+push whose params say `package`) and a DAW push land in different areas. An
+operation no area claims is reported as `unclassified`, never dropped.
+
+A generation or separation is stalled when it reads running and no process
+owns it. Anything else is stalled after 30 minutes, far past every ceiling.
+
+**Nothing leaves with a secret or a path in it**, because a health report is
+what gets pasted into a ticket.
+- Error text is kept: it is the only thing that says what went wrong.
+- Every absolute path is cut to its file name. URLs and relative doc
+  references survive.
+- Every credential the environment holds is removed.
+- The encoder's path and the sidecar token never appear.
+
+Three mutations each fail the test: dropping the path cut, dropping the secret
+cut, and treating an orphaned job as live.
+
 ### A Scored Project Travels Whole
 The project bundle (MUS-021) carries every score-session table: sessions,
 tracks, clips, emotion ranges, markers, automation, operations with their job
@@ -5799,6 +5856,7 @@ node --test backend/tests/daw-sync-ui.test.js
 node --test backend/tests/approved-score.test.js
 node --test backend/tests/music-bundle.test.js
 node --test backend/tests/music-rights.test.js
+node --test backend/tests/music-docs-ops.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

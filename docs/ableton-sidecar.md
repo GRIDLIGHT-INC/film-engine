@@ -99,6 +99,31 @@ converts milliseconds to beats at Live's current tempo.
 
 ## Troubleshooting
 
+Start with Film Engine's own health report: `GET /film/music-sessions/health`,
+or the `music_health` tool. It tells you whether the adapter is configured and
+why not. With `probe=true` it also asks the sidecar whether it answers. It never
+shows the token. The sidecar answers with these status codes:
+
+- **401**: the caller did not send the sidecar's token, or sent a different
+  one. Film Engine's `ABLETON_SIDECAR_TOKEN` must be exactly the same as the
+  sidecar's.
+- **403**: the operation is not on the allowlist (`GET /ops` lists the ones
+  that are), or it tried to change a track whose name does not carry Film
+  Engine's `⟨fe:…⟩` marker. The sidecar changes no other track.
+- **400**: the body is not JSON, or an operation's arguments are the wrong
+  type or out of range. The message names the argument.
+- **404**: the path is not one the sidecar serves. It serves only
+  `GET /health`, `GET /ops` and `POST /op`.
+- **413**: the body is over the limit. An operation is a name and a few
+  arguments. Audio is never sent through the sidecar.
+- **503**: the sidecar is running, but it has no connection to Live. The
+  message gives the reason. When Film Engine answers 503 itself, its adapter
+  is not configured: set `ABLETON_SIDECAR_TOKEN`, plus `ABLETON_SIDECAR_URL`
+  if the sidecar is not on port 3190.
+- **502**: Live answered, but its answer does not confirm the change. For
+  example, the tempo, a track name or the transport reads differently
+  afterwards. Read the set before trying again. The DAW contract records the
+  outcome as failed.
 - **"Live did not complete the handshake"**: Live is not running, AbletonOSC
   is not selected as a control surface, or something else holds port 11001
   (only one program can receive AbletonOSC's replies).

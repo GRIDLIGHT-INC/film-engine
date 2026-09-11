@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**336 tools, 70 families.** Everything the app can do, you can ask for in a
+**337 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -599,7 +599,7 @@ asset on the scene and cost money to make.
 `music_generate_plan` · `music_generate` · `music_generation_list` ·
 `music_job_list` · `music_job_get` · `music_job_poll` · `music_job_retry` ·
 `music_package_build` · `music_package_list` · `music_package_validate` · `music_package_import` ·
-`music_session_approve` · `music_session_unapprove` · `music_score_report` · `music_score_lineage`
+`music_session_approve` · `music_session_unapprove` · `music_score_report` · `music_score_lineage` · `music_health`
 
 A cue is one piece of music. A **score session** is the soundtrack of an
 ordered picture sequence: tracks, clips over immutable audio, an emotional arc,
@@ -679,6 +679,17 @@ generated file is generated, not cleared. Approval and the final master follow
 the rights policy: blocked material blocks both, expired material blocks the
 master, and unknown or restricted material warns. A person can change that in
 settings. A block can be passed only by saying so, and that is recorded.
+
+**When something looks stuck, ask for `music_health`.** It is free. It
+reports every score operation by area: renders, generation jobs, separations,
+packages, DAW pushes and pulls, and stem imports. For each area it shows what is
+running, what has stalled, and what failed recently. Every failure comes with
+its session and how to recover. An operation has stalled when no process owns a
+job, for example after the server restarted mid-generation, or when anything
+else has run far past its limit. The report also says whether the encoder is
+available and whether each DAW is configured. Pass `probe: true` to also ask
+the DAW whether it responds. You can paste the report into a ticket: it never
+includes a token, a key or a local path.
 
 **A score package takes the session to any DAW and back.**
 `music_package_build` spends nothing and builds one byte-stable archive. It holds
