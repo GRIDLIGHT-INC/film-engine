@@ -209,6 +209,49 @@ function measureLevels(file, ffmpeg) {
 const fail = (stage, reason) => ({ ok: false, stage, reason });
 
 /**
+ * The half of a render that is the same whoever played it: cut to the cue,
+ * read it back, and refuse silence.
+ *
+ * Shared by the SoundFont renderer below and by the plugin host in
+ * `lib/instrument-host.js`, because "a render is judged on its volume" is one
+ * rule and two copies is how one of them keeps a fix the other does not.
+ *
+ * @param {string} rawPath  what the renderer produced, any length, any format
+ * @param {string} outPath  where the finished 48kHz/24-bit stereo file goes
+ */
+function finishRender({ rawPath, outPath, lengthMs, frameMs = 1000 / 24, sampleRate = 48000, silenceDb = -60, ffmpeg } = {}) {
+    let ff = ffmpeg;
+    if (!ff) { try { ff = require('./ffmpeg').resolveFfmpeg(); } catch (err) { ff = { available: false, reason: err.message }; } }
+    if (!ff.available) return fail('encoder', ff.reason);
+    if (!rawPath || !fs.existsSync(rawPath)) return fail('render', 'the renderer produced no file');
+    if (!(Number(lengthMs) > 0)) return fail('length', 'there is no length to render to');
+
+    // A release tail runs past the last note and a quiet end is shorter: pad, then cut.
+    try {
+        execFileSync(ff.bin, ['-y', '-loglevel', 'error', '-i', rawPath, '-af', 'apad',
+            '-t', (Number(lengthMs) / 1000).toFixed(3), '-ar', String(sampleRate), '-ac', '2', '-c:a', 'pcm_s24le', outPath],
+        { stdio: 'pipe', timeout: 600000 });
+    } catch (err) {
+        return fail('encoder', `the render could not be trimmed to length: ${String(err.stderr || err.message).trim().slice(0, 200)}`);
+    }
+
+    const { inspectMedia } = require('./ffmpeg');
+    const seen = inspectMedia(outPath, { ffmpeg: ff });
+    if (!seen.ok) return fail('readback', seen.reason);
+    const durationMs = Math.round(seen.durationSeconds * 1000);
+    if (Math.abs(durationMs - Number(lengthMs)) > frameMs) {
+        return fail('length', `the render is ${durationMs}ms and the cue is ${Math.round(lengthMs)}ms`);
+    }
+    const levels = measureLevels(outPath, ff);
+    if (!(levels.max_db > silenceDb)) {
+        return fail('silence', `the render peaks at ${levels.max_db == null ? 'nothing measurable' : levels.max_db + ' dB'} — `
+            + 'silence. Nothing was loaded to play these notes (a SoundFont with no instrument for the part, '
+            + 'or a plugin state holding no patch).');
+    }
+    return { ok: true, file: outPath, duration_ms: durationMs, levels };
+}
+
+/**
  * Render a MIDI file through a SoundFont to a 48kHz, 24-bit stereo WAV exactly
  * the cue's length, and prove it: read back, length within one frame, peak
  * above silence. Every failure names its stage.
@@ -232,34 +275,15 @@ function renderMidi({ midiPath, outPath, lengthMs, soundfont, frameMs = 1000 / 2
         return fail('renderer', `fluidsynth produced no file${said ? `: ${said}` : ''}`);
     }
 
-    // A release tail runs past the last note, and a quiet end is shorter: pad, then cut to the cue.
-    try {
-        execFileSync(ff.bin, ['-y', '-loglevel', 'error', '-i', raw, '-af', 'apad',
-            '-t', (Number(lengthMs) / 1000).toFixed(3), '-ar', String(sampleRate), '-ac', '2', '-c:a', 'pcm_s24le', outPath],
-        { stdio: 'pipe', timeout: 600000 });
-    } catch (err) {
-        return fail('encoder', `the render could not be trimmed to the cue: ${String(err.stderr || err.message).trim().slice(0, 200)}`);
-    } finally {
-        try { fs.unlinkSync(raw); } catch (_) { /* gone is fine */ }
-    }
-
-    const { inspectMedia } = require('./ffmpeg');
-    const seen = inspectMedia(outPath, { ffmpeg: ff });
-    if (!seen.ok) return fail('readback', seen.reason);
-    const durationMs = Math.round(seen.durationSeconds * 1000);
-    if (Math.abs(durationMs - Number(lengthMs)) > frameMs) {
-        return fail('length', `the render is ${durationMs}ms and the cue is ${Math.round(lengthMs)}ms`);
-    }
-    const levels = measureLevels(outPath, ff);
-    if (!(levels.max_db > silenceDb)) {
-        return fail('silence', `the render peaks at ${levels.max_db == null ? 'nothing measurable' : levels.max_db + ' dB'} — `
-            + 'silence. The SoundFont has no instrument for these parts (a drum part needs a percussion bank).');
-    }
-    return { ok: true, file: outPath, duration_ms: durationMs, levels, renderer: 'fluidsynth', renderer_source: fl.source };
+    // Cut to the cue, read back, refuse silence — the one rule, shared with the plugin host.
+    const finished = finishRender({ rawPath: raw, outPath, lengthMs, frameMs, sampleRate, silenceDb, ffmpeg: ff });
+    try { fs.unlinkSync(raw); } catch (_) { /* gone is fine */ }
+    if (!finished.ok) return finished;
+    return { ...finished, renderer: 'fluidsynth', renderer_source: fl.source };
 }
 
 module.exports = {
     LIBRARY_LICENSES, LIBRARIES, RENDERERS,
     resolveFluidsynth, resolveFluidsynthUncached, resolveSoundfont, availability,
-    measureLevels, renderMidi,
+    measureLevels, renderMidi, finishRender,
 };

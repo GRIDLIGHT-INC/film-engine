@@ -12,3 +12,6 @@ build/
 
 # Session exports from the desktop client — not source
 Claude outputs/
+
+# The instrument sidecar runs plugins; its venv is the operator's, not the repo's.
+backend/.venv/

@@ -65,6 +65,10 @@ const NOT_AN_IMAGE = Object.freeze({
     // provider here whose contract wants the bare blob, which is why the
     // exemption names the field rather than the file alone.
     'providers/worldlabs.js': 'data_base64 is the documented media source and takes RAW base64 — the file type travels in a separate `extension` field, and a data: URI in it is refused',
+    // Not media, and not a provider: a Standard MIDI File and a plugin state
+    // crossing to the instrument sidecar on this machine, which writes both to
+    // temp files for the plugin to read. Nothing here is ever sent to an API.
+    'instrument-host.js': 'the notes (an SMF) and a plugin state travel to the local sidecar as base64 and are written to temp files there — never image media, never a provider',
 });
 
 test('the exemptions are real and reasoned', () => {

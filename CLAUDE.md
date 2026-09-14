@@ -25,6 +25,7 @@ film-engine/
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
 │   ├── ableton-sidecar.js  # The Ableton sidecar: loopback-only, token-gated, an allowlist of typed AbletonOSC operations (run by hand)
+│   ├── instrument-sidecar.py # The instrument sidecar: holds VST3/AU plugins, renders a part’s notes through them (run by hand)
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -113,6 +114,7 @@ film-engine/
 │   │   ├── music-sections.js     # A cue that changes over its own length
 │   │   ├── midi.js               # Notes in milliseconds, validated against the cue; a Standard MIDI File written and read back
 │   │   ├── instrument-render.js  # Notes become sound: FluidSynth probed, a SoundFont whose licence is known, a render judged by its volume
+│   │   ├── instrument-host.js    # The director’s own plugins, held by a sidecar: loopback, token, an allowlist, a render finished by the shared rule
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
@@ -638,12 +640,14 @@ film-engine/
 │       ├── music-docs-ops.test.js # The workstation documented from its own registries; health readable without a secret or a path
 │       ├── music-e2e.test.js # Screenplay → final movie, scored, through MCP: once with no DAW, once through Ableton; recovery, bundle, opt-in real Live
 │       ├── instrument-render.test.js # A render the cue's length and not silent; a missing SoundFont caught on volume; licence recorded
+│       ├── instrument-host.test.js # Loopback, token and allowlist before any plugin loads; a part rendered through a fake host and a real one
 │       ├── music-midi.test.js # Parts over a plan survive the file within a frame; a played part replaces one part and outlives a rewrite
 │       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
 ├── docs/
 │   ├── claude-desktop-guide.md # Every MCP tool, in the order the work is done
 │   ├── ableton-sidecar.md  # Installing AbletonOSC at the pinned commit, running the sidecar; nothing of Ableton's is bundled
+│   ├── instrument-sidecar.md # Installing the plugin host, running it, and the two things no plugin host can do
 │   ├── music-workstation.md # The score workflow, configuration, provider capabilities, rights, health, backup/restore, migrations
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
@@ -3945,6 +3949,19 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### Your Own Libraries, Inside Film Engine
+*"I want to use those libraries INSIDE Film Engine without having Ableton Live open... I generate a MIDI melody with AI, apply it to a library sound and can hear the result in its own track... building a full composition directly in Film Engine, not leveraging ElevenLabs for this."* The director owns **248 sample libraries**, and the complaint is time.
+
+**Node cannot host a plugin, so a sidecar does.** `backend/instrument-sidecar.py` is the Ableton sidecar's shape (MUS-017) with a stronger reason: it loads third-party plugin code into itself. Started by a person, 127.0.0.1 only, token-gated, three typed operations (`instruments`, `capture`, `render`) and no generic call into a plugin — and a **plugin path outside the folders macOS installs plugins into is refused**, because "any path the caller likes" behind a localhost port is arbitrary code execution.
+
+**Measured before it was designed, not after.** Kontakt 8 VST3 loads headless in **0.9 s** (4145 parameters, 64 outputs), `save_state` is **5344 bytes** and `load_state` reads it back, and three seconds render in **0.1 s**. That last pair is the load-bearing one: **a plugin exposes its state, not its browser**, so state IS how a patch is recalled without a GUI. An NKS preset's `PCHK` chunk is exactly that state, which is what makes choosing a sound by name possible across 248 libraries; anything older is captured once through `capture`.
+
+**Two things are stated as impossible rather than left to be discovered.** No plugin host can browse a library and load an `.nki` by path, and none of this plays live from the page — it renders offline (far faster than real time) and the take is heard in the Score page like any other clip. Both are in `UNSUPPORTED`, the shape `lib/ableton-osc.js` already uses.
+
+**One rule finishes every render.** `finishRender` — cut to length, read back, refuse silence — moved out of the SoundFont renderer so the plugin host shares it rather than keeping a second copy; a test asserts the volume measurement exists exactly once and that the plugin host does not measure its own. Silence is the normal answer from a plugin holding no patch, so the refusal says so.
+
+`tests/instrument-host.test.js` proves the boundary with no plugin at all (loopback, token, allowlist, an unknown operation refused **before** any request is sent) and the audio against a fake sidecar serving real WAV bytes, so it runs anywhere. The real test spawns the sidecar, loads Kontakt, and refuses a plugin outside the plugin folders — it skips with its reason where no plugin is installed.
+
 ### The Notes, Played Through Instruments on This Machine
 GRD-3995. Phase 1 gave a cue notes; this plays them through a sample library, offline, for nothing per render. The shape is the conform’s: an executable **probed at runtime and never bundled** (a library is gigabytes and operator-installed), reported when absent, and every result **read back before it is believed**.
 
@@ -5956,6 +5973,7 @@ node --test backend/tests/music-e2e.test.js
 node --test backend/tests/music-registries.test.js
 node --test backend/tests/music-midi.test.js
 node --test backend/tests/instrument-render.test.js
+node --test backend/tests/instrument-host.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
