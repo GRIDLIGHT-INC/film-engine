@@ -36593,10 +36593,17 @@ ${fountainText.slice(0, 50000)}`;
                 + c('tempo_map', row.tempo_map, { type: 'json', note: 'List of { at_ms, bpm, numerator, denominator }, sorted, starting at 0.' })
                 + c('notes', row.notes, { type: 'text' });
         } else if (sel.kind === 'tracks') {
+            /*
+             * A TRACK IS EDITED UNDER ITS OWN LANE, NEVER HERE.
+             *
+             * Its details moved below the track, in tabs. Mounting them here as
+             * well would be two live copies of one set of controls — the shape
+             * this codebase keeps paying for — so this is a way back to them
+             * and nothing else.
+             */
             title = 'Track';
-            // The same tabbed details that sit under the lane, from one builder.
-            body = `<p class="text-sm text-muted">Also under the lane itself \u2014 press \u25B8 beside the name.</p>`
-                + mwTrackDetailsHtml(row);
+            body = `<p class="text-sm text-muted">\u201c${esc(row.name || 'untitled')}\u201d is edited under its own lane: part, instrument, mix, takes, automation.</p>
+                <button class="btn btn-secondary btn-sm" onclick="mwShowTrack('${esc(row.id)}')">Show it under the lane</button>`;
         } else if (sel.kind === 'clips') {
             title = 'Clip';
             body = c('name', row.name)
@@ -36761,7 +36768,19 @@ ${fountainText.slice(0, 50000)}`;
 
     function mwSelect(kind, id) {
         MW.selection = { kind, id };
+        // A track's details are under its lane now, so selecting one opens
+        // them: selecting with nothing appearing anywhere reads as a dead click.
+        if (kind === 'tracks') MW.open[id] = true;
         mwRepaint();
+    }
+
+    /** Open a lane's details and put them where they can be seen. */
+    function mwShowTrack(id) {
+        MW.open[id] = true;
+        MW.selection = { kind: 'tracks', id };
+        mwRepaint();
+        const el = document.querySelector(`[data-details="${id}"]`);
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     async function mwCreate(kind, data) {

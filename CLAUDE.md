@@ -3974,9 +3974,19 @@ field the validator accepts has a control that saves. Switching tabs repaints
 nothing: it toggles classes, because a re-render would lose the roll's scroll
 position and anything half-typed in another pane.
 
-**One builder, two mounts.** `mwTrackSections` states the controls once;
-`mwTrackDetailsHtml` mounts them under the lane and in the inspector. Two
-statements of the same controls is exactly how the two come to disagree.
+**It MOVED; it was not copied.** The first build mounted the same builder
+under the lane *and* left it in the side inspector, which is two live copies of
+one set of controls — the shape this codebase keeps paying for — and it is not
+what was asked for. The side panel now carries no track control at all: it says
+which lane is selected and offers a way back down to it. Selecting a lane opens
+its details, because selecting something and seeing nothing appear anywhere
+reads as a dead click.
+
+**The audit followed the controls.** `music-workstation-editor` executes the
+renderers and requires a saving control for every field a validator accepts; it
+used to find the track's fields in the inspector and now renders the lane with
+its details OPEN. A test that keeps checking the old surface would pass while
+the feature moved out from under it.
 
 **The roll shares the ruler's x-axis.** Notes are positioned with the same
 `mwX` the clips above them use, so a note sits directly under the audio it made

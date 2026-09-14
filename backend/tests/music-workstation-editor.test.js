@@ -137,7 +137,9 @@ function renderedControls() {
         ${kindTable[0]}
         const MW = { model: ${JSON.stringify(model)}, session: ${JSON.stringify(model.session)}, brief: null, selection: null, playheadMs: 0,
             instruments: [{ id: 'I1', name: 'Vortex Bells', library: 'Ethereal Earth', available: true }], instrumentsError: null, rendering: null,
-            open: {}, tab: {}, rollSel: null, snapDiv: 2, audition: null,
+            // A track is edited UNDER ITS LANE, so the audit reads it there:
+            // the side inspector no longer carries a track's controls at all.
+            open: { T1: true }, tab: {}, rollSel: null, snapDiv: 2, audition: null,
             vocab: { vocabulary: ${JSON.stringify(contracts.VOCABULARY)}, ranges: ${JSON.stringify(contracts.RANGES)}, transitions: ${JSON.stringify(contracts.TRANSITIONS)} } };
         ${parts.join('\n')}
         const out = {};
