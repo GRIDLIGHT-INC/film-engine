@@ -131,6 +131,13 @@ function harness(opts = {}) {
     });
 
     const build = new Function('document', 'fetch', 'API', 'setStatus', 'setInterval', 'clearInterval', `
+        // api() schedules a refresh of the current page after a successful
+        // write (see live-after-write). This harness is about the BUSY refcount,
+        // so the refresh is stubbed rather than simulated — and stubbed rather
+        // than omitted, because an undefined call throws inside api() and would
+        // report the spinner as broken.
+        let refreshed = 0;
+        function refreshAfterWrite() { refreshed++; }
         ${consts}
         ${parts.join('\n')}
         return { api, setOrigin(e) { GENERATION_ORIGIN = e; } };

@@ -439,6 +439,7 @@ film-engine/
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
 │       ├── page-handlers.test.js       # A button wired to nothing, and a modal shown with a class the CSS ignores
 │       ├── page-route.test.js          # A refresh keeps the page you were on; every page is reachable by URL
+│       ├── live-after-write.test.js    # The page's OWN writes reach the screen; a throttle coalesces rather than dropping
 │       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
 │       ├── plate-lens.test.js          # The API the ticket named does not exist; the maths is executed, not read
 │       ├── plate-exposure.test.js      # A lock that survives a lens change, or crashes on one
@@ -3957,6 +3958,59 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### Every Screen Follows the Data, Including After Our Own Writes
+*"The problem isn't just the score page, it's every screen that doesn't update
+as soon as there is new data or a UI update."*
+
+The transport was already right and the wiring was half-done.
+`refreshCurrentPage()` existed and was driven by exactly two things: an SSE
+`change` event, and window focus. SQLite's `data_version` moves only when
+**another** connection commits — which is deliberate, and is what stops the page
+fighting the user's typing — so the live channel correctly says nothing about
+this page's own POSTs. That left every write to be followed by a re-read the
+calling function had to remember.
+
+**Measured: 81 of 236 mutating call sites did not.** A third of the app's own
+writes left the screen showing the state before them, which is exactly what
+"every screen doesn't update" describes.
+
+It is fixed in **`api()`**, the one funnel every call goes through, for the same
+reason the busy spinner lives there: threading it through 236 call sites is how
+81 of them end up without it. A successful POST, PUT, PATCH or DELETE schedules
+a coalesced refresh of the current page.
+
+**The throttle was half the defect.** `refreshCurrentPage` returned early inside
+its 3-second window, so a *burst* of changes produced **no** refresh at all — the
+throttle turned "too often" into "never". It now schedules a trailing refresh
+instead of dropping one.
+
+**Deferred, never dropped**, on the rule the live channel already follows: a
+refresh that lands while a field is focused or a modal is open is held and
+flushed on the next blur or click, because a page skipped for the life of a
+modal is a page that is wrong when the modal closes.
+
+**The project list is a page too.** The guard read `!state.currentProject`, so
+creating or deleting a project could never refresh the screen that lists them.
+
+**Two paths opt out with `refresh: false`, each saying why**: the workstation
+autosave fires on every tick of a slider and repaints its own lanes, and the
+screenplay autosave runs while somebody is typing — reloading either would
+rebuild the thing being dragged or the editor under the caret. An unexplained
+opt-out is how a screen quietly goes back to being stale, so the test caps how
+many there may be and requires each to carry its reason.
+
+`tests/live-after-write.test.js` EXECUTES `api()` against a fake fetch, because
+a grep cannot tell a refresh that is scheduled from one a throttle drops — and
+the dropping was the half nobody could see. Both defects were re-introduced as
+mutations and both fail it.
+
+**An extractor trap worth recording.** The sandbox reads functions out of the
+page by brace depth, and taking the first `{` after the name reads a DEFAULT
+PARAMETER as the body: `function api(path, opts = {})` truncated to
+`function api(path, opts = {}`, which fails as a syntax error inside the sandbox
+and reads as the page being broken rather than the test. The parameter list is
+skipped by paren depth first.
+
 ### A Refresh Keeps the Page You Were On
 *"Whenever I refresh in a page it goes back to the project list."*
 
@@ -6006,6 +6060,7 @@ node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
 node --test backend/tests/page-handlers.test.js
 node --test backend/tests/page-route.test.js
+node --test backend/tests/live-after-write.test.js
 node --test backend/tests/ios-app.test.js
 node --test backend/tests/plate-lens.test.js
 node --test backend/tests/plate-exposure.test.js

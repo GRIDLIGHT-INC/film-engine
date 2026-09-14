@@ -14488,9 +14488,14 @@ THREE.GLTFLoader = GLTFLoader;
                 headers: { 'Content-Type': 'application/json', ...opts.headers },
                 ...opts
             });
-            if (res.status === 204) return {};
+            const mutated = /^(POST|PUT|PATCH|DELETE)$/.test(String(opts.method || 'GET').toUpperCase());
+            if (res.status === 204) { if (mutated && opts.refresh !== false) refreshAfterWrite(); return {}; }
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            // A write that succeeded is on the screen by the time you look up.
+            // `refresh: false` is for the few paths that repaint themselves and
+            // would otherwise fight a drag or a keystroke; each says why.
+            if (mutated && opts.refresh !== false) refreshAfterWrite();
             return data;
         } catch (err) {
             if (err.message.includes('fetch')) throw new Error('Backend offline');
@@ -19511,11 +19516,26 @@ THREE.GLTFLoader = GLTFLoader;
      */
     const BUSY = { count: 0, pending: false };
 
+    let TRAILING = null;
     function refreshCurrentPage(reason) {
-        if (!PAGE_RELOAD || !state.currentProject) return;
+        // The project list is a page too: creating or deleting a project has to
+        // reach the screen that lists them.
+        if (!PAGE_RELOAD) return;
+        if (!state.currentProject && state.currentPage !== 'projects') return;
         if (BUSY.count > 0) { BUSY.pending = true; return; }
         const now = Date.now();
-        if (now - LAST_RELOAD < RELOAD_THROTTLE_MS) return;
+        if (now - LAST_RELOAD < RELOAD_THROTTLE_MS) {
+            /*
+             * COALESCED, NEVER DROPPED. Returning here left the screen showing
+             * the state before the write for as long as writes kept arriving
+             * inside the window — the throttle turned a burst of changes into
+             * no refresh at all, which is the opposite of what it is for.
+             */
+            if (!TRAILING) TRAILING = setTimeout(() => { TRAILING = null; refreshCurrentPage(reason); },
+                RELOAD_THROTTLE_MS - (now - LAST_RELOAD) + 20);
+            return;
+        }
+        if (TRAILING) { clearTimeout(TRAILING); TRAILING = null; }
         LAST_RELOAD = now;
         try {
             const out = PAGE_RELOAD();
@@ -19575,6 +19595,40 @@ THREE.GLTFLoader = GLTFLoader;
         return false;
     }
 
+    /**
+     * OUR OWN WRITES HAVE TO REACH THE SCREEN TOO.
+     *
+     * SQLite's data_version moves only when ANOTHER connection commits, so the
+     * SSE channel correctly says nothing about this page's own POSTs. That left
+     * every write to be followed by a re-read the calling function had to
+     * remember — and measured across the page, 81 of 236 mutating call sites
+     * did not, so a third of the app's own writes left the screen showing the
+     * state before them.
+     *
+     * It lives in `api()`, the one funnel every call goes through, for exactly
+     * the reason the busy spinner does: threading it through 236 call sites is
+     * how 81 of them end up without it.
+     */
+    const AFTER_WRITE = { timer: null, pending: false };
+    function refreshAfterWrite() {
+        clearTimeout(AFTER_WRITE.timer);
+        // One refresh per burst: a batch write is not one reload per row.
+        AFTER_WRITE.timer = setTimeout(() => {
+            // Deferred rather than dropped, the rule the live channel already
+            // follows: a refresh skipped because a field was focused leaves the
+            // page wrong for as long as it stays focused.
+            if (liveBusy()) { AFTER_WRITE.pending = true; return; }
+            AFTER_WRITE.pending = false;
+            LAST_RELOAD = 0;   // what YOU just did outranks a background throttle
+            refreshCurrentPage('own-write');
+        }, 250);
+    }
+    function flushAfterWrite() {
+        if (!AFTER_WRITE.pending) return;
+        AFTER_WRITE.pending = false;
+        refreshAfterWrite();
+    }
+
     function liveRefresh() {
         // Deferred rather than dropped. A refresh skipped because a modal was
         // open is a page that stays wrong for as long as the modal is, and the
@@ -19587,8 +19641,8 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     // Whatever ends the busy state is the moment to catch up.
-    document.addEventListener('focusout', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); });
-    document.addEventListener('click', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); }, true);
+    document.addEventListener('focusout', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); flushAfterWrite(); });
+    document.addEventListener('click', () => { if (LIVE.pending) setTimeout(liveRefresh, 150); flushAfterWrite(); }, true);
 
     window.addEventListener('focus', () => refreshCurrentPage('focus'));
     document.addEventListener('visibilitychange', () => {
@@ -20969,7 +21023,10 @@ THREE.GLTFLoader = GLTFLoader;
                 return;
             }
 
+            // refresh: false — this runs while somebody is typing, and
+            // reloading the page would rebuild the editor under the caret.
             await api('/projects/' + state.currentProject.id + '/script/' + currentScriptVersion, {
+                refresh: false,
                 method: 'PUT',
                 body: JSON.stringify({ fountain_content: fountainText })
             });
@@ -36783,7 +36840,10 @@ ${fountainText.slice(0, 50000)}`;
             const sid = MW.session.id;
             const url = kind === 'session' ? `/music-sessions/${sid}` : `/music-sessions/${sid}/${kind}/${id}`;
             try {
-                const out = await api(url, { method: 'PUT', body: JSON.stringify(body) });
+                // refresh: false — this fires on every tick of a slider and
+                // repaints the lanes itself; a full page reload mid-drag would
+                // rebuild the thing being dragged.
+                const out = await api(url, { method: 'PUT', body: JSON.stringify(body), refresh: false });
                 const row = mwFindRow(kind, id);
                 if (row) Object.assign(row, kind === 'session' ? (out.session || out) : out);
                 if (kind === 'session' && MW.session) Object.assign(MW.session, out.session || out);
