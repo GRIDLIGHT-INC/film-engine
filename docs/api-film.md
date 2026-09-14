@@ -1703,6 +1703,7 @@ A score session is a soundtrack written against a picture sequence (or a scene):
 | POST | `/film/music-sessions/:id/daw/:adapter/pull` | bring a render back, validated by hash and alignment, as candidate takes |
 | POST | `/film/music-sessions/:id/daw/:adapter/transport` | play / stop / locate, only when a person asked (supervised) |
 | GET | `/film/music-sessions/:id/daw/:adapter/audit` | FREE: every DAW push, pull and transport on the session, needing no connection (MUS-019) |
+| POST | `/film/music-sessions/:id/tracks/:trackId/render` | FREE: play a lane's own notes through its own instrument, landing the audio as a take on that lane. Refuses 412 with no part, 400 with no instrument, 409 when the plugin or patch is gone, 422 when the render came back silent |
 | GET / POST | `/film/music-sessions/:id/:kind` | list / create a child |
 | PUT / DELETE | `/film/music-sessions/:id/:kind/:childId` | update / delete a child |
 | GET | `/film/projects/:id/music/capabilities` | FREE: every music workflow the project's provider serves (compose, parts, separate, reference, video, inpaint) — status, limits, cost hint, and who else could do it |

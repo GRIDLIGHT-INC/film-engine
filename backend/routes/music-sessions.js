@@ -42,6 +42,7 @@
  *   POST   /film/music-sessions/:id/daw/:adapter/pull    bring a render back, validated by hash and alignment, as candidate takes
  *   POST   /film/music-sessions/:id/daw/:adapter/transport   play / stop / locate, only when a person asked (supervised)
  *   GET    /film/music-sessions/:id/daw/:adapter/audit   FREE: every DAW push, pull and transport on the session, needing no connection (MUS-019)
+ *   POST   /film/music-sessions/:id/tracks/:trackId/render  FREE: play a lane's own notes through its own instrument, landing the audio as a take on it
  *   GET|POST /film/music-sessions/:id/:kind             list / create a child
  *   PUT|DELETE /film/music-sessions/:id/:kind/:childId  update / delete a child
  *
@@ -59,6 +60,7 @@
  * a failing third op leaves the first two unwritten and is named by index.
  */
 
+const fs = require('fs');
 const { db, generateId } = require('../db/database');
 const contracts = require('../lib/music-session');
 const context = require('../lib/music-context');
@@ -214,6 +216,118 @@ function deleteSession(session) {
 }
 
 // ── Children ───────────────────────────────────────────────────────────────
+
+/**
+ * PLAY A TRACK: its own notes, through its own instrument, into its own lane.
+ *
+ * "The score should be where this all happens." The session is the place with
+ * the tracks, the ruler and the mixer, so this is where composing happens: a
+ * track carries notes and an instrument, and rendering lands the audio as a
+ * take on that track — a candidate where something is already there, so what
+ * is playing keeps playing until somebody chooses otherwise (MUS-013).
+ *
+ * Free: it runs on this machine and no provider is billed.
+ */
+async function renderTrack(sessionId, trackId) {
+    const session = db.prepare('SELECT * FROM film_music_sessions WHERE id = ?').get(sessionId);
+    if (!session) return reply(404, { error: 'no such session' });
+    const track = childRow('tracks', sessionId, trackId);
+    if (!track) return reply(404, { error: 'no such track in this session' });
+
+    let notes = null;
+    try { notes = JSON.parse(track.notes_json || 'null'); } catch (_) { notes = null; }
+    if (!notes || !Array.isArray(notes.notes) || !notes.notes.length) {
+        return reply(412, {
+            code: 'PRECONDITION', error: `"${track.name || 'this track'}" has no notes to play`,
+            fix: 'write them with music_track_update — { notes: { program, notes: [{ start_ms, duration_ms, pitch, velocity }] } }',
+        });
+    }
+    if (!track.instrument_id) {
+        const instruments = require('../lib/instruments');
+        return reply(400, {
+            error: `"${track.name || 'this track'}" has no instrument to play it`,
+            fix: 'set instrument_id on the track',
+            instruments: instruments.listInstruments({ limit: 20 }).map(i => ({ id: i.id, name: i.name, library: i.library })),
+            find: 'GET /film/instruments/catalogue?q= — your own sounds, read live from Kontakt',
+        });
+    }
+
+    const instruments = require('../lib/instruments');
+    const instrument = instruments.getInstrument(track.instrument_id);
+    if (!instrument) return reply(400, { error: 'that instrument is not in the library any more' });
+    if (!instrument.available) {
+        return reply(409, { error: `${instrument.name} cannot play right now: its plugin or its patch is missing`, plugin: instrument.plugin });
+    }
+    const state = instruments.stateOf(instrument.id);
+    if (!state.ok) return reply(409, { error: state.reason, instrument: instrument.name });
+
+    // The session's own length and tempo: a part is written against the picture.
+    const model = readScoreSession(db, sessionId);
+    const lastNote = Math.max(...notes.notes.map(n => n.start_ms + n.duration_ms));
+    const lengthMs = Math.max(Number(model.duration_ms) || 0, lastNote);
+    const tempo = (model.session.tempo_map || [])[0];
+    const midi = require('../lib/midi');
+    const checked = midi.validateScore({
+        plan: {
+            tempo_bpm: (tempo && tempo.tempo_bpm) || 120,
+            meter: (tempo && tempo.meter) || '4/4',
+            length_ms: lengthMs,
+        },
+        parts: [{ name: track.name || 'track', program: notes.program, drums: notes.drums, notes: notes.notes }],
+    }, { length_ms: lengthMs });
+    if (!checked.ok) return reply(400, { error: checked.errors[0], errors: checked.errors });
+
+    const { saveFile, getFilePath, getFileUrl, ensureDir } = require('../lib/file-storage');
+    const host = require('../lib/instrument-host');
+    ensureDir(session.project_id, 'music');
+    const fileName = `track_${trackId.slice(0, 8)}_${Date.now().toString(36)}.wav`;
+    const outPath = getFilePath(session.project_id, 'music', fileName);
+    const rendered = await host.renderPart({
+        plugin: instrument.plugin, state: state.state, midi: midi.writeSmf(checked.score),
+        lengthMs, outPath,
+    });
+    if (!rendered.ok) {
+        const status = ['config', 'unreachable'].includes(rendered.stage) ? 503
+            : rendered.stage === 'silence' ? 422 : 502;
+        return reply(status, {
+            error: rendered.reason, stage: rendered.stage, fix: rendered.fix,
+            instrument: instrument.name, guide: 'docs/instrument-sidecar.md',
+        });
+    }
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, scene_id, asset_type, file_path, file_name, format, mime_type,
+         size_bytes, duration_ms, version, provider, license_source, license_status, metadata)
+        VALUES (?, ?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, ?, 1, 'instrument', '', 'unknown', ?)`)
+        .run(assetId, session.project_id, session.scene_id || null, outPath, fileName,
+            fs.statSync(outPath).size, rendered.duration_ms, JSON.stringify({
+                kind: 'instrument_render', session_id: sessionId, track_id: trackId,
+                instrument_id: instrument.id, instrument: instrument.name, library: instrument.library,
+                source_ref: instrument.source_ref, source_file: instrument.source_file,
+                levels: rendered.levels,
+            }));
+
+    // A take, not a replacement: what is playing keeps playing until chosen.
+    const already = db.prepare('SELECT COUNT(*) AS n FROM film_music_clips WHERE track_id = ?').get(trackId).n;
+    const clip = createChild('clips', sessionId, {
+        track_id: trackId, asset_id: assetId, name: instrument.name,
+        start_ms: 0, duration_ms: rendered.duration_ms, source_offset_ms: 0,
+        source_kind: 'generated', take_status: already ? 'candidate' : 'selected',
+    });
+    if (clip.status >= 400) return clip;
+
+    return reply(201, {
+        clip: clip.body, asset_id: assetId, track: track.name,
+        instrument: instrument.name, library: instrument.library || null,
+        duration_ms: rendered.duration_ms, levels: rendered.levels,
+        url: getFileUrl('music', session.project_id, fileName, assetId),
+        spends: 'nothing',
+        note: already
+            ? `Played by ${instrument.name} as a new take. The take that was there still plays until you choose this one.`
+            : `Played by ${instrument.name}. It is on the track now.`,
+    });
+}
 
 function createChild(kind, sessionId, body) {
     const spec = CHILD_KINDS[kind];
@@ -581,6 +695,12 @@ async function handleMusicSessions(req, res, urlParts, query) {
             // only turns its verdict into a status. A refusal wrote nothing.
             const out = await stems.importStems(db, id, req.body);
             return json(res, out.ok ? 201 : (out.status || 400), out);
+        }
+
+        if (sub === 'tracks' && urlParts[4] && urlParts[5] === 'render' && req.method === 'POST') {
+            if (!UUID_RE.test(urlParts[4])) return json(res, 400, { error: 'Invalid id' });
+            const r = await renderTrack(id, urlParts[4]);
+            return json(res, r.status, r.body);
         }
 
         if (CHILD_KINDS[sub]) {

@@ -94,12 +94,14 @@ function fieldsOf(table) {
  */
 function renderedControls() {
     const parts = ['mwInspectorHtml', 'mwControl', 'mwEnumOptions', 'mwFindRow', 'mwTakeGroupHtml', 'mwTrackOfAutomation',
-        'mwTime', 'mwStatusHtml', 'mwTrackHtml', 'mwClipHtml', 'mwEmotionHtml'].map(n => {
+        'mwTime', 'mwStatusHtml', 'mwTrackHtml', 'mwClipHtml', 'mwEmotionHtml',
+        'mwInstrumentControl', 'mwTrackPlayHtml'].map(n => {
         const f = fnSource(n); assert.ok(f, `no ${n} on the page`); return f;
     });
     const kindTable = /const MW_KIND_TABLE = \{[^}]*\};/.exec(SPA);
     assert.ok(kindTable, 'no MW_KIND_TABLE');
     const track = { id: 'T1', name: 'cello', role_kind: 'instrument', role: 'cello', sort_order: 0, color: '#ff0000', gain_db: 0, pan: 0, muted: false, soloed: false, output_track_id: null,
+        instrument_id: 'I1', notes: { program: 42, drums: false, notes: [{ start_ms: 0, duration_ms: 500, pitch: 60, velocity: 100 }] },
         clips: [{ id: 'C1', name: 'take 1', asset_id: 'A1', source_operation_id: null, source_kind: 'imported', start_ms: 0, duration_ms: 1000, source_offset_ms: 0, gain_db: 0, fade_in_ms: 0, fade_out_ms: 0, loop_policy: 'none', warp_policy: 'none', take_group: 'g', take_status: 'selected' }],
         automation: [{ id: 'U1', clip_id: null, parameter: 'gain', interpolation: 'linear', points: [] }] };
     const model = {
@@ -114,6 +116,7 @@ function renderedControls() {
         const mwX = ms => Math.round((Number(ms) || 0) / 1000 * 40);
         ${kindTable[0]}
         const MW = { model: ${JSON.stringify(model)}, session: ${JSON.stringify(model.session)}, brief: null, selection: null, playheadMs: 0,
+            instruments: [{ id: 'I1', name: 'Vortex Bells', library: 'Ethereal Earth', available: true }], instrumentsError: null, rendering: null,
             vocab: { vocabulary: ${JSON.stringify(contracts.VOCABULARY)}, ranges: ${JSON.stringify(contracts.RANGES)}, transitions: ${JSON.stringify(contracts.TRANSITIONS)} } };
         ${parts.join('\n')}
         const out = {};

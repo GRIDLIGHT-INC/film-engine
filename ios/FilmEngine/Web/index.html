@@ -1548,6 +1548,8 @@
         .mw-lane-head { position:sticky; left:0; z-index:4; width:200px; min-width:200px; padding:6px 8px; box-sizing:border-box; background:var(--gl-bg-surface,#1a1a2e); border-right:1px solid var(--gl-border,rgba(255,255,255,.1)); cursor:pointer; display:flex; flex-direction:column; gap:2px; }
         .mw-lane-head b { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .mw-mini { display:flex; align-items:center; gap:4px; }
+        .mw-inst { display:flex; align-items:center; gap:6px; min-width:0; }
+        .mw-inst .text-sm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .mw-mini input[type=range] { width:52px; }
         .mw-toggle { width:20px; height:18px; font-size:10px; line-height:16px; padding:0; border:1px solid var(--gl-border,rgba(255,255,255,.2)); border-radius:4px; background:transparent; color:var(--gl-text-secondary); cursor:pointer; }
         .mw-toggle.on { background:#f59e0b; color:#111; border-color:#f59e0b; }
@@ -35809,7 +35811,7 @@ ${fountainText.slice(0, 50000)}`;
         selection: null, playheadMs: 0, playing: false, pxPerSec: 40,
         audio: null, buffers: {}, timers: {}, pending: {}, saveNote: '',
         raf: null, ctxStart: 0, msStart: 0, drag: null, sources: [],
-        jobs: [], audition: null, emotionBox: '', daw: null,
+        jobs: [], audition: null, emotionBox: '', daw: null, instruments: [], instrumentsError: null, rendering: null,
     };
     const MW_KIND_TABLE = { tracks: 'film_music_tracks', clips: 'film_music_clips', markers: 'film_music_markers',
         'emotion-ranges': 'film_music_emotion_ranges', automation: 'film_music_automation', session: 'film_music_sessions' };
@@ -35839,14 +35841,18 @@ ${fountainText.slice(0, 50000)}`;
     async function mwLoadSession(id) {
         const root = document.getElementById('mwRoot');
         try {
-            const [model, brief, drift, capabilities, jobsRead] = await Promise.all([
+            const [model, brief, drift, capabilities, jobsRead, instrumentsRead] = await Promise.all([
                 api('/music-sessions/' + id),
                 api('/music-sessions/' + id + '/brief').catch(e => ({ ok: false, brief: null, warnings: [e.message] })),
                 api('/music-sessions/' + id + '/drift').catch(e => ({ ok: false, tracked: false, drifted: false, error: e.message })),
                 api('/projects/' + state.currentProject.id + '/music/capabilities').catch(e => ({ error: e.message, workflows: [] })),
                 api('/music-sessions/' + id + '/jobs').catch(() => ({ jobs: [] })),
+                // The director's own sounds. A failure here is a picker that
+                // says why, never a session that will not open.
+                api('/instruments').catch(e => ({ instruments: [], error: e.message })),
             ]);
             MW.model = model; MW.session = model.session; MW.brief = brief; MW.drift = drift; MW.capabilities = capabilities; MW.jobs = jobsRead.jobs || [];
+            MW.instruments = instrumentsRead.instruments || []; MW.instrumentsError = instrumentsRead.error || null;
             if (MW.selection && !mwFindRow(MW.selection.kind, MW.selection.id)) MW.selection = null;
             mwRender();
             // The DAW panel is fetched AFTER the editor is on screen and paints
@@ -36106,6 +36112,7 @@ ${fountainText.slice(0, 50000)}`;
             <div class="mw-lane-head" onclick="mwSelect('tracks', '${esc(t.id)}')">
                 <b>${esc(t.name || 'untitled')}</b>
                 <span class="text-sm text-muted">${esc(t.role || t.role_kind)}</span>
+                ${mwTrackPlayHtml(t)}
                 <div class="mw-mini">
                     <button class="mw-toggle ${t.muted ? 'on' : ''}" title="Mute" data-mw="film_music_tracks:muted" data-kind="tracks" data-id="${esc(t.id)}" data-value="${t.muted ? 'false' : 'true'}" onclick="event.stopPropagation(); mwFieldChanged(this)">M</button>
                     <button class="mw-toggle ${t.soloed ? 'on' : ''}" title="Solo" data-mw="film_music_tracks:soloed" data-kind="tracks" data-id="${esc(t.id)}" data-value="${t.soloed ? 'false' : 'true'}" onclick="event.stopPropagation(); mwFieldChanged(this)">S</button>
@@ -36117,6 +36124,51 @@ ${fountainText.slice(0, 50000)}`;
                 ${(t.clips || []).map(c => mwClipHtml(c, t)).join('')}
             </div>
         </div>`;
+    }
+
+    /**
+     * WHICH SOUND PLAYS THIS LANE, AND THE BUTTON THAT PLAYS IT.
+     *
+     * A track carries its own notes and its own instrument, so composing is
+     * write the part, choose the sound, press play. The button is disabled
+     * with the reason rather than hidden: a lane with no notes and a lane
+     * whose plugin is missing are different problems, and a control that
+     * vanishes looks like the feature not existing.
+     */
+    function mwTrackPlayHtml(t) {
+        const notes = (t.notes && Array.isArray(t.notes.notes)) ? t.notes.notes.length : 0;
+        const inst = MW.instruments.find(i => i.id === t.instrument_id) || null;
+        const why = !notes ? 'No notes on this lane yet \u2014 write a part in the inspector, or ask Claude for one.'
+            : !t.instrument_id ? 'No instrument on this lane \u2014 choose one of your own sounds in the inspector.'
+            : !inst ? 'That instrument is not in the library any more.'
+            : !inst.available ? `${inst.name} cannot play: its plugin or its patch is missing.`
+            : '';
+        const busy = MW.rendering === t.id;
+        return `<span class="mw-inst">
+            <button class="btn btn-secondary btn-sm" ${why || busy ? 'disabled' : ''}
+                title="${esc(why || `Play these ${notes} notes with ${inst ? inst.name : ''} \u2014 free, it runs on this machine`)}"
+                onclick="event.stopPropagation(); mwPlayTrack('${esc(t.id)}')">${busy ? '\u2026' : '\u25B6'} Play</button>
+            <span class="text-sm text-muted">${inst ? esc(inst.name) + (inst.library ? ' \u00b7 ' + esc(inst.library) : '') : (notes ? 'no instrument' : 'no part')}</span>
+        </span>`;
+    }
+
+    /**
+     * Play the track: its notes, through its instrument, into its own lane.
+     * Free \u2014 it runs on this machine and no provider is billed, so there is
+     * no confirmation to pass; a refusal names the stage it stopped at.
+     */
+    async function mwPlayTrack(trackId) {
+        if (!MW.session || MW.rendering) return;
+        MW.rendering = trackId; mwRepaint(); mwNote('Playing the part\u2026');
+        try {
+            const out = await api(`/music-sessions/${MW.session.id}/tracks/${trackId}/render`, { method: 'POST', body: '{}' });
+            MW.rendering = null;
+            await mwLoadSession(MW.session.id);
+            mwNote(out.note || `Played by ${out.instrument}.`);
+        } catch (e) {
+            MW.rendering = null; mwRepaint();
+            mwNote('It did not play: ' + e.message);
+        }
     }
 
     /** A clip: positioned by start_ms, sized by duration_ms, with the sound library's waveform inside it. */
@@ -36196,6 +36248,10 @@ ${fountainText.slice(0, 50000)}`;
                 + c('gain_db', row.gain_db, { type: 'range', min: -96, max: 24, step: 0.5 }) + c('pan', row.pan, { step: 0.05 })
                 + c('muted', row.muted, { type: 'bool' }) + c('soloed', row.soloed, { type: 'bool' })
                 + c('output_track_id', row.output_track_id, { type: 'select', options: trackOpts.filter(o => o.value !== row.id), empty: 'the master', label: 'routes to' })
+                + mwInstrumentControl(row)
+                + c('notes', row.notes || { program: 0, notes: [] }, { type: 'json', label: 'the part (MIDI notes)',
+                    note: 'The notes this lane plays, in MILLISECONDS: { program, notes: [{ start_ms, duration_ms, pitch, velocity }] }. Ask Claude for a melody with music_track_update, or write one here.' })
+                + `<div class="mw-sub">${mwTrackPlayHtml(row)} <span class="text-sm text-muted">Free \u2014 it runs on this machine.</span></div>`
                 + `<div class="mw-sub"><b>Clips</b> <button class="btn btn-secondary btn-sm" data-mw-create="clips" onclick="mwAddClipFromAsset('${esc(row.id)}')">+ Place an audio file at the playhead</button></div>`
                 + `<div class="mw-sub"><b>Automation</b> ${(row.automation || []).map(a => `<button class="btn btn-secondary btn-sm" onclick="mwSelect('automation', '${esc(a.id)}')">${esc(a.parameter)} (${(a.points || []).length})</button>`).join(' ')}
                     <button class="btn btn-secondary btn-sm" data-mw-create="automation" onclick="mwCreate('automation', { track_id: '${esc(row.id)}', parameter: 'gain', points: [] })">+ Curve</button></div>`;
@@ -36239,6 +36295,27 @@ ${fountainText.slice(0, 50000)}`;
             ${body}
         </section>`;
     }
+    /**
+     * The instrument picker: the director's own sounds, from their own
+     * libraries. A plugin exposes its state and not its browser, so a sound
+     * joins this list by being loaded in the plugin once and captured \u2014 said
+     * here rather than left to be discovered.
+     */
+    function mwInstrumentControl(track) {
+        const opts = MW.instruments.map(i => ({
+            value: i.id,
+            label: `${i.name}${i.library ? ' \u00b7 ' + i.library : ''}${i.available ? '' : ' (plugin missing)'}`,
+        }));
+        const picker = mwControl('film_music_tracks', 'tracks', track.id, 'instrument_id', track.instrument_id,
+            { type: 'select', options: opts, empty: MW.instruments.length ? 'no instrument' : 'your library is empty', label: 'instrument' });
+        const help = MW.instrumentsError
+            ? `Your sounds could not be listed: ${esc(MW.instrumentsError)}`
+            : MW.instruments.length
+                ? 'One of your own sounds. Browse everything you own with instrument_catalogue; capture a new one from the plugin.'
+                : 'Nothing here yet: start the instrument sidecar, capture a patch from a plugin you own, and it appears in this list. See docs/instrument-sidecar.md.';
+        return picker + `<p class="text-sm text-muted" style="margin:-6px 0 10px;">${help}</p>`;
+    }
+
     function mwTrackOfAutomation(id) { return (MW.model.tracks || []).find(t => (t.automation || []).some(a => a.id === id)) || null; }
 
     /** The other takes of this clip's group, so choosing one is one click. */
@@ -36295,7 +36372,8 @@ ${fountainText.slice(0, 50000)}`;
         if (el.dataset.value !== undefined) value = el.dataset.value === 'true';
         else if (el.type === 'checkbox') value = !!el.checked;
         else if (el.type === 'range' || el.type === 'number') value = el.value === '' ? null : Number(el.value);
-        else if (el.tagName === 'TEXTAREA' && (field === 'points' || field === 'tempo_map')) {
+        else if (el.tagName === 'TEXTAREA' && (field === 'points' || field === 'tempo_map'
+            || (table === 'film_music_tracks' && field === 'notes'))) {
             try { value = JSON.parse(el.value || '[]'); } catch (e) { mwNote('Save failed: ' + field + ' is not valid JSON'); return; }
         } else value = el.value === '' && /_id$/.test(field) ? null : el.value;
         if (el.type === 'range' && el.nextElementSibling) el.nextElementSibling.textContent = value;

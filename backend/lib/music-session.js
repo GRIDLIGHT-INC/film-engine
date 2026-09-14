@@ -99,6 +99,8 @@ const TRANSITIONS = {
 /** Which stored column holds JSON, and what the parsed field is called. */
 const JSON_COLUMNS = {
     film_music_sessions: { tempo_map_json: 'tempo_map' },
+    // What a track PLAYS: a part's notes, written by the agent or played in.
+    film_music_tracks: { notes_json: 'notes' },
     film_music_automation: { points_json: 'points' },
     film_music_operations: { params_json: 'params' },
 };
@@ -244,6 +246,29 @@ function validateSession(input) {
     return result(errors, value);
 }
 
+/**
+ * A track's notes, checked the way every note list here is checked.
+ *
+ * The LENGTH is not checked at this point: a track is written before anybody
+ * decides how long the cue runs, and the render checks the notes against the
+ * session's real length — which is where a note past the end actually matters.
+ */
+function trackNotes(errors, input) {
+    if (input === null || input === '') return null;
+    const midi = require('./midi');
+    const part = Array.isArray(input) ? { notes: input } : (input || {});
+    const checked = midi.validateScore({
+        plan: { tempo_bpm: 120, meter: '4/4', length_ms: 24 * 60 * 60 * 1000 },
+        parts: [{ name: 'track', program: part.program, drums: part.drums, notes: part.notes }],
+    }, { length_ms: 24 * 60 * 60 * 1000 });
+    if (!checked.ok) {
+        for (const message of checked.errors) errors.push({ field: 'notes', message: message.replace(/^track: /, '') });
+        return null;
+    }
+    const one = checked.score.parts[0];
+    return { program: one.program, drums: one.drums, notes: one.notes };
+}
+
 function validateTrack(input) {
     const i = input || {};
     const errors = [];
@@ -265,7 +290,19 @@ function validateTrack(input) {
         muted: bool('muted', i.muted),
         soloed: bool('soloed', i.soloed),
         output_track_id: i.output_track_id || null,
+        /*
+         * WHAT THIS TRACK PLAYS, and what plays it.
+         *
+         * "The score should be where this all happens." So a track carries its
+         * own notes — { program, drums, notes: [{ start_ms, duration_ms, pitch,
+         * velocity }] } — and the instrument that renders them. Times are
+         * milliseconds from the start of the session, never beats, because the
+         * cut is in milliseconds.
+         */
+        instrument_id: i.instrument_id === undefined ? undefined : (i.instrument_id || null),
+        notes: i.notes === undefined ? undefined : trackNotes(errors, i.notes),
     };
+    for (const key of ['instrument_id', 'notes']) if (value[key] === undefined) delete value[key];
     check(errors, 'sort_order', isInt(value.sort_order), 'sort_order must be a whole number');
     check(errors, 'gain_db', Number.isFinite(value.gain_db) && value.gain_db >= AUTOMATION_RANGES.gain.min && value.gain_db <= AUTOMATION_RANGES.gain.max,
         `gain_db must be between ${AUTOMATION_RANGES.gain.min} and ${AUTOMATION_RANGES.gain.max} dB`);
@@ -453,7 +490,14 @@ function fromRow(table, row) {
         if (!(column in out)) continue;
         const raw = out[column];
         delete out[column];
-        const empty = column === 'params_json' ? {} : [];
+        /*
+         * What "empty" IS depends on the column, and the two are not the same
+         * claim: a lane with no part has NO part (null), while an empty list
+         * would be a part with no notes in it — which the validator rightly
+         * refuses, so reading one back would make every untouched lane
+         * unsaveable.
+         */
+        const empty = column === 'params_json' ? {} : column === 'notes_json' ? null : [];
         if (raw === null || raw === undefined || raw === '') { out[field] = empty; continue; }
         try {
             const parsed = JSON.parse(raw);

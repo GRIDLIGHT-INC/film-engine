@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**350 tools, 74 families.** Everything the app can do, you can ask for in a
+**351 tools, 74 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -586,7 +586,8 @@ asset on the scene and cost money to make.
 ### Playing a part on the director's own instruments
 
 `instrument_catalogue` · `instrument_list` · `instrument_get` · `instrument_scan` ·
-`instrument_update` · `instrument_delete` · `music_midi_render_part`
+`instrument_update` · `instrument_delete` · `music_track_render` ·
+`music_midi_render_part`
 
 **Start with `instrument_catalogue`.** It reads the director's own Kontakt index
 live — every sound they own, by name, library and tag ("cello", "Ethereal
@@ -601,12 +602,23 @@ somebody's collection. `instrument_list` is how
 you find one — search by name, library, vendor or tag — and an instrument marked
 unavailable has lost its plugin or its patch and will not play.
 
-`music_midi_render_part` plays ONE part of a cue through one of them, on the
-director's machine, and keeps it as that part's audio. Nothing is billed. This
-is how a score is built here: write the parts with `music_midi_write`, give each
-one an instrument, render them, and the cue exists part by part — no ElevenLabs
-and no DAW. A render that comes back silent is refused rather than kept, because
-that is what a plugin with no patch loaded produces.
+**A composition is built on the SCORE, not on a cue.** `music_track_update`
+gives a lane its own part and its own instrument — `notes: { program, notes:
+[{ start_ms, duration_ms, pitch, velocity }] }` in milliseconds, and an
+`instrument_id` from `instrument_list` — and `music_track_render` plays it into
+that lane. That is the loop: write a melody, choose one of their sounds, play
+it, listen, write the next lane. Nothing is billed; it runs on their machine.
+
+On a lane that already holds a take the new one arrives as a **candidate**, so
+what is playing keeps playing until somebody selects it — never say a take was
+replaced. A render that comes back silent is refused rather than kept, because
+that is what a plugin with no patch loaded produces, and every refusal names its
+stage.
+
+`music_midi_render_part` is the same thing for ONE part of a music CUE, when the
+work is a single cue rather than a composition: write the parts with
+`music_midi_write`, give each one an instrument, render them, and the cue exists
+part by part — no ElevenLabs and no DAW.
 
 `instrument_scan` indexes the NKS presets the installed libraries ship, so their
 sounds can be chosen by name. It copies nothing. A library that is not NKS-ready

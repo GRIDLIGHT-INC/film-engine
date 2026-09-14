@@ -30,7 +30,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (108 migrations)
+│   │   └── migrations/     # SQL migration files (109 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -647,6 +647,7 @@ film-engine/
 │       ├── instrument-render.test.js # A render the cue's length and not silent; a missing SoundFont caught on volume; licence recorded
 │       ├── instrument-host.test.js # Loopback, token and allowlist before any plugin loads; a part rendered through a fake host and a real one
 │       ├── instruments.test.js   # A preset built byte by byte and read back; a patch kept and forgotten; a part played, and every refusal
+│       ├── score-instruments.test.js # A lane with its own part and its own sound: four refusals by name, a take that joins rather than replaces
 │       ├── music-midi.test.js # Parts over a plan survive the file within a frame; a played part replaces one part and outlives a rewrite
 │       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
@@ -3955,6 +3956,65 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### The Score Is Where a Composition Is Built
+*"First of all the score should be where this all happens."* Right, and the first
+build put it on the wrong page. A cue's MIDI panel can play one part of one cue;
+a **composition** is several lanes against the picture, each with its own sound,
+each re-played until it is right — and the score session is the only place that
+has the lanes, the ruler, the mixer and the takes. Everything else was already
+there and the one thing missing was that a **track had no part and no sound of
+its own**.
+
+Migration 112 gives `film_music_tracks` its `notes_json`, and 110 already gave it
+`instrument_id`. So a lane carries the two facts that make it playable, and
+`POST /music-sessions/:id/tracks/:tid/render` (`music_track_render`, **351
+tools**) plays it: the notes through the instrument, into that lane. It is
+**free and says so** — it runs on the director's own machine through the
+instrument sidecar and no provider is billed — so there is no confirmation to
+pass, which is the difference between trying four melodies and rationing them.
+
+**A play is a take, never a replacement.** On a lane that already holds
+something the new clip lands as a `candidate`, so what is playing keeps playing
+until somebody selects it — the rule every other generated output on a score
+session follows (MUS-013), and the whole reason exploring is safe.
+
+**The part is validated by the same code a cue's MIDI is.** `trackNotes` runs
+`midi.validateScore` over the lane's notes against the session's own length and
+its tempo map, so a pitch of 999 is refused with *"note 0 pitch 999 is not
+0–127"* rather than stored and discovered at render time. Times are
+**milliseconds, never beats**, which is what makes a part land where the cut is.
+
+**Four ways a lane cannot play, and each is a different sentence.** No notes
+(412, naming how to write them), no instrument (400, listing what is in the
+library and where to find more), an instrument whose plugin has been
+uninstalled (409, naming it), and a render that came back silent (422, naming
+the stage). They all look like *"the button does nothing"* from outside, which is
+exactly why the Play button on the lane head is **disabled with the reason
+rather than hidden**: a control that vanishes reads as the feature not existing,
+which is how this was reported in the first place — *"the side menu is music
+cues and there are no MIDI button"* (the MIDI panel was on **Music & Sound**,
+never on Music Cues).
+
+**Where the sound came from travels with the audio.** The registered asset
+carries `instrument`, `library`, `source_ref` (`kontakt:1423`) and `source_file`
+in its metadata, so a file made in September is still traceable to the patch it
+came from in March — the same reasoning that made a capture read its name out of
+Kontakt's own index.
+
+**And two fields an agent could not see.** `musicSchemaFor` derives a tool's
+schema from the validator's own defaults, and both `notes` and `instrument_id`
+are optional — so the validator dropped them from an empty seed and
+`music_track_update` advertised neither. A field a route accepts and a schema
+does not mention is one the model never tries, which is the *capability with no
+surface* failure pointed at an agent instead of a page. They are seeded now.
+
+`tests/score-instruments.test.js` is set-based over the four refusals, because
+the failure is partial by nature — a route that refuses an empty lane and
+silently keeps a silent take passes any test written against the first. The
+audio path runs against a fake sidecar serving real WAV bytes, so nobody's
+library has to be installed, and the take semantics are proven by playing the
+same lane **twice** and reading the clips back.
+
 ### The Name Comes From Kontakt, and the Library Holds Only What You Used
 *"You should dynamically have the library name and the patch name when we load it into Film Engine so I know the source of the file in the future."* A capture called "Kontakt capture (rename me)" is useless in six months.
 
@@ -5572,7 +5632,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (108 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (109 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6016,6 +6076,7 @@ node --test backend/tests/music-midi.test.js
 node --test backend/tests/instrument-render.test.js
 node --test backend/tests/instrument-host.test.js
 node --test backend/tests/instruments.test.js
+node --test backend/tests/score-instruments.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

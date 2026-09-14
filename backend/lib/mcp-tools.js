@@ -3744,7 +3744,8 @@ const musicSeparation = require('./music-separation');
 const musicGeneration = require('./music-generation');
 
 const MUSIC_SINGULAR = { tracks: 'track', clips: 'clip', markers: 'marker', 'emotion-ranges': 'emotion', automation: 'automation' };
-const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 } };
+const MUSIC_SEED = { film_music_clips: { duration_ms: 1000 }, film_music_emotion_ranges: { end_ms: 1000 },
+    film_music_tracks: { instrument_id: null, notes: null } };
 const MUSIC_WHAT = {
     tracks: 'a lane with a role (instrument, family, bus, reference, picture) and mixer state: gain, pan, mute, solo, order',
     clips: 'an immutable asset placed on a track: start_ms and duration_ms in the session clock, source_offset_ms into the file, fades, loop and warp policy, take group and status, and source_kind (generated, native_part, separated, rendered, imported)',
@@ -3753,6 +3754,8 @@ const MUSIC_WHAT = {
     automation: 'a parameter over time on a track (or one clip): gain, pan, mute, send or filter, as sorted { at_ms, value } points',
 };
 const MUSIC_HELP = {
+    instrument_id: 'Which of the director’s own sounds plays this lane, from instrument_list. Set it with the part, then play it with music_track_render.',
+    notes: 'THE PART THIS LANE PLAYS: { program, drums, notes: [{ start_ms, duration_ms, pitch, velocity }] }, in MILLISECONDS, pitch 0-127 with 60 as middle C. Write a melody here and play it with music_track_render.',
     start_ms: 'Whole milliseconds in the session clock — the cut is in milliseconds, never beats.',
     duration_ms: 'Whole milliseconds; must be > 0.',
     source_offset_ms: 'Where in the source file the clip begins. Keep 0 on import to preserve leading silence.',
@@ -3805,6 +3808,7 @@ function musicSchemaFor(table, omit) {
         else if (/_ms$/.test(key) || key === 'sort_order') prop = { type: 'integer' };
         else if (['gain_db', 'frame_rate', 'cost_usd'].includes(key)) prop = { type: 'number' };
         else if (['tempo_map', 'points'].includes(key)) prop = { type: 'array' };
+        else if (table === 'film_music_tracks' && key === 'notes') prop = { type: 'object' };
         else if (key === 'params') prop = { type: 'object' };
         else prop = { type: 'string' };
         if (MUSIC_HELP[key]) prop.description = MUSIC_HELP[key];
@@ -4163,6 +4167,21 @@ function musicSessionTools() {
             path: a => `/film/music-sessions/${a.session_id}/bounces`, schema: S, required: ['session_id'],
         },
     );
+    tools.push({
+        name: 'music_track_render', handler: H, method: 'POST',
+        description: 'FREE \u2014 it runs on this machine and no provider is billed. Play a score track\u2019s own '
+            + 'notes through its own instrument, and land the audio as a take in that track\u2019s lane. THIS IS '
+            + 'WHERE A SCORE IS COMPOSED from the director\u2019s own sample libraries: give a track notes '
+            + '(music_track_update with notes: { program, notes: [{ start_ms, duration_ms, pitch, velocity }] }) and '
+            + 'an instrument_id from instrument_list, then play it. On a track that already holds a take the new one '
+            + 'arrives as a CANDIDATE, so what plays keeps playing until somebody selects it. A render that comes '
+            + 'back silent is refused rather than kept, and a refusal names its stage.',
+        path: a => `/film/music-sessions/${a.session_id}/tracks/${a.track_id}/render`,
+        body: () => ({}),
+        schema: { ...S, track_id: { type: 'string', description: 'The track to play, from music_track_list.' } },
+        required: ['session_id', 'track_id'],
+    });
+
     for (const [kind, spec] of Object.entries(MUSIC_KINDS)) {
         const one = MUSIC_SINGULAR[kind];
         const idArg = `${one}_id`;

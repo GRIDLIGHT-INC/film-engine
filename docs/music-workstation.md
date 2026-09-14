@@ -284,6 +284,8 @@ starting a server that will apply a new migration to live data.
 | `108_music_daw_links.sql` | `film_music_daw_links` | One DAW item per Film Engine key per adapter. |
 | `109_rights_origin.sql` | `origin` on `film_rights` | Existing rows read `unknown`, a recorded answer rather than a guess. |
 | `110_instruments.sql` | `film_instruments`, `instrument_id` on tracks | The director's own plugins and patches, not project-scoped: a library outlives a film. A track whose instrument is removed keeps its arrangement and its takes. |
+| `111_instrument_source.sql` | `source_ref`, `source_file` on `film_instruments` | Which catalogue row the sound is, and the file it lives in, so a capture is recognisable in six months. |
+| `112_track_notes.sql` | `notes_json` on `film_music_tracks` | The part a lane plays, in milliseconds. NULL means a lane with no part, which is every lane that exists today. |
 
 ## Proving it end to end
 
