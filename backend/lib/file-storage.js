@@ -178,6 +178,7 @@ function serveFile(res, projectId, subdir, filename, opts) {
         '.webp': 'image/webp',
         '.wav': 'audio/wav',
         '.mp3': 'audio/mpeg',
+        '.mid': 'audio/midi',
         '.ogg': 'audio/ogg',
         '.mp4': 'video/mp4',
         '.mov': 'video/quicktime',

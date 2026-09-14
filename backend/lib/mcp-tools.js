@@ -32,6 +32,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleMusicMidi } = require('../routes/music-midi');
 const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
@@ -2502,6 +2503,68 @@ const PRODUCTION_TOOLS = [
             text: { type: 'string', description: 'Required for a text note.' },
         },
         required: ['shot_id', 'kind', 'points'],
+    },
+    {
+        name: 'music_midi_get',
+        handler: handleMusicMidi, method: 'GET',
+        description: 'FREE. A cue\u2019s NOTES and the contract for writing them: the cue\u2019s length in milliseconds '
+            + 'and where it came from, the one-frame tolerance, the 128 General MIDI programs, and the plan and '
+            + 'parts already written \u2014 each part marked agent or performed. Read music_brief for what the scene '
+            + 'is, then this, then write with music_midi_write.',
+        path: a => `/film/music-cues/${a.cue_id}/midi`,
+        schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
+    },
+    {
+        name: 'music_midi_write',
+        handler: handleMusicMidi, method: 'PUT',
+        description: 'FREE \u2014 nothing is generated; YOU compose. Write a cue as PARTS OVER A HARMONIC PLAN and it '
+            + 'is stored as a Standard MIDI File with one track per part, which a DAW opens as separate '
+            + 'instruments. First fix the plan: tempo_bpm, meter, key, chord changes and sections, all in '
+            + 'MILLISECONDS from the start of the cue (never beats \u2014 the cut is in milliseconds). Then write one '
+            + 'part per instrument against those chords: { name, instrument, program (General MIDI 0\u2013127) or '
+            + 'drums: true, notes: [{ start_ms, duration_ms, pitch, velocity }] }. Every note must end inside the '
+            + 'cue; a refusal names the part and the note. The director plays melodies themselves: a part they '
+            + 'imported with music_midi_import_part is KEPT through your rewrite unless you name it in '
+            + 'replace_performed, so write the harmony and leave the tune to them when they have played one.',
+        path: a => `/film/music-cues/${a.cue_id}/midi`,
+        body: a => { const { cue_id, ...rest } = a || {}; return rest; },
+        schema: {
+            cue_id: { type: 'string' },
+            plan: { type: 'object', description: '{ tempo_bpm, meter "4/4", key "D minor", chords: [{ start_ms, symbol }], sections: [{ name, start_ms, end_ms }] }' },
+            parts: { type: 'array', description: 'One per instrument: { name, instrument, program | drums, notes: [{ start_ms, duration_ms, pitch, velocity }] }.' },
+            replace_performed: { type: 'array', items: { type: 'string' }, description: 'Names of performed parts you may write over. Omit to keep what the director played.' },
+        },
+        required: ['cue_id', 'plan', 'parts'],
+    },
+    {
+        name: 'music_midi_import_part',
+        handler: handleMusicMidi, method: 'POST',
+        description: 'FREE. Replace ONE part of a cue with a .mid the director PLAYED \u2014 a melody performed in '
+            + 'Ableton, say \u2014 or add it as a new part. Only that part changes; the plan and the other parts '
+            + 'stay, and the original file is kept beside the rebuilt one. With no notes written yet the plan '
+            + 'is taken from the file\u2019s own tempo and meter. A take longer than the cue is refused rather '
+            + 'than cut; trim it in the DAW or shift it with offset_ms.',
+        path: a => `/film/music-cues/${a.cue_id}/midi/parts/${encodeURIComponent(a.part)}/import`,
+        body: a => ({ data: a.file, name: a.name, track: a.track, instrument: a.instrument, program: a.program, drums: a.drums, offset_ms: a.offset_ms }),
+        schema: {
+            cue_id: { type: 'string' },
+            part: { type: 'string', description: 'The part this take replaces or becomes, e.g. "melody".' },
+            file: { type: 'string', description: 'data:audio/midi;base64,...' },
+            name: { type: 'string', description: 'The original file name, kept for the record.' },
+            track: { type: 'string', description: 'Which track of the file to take, by index or name. Omit to take every track with notes.' },
+            instrument: { type: 'string' },
+            program: { type: 'number', description: 'General MIDI program 0\u2013127. Omit to use the file\u2019s own.' },
+            drums: { type: 'boolean' },
+            offset_ms: { type: 'number', description: 'Shift the take later (or earlier, negative) against the cue.' },
+        },
+        required: ['cue_id', 'part', 'file'],
+    },
+    {
+        name: 'music_midi_delete',
+        handler: handleMusicMidi, method: 'DELETE',
+        description: 'Remove a cue\u2019s note file. Files the director played are kept in the project\u2019s music folder.',
+        path: a => `/film/music-cues/${a.cue_id}/midi`,
+        schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
     },
     {
         name: 'music_brief',

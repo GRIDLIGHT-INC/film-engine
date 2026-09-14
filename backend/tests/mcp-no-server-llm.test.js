@@ -172,6 +172,9 @@ const ENTITY_ROUTES = [
     // A score session is where the soundtrack is arranged. The agent host is
     // the model, so a session it cannot create, change or remove is a
     // soundtrack that has to be built by hand.
+    // A cue's notes. The agent composes them; a note list it cannot write or
+    // remove is a score that has to be typed into a DAW by hand.
+    { kind: 'cue notes', file: 'music-midi.js', verbs: { PUT: 'music_midi_write', POST: 'music_midi_import_part', DELETE: 'music_midi_delete' } },
     { kind: 'score session', file: 'music-sessions.js', verbs: { POST: 'music_session_create', PUT: 'music_session_update', DELETE: 'music_session_delete' } },
 ];
 

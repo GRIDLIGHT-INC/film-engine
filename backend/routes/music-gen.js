@@ -1499,6 +1499,6 @@ module.exports = {
      * generating to find out costs money, and the wrong cue produces a
      * perfectly good file.
      */
-    _internal: { cueForScene, ambientOptions, cueOfKind, linkCueAsset, CUE_KIND_FOR, generateFromCue },
+    _internal: { cueForScene, ambientOptions, cueOfKind, linkCueAsset, CUE_KIND_FOR, generateFromCue, sceneScoreContext },
     collectShotAudioTracks,
 };

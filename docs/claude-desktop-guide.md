@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**337 tools, 70 families.** Everything the app can do, you can ask for in a
+**341 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -582,6 +582,28 @@ every cue was generated at a hardcoded thirty seconds.
 `music_cue_update` merges, so refining one sentence cannot clear the
 instruments. Deleting a cue keeps any audio generated from it — that is an
 asset on the scene and cost money to make.
+
+### Writing the notes, and playing a part yourself
+
+`music_midi_get` · `music_midi_write` · `music_midi_import_part` · `music_midi_delete`
+
+A cue can carry NOTES as well as audio: a Standard MIDI File with one track per
+part, which Ableton opens as separate instruments. You compose them; nothing
+here calls a model and nothing spends money. Read `music_brief` for what the
+scene is and `music_midi_get` for the contract — the cue’s length in
+milliseconds, the one-frame tolerance and the 128 General MIDI programs.
+
+Write **parts over a harmonic plan**, not a whole cue at once: fix the tempo,
+meter, key, chord changes and sections first, then one part per instrument
+against those chords. Everything is in **milliseconds from the start of the
+cue**, never beats, because the cut is in milliseconds. A note that ends past
+the cue is refused, naming the part and the note.
+
+**The director plays melodies.** A .mid they performed arrives through
+`music_midi_import_part` onto one named part, which replaces only that part and
+keeps the original file. Your next `music_midi_write` keeps a played part as it
+is unless you name it in replace_performed — so when a tune has been played,
+write the harmony around it rather than over it.
 
 ### Scoring the picture
 

@@ -52,6 +52,7 @@ film-engine/
 │   │   ├── lipsync.js          # Lip-sync pipeline (Phase 6)
 │   │   ├── music-gen.js        # Music, SFX, ambient generation (Phase 7)
 │   │   ├── sounds.js          # Every audio file in the film, one card each, and one prompt to make another
+│   │   ├── music-midi.js      # A cue’s notes: parts over a plan, written by the agent or played by the director
 │   │   ├── post-production.js  # Post-production pipeline (Phase 9)
 │   │   ├── pipeline.js         # Pipeline orchestrator (Phase 12)
 │   │   ├── qa.js               # QA checks & quality gates (Phase 13)
@@ -110,6 +111,7 @@ film-engine/
 │   │   ├── dialogue-delivery.js   # How a line is SAID, and how long to hold after it
 │   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
 │   │   ├── music-sections.js     # A cue that changes over its own length
+│   │   ├── midi.js               # Notes in milliseconds, validated against the cue; a Standard MIDI File written and read back
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
@@ -633,6 +635,7 @@ film-engine/
 │       ├── music-rights.test.js # Every origin, every derivative writer, every gate × status: rights follow the music and the policy acts where it is stated
 │       ├── music-docs-ops.test.js # The workstation documented from its own registries; health readable without a secret or a path
 │       ├── music-e2e.test.js # Screenplay → final movie, scored, through MCP: once with no DAW, once through Ableton; recovery, bundle, opt-in real Live
+│       ├── music-midi.test.js # Parts over a plan survive the file within a frame; a played part replaces one part and outlives a rewrite
 │       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
 ├── docs/
@@ -3924,6 +3927,21 @@ Upscaling (Real-ESRGAN), face restoration (CodeFormer), and color grading (LUT p
 ### Pipeline Orchestrator
 9-step shot production pipeline: keyframe → video → voice → lipsync → music → sfx → ambient → post → assembly. Dependency resolution, auto-skip (voice/lipsync when no dialogue), retry with exponential backoff (3 attempts, 5s base), pause/resume/cancel support.
 
+### A Cue Has Notes: Parts Over a Plan, and a Part You Played
+GRD-3994, the first instrument-render phase. The director’s answer to *editable notes or realistic timbre* was **both**: *"realistic instruments that I could play… I dig into melodies myself with AI providing instruments."* So a cue gets a note list the connected agent writes and any part of it can be replaced by MIDI the director performed. There is no renderer yet; a `.mid` with one track per part is already useful in Ableton, and turning notes into sound is the next phase.
+
+**Parts over a harmonic plan, not a whole cue.** `music_midi_write` takes a `plan` (tempo, meter, key, chord changes, sections) and `parts[]`, each one instrument with a General MIDI program (or `drums`) and notes as `{start_ms, duration_ms, pitch, velocity}`. Whole-cue MIDI from a language model is the unproven step; a fixed plan with one part at a time is the honest scope, and it is what lets a played melody sit over written harmony.
+
+**Milliseconds, never beats.** The cut is in milliseconds and the cue’s length is the contract, so beats would be a second clock that drifts from the picture the moment the tempo changes. Ticks exist only inside the file. The length is the same walk `cueSeconds` takes — the cue’s own duration, then the measured cut, then the measured dialogue — but kept in milliseconds, because a note list checked against a length rounded to whole seconds refuses a note that ends inside the real cut. A cue with no length is **refused (409)** before anything is written.
+
+**A played part outlives a rewrite.** `music_midi_import_part` replaces ONE named part with a performed `.mid`, keeps the original bytes beside the rebuilt file, and marks the part `performed`. An agent rewrite keeps every performed part unless it names it in `replace_performed` — a rewrite that silently wrote over what somebody played is the failure this exists to prevent. A director who skips the agent entirely gets a plan taken from the file’s own tempo and meter, and the cue’s length.
+
+**Written, then read back, before it is registered.** `lib/midi.js` is hand-rolled (ADR-002: four chunk types and a variable-length integer) and its parser reads MIDI the way a DAW writes it — format 0, running status, note-on at velocity 0 as a release, sysex — and refuses what would make the times wrong: an SMPTE time division, a chunk that runs past the file. Every stored file is parsed back and refused if its note count or length differs from the list it was printed from.
+
+**Deliberately not a `MEDIA_IMPORTS` target, and not in `MEDIA_KINDS`.** The ticket asked for a `midi` entry in `MEDIA_KINDS`; eleven modules read that registry as a *capability’s* storage and MIDI has no provider, and `MEDIA_IMPORTS` is "a file stored where a generated one goes", pinned at eighteen targets by five epic documents. A performed `.mid` is neither: it replaces one part of a note list. So it has its own route on the cue, with its own sniffing, and a UI control on every sound cue card. Stored as `film_assets` `other` + `metadata.kind = 'midi'` (the 3D precedent: the CHECK cannot be widened in place), one note file per cue updated in place so its asset id is stable, served as `audio/midi`.
+
+Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
+
 ### The Model Proposes the Arc; a Person Accepts It
 The emotional arc of a picture is the judgement the whole score hangs on, and
 the connected agent **is** the model here — so MUS-010 is not a "run the
@@ -5918,6 +5936,7 @@ node --test backend/tests/music-rights.test.js
 node --test backend/tests/music-docs-ops.test.js
 node --test backend/tests/music-e2e.test.js
 node --test backend/tests/music-registries.test.js
+node --test backend/tests/music-midi.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

@@ -113,6 +113,7 @@ const { handleVoice } = require('./routes/voice');
 const { handleVideoGen } = require('./routes/video-gen');
 const { handleLipsync } = require('./routes/lipsync');
 const { handleMusicGen } = require('./routes/music-gen');
+const { handleMusicMidi } = require('./routes/music-midi');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
@@ -1185,6 +1186,10 @@ const server = http.createServer(async (req, res) => {
          */
         if (parts[1] === 'music-cues' && parts[2] && !parts[3]) {
             return handleAssets(req, res, parts, query);
+        }
+        // /film/music-cues/:id/midi[/parts/:part/import] — the cue's notes (GRD-3994).
+        if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'midi') {
+            return handleMusicMidi(req, res, parts, query);
         }
         // /film/music-cues/:id/generate — generate the cue that was written.
         // Registered beside the other music-cue verbs; handled by music-gen.js
