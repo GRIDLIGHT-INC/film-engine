@@ -15,3 +15,7 @@ Claude outputs/
 
 # The instrument sidecar runs plugins; its venv is the operator's, not the repo's.
 backend/.venv/
+
+# Python bytecode from the sidecar and its workers.
+__pycache__/
+*.pyc
