@@ -44,6 +44,20 @@ function fnSource(name) {
     }
     return null;
 }
+/** A top-level `const NAME = …;` — an arrow helper or a declared registry. */
+function constSource(name) {
+    const m = new RegExp(`\\bconst\\s+${name}\\s*=`).exec(SPA);
+    if (!m) return null;
+    let depth = 0;
+    for (let j = m.index; j < SPA.length; j++) {
+        const ch = SPA[j];
+        if ('([{'.includes(ch)) depth++;
+        else if (')]}'.includes(ch)) depth--;
+        else if (ch === ';' && depth === 0) return SPA.slice(m.index, j + 1);
+    }
+    return null;
+}
+
 /*
  * Line-based, because a `/*` inside a string opens a comment that runs to the
  * next `*​/` — and the import control's accept="audio/*" is exactly that, so a
@@ -95,9 +109,15 @@ function fieldsOf(table) {
 function renderedControls() {
     const parts = ['mwInspectorHtml', 'mwControl', 'mwEnumOptions', 'mwFindRow', 'mwTakeGroupHtml', 'mwTrackOfAutomation',
         'mwTime', 'mwStatusHtml', 'mwTrackHtml', 'mwClipHtml', 'mwEmotionHtml',
-        'mwInstrumentControl', 'mwTrackPlayHtml'].map(n => {
+        'mwInstrumentControl', 'mwTrackPlayHtml', 'mwTrackDetailsHtml', 'mwTrackSections',
+        'mwPartPaneHtml', 'mwRollHtml', 'mwNotesOf', 'mwRollRange', 'mwTempoBpm', 'mwSnapMs',
+        'mwLengthMs', 'mwHeard'].map(n => {
         const f = fnSource(n); assert.ok(f, `no ${n} on the page`); return f;
     });
+    // The roll is built from declared registries and arrow helpers too.
+    for (const n of ['MW_TRACK_TABS', 'MW_ROW_H', 'MW_BLACK', 'MW_PITCH_NAMES', 'mwPitchName', 'mwSnap']) {
+        const c = constSource(n); assert.ok(c, `no ${n} on the page`); parts.push(c);
+    }
     const kindTable = /const MW_KIND_TABLE = \{[^}]*\};/.exec(SPA);
     assert.ok(kindTable, 'no MW_KIND_TABLE');
     const track = { id: 'T1', name: 'cello', role_kind: 'instrument', role: 'cello', sort_order: 0, color: '#ff0000', gain_db: 0, pan: 0, muted: false, soloed: false, output_track_id: null,
@@ -117,6 +137,7 @@ function renderedControls() {
         ${kindTable[0]}
         const MW = { model: ${JSON.stringify(model)}, session: ${JSON.stringify(model.session)}, brief: null, selection: null, playheadMs: 0,
             instruments: [{ id: 'I1', name: 'Vortex Bells', library: 'Ethereal Earth', available: true }], instrumentsError: null, rendering: null,
+            open: {}, tab: {}, rollSel: null, snapDiv: 2, audition: null,
             vocab: { vocabulary: ${JSON.stringify(contracts.VOCABULARY)}, ranges: ${JSON.stringify(contracts.RANGES)}, transitions: ${JSON.stringify(contracts.TRANSITIONS)} } };
         ${parts.join('\n')}
         const out = {};

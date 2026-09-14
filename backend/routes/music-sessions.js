@@ -313,7 +313,17 @@ async function renderTrack(sessionId, trackId) {
     const clip = createChild('clips', sessionId, {
         track_id: trackId, asset_id: assetId, name: instrument.name,
         start_ms: 0, duration_ms: rendered.duration_ms, source_offset_ms: 0,
-        source_kind: 'generated', take_status: already ? 'candidate' : 'selected',
+        source_kind: 'generated',
+        /*
+         * ONE LANE IS ONE PART, SO ITS TAKES ARE ONE GROUP.
+         *
+         * Without a group `mwHeard` falls back to "is it selected", so a
+         * candidate is never played AND the take switcher reports "no group" —
+         * the take is landed and unreachable, which from the page is
+         * indistinguishable from the render having done nothing.
+         */
+        take_group: trackId,
+        take_status: already ? 'candidate' : 'selected',
     });
     if (clip.status >= 400) return clip;
 

@@ -3956,6 +3956,73 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### A Track's Details Live Under the Track, and the Part Is a Piano Roll
+*"All the details about a track should be below each track, able to expand or
+close, with tabs for each section."* And: *"let's add a piano roll we can expand
+from below the track to play the notes manually."*
+
+Everything about a lane was in one column in the side inspector, so editing the
+lane you were looking at meant reading a form somewhere else. A chevron beside
+the name opens the lane's own details underneath it, in six tabs —
+**Part, Instrument, Mix, Takes, Automation, Lane** — declared once in
+`MW_TRACK_TABS`.
+
+**Every pane is rendered and the inactive ones are hidden with a class.** A
+control that exists only while its tab is open cannot be found by a person, by
+find-in-page, or by the editor audit — and that audit is what guarantees every
+field the validator accepts has a control that saves. Switching tabs repaints
+nothing: it toggles classes, because a re-render would lose the roll's scroll
+position and anything half-typed in another pane.
+
+**One builder, two mounts.** `mwTrackSections` states the controls once;
+`mwTrackDetailsHtml` mounts them under the lane and in the inspector. Two
+statements of the same controls is exactly how the two come to disagree.
+
+**The roll shares the ruler's x-axis.** Notes are positioned with the same
+`mwX` the clips above them use, so a note sits directly under the audio it made
+— which is the entire reason to put the roll under the lane rather than in a
+window. The key column is sticky-left like the lane heads; the settings panes
+are sticky-left too, so they stay readable while the timeline scrolls, while the
+roll deliberately scrolls WITH it.
+
+**Milliseconds are the storage; beats are only the grid.** Snap is derived from
+the session's own tempo map (1/4, 1/8, 1/16, or off) and converted to
+milliseconds at the moment a note lands. Click the grid to add, drag to move,
+drag the right edge for length, double-click to remove.
+
+**Every gesture saves the WHOLE part, once.** The validator takes a part, not a
+note, so a half-written list refused mid-drag would leave the lane holding
+something it cannot play and the refusal would arrive with nothing to point at.
+It goes through `mwSave` — the same validator an agent's `music_track_update`
+meets — so a pitch outside 0–127 or a note past the picture is refused by name
+here exactly as it is there.
+
+**The key preview is a plain tone and says so.** Clicking a key sounds a
+triangle wave, because placing notes by ear needs immediate feedback and the
+lane's real sound is a sample library rendered offline through the sidecar. A
+sine pretending to be Kontakt would be a worse lie than silence, so the tooltip
+names it: *a reference tone, not your instrument*.
+
+### It Says Play, So It Plays
+Two defects, reported as *"if I click play it doesn't work"* — and the button
+was working perfectly. Both renders had gone through Kontakt and landed.
+
+**A new take had no take group.** `mwHeard` falls back to *is it selected* when
+a clip carries no `take_group`, so a candidate was never played, and
+`mwTakeGroupHtml` reported *no group*, so it could not be switched to either.
+The take was landed and **unreachable** — from the page, indistinguishable from
+the render having done nothing. One lane is one part, so its takes are one
+group: the track id.
+
+**And a button called Play did not play.** It rendered a file, landed it as a
+candidate (correctly — what is playing keeps playing until somebody selects it)
+and left the lane looking identical. Pressing Play now **auditions** the new
+take in its group's place and plays from its head, through the mechanism
+MUS-014 already built: what is HEARD changes, what is SELECTED does not, so
+nothing that ships moves. An `AudioContext` created during a click is suspended
+by the time an awaited render returns, so `mwPlay` resumes it — without that,
+playing is silence with no error.
+
 ### The Score Is Where a Composition Is Built
 *"First of all the score should be where this all happens."* Right, and the first
 build put it on the wrong page. A cue's MIDI panel can play one part of one cue;
