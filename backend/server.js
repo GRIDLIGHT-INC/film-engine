@@ -114,6 +114,7 @@ const { handleVideoGen } = require('./routes/video-gen');
 const { handleLipsync } = require('./routes/lipsync');
 const { handleMusicGen } = require('./routes/music-gen');
 const { handleMusicMidi } = require('./routes/music-midi');
+const { handleInstruments } = require('./routes/instruments');
 const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
@@ -1167,6 +1168,12 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/budget/:id
         if (parts[1] === 'budget') {
             return handleBudget(req, res, parts, query);
+        }
+
+        // Route: /film/instruments[...] — the director's own plugins and patches.
+        // Not project-scoped: a library outlives a film.
+        if (parts[1] === 'instruments') {
+            return await handleInstruments(req, res, parts, query);
         }
 
         // Route: /film/spend/rates — the published rate book, and corrections

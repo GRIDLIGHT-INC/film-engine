@@ -121,6 +121,13 @@ function asset(projectId) {
         .run(id, projectId);
     return id;
 }
+/** An instrument belongs to the director rather than to a project: no project id. */
+function instrument() {
+    const id = generateId();
+    db.prepare(`INSERT INTO film_instruments (id, name, plugin_path, plugin_format, source, state_path)
+                VALUES (?, 'Cello', '/Library/Audio/Plug-Ins/VST3/X.vst3', 'vst3', 'captured', '/tmp/x.state')`).run(id);
+    return id;
+}
 
 /**
  * One row in `table`, with every parent it needs created for it. Returns the
@@ -186,6 +193,9 @@ function parentFor(fk, projectId) {
         case 'film_music_tracks': return row('film_music_tracks', { project_id: projectId }).id;
         case 'film_music_clips': return row('film_music_clips', { project_id: projectId }).id;
         case 'film_music_operations': return row('film_music_operations', { project_id: projectId }).id;
+        // An instrument is the director's, not a project's: one sound out of one
+        // of their libraries, which a track may be played by.
+        case 'film_instruments': return instrument();
         default: throw new Error(`no parent fixture for ${fk.table}`);
     }
 }

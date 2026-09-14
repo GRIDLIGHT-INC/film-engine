@@ -23,8 +23,9 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { saveFile, getFileUrl } = require('../lib/file-storage');
+const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-storage');
 const midi = require('../lib/midi');
+const host = require('../lib/instrument-host');
 const fs = require('fs');
 const path = require('path');
 
@@ -112,6 +113,8 @@ function getMidi(res, ctx) {
         gm_programs: midi.GM_PROGRAMS,
         notes: describe(asset, ctx),
         score: asset ? scoreOf(asset) : null,
+        // What each part has been played by, if anything has played it yet.
+        renders: rendersFor(ctx.cue.id, ctx.projectId),
         spends: 'nothing',
         note: 'Read music_brief first for what the scene is. Write the plan (tempo, meter, key, chords, '
             + 'sections) and then one part per instrument against it. A part the director played '
@@ -398,6 +401,115 @@ async function renderCueNotes(res, ctx) {
     });
 }
 
+/** What a part has been rendered to, per part name. */
+function rendersFor(cueId, projectId) {
+    const rows = db.prepare(
+        `SELECT * FROM film_assets
+          WHERE asset_type = 'audio_music' AND json_valid(metadata)
+            AND json_extract(metadata, '$.kind') = 'instrument_render'
+            AND json_extract(metadata, '$.cue_id') = ?
+          ORDER BY created_at DESC`).all(cueId);
+    const out = {};
+    for (const row of rows) {
+        let meta = {};
+        try { meta = JSON.parse(row.metadata || '{}') || {}; } catch (_) { meta = {}; }
+        const part = meta.part || '';
+        if (!part || out[part]) continue;          // newest per part
+        out[part] = {
+            asset_id: row.id, part, instrument_id: meta.instrument_id || null,
+            instrument: meta.instrument || null, library: meta.library || null,
+            duration_ms: row.duration_ms, levels: meta.levels || null,
+            url: getFileUrl('music', projectId, row.file_name, row.created_at),
+        };
+    }
+    return out;
+}
+
+/**
+ * Play ONE part of a cue through one of the director's instruments.
+ *
+ * This is the whole point of the instrument work: the agent writes the notes,
+ * a library patch plays them, and the result is that part's own audio — so a
+ * composition is built part by part inside Film Engine rather than in a DAW.
+ */
+async function renderCuePart(req, res, ctx, partName) {
+    const body = req.body || {};
+    const asset = currentAsset(ctx.cue.id);
+    if (!asset) {
+        return json(res, 412, { code: 'PRECONDITION', error: 'this cue has no notes to play',
+            fix: 'write them with music_midi_write, or import a played part' });
+    }
+    if (!ctx.length.ms) return refuseNoLength(res, ctx);
+
+    const score = scoreOf(asset);
+    const part = ((score && score.parts) || []).find(p => p.name.toLowerCase() === partName.toLowerCase());
+    if (!part) {
+        return json(res, 404, { error: `this cue has no part called "${partName}"`,
+            parts: ((score && score.parts) || []).map(p => p.name) });
+    }
+
+    const instruments = require('../lib/instruments');
+    const instrument = body.instrument_id ? instruments.getInstrument(body.instrument_id) : null;
+    if (!instrument) {
+        return json(res, 400, { error: 'name the instrument to play this part, from instrument_list',
+            instruments: instruments.listInstruments({ limit: 20 }).map(i => ({ id: i.id, name: i.name, library: i.library })) });
+    }
+    if (!instrument.available) {
+        return json(res, 409, { error: `${instrument.name} cannot be played right now: its plugin or its patch is missing`,
+            plugin: instrument.plugin });
+    }
+    const state = instruments.stateOf(instrument.id);
+    if (!state.ok) return json(res, 409, { error: state.reason, instrument: instrument.name });
+
+    // The part alone, as its own file: one track, the cue's own plan.
+    const single = midi.writeSmf({ plan: score.plan, parts: [part] });
+    ensureDir(ctx.projectId, 'music');
+    const slug = part.name.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40) || 'part';
+    const fileName = `cue_${ctx.cue.id.slice(0, 8)}_${slug}.wav`;
+    const outPath = getFilePath(ctx.projectId, 'music', fileName);
+
+    const rendered = await host.renderPart({
+        plugin: instrument.plugin, state: state.state, midi: single,
+        lengthMs: ctx.length.ms, outPath, frameMs: ctx.frame_ms,
+    });
+    if (!rendered.ok) {
+        const status = ['config', 'unreachable'].includes(rendered.stage) ? 503
+            : rendered.stage === 'silence' ? 422 : 502;
+        return json(res, status, {
+            error: rendered.reason, stage: rendered.stage, fix: rendered.fix,
+            instrument: instrument.name, guide: 'docs/instrument-sidecar.md',
+        });
+    }
+
+    const prior = db.prepare(
+        `SELECT id FROM film_assets WHERE asset_type = 'audio_music' AND json_valid(metadata)
+            AND json_extract(metadata, '$.kind') = 'instrument_render'
+            AND json_extract(metadata, '$.cue_id') = ? AND json_extract(metadata, '$.part') = ?`).all(ctx.cue.id, part.name);
+    for (const row of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, scene_id, asset_type, file_path, file_name, format, mime_type,
+         size_bytes, duration_ms, version, provider, license_source, license_status, metadata)
+        VALUES (?, ?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, ?, ?, 'instrument', '', 'unknown', ?)`)
+        .run(assetId, ctx.projectId, ctx.cue.scene_id || null, outPath, fileName,
+            fs.statSync(outPath).size, rendered.duration_ms, prior.length + 1, JSON.stringify({
+                kind: 'instrument_render', cue_id: ctx.cue.id, part: part.name,
+                instrument_id: instrument.id, instrument: instrument.name, library: instrument.library,
+                plugin: instrument.plugin, source: instrument.source,
+                notes_asset_id: asset.id, notes_version: asset.version, levels: rendered.levels,
+            }));
+
+    return json(res, 201, {
+        asset_id: assetId, part: part.name, instrument: instrument.name, library: instrument.library || null,
+        duration_ms: rendered.duration_ms, levels: rendered.levels,
+        render_seconds: rendered.render_seconds,
+        url: getFileUrl('music', ctx.projectId, fileName, assetId),
+        note: `${part.name} played by ${instrument.name}. Render the other parts and you have the cue, `
+            + 'each part its own file.',
+    });
+}
+
 function handleMusicMidi(req, res, parts) {
     const cueId = parts[2];
     if (!UUID_RE.test(String(cueId || ''))) return json(res, 400, { error: 'Invalid cue ID' });
@@ -412,6 +524,12 @@ function handleMusicMidi(req, res, parts) {
     }
     if (parts[4] === 'render' && !parts[5] && req.method === 'POST') return renderCueNotes(res, ctx);
     if (parts[4] === 'render' && parts[5] === 'plan' && req.method === 'GET') return renderPlan(res, ctx);
+    if (parts[4] === 'parts' && parts[5] && parts[6] === 'render' && req.method === 'POST') {
+        let name;
+        try { name = decodeURIComponent(parts[5]).trim(); } catch (_) { name = ''; }
+        if (!name) return json(res, 400, { error: 'name the part to play' });
+        return renderCuePart(req, res, ctx, name);
+    }
     if (parts[4] === 'parts' && parts[5] && parts[6] === 'import' && req.method === 'POST') {
         let name;
         try { name = decodeURIComponent(parts[5]).trim(); } catch (_) { name = ''; }

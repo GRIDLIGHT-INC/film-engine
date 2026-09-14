@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleMusicMidi } = require('../routes/music-midi');
+const { handleInstruments } = require('../routes/instruments');
 const { handleProviders } = require('../routes/providers');
 const { handleContinuity } = require('../routes/continuity');
 const { handleMarketing } = require('../routes/marketing');
@@ -2565,6 +2566,77 @@ const PRODUCTION_TOOLS = [
         description: 'Remove a cue\u2019s note file. Files the director played are kept in the project\u2019s music folder.',
         path: a => `/film/music-cues/${a.cue_id}/midi`,
         schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
+    },
+    {
+        name: 'instrument_list',
+        handler: handleInstruments, method: 'GET',
+        description: 'FREE. The director\u2019s own instruments \u2014 one sound out of one of their libraries, as a plugin '
+            + 'plus the patch that recalls it. Search with q (name, library, vendor or tag). An instrument marked '
+            + 'unavailable has lost its plugin or its patch and will not play. Use an id from here with '
+            + 'music_midi_render_part.',
+        path: a => `/film/instruments${a.q ? `?q=${encodeURIComponent(a.q)}` : ''}`,
+        schema: { q: { type: 'string', description: 'name, library, vendor or tag' } }, required: [],
+    },
+    {
+        name: 'instrument_get',
+        handler: handleInstruments, method: 'GET',
+        description: 'FREE. One instrument: which plugin plays it, where its patch came from, and whether it can play right now.',
+        path: a => `/film/instruments/${a.instrument_id}`,
+        schema: { instrument_id: { type: 'string' } }, required: ['instrument_id'],
+    },
+    {
+        name: 'instrument_scan',
+        handler: handleInstruments, method: 'POST',
+        description: 'FREE and local. Index the NKS presets the installed libraries ship, so their sounds can be chosen '
+            + 'by name. Nothing is copied: each row points at the preset where Native Access installed it. A library '
+            + 'that is not NKS-ready ships no preset and is reported rather than skipped \u2014 those patches are '
+            + 'captured from the plugin instead.',
+        path: () => '/film/instruments/scan',
+        body: a => { const { ...rest } = a || {}; return rest; },
+        schema: {
+            plugin: { type: 'string', description: 'Which plugin plays them. Defaults to Kontakt 8.' },
+            roots: { type: 'array', items: { type: 'string' }, description: 'Folders to search. Defaults to the NI content folders.' },
+            limit: { type: 'number' },
+        },
+        required: [],
+    },
+    {
+        name: 'instrument_update',
+        handler: handleInstruments, method: 'PUT',
+        description: 'Rename an instrument, or re-tag it so it can be found among thousands. Merged, never replaced.',
+        path: a => `/film/instruments/${a.instrument_id}`,
+        body: a => { const { instrument_id, ...rest } = a || {}; return rest; },
+        schema: {
+            instrument_id: { type: 'string' },
+            name: { type: 'string' }, library: { type: 'string' }, vendor: { type: 'string' },
+            tags: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' },
+        },
+        required: ['instrument_id'],
+    },
+    {
+        name: 'instrument_delete',
+        handler: handleInstruments, method: 'DELETE',
+        description: 'Forget an instrument. A captured patch is deleted with it; an NKS preset belongs to the library '
+            + 'and is left where it is. Tracks that used it keep their takes.',
+        path: a => `/film/instruments/${a.instrument_id}`,
+        schema: { instrument_id: { type: 'string' } }, required: ['instrument_id'],
+    },
+    {
+        name: 'music_midi_render_part',
+        handler: handleMusicMidi, method: 'POST',
+        description: 'FREE \u2014 runs on this machine; no provider is billed. Play ONE part of a cue through one of the '
+            + 'director\u2019s own instruments (Kontakt and their libraries) and keep it as that part\u2019s audio. This is how '
+            + 'a composition is built here: write the parts with music_midi_write, give each one an instrument from '
+            + 'instrument_list, render them, and the cue exists part by part. Needs the instrument sidecar running; a '
+            + 'render that comes back silent is refused rather than kept.',
+        path: a => `/film/music-cues/${a.cue_id}/midi/parts/${encodeURIComponent(a.part)}/render`,
+        body: a => ({ instrument_id: a.instrument_id }),
+        schema: {
+            cue_id: { type: 'string' },
+            part: { type: 'string', description: 'The part to play, by name, from music_midi_get.' },
+            instrument_id: { type: 'string', description: 'From instrument_list.' },
+        },
+        required: ['cue_id', 'part', 'instrument_id'],
     },
     {
         name: 'music_midi_render_plan',

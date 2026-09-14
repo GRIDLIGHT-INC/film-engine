@@ -61,6 +61,10 @@ const PATH_COLUMNS = Object.freeze([
     { table: 'film_video_jobs', column: 'output_path', key: 'id' },
     { table: 'film_lipsync_jobs', column: 'output_path', key: 'id' },
     { table: 'film_post_jobs', column: 'output_path', key: 'id' },
+
+    // A captured patch: written under our own root, so it moves with the
+    // profile exactly as an asset does.
+    { table: 'film_instruments', column: 'state_path', key: 'id' },
     { table: 'film_stitch_jobs', column: 'output_path', key: 'id' },
     { table: 'film_audio_mix_jobs', column: 'output_path', key: 'id' },
     { table: 'film_export_packages', column: 'output_path', key: 'id' },
@@ -97,6 +101,13 @@ const NOT_PATHS = Object.freeze({
     'film_rights.license_url': 'a URL — the licence a piece of music is held under',
     'film_brands.cta_url': 'a URL — where a call to action points',
     'film_style_book_media.source_url': 'a URL — a reference left where it lives',
+
+    // OUTSIDE this engine's data, deliberately. A plugin lives where macOS
+    // installs plugins and a preset where Native Access put it; Film Engine
+    // points at both and owns neither, so moving the data directory must not
+    // rewrite them to somewhere the library is not.
+    'film_instruments.plugin_path': 'where macOS installed the plugin \u2014 not ours to move',
+    'film_instruments.preset_path': 'where the library installed the preset \u2014 read in place, never copied',
 
     // These own their own resolution, and rewriting them would fight it.
     'film_backups.file_path': 'resolved by resolveBackupPath in routes/backups.js',

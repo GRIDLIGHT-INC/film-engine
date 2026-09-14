@@ -56,6 +56,21 @@ accident:
   monitoring would need an audio server and a stream. Rendering is far faster
   than real time, and the result is heard in the Score page like any other clip.
 
+## Getting your sounds in
+
+An **instrument** is one sound: a plugin plus the patch that recalls it.
+
+* **Scan** — `POST /film/instruments/scan` (or `instrument_scan`) reads the NKS
+  presets your libraries ship and indexes them by name, vendor and tags. Nothing
+  is copied: each row points at the preset where Native Access installed it.
+* **Capture** — a library that is not NKS-ready ships no preset. Open the
+  plugin's own editor through `POST /film/instruments/capture`, load the patch,
+  close the window, and the state that recalls it is kept. Once per sound.
+
+Then give a part an instrument and play it:
+`POST /film/music-cues/:id/midi/parts/:part/render`, or the **Play** button
+beside that part in the cue's MIDI panel.
+
 ## How a render is judged
 
 The same rule as every other render here: the file is cut to the part's length,

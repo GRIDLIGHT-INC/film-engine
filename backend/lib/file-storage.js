@@ -314,6 +314,10 @@ function serveFile(res, projectId, subdir, filename, opts) {
 }
 
 module.exports = {
+    // Where everything this engine stores lives. Exported so a store that is
+    // NOT project-scoped (the instrument library) roots itself the same way
+    // rather than recomputing the rule and drifting from it.
+    DATA_DIR,
     ensureDir,
     saveFile,
     getFilePath,

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**343 tools, 70 families.** Everything the app can do, you can ask for in a
+**349 tools, 74 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -582,6 +582,28 @@ every cue was generated at a hardcoded thirty seconds.
 `music_cue_update` merges, so refining one sentence cannot clear the
 instruments. Deleting a cue keeps any audio generated from it — that is an
 asset on the scene and cost money to make.
+
+### Playing a part on the director's own instruments
+
+`instrument_list` · `instrument_get` · `instrument_scan` · `instrument_update` ·
+`instrument_delete` · `music_midi_render_part`
+
+The director owns 248 sample libraries. An **instrument** is one sound out of
+one of them: a plugin plus the patch that recalls it. `instrument_list` is how
+you find one — search by name, library, vendor or tag — and an instrument marked
+unavailable has lost its plugin or its patch and will not play.
+
+`music_midi_render_part` plays ONE part of a cue through one of them, on the
+director's machine, and keeps it as that part's audio. Nothing is billed. This
+is how a score is built here: write the parts with `music_midi_write`, give each
+one an instrument, render them, and the cue exists part by part — no ElevenLabs
+and no DAW. A render that comes back silent is refused rather than kept, because
+that is what a plugin with no patch loaded produces.
+
+`instrument_scan` indexes the NKS presets the installed libraries ship, so their
+sounds can be chosen by name. It copies nothing. A library that is not NKS-ready
+ships no preset and is reported: those patches are captured from the plugin
+instead, by a person, once.
 
 ### Writing the notes, and playing a part yourself
 

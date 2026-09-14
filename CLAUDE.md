@@ -29,7 +29,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (106 migrations)
+│   │   └── migrations/     # SQL migration files (107 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -95,6 +95,7 @@ film-engine/
 │   │   ├── approvals.js        # Decision packets: may I run this, and which of these is the take
 │   │   ├── repair.js          # Run a repair — the half that spends, kept apart from the free plan
 │   │   ├── frame-handles.js    # One frame, to whoever holds the id — the id IS the credential
+│   │   ├── instruments.js      # The instrument library: capture a patch, scan NKS presets, keep what plays a part
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -115,6 +116,8 @@ film-engine/
 │   │   ├── midi.js               # Notes in milliseconds, validated against the cue; a Standard MIDI File written and read back
 │   │   ├── instrument-render.js  # Notes become sound: FluidSynth probed, a SoundFont whose licence is known, a render judged by its volume
 │   │   ├── instrument-host.js    # The director’s own plugins, held by a sidecar: loopback, token, an allowlist, a render finished by the shared rule
+│   │   ├── instruments.js        # One SOUND out of one library: a plugin and the state that recalls the patch
+│   │   ├── instrument-presets.js # An NKS preset read without opening anything: its PCHK chunk IS the patch
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
@@ -641,6 +644,7 @@ film-engine/
 │       ├── music-e2e.test.js # Screenplay → final movie, scored, through MCP: once with no DAW, once through Ableton; recovery, bundle, opt-in real Live
 │       ├── instrument-render.test.js # A render the cue's length and not silent; a missing SoundFont caught on volume; licence recorded
 │       ├── instrument-host.test.js # Loopback, token and allowlist before any plugin loads; a part rendered through a fake host and a real one
+│       ├── instruments.test.js   # A preset built byte by byte and read back; a patch kept and forgotten; a part played, and every refusal
 │       ├── music-midi.test.js # Parts over a plan survive the file within a frame; a played part replaces one part and outlives a rewrite
 │       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
@@ -3949,6 +3953,17 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### One Sound Out of a Library, Playing a Part
+The sidecar holds the plugins; this is what makes 248 libraries usable. An **instrument** here is not a library — it is one SOUND: a plugin path plus the state blob that recalls that patch, because a plugin exposes its state and not its browser. Migration 110 keeps them in `film_instruments`, **not project-scoped** on the style-book precedent: a library outlives a film, and re-capturing a patch per project is exactly the time this exists to save. `film_music_tracks.instrument_id` is `ON DELETE SET NULL` — an instrument removed from the library must not take the arrangement with it.
+
+**Two ways a patch arrives, and the row records which.** `captured` is a person at the plugin's own editor (supervised, blocking, a window in front of somebody); `nks` is a preset this engine read. `lib/instrument-presets.js` walks the RIFF chunks of an `.nksf` — NISI (what it is, as MessagePack), NICA, PLID, **PCHK (the plugin state)** — and returns the state with NKS's four-byte envelope stripped, because what a plugin wants is the chunk it wrote. Metadata it cannot parse costs the sound its NAME, never the sound: the file name is the fallback and the patch still loads. **Unverified and stated as such:** whether Kontakt accepts a PCHK payload through the host's own `load_state` can only be proven against a real preset, and no library was installed when this was written — it is checked the one way it can be, by rendering and listening for silence.
+
+**A part is played, not a cue.** `POST /film/music-cues/:id/midi/parts/:part/render` takes one part of the note list, writes it as its own single-track SMF against the cue's plan, plays it through the chosen instrument, and keeps it as that part's audio — so a composition is built part by part inside Film Engine. Re-rendering **replaces** that part rather than piling takes up, and `GET …/midi` reports `renders` per part, so the panel can say what has been played and by what. A render that comes back silent is refused (422) rather than kept: silence is what a patch-less plugin produces, and a take of nothing is worse than no take.
+
+**A scan indexes, it does not copy.** Every row points at the preset where Native Access installed it; a library that is not NKS-ready ships no `.nksf` and is **reported** rather than skipped, because those patches need capturing and a silent omission reads as the scan having worked. Scanning twice adds nothing.
+
+Served at `GET|POST /film/instruments`, `GET /film/instruments/{host,plugins}`, `POST /film/instruments/{capture,scan}`, `GET|PUT|DELETE /film/instruments/:id`, on the cue's MIDI panel (an instrument per part, a Play button, the audio beside it), and as `instrument_list` / `instrument_get` / `instrument_scan` / `instrument_update` / `instrument_delete` / `music_midi_render_part` (**349 tools**).
+
 ### Your Own Libraries, Inside Film Engine
 *"I want to use those libraries INSIDE Film Engine without having Ableton Live open... I generate a MIDI melody with AI, apply it to a library sound and can hear the result in its own track... building a full composition directly in Film Engine, not leveraging ElevenLabs for this."* The director owns **248 sample libraries**, and the complaint is time.
 
@@ -5531,7 +5546,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (106 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (107 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5974,6 +5989,7 @@ node --test backend/tests/music-registries.test.js
 node --test backend/tests/music-midi.test.js
 node --test backend/tests/instrument-render.test.js
 node --test backend/tests/instrument-host.test.js
+node --test backend/tests/instruments.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js

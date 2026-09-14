@@ -283,6 +283,7 @@ starting a server that will apply a new migration to live data.
 | `107_music_job_children.sql` | `group_id`, `seq`, `attempt`, `take_number`, `output_clip_id`, fingerprints on operations | Existing operations become parents with no children. |
 | `108_music_daw_links.sql` | `film_music_daw_links` | One DAW item per Film Engine key per adapter. |
 | `109_rights_origin.sql` | `origin` on `film_rights` | Existing rows read `unknown`, a recorded answer rather than a guess. |
+| `110_instruments.sql` | `film_instruments`, `instrument_id` on tracks | The director's own plugins and patches, not project-scoped: a library outlives a film. A track whose instrument is removed keeps its arrangement and its takes. |
 
 ## Proving it end to end
 

@@ -37428,9 +37428,12 @@ ${fountainText.slice(0, 50000)}`;
      * Nothing here spends money.
      */
     async function openCueMidi(cueId) {
-        let d;
+        let d, lib = { instruments: [] };
         try { d = await api('/music-cues/' + cueId + '/midi'); }
         catch (err) { setStatus('Could not read the notes: ' + err.message, true); return; }
+        // The director's own instruments. A failure here is not fatal: the notes
+        // are still readable and downloadable without anything to play them.
+        try { lib = await api('/instruments'); } catch (err) { lib = { instruments: [], error: err.message }; }
         const n = d.notes;
         const parts = n ? n.parts : [];
         const len = d.length && d.length.ms
@@ -37439,16 +37442,34 @@ ${fountainText.slice(0, 50000)}`;
         const replace = p => `<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;" title="Replace this part with a .mid you played. Only this part changes.">Replace with played
                 <input type="file" accept="audio/midi,audio/x-midi,.mid,.midi" style="display:none"
                        onchange="uploadCueMidiPart(event, '${esc(cueId)}', ${jsAttr(p.name)})"></label>`;
+        const playable = (lib.instruments || []).filter(i => i.available);
+        const picker = p => {
+            if (!playable.length) return '<span class="text-muted text-sm">no instruments yet</span>';
+            const chosen = (d.renders && d.renders[p.name] && d.renders[p.name].instrument_id) || '';
+            return `<select class="form-input" style="max-width:190px;padding:2px 6px;" data-cue-part="${esc(p.name)}">
+                ${playable.map(i => `<option value="${esc(i.id)}" ${i.id === chosen ? 'selected' : ''}>${esc(i.name)}${i.library ? ' \u00b7 ' + esc(i.library) : ''}</option>`).join('')}
+            </select>`;
+        };
+        const heard = p => {
+            const r = d.renders && d.renders[p.name];
+            return r ? `<audio src="${esc(API_BASE + r.url)}" controls preload="none" style="height:28px;max-width:180px;"></audio>` : '';
+        };
         const rows = parts.length
             ? parts.map(p => `<tr><td>${esc(p.name)}</td><td>${esc(p.drums ? 'Drums' : (p.instrument || ''))}</td>
-                    <td>${p.notes}</td><td>${p.source === 'performed' ? 'played' : 'written'}</td><td>${replace(p)}</td></tr>`).join('')
-            : '<tr><td colspan="5" class="text-muted text-sm">No notes yet. Ask Claude to write parts over a plan for this cue, or add a part you played below.</td></tr>';
+                    <td>${p.notes}</td><td>${p.source === 'performed' ? 'played' : 'written'}</td>
+                    <td>${picker(p)}</td>
+                    <td><button class="btn btn-secondary btn-sm" title="Play this part through the chosen instrument, on this machine. Free."
+                            onclick="playCuePart('${esc(cueId)}', ${jsAttr(p.name)}, this)">Play</button></td>
+                    <td>${heard(p)}</td>
+                    <td>${replace(p)}</td></tr>`).join('')
+            : '<tr><td colspan="8" class="text-muted text-sm">No notes yet. Ask Claude to write parts over a plan for this cue, or add a part you played below.</td></tr>';
         showModalHtml('cueMidiModal', `
             <div class="modal-header"><h3>Notes · ${esc(d.cue.title || 'cue')}</h3></div>
             <p class="text-sm text-muted">Length ${esc(len)}. ${n ? 'Version ' + n.version + '.' : ''}
                A part you play is kept when Claude rewrites the others.</p>
-            <table class="data-table" style="width:100%;"><thead><tr><th>Part</th><th>Instrument</th><th>Notes</th><th>From</th><th></th></tr></thead>
+            <table class="data-table" style="width:100%;"><thead><tr><th>Part</th><th>Written for</th><th>Notes</th><th>From</th><th>Played by</th><th></th><th>Heard</th><th></th></tr></thead>
                 <tbody>${rows}</tbody></table>
+            ${playable.length ? '' : '<p class="text-sm text-muted">No instruments in your library yet. Capture a patch from a plugin you own, or scan your NKS presets \u2014 see docs/instrument-sidecar.md.</p>'}
             <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap;">
                 <input id="cueMidiNewPart" class="form-input" placeholder="New part, e.g. melody" style="max-width:220px;">
                 <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;">Add a played part
@@ -37473,6 +37494,35 @@ ${fountainText.slice(0, 50000)}`;
             setStatus('Could not render: ' + err.message, true);
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = 'Render with instruments'; }
+        }
+    }
+
+    /*
+     * Play one part through one of your own instruments (Kontakt and the
+     * libraries you own), on this machine. Free: nothing is billed, and the
+     * result becomes that part's audio, which is how a composition is built
+     * here part by part rather than in a DAW.
+     */
+    async function playCuePart(cueId, part, btn) {
+        const row = btn.closest('tr');
+        const select = row && row.querySelector('select[data-cue-part]');
+        const instrumentId = select && select.value;
+        if (!instrumentId) { setStatus('Pick an instrument for this part first', true); return; }
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Playing\u2026';
+        setStatus('Playing ' + part + ' through your instrument\u2026', true);
+        try {
+            const r = await api('/music-cues/' + cueId + '/midi/parts/' + encodeURIComponent(part) + '/render', {
+                method: 'POST', body: JSON.stringify({ instrument_id: instrumentId }),
+            });
+            setStatus(r.note || (part + ' played'), true);
+            openCueMidi(cueId);
+        } catch (err) {
+            setStatus('Could not play that part: ' + err.message, true);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
         }
     }
 

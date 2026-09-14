@@ -174,6 +174,8 @@ const ENTITY_ROUTES = [
     // soundtrack that has to be built by hand.
     // A cue's notes. The agent composes them; a note list it cannot write or
     // remove is a score that has to be typed into a DAW by hand.
+    // The director's own instruments: a plugin and the patch that recalls a sound.
+    { kind: 'instrument', file: 'instruments.js', verbs: { POST: 'instrument_scan', PUT: 'instrument_update', DELETE: 'instrument_delete' } },
     { kind: 'cue notes', file: 'music-midi.js', verbs: { PUT: 'music_midi_write', POST: 'music_midi_import_part', DELETE: 'music_midi_delete' } },
     { kind: 'score session', file: 'music-sessions.js', verbs: { POST: 'music_session_create', PUT: 'music_session_update', DELETE: 'music_session_delete' } },
 ];
