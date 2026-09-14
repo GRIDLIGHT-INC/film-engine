@@ -71,6 +71,21 @@ Then give a part an instrument and play it:
 `POST /film/music-cues/:id/midi/parts/:part/render`, or the **Play** button
 beside that part in the cue's MIDI panel.
 
+## What happens when a plugin falls over
+
+A plugin is somebody else's code and Kontakt crashes in two places: while being
+re-stated, and while being unloaded after a perfectly good render. So every job
+runs in its own short-lived worker process (`backend/instrument-worker.py`):
+
+* a crash costs **one job**, never the sidecar;
+* the worker writes its answer to a **file**, because Kontakt prints its own log
+  lines into stdout and would corrupt JSON there;
+* the worker leaves through `os._exit`, skipping the destructors that crash, and
+  the sidecar judges the **answer** rather than the exit code.
+
+`GET /health` says what is running (`busy`), because while a capture has a window
+open everything else waits behind it.
+
 ## How a render is judged
 
 The same rule as every other render here: the file is cut to the part's length,

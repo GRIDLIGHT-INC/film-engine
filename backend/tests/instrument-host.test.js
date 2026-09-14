@@ -184,6 +184,24 @@ test('notes are required, and a length is required', async () => {
     } finally { fake.close(); }
 });
 
+test('a plugin that crashes on the way out has still done the work', () => {
+    /*
+     * Measured, not imagined: Kontakt rendered six seconds of audio, wrote it,
+     * and then segfaulted while being unloaded — so the worker's exit code said
+     * "crash" about a job that had finished, and the render was thrown away.
+     *
+     * Two rules came out of it, and both live in the sidecar: the answer is a
+     * FILE (Kontakt prints its own log lines into stdout, which corrupts JSON
+     * on that channel), and the exit code decides nothing when an answer exists.
+     */
+    const sidecar = fs.readFileSync(path.join(__dirname, '..', 'instrument-sidecar.py'), 'utf8');
+    const worker = fs.readFileSync(path.join(__dirname, '..', 'instrument-worker.py'), 'utf8');
+    assert.match(sidecar, /answer_path/, 'the sidecar does not give the worker a file to answer in');
+    assert.match(sidecar, /if answer and proc\.returncode != 0/, 'a crash on the way out still discards the work');
+    assert.match(worker, /os\._exit\(0\)/, 'the worker runs the plugin destructors that crash');
+    assert.doesNotMatch(sidecar, /json\.loads\(proc\.stdout/, 'the sidecar parses stdout, which a plugin writes into');
+});
+
 test('every renderer finishes its file the same way', () => {
     // One rule: cut to length, read back, refuse silence. Two copies is how one
     // of them keeps a fix the other does not.

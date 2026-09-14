@@ -20,6 +20,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
 
 const DEFAULT_URL = 'http://127.0.0.1:3191';
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -74,41 +75,65 @@ function hostConfig(env = process.env) {
 
 const refusal = (stage, reason, extra = {}) => ({ ok: false, stage, reason, ...extra });
 
+/**
+ * One request, over node:http rather than fetch.
+ *
+ * DELIBERATE, and it cost a capture to learn: fetch gives up after five minutes
+ * of waiting for response headers. A capture waits on a person at a plugin
+ * window, and a big library's render can outlast that too — so the answer came
+ * back to a closed socket and the work was lost. Here the only ceiling is the
+ * one an operation declares.
+ */
+function request({ url, method = 'GET', token, body, timeoutMs = 0 }) {
+    return new Promise((resolve, reject) => {
+        const target = new URL(url);
+        const payload = body == null ? null : Buffer.from(JSON.stringify(body));
+        const req = http.request({
+            hostname: target.hostname, port: target.port, path: target.pathname + target.search, method,
+            headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}),
+            },
+        }, res => {
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+        });
+        if (timeoutMs > 0) {
+            req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error(`no answer within ${timeoutMs}ms`), { timedOut: true })));
+        }
+        req.on('error', reject);
+        if (payload) req.write(payload);
+        req.end();
+    });
+}
+
 async function callSidecar(op, args, opts = {}) {
     const cfg = opts.config || hostConfig();
     if (!cfg.configured) return refusal('config', cfg.reason);
     const spec = HOST_OPERATIONS[op];
     if (!spec) return refusal('op', `'${op}' is not an operation the instrument sidecar performs`);
 
-    const controller = new AbortController();
     const ms = opts.timeoutMs != null ? opts.timeoutMs : spec.timeout_ms;
-    const timer = ms > 0 ? setTimeout(() => controller.abort(), ms) : null;
     let res;
     try {
-        res = await fetch(`${cfg.url}/op`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
-            body: JSON.stringify({ op, args: args || {} }),
-            signal: controller.signal,
-        });
+        res = await request({ url: `${cfg.url}/op`, method: 'POST', token: cfg.token, body: { op, args: args || {} }, timeoutMs: ms });
     } catch (err) {
-        if (err.name === 'AbortError') return refusal('timeout', `the sidecar did not answer '${op}' within ${ms}ms`);
+        if (err.timedOut) return refusal('timeout', `the sidecar did not answer '${op}' within ${ms}ms`);
         return refusal('unreachable', `the instrument sidecar is not answering at ${cfg.url}: ${err.message}`, {
             fix: 'start it: INSTRUMENT_SIDECAR_TOKEN=<token> backend/.venv/bin/python backend/instrument-sidecar.py',
         });
-    } finally {
-        if (timer) clearTimeout(timer);
     }
 
-    const type = String(res.headers.get('content-type') || '');
+    const type = String(res.headers['content-type'] || '');
     if (type.startsWith('audio/')) {
         let meta = {};
-        try { meta = JSON.parse(res.headers.get('x-render') || '{}'); } catch (_) { meta = {}; }
-        return { ok: true, audio: Buffer.from(await res.arrayBuffer()), meta };
+        try { meta = JSON.parse(res.headers['x-render'] || '{}'); } catch (_) { meta = {}; }
+        return { ok: true, audio: res.body, meta };
     }
     let body = {};
-    try { body = await res.json(); } catch (_) { body = {}; }
-    if (!res.ok) return refusal(res.status === 401 ? 'token' : 'sidecar', body.error || `the sidecar answered ${res.status}`, { status: res.status, detail: body });
+    try { body = JSON.parse(res.body.toString('utf8') || '{}'); } catch (_) { body = {}; }
+    if (res.status >= 400) return refusal(res.status === 401 ? 'token' : 'sidecar', body.error || `the sidecar answered ${res.status}`, { status: res.status, detail: body });
     return { ok: true, ...body };
 }
 
@@ -118,20 +143,18 @@ async function health(opts = {}) {
     if (!cfg.configured) {
         return { ok: false, configured: false, reasons: [cfg.reason], fixes: ['see docs/instrument-sidecar.md'] };
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeoutMs || 10000);
     try {
-        const res = await fetch(`${cfg.url}/health`, {
-            headers: { Authorization: `Bearer ${cfg.token}` }, signal: controller.signal,
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
+        const res = await request({ url: `${cfg.url}/health`, token: cfg.token, timeoutMs: opts.timeoutMs || 10000 });
+        let body = {};
+        try { body = JSON.parse(res.body.toString('utf8') || '{}'); } catch (_) { body = {}; }
+        if (res.status >= 400) {
             return { ok: false, configured: true, reachable: true, reasons: [body.error || `the sidecar answered ${res.status}`], fixes: [] };
         }
         return {
             ok: !!body.ok, configured: true, reachable: true,
             host: body.host || null, instruments_found: body.instruments_found || 0,
             kontakt: body.kontakt || null, loaded_plugins: body.loaded_plugins || [],
+            busy: body.busy || null, queued: body.queued || 0,
             reasons: body.ok ? [] : [...(body.reasons || []), body.host && body.host.reason].filter(Boolean),
             fixes: body.ok ? [] : ['install the host library in the sidecar’s venv, or install a plugin'],
         };
@@ -168,10 +191,32 @@ async function capture({ plugin, state, supervised }, opts = {}) {
     if (!supervised) {
         return refusal('supervised', 'capture opens a plugin window for a person to use; say so with supervised: true');
     }
-    return callSidecar('capture', {
+    const startedAt = Date.now() / 1000;
+    const answer = await callSidecar('capture', {
         plugin, supervised: true,
         ...(state ? { state_b64: Buffer.isBuffer(state) ? state.toString('base64') : String(state) } : {}),
     }, opts);
+    if (answer.ok) return answer;
+
+    /*
+     * A CAPTURE THE CONNECTION LOST IS NOT LOST.
+     *
+     * Somebody stood at a plugin window and chose a sound; if the answer came
+     * back to a dropped socket, the work is still on the sidecar. This is the
+     * same rule the provider handles follow — the expensive part already
+     * happened, so reach for the result rather than asking for it again.
+     */
+    if (!['unreachable', 'timeout'].includes(answer.stage)) return answer;
+    const cfg = opts.config || hostConfig();
+    if (!cfg.configured) return answer;
+    try {
+        const res = await request({ url: `${cfg.url}/last-capture`, token: cfg.token, timeoutMs: 10000 });
+        const body = JSON.parse(res.body.toString('utf8') || '{}');
+        if (res.status < 400 && body.state_b64 && Number(body.at) >= startedAt) {
+            return { ok: true, ...body, recovered: 'the connection dropped; this is the patch you chose, kept by the sidecar' };
+        }
+    } catch (_) { /* the sidecar is genuinely gone; the original refusal stands */ }
+    return answer;
 }
 
 /**

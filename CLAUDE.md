@@ -25,7 +25,8 @@ film-engine/
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
 │   ├── ableton-sidecar.js  # The Ableton sidecar: loopback-only, token-gated, an allowlist of typed AbletonOSC operations (run by hand)
-│   ├── instrument-sidecar.py # The instrument sidecar: holds VST3/AU plugins, renders a part’s notes through them (run by hand)
+│   ├── instrument-sidecar.py # The instrument sidecar: supervises plugin workers, loopback and token-gated (run by hand)
+│   ├── instrument-worker.py # One plugin job in its own process: a real main thread for the editor, and a crash costs one job
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
@@ -3952,6 +3953,19 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 **Deliberately not a `MEDIA_IMPORTS` target, and not in `MEDIA_KINDS`.** The ticket asked for a `midi` entry in `MEDIA_KINDS`; eleven modules read that registry as a *capability’s* storage and MIDI has no provider, and `MEDIA_IMPORTS` is "a file stored where a generated one goes", pinned at eighteen targets by five epic documents. A performed `.mid` is neither: it replaces one part of a note list. So it has its own route on the cue, with its own sniffing, and a UI control on every sound cue card. Stored as `film_assets` `other` + `metadata.kind = 'midi'` (the 3D precedent: the CHECK cannot be widened in place), one note file per cue updated in place so its asset id is stable, served as `audio/midi`.
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
+
+### A Plugin Is Somebody Else's Code, and It Falls Over
+Three things were learned by running Kontakt rather than reading about it, and each changed the design.
+
+**A plugin window opens only on the main thread.** `open_editor()` from an HTTP worker thread raises *"Plugin UI windows can only be shown from the main thread"*. The first design answered requests on worker threads, so capture could not work at all.
+
+**A plugin can take its host down.** Kontakt logged `PresetSlotManager::selectSlot: slot not found` while being re-stated and killed the sidecar mid-render. A segfault cannot be caught in Python, so the containment is a process boundary: `backend/instrument-worker.py` does ONE job and exits. It gets a real main thread for the editor, it loads the plugin fresh so it inherits nothing from the job before, and when it dies it costs one job rather than the host. The sidecar supervises and reports what is running, because a queue nobody can see reads as a sidecar that has died.
+
+**An exit code is not a verdict.** Kontakt rendered six seconds of audio, wrote the file, and THEN segfaulted while being unloaded — so a non-zero exit was reported about work that had finished, and a good render was discarded. Two rules followed: the worker writes its answer to a FILE (Kontakt prints its own log lines into stdout, which corrupts JSON on that channel) and leaves through `os._exit`, skipping the destructors that crash; and the sidecar decides on the answer, noting `plugin_crashed_on_exit` rather than losing the take.
+
+**And the client cannot use `fetch`.** Node's fetch gives up after five minutes waiting for response headers. A capture waits on a person standing at a plugin window; the first real capture took longer than that, and the patch came back to a closed socket and was lost. The client speaks plain `node:http` with only the ceiling each operation declares, and the sidecar now keeps the last capture at `GET /last-capture` so a dropped connection costs nothing — the rule the provider handles already follow.
+
+**Measured end to end on the director's Mac**, 2026-09-14: a captured Kontakt patch is **547KB** of state; four notes written by Claude rendered through it in **5.4s** to a 6.000s file peaking at **-12.8 dB**. No DAW open, nothing billed.
 
 ### One Sound Out of a Library, Playing a Part
 The sidecar holds the plugins; this is what makes 248 libraries usable. An **instrument** here is not a library — it is one SOUND: a plugin path plus the state blob that recalls that patch, because a plugin exposes its state and not its browser. Migration 110 keeps them in `film_instruments`, **not project-scoped** on the style-book precedent: a library outlives a film, and re-capturing a patch per project is exactly the time this exists to save. `film_music_tracks.instrument_id` is `ON DELETE SET NULL` — an instrument removed from the library must not take the arrangement with it.

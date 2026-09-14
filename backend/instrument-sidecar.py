@@ -1,10 +1,11 @@
 """THE INSTRUMENT SIDECAR: a separate, localhost-only process that holds plugins.
 
 The director owns 248 sample libraries and wants to score inside Film Engine
-rather than in a DAW. Node cannot host a VST3/AU plugin, so this process does —
-and it is the Ableton sidecar's shape (backend/ableton-sidecar.js), for the same
-reasons: the Film Engine server never spawns it, it listens on 127.0.0.1 only,
-it answers only a caller carrying its token, and it does only what OPS lists.
+rather than in a DAW. Node cannot host a VST3/AU plugin, so this supervises
+processes that can (see instrument-worker.py) — and it is the Ableton sidecar's
+shape (backend/ableton-sidecar.js), for the same reasons: the Film Engine server
+never spawns it, it listens on 127.0.0.1 only, it answers only a caller carrying
+its token, and it does only what OPS lists.
 
 Run it yourself, beside Film Engine:
 
@@ -21,17 +22,15 @@ the host library is missing, 500 the plugin failed, 504 too slow.
 
 Python, because the plugin host (DawDreamer, JUCE underneath) is a Python
 library. Measured on this machine before it was chosen: Kontakt 8 VST3 loads
-headless in 0.9s with 4145 parameters, its state saves to ~5KB and loads back,
-and three seconds of audio render in 0.1s.
+headless in 0.9s with 4145 parameters, its state saves and loads back (547KB
+with a library patch in it), and a six-second part rendered in 4.4s.
 """
 
 import base64
-import hashlib
 import hmac
-import io
 import json
 import os
-import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -44,6 +43,9 @@ DEFAULT_PORT = 3191
 BODY_LIMIT = 64 * 1024 * 1024          # a MIDI file and a plugin state, not audio
 SAMPLE_RATE = 48000
 BLOCK = 512
+# A render is minutes at worst (a big library loads slowly); a capture has none,
+# because a person is deciding.
+RENDER_TIMEOUT = 900
 
 # Where macOS keeps plugins. A plugin path outside these is refused: the sidecar
 # loads code into itself, so "any path the caller likes" would be arbitrary code
@@ -96,8 +98,85 @@ class HostMissing(Exception):
 
 
 _engine_lock = threading.Lock()
-_loaded = {}                # plugin path -> processor, kept because loading a big library is slow
 _last_error = {'at': None, 'what': None}
+_last_capture = {}          # the patch somebody last chose, in case the caller lost the answer
+
+# ── this process supervises; the plugins live in children ────────────────
+#
+# Two facts forced it, both met on this machine rather than read about:
+#
+#   * macOS shows a plugin window only from a process's MAIN thread, and an HTTP
+#     server answers on worker threads ("Plugin UI windows can only be shown
+#     from the main thread").
+#   * A plugin can take its host down. Kontakt logged `PresetSlotManager::
+#     selectSlot: slot not found` while being re-stated and killed this process
+#     mid-render; a segfault cannot be caught in Python.
+#
+# So a job runs in its own short-lived worker: it gets a real main thread for the
+# editor, it loads the plugin fresh so it inherits nothing, and when it dies it
+# costs one job rather than the sidecar. One at a time — audio is not reentrant —
+# and /health says what is running, because a queue nobody can see reads as a
+# sidecar that has died.
+
+_busy = {'op': None, 'since': None}
+WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instrument-worker.py')
+
+
+def run_worker(op, args, timeout=None):
+    """
+    One plugin job, in its own process.
+
+    A plugin is somebody else's code: Kontakt logged `PresetSlotManager::
+    selectSlot: slot not found` while re-stating a live instance and took this
+    process down with it, mid-render. A segfault cannot be caught in Python, so
+    the containment is the process boundary — a crash costs one job and the
+    sidecar keeps answering. It also gives the editor a real main thread, which
+    is the only place macOS will show a plugin window.
+    """
+    if not os.path.exists(WORKER):
+        raise Refusal(500, f'the worker is missing at {WORKER}')
+    answer_path = tempfile.NamedTemporaryFile(suffix='.json', delete=False).name
+    with _engine_lock:                                   # one plugin at a time; audio is not reentrant
+        _busy.update(op=op, since=time.time())
+        try:
+            proc = subprocess.run(
+                [sys.executable, WORKER],
+                input=json.dumps({'op': op, 'args': args, 'answer_path': answer_path}),
+                capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Refusal(504, f'the plugin did not finish {op} within {timeout}s')
+        finally:
+            _busy.update(op=None, since=None)
+
+    # THE ANSWER, NOT THE EXIT CODE. A plugin can fall over while it is being
+    # unloaded — measured here, after a render that had already produced its
+    # audio — so work that finished is work that counts. What decides is whether
+    # the worker wrote its answer; stdout cannot be trusted, because Kontakt
+    # prints its own log lines there.
+    answer = None
+    try:
+        with open(answer_path) as fh:
+            answer = json.loads(fh.read() or 'null')
+    except Exception:
+        answer = None
+    finally:
+        try:
+            os.unlink(answer_path)
+        except OSError:
+            pass
+    if answer and proc.returncode != 0:
+        answer['plugin_crashed_on_exit'] = True
+
+    if not answer:
+        tail = (proc.stderr or '').strip().split('\n')[-3:]
+        _last_error.update(at=time.time(), what=f'{op}: worker exited {proc.returncode} with no answer')
+        raise Refusal(502, f'the plugin crashed during {op} (exit {proc.returncode}). '
+                           f'{" ".join(tail)[:300]}')
+    if not answer.get('ok'):
+        _last_error.update(at=time.time(), what=f"{op}: {answer.get('reason')}")
+        raise Refusal(422 if answer.get('stage') in ('notes', 'render') else 502,
+                      f"{answer.get('stage', 'plugin')}: {answer.get('reason', 'the plugin refused')}")
+    return answer
 
 
 def _host():
@@ -137,67 +216,6 @@ def list_instruments():
     return out
 
 
-def _processor(dd, engine, plugin):
-    """One loaded plugin per path, reused: loading a large library takes seconds."""
-    key = os.path.realpath(plugin)
-    got = _loaded.get(key)
-    if got is None:
-        got = engine.make_plugin_processor('instrument', plugin)
-        try:
-            # Kontakt reports 64 outputs; the main pair is what a part is.
-            got.disable_nonmain_buses()
-        except Exception:
-            pass
-        _loaded[key] = got
-    return got
-
-
-def _write_state(processor, state_b64):
-    if not state_b64:
-        return
-    blob = base64.b64decode(state_b64)
-    with tempfile.NamedTemporaryFile(suffix='.state', delete=False) as fh:
-        fh.write(blob)
-        path = fh.name
-    try:
-        processor.load_state(path)
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-
-
-def _read_state(processor):
-    with tempfile.NamedTemporaryFile(suffix='.state', delete=False) as fh:
-        path = fh.name
-    try:
-        processor.save_state(path)
-        with open(path, 'rb') as fh:
-            return base64.b64encode(fh.read()).decode('ascii')
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-
-
-def float_wav(samples, sample_rate):
-    """A 32-bit float WAV. The caller trims it to length and converts it."""
-    channels = samples.shape[0]
-    frames = samples.shape[1]
-    data = samples.T.astype('<f4').tobytes()
-    header = io.BytesIO()
-    header.write(b'RIFF')
-    header.write(struct.pack('<I', 36 + len(data)))
-    header.write(b'WAVEfmt ')
-    header.write(struct.pack('<IHHIIHH', 16, 3, channels, sample_rate,
-                             sample_rate * channels * 4, channels * 4, 32))
-    header.write(b'data')
-    header.write(struct.pack('<I', len(data)))
-    return header.getvalue() + data
-
-
 def op_instruments(_args):
     return {'instruments': list_instruments(), 'folders': list(PLUGIN_DIRS)}
 
@@ -206,22 +224,20 @@ def op_capture(args):
     """Blocking and supervised: it opens a window a person interacts with."""
     if not args.get('supervised'):
         raise Refusal(403, 'capture opens a plugin window for a person to use; pass supervised: true when a person asked for it')
-    dd = _host()
-    plugin = args['plugin']
-    with _engine_lock:
-        engine = dd.RenderEngine(SAMPLE_RATE, BLOCK)
-        processor = engine.make_plugin_processor('capture', plugin)
-        _write_state(processor, args.get('state_b64'))
-        processor.open_editor()                              # returns when the person closes it
-        state = _read_state(processor)
-    return {'state_b64': state, 'bytes': len(base64.b64decode(state)),
-            'note': 'this state recalls exactly what was loaded when the window was closed'}
+    # No ceiling: a person is deciding. The caller has its own patience.
+    got = run_worker('capture', {'plugin': args['plugin'], 'state_b64': args.get('state_b64')}, timeout=None)
+    state = got['state_b64']
+    answer = {'state_b64': state, 'bytes': len(base64.b64decode(state)), 'plugin': plugin, 'at': time.time(),
+              'note': 'this state recalls exactly what was loaded when the window was closed'}
+    # KEPT, because a person stood at that window: if the answer goes back to a
+    # dropped connection the patch is still here, at GET /last-capture. A capture
+    # can outlast any HTTP client's patience, and losing it means doing it again.
+    _last_capture.clear()
+    _last_capture.update(answer)
+    return answer
 
 
 def op_render(args):
-    dd = _host()
-    import numpy as np
-    plugin = args['plugin']
     length_ms = int(args['length_ms'])
     sample_rate = int(args.get('sample_rate') or SAMPLE_RATE)
     midi = base64.b64decode(args['midi_b64'])
@@ -231,33 +247,26 @@ def op_render(args):
     with tempfile.NamedTemporaryFile(suffix='.mid', delete=False) as fh:
         fh.write(midi)
         midi_path = fh.name
+    out_path = tempfile.NamedTemporaryFile(suffix='.wav', delete=False).name
+    started = time.time()
     try:
-        with _engine_lock:
-            engine = dd.RenderEngine(sample_rate, BLOCK)
-            processor = _processor(dd, engine, plugin)
-            _write_state(processor, args.get('state_b64'))
-            processor.clear_midi()
-            processor.load_midi(midi_path, beats=False)
-            engine.load_graph([(processor, [])])
-            started = time.time()
-            # A tail past the notes: a release should not be cut by the render.
-            engine.render(length_ms / 1000.0 + 2.0)
-            audio = engine.get_audio()
-            took = time.time() - started
-        if audio.shape[0] > 2:
-            audio = audio[:2]
-        elif audio.shape[0] == 1:
-            audio = np.vstack([audio, audio])
-        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        got = run_worker('render', {
+            'plugin': args['plugin'], 'state_b64': args.get('state_b64'),
+            'midi_path': midi_path, 'out_path': out_path,
+            'length_ms': length_ms, 'sample_rate': sample_rate,
+        }, timeout=RENDER_TIMEOUT)
+        with open(out_path, 'rb') as fh:
+            wav = fh.read()
         return {
-            '__wav__': float_wav(audio, sample_rate),
-            'peak': peak, 'seconds': audio.shape[1] / sample_rate, 'render_seconds': round(took, 3),
+            '__wav__': wav, 'peak': got.get('peak'), 'seconds': got.get('seconds'),
+            'render_seconds': round(time.time() - started, 3),
         }
     finally:
-        try:
-            os.unlink(midi_path)
-        except OSError:
-            pass
+        for path in (midi_path, out_path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 HANDLERS = {'instruments': op_instruments, 'capture': op_capture, 'render': op_render}
@@ -286,7 +295,12 @@ def config(env):
 
 def health():
     out = {'ok': True, 'python': sys.version.split()[0], 'sample_rate': SAMPLE_RATE,
-           'folders': list(PLUGIN_DIRS), 'loaded_plugins': sorted(_loaded), 'last_error': _last_error}
+           'folders': list(PLUGIN_DIRS), 'last_error': _last_error,
+           # What the main thread is doing, because while a capture has a window
+           # open everything else waits behind it — and a queue nobody can see
+           # reads as the sidecar having died.
+           'busy': ({'op': _busy['op'], 'seconds': round(time.time() - _busy['since'], 1)}
+                    if _busy['op'] else None)}
     try:
         dd = _host()
         out['host'] = {'library': 'dawdreamer', 'version': getattr(dd, '__version__', 'unknown')}
@@ -331,7 +345,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {'error': 'this sidecar answers only a caller carrying its token'})
         if self.path == '/health':
             return self._send(200, health())
-        return self._send(404, {'error': 'not found', 'paths': ['/health', '/ops', '/op']})
+        if self.path == '/last-capture':
+            if not _last_capture:
+                return self._send(404, {'error': 'nothing has been captured since this sidecar started'})
+            return self._send(200, dict(_last_capture))
+        return self._send(404, {'error': 'not found', 'paths': ['/health', '/ops', '/op', '/last-capture']})
 
     def do_POST(self):
         if not self._authorised():
