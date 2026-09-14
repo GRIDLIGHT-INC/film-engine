@@ -277,6 +277,12 @@ async function executeStep(stepId, shot, scene, project) {
         for (const payload of requests) {
             const result = await generator.generate(capability, payload);
             results.push(result);
+            // An adapter that is handed a request it has nothing to work from (a
+            // renderer with no notes) says PRECONDITION, exactly as a builder does:
+            // work that is not ready, not a fault to retry.
+            if (result && result.code === 'PRECONDITION') {
+                return { ok: true, skipped: true, message: result.error, results };
+            }
             if (!result || !result.ok) {
                 return { ok: false, error: (result && result.error) || `${capability} generation failed`, results };
             }

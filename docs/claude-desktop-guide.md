@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**341 tools, 70 families.** Everything the app can do, you can ask for in a
+**343 tools, 70 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -585,7 +585,8 @@ asset on the scene and cost money to make.
 
 ### Writing the notes, and playing a part yourself
 
-`music_midi_get` · `music_midi_write` · `music_midi_import_part` · `music_midi_delete`
+`music_midi_get` · `music_midi_write` · `music_midi_import_part` · `music_midi_delete` ·
+`music_midi_render_plan` · `music_midi_render`
 
 A cue can carry NOTES as well as audio: a Standard MIDI File with one track per
 part, which Ableton opens as separate instruments. You compose them; nothing
@@ -604,6 +605,13 @@ the cue is refused, naming the part and the note.
 keeps the original file. Your next `music_midi_write` keeps a played part as it
 is unless you name it in replace_performed — so when a tune has been played,
 write the harmony around it rather than over it.
+
+**Hearing it.** `music_midi_render` plays the notes through a SoundFont installed on
+this machine (FluidSynth) into a WAV exactly the cue’s length and makes it the
+cue’s audio. It is free and nothing is billed. `music_midi_render_plan` says
+first which library and licence it would use and what is missing. A silent
+render is refused rather than kept, and the library’s licence is recorded on
+the file.
 
 ### Scoring the picture
 

@@ -37454,9 +37454,26 @@ ${fountainText.slice(0, 50000)}`;
                 <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;">Add a played part
                     <input type="file" accept="audio/midi,audio/x-midi,.mid,.midi" style="display:none"
                            onchange="uploadCueMidiPart(event, '${esc(cueId)}', '')"></label>
-                ${n ? `<a class="btn btn-secondary btn-sm" href="${esc(API_BASE + n.url)}" download>Download .mid</a>` : ''}
+                ${n ? `<a class="btn btn-secondary btn-sm" href="${esc(API_BASE + n.url)}" download>Download .mid</a>
+                       <button class="btn btn-secondary btn-sm" title="Play these notes through the SoundFont installed on this machine. Free." onclick="renderCueInstruments('${esc(cueId)}', this)">Render with instruments</button>` : ''}
                 <button class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="closeModal('cueMidiModal')">Close</button>
             </div>`);
+    }
+
+    /** Play a cue's notes through local instruments (FluidSynth). Free, and it becomes the cue's audio. */
+    async function renderCueInstruments(cueId, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = 'Rendering\u2026'; }
+        setStatus('Rendering the notes through the instruments on this machine\u2026', true);
+        try {
+            const r = await api('/music-cues/' + cueId + '/midi/render', { method: 'POST', body: '{}' });
+            setStatus(r.note || 'Rendered', true);
+            closeModal('cueMidiModal');
+            loadMusic();
+        } catch (err) {
+            setStatus('Could not render: ' + err.message, true);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Render with instruments'; }
+        }
     }
 
     /** Send a played .mid onto one part of a cue. The server rebuilds the file and keeps the original. */

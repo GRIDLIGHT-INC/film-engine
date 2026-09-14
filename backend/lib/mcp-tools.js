@@ -2567,6 +2567,25 @@ const PRODUCTION_TOOLS = [
         schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
     },
     {
+        name: 'music_midi_render_plan',
+        handler: handleMusicMidi, method: 'GET',
+        description: 'FREE. What playing a cue\u2019s notes through instruments on this machine would do: the parts, the '
+            + 'SoundFont library and its licence, the length, and anything missing (FluidSynth, a SoundFont, the encoder) '
+            + 'with how to fix it. Read before music_midi_render.',
+        path: a => `/film/music-cues/${a.cue_id}/midi/render/plan`,
+        schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
+    },
+    {
+        name: 'music_midi_render',
+        handler: handleMusicMidi, method: 'POST',
+        description: 'FREE \u2014 runs on this machine; no provider is billed. Play a cue\u2019s written notes through a '
+            + 'SoundFont (FluidSynth) into a 48kHz WAV exactly the cue\u2019s length and make it the cue\u2019s audio. The '
+            + 'render is read back and refused if it is silent, and the sample library\u2019s licence is recorded on it. '
+            + 'Needs notes (music_midi_write, or a played part) and a SoundFont installed; music_midi_render_plan says what is missing.',
+        path: a => `/film/music-cues/${a.cue_id}/midi/render`,
+        schema: { cue_id: { type: 'string' } }, required: ['cue_id'],
+    },
+    {
         name: 'music_brief',
         handler: handleMusicGen, method: 'GET',
         description: 'Everything the engine knows about a scene, for deciding what it should SOUND like: the heading, what happens, who is in it, how many lines of dialogue, how many shots, the film\u2019s genre and the musical clauses of its look — plus the real length of the cut and where that number came from. It returns NO conclusion: what a scene should sound like is a judgement, and you are the model here. Decide the mood, genre, instruments and a reference track, then store them with music_cue_create; a cue somebody wrote always beats the derivation. Watch the dialogue count — a wall-to-wall dialogue scene wants sparse underscore that never becomes melodic, because a melody there fights the words. SPENDS NOTHING.',

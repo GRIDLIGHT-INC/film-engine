@@ -507,6 +507,18 @@ const RATE_BOOK = {
         note: '$0.15 per minute on the API — about 900 credits per minute, i.e. 15 credits per second.',
     },
 
+    // ── FluidSynth ────────────────────────────────────────────────────────
+    // Instruments on this machine: a cue's notes rendered through a SoundFont.
+    // Zero DELIBERATELY, flagged self_hosted, so a free render reads as local
+    // rather than as a pair somebody forgot to price.
+    'fluidsynth:music': {
+        unit: 'second', native_unit: 'second', native_per_unit: 1, usd_per_native: 0,
+        self_hosted: true,
+        source: 'https://www.fluidsynth.org/',
+        checked: '2026-09-13',
+        note: 'Runs locally (LGPL). No per-render charge; the sample library carries its own licence, recorded on each render.',
+    },
+
     // ── Gridlight ─────────────────────────────────────────────────────────
     // A local/self-hosted gateway. It bills nothing per call; the cost is the
     // machine it runs on. Priced at zero DELIBERATELY and said out loud, so a

@@ -77,12 +77,38 @@ const STEP_EXTERNAL_DEPENDENCY = {
  * no other way to exercise the blocked path.
  */
 const DEPENDENCY_CHECKS = {
+    /*
+     * Not a STEP dependency: the music step needs it only on a project whose
+     * music resolves to the local renderer (GRD-3995), so it is consulted from
+     * checkCapability through ADAPTER_DEPENDENCY rather than declared on the
+     * step, where it would block every project's music stage.
+     */
+    fluidsynth: {
+        what: 'a MIDI renderer, a SoundFont whose licence is known, and an encoder, to play a cue\u2019s notes through instruments',
+        resolve: () => require('./instrument-render').availability(),
+        check: resolve => checkInstrumentDependency(resolve),
+    },
     ffmpeg: {
         what: 'an encoder to join the shot masters into one film',
         resolve: () => require('./ffmpeg').resolveFfmpeg(),
         check: resolve => checkConformDependency(resolve),
     },
 };
+
+/** Which provider runs on something this machine must have installed. */
+const ADAPTER_DEPENDENCY = { fluidsynth: 'fluidsynth' };
+
+/** The local renderer's verdict, in the shape checkConformDependency returns. */
+function checkInstrumentDependency(resolve = () => require('./instrument-render').availability()) {
+    let av;
+    try { av = resolve(); } catch (err) {
+        return { verdict: 'blocked', reasons: [`instrument probe failed: ${err.message}`], fixes: ['reinstall FluidSynth and check FILM_SOUNDFONT'] };
+    }
+    if (!av || !av.ok) {
+        return { verdict: 'blocked', reasons: (av && av.reasons) || ['the instrument renderer is not available'], fixes: (av && av.fixes) || [] };
+    }
+    return { verdict: 'go', reasons: [`FluidSynth is available with ${av.soundfont.library} (${av.soundfont.license}).`], fixes: [] };
+}
 
 /** The verdict for one declared dependency. Never throws. */
 function checkDependency(dependency, resolvers) {
@@ -253,6 +279,21 @@ async function checkCapability(capability, projectConfig, cache) {
         return out;
     }
 
+    /*
+     * A local renderer has no credential to be missing. What it can lack is the
+     * software it runs on, and saying "has no credential" sends someone looking
+     * for a key that does not exist.
+     */
+    if (ADAPTER_DEPENDENCY[effective]) {
+        const dep = checkDependency(ADAPTER_DEPENDENCY[effective], cache && cache.resolvers);
+        if (dep.verdict !== 'go') {
+            out.verdict = 'blocked';
+            out.reasons.push(...dep.reasons);
+            out.fixes.push(...dep.fixes);
+        }
+        return out;
+    }
+
     if (!isProviderConfigured(effective)) {
         out.verdict = 'blocked';
         // A keyless local service is not missing a credential — it is switched
@@ -357,7 +398,7 @@ async function preflight(opts) {
 }
 
 module.exports = {
-    preflight, stages, checkCapability, checkConformDependency, checkDependency, checkStageDependency, reachable,
+    preflight, stages, checkCapability, checkConformDependency, checkInstrumentDependency, ADAPTER_DEPENDENCY, checkDependency, checkStageDependency, reachable,
     HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, STEP_EXTERNAL_DEPENDENCY, DEPENDENCY_CHECKS,
     GRIDLIGHT_URL,
 };

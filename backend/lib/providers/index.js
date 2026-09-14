@@ -435,7 +435,14 @@ function isProviderConfigured(id) {
         // "Nothing to configure" and "switched off" are different answers, and
         // reading the first as ready is what made every readiness check report
         // a gateway that may not be running as available.
-        return id === DEFAULT_PROVIDER ? localGatewayEnabled() : true;
+        if (id === DEFAULT_PROVIDER) return localGatewayEnabled();
+        // A local renderer with nothing to paste is ready only when what it runs on is
+        // present: read as ready without asking, a readiness report says go for a
+        // render that will produce silence.
+        if (typeof adapter.available === 'function') {
+            try { return !!adapter.available().ok; } catch (_) { return false; }
+        }
+        return true;
     }
 
     try {

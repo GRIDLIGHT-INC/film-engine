@@ -310,6 +310,94 @@ function deleteMidi(res, ctx) {
     });
 }
 
+/**
+ * What rendering the notes through instruments would do, spending nothing: the
+ * parts, the library and its licence, the length, and anything missing.
+ */
+function renderPlan(res, ctx) {
+    const asset = currentAsset(ctx.cue.id);
+    const av = require('../lib/instrument-render').availability();
+    const blockers = [...av.reasons];
+    if (!asset) blockers.push('this cue has no notes yet — write them with music_midi_write, or import a played part');
+    if (!ctx.length.ms) blockers.push('this cue has no length to render to');
+    return json(res, 200, {
+        cue: { id: ctx.cue.id, title: ctx.cue.title, scene_id: ctx.cue.scene_id },
+        can_render: blockers.length === 0, blockers, fixes: av.fixes,
+        notes: describe(asset, ctx),
+        length: { ms: ctx.length.ms, source: ctx.length.source },
+        renderer: av.renderer.available ? { id: 'fluidsynth', source: av.renderer.source } : { reason: av.renderer.reason },
+        soundfont: av.soundfont.available
+            ? { library: av.soundfont.library, license: av.soundfont.license, source: av.soundfont.source }
+            : { reason: av.soundfont.reason },
+        output: { asset_type: 'audio_music', format: 'WAV, 48kHz, 24-bit, stereo', lands_on: 'this cue, as its audio' },
+        spends: 'nothing — the render runs on this machine',
+    });
+}
+
+/**
+ * Play the cue's notes through a SoundFont and make that the cue's audio.
+ *
+ * Resolved through the registry with music pinned to the local renderer for
+ * THIS call only, so it is metered and attributed like any generation and the
+ * project's stored choice is untouched.
+ */
+async function renderCueNotes(res, ctx) {
+    const asset = currentAsset(ctx.cue.id);
+    if (!asset) {
+        return json(res, 412, {
+            code: 'PRECONDITION', error: 'this cue has no notes to render',
+            fix: 'write them with music_midi_write, or import a played part',
+        });
+    }
+    if (!ctx.length.ms) return refuseNoLength(res, ctx);
+
+    const providers = require('../lib/providers');
+    const config = Object.assign(require('../lib/provider-config').providerConfigFor(ctx.projectId) || {}, { music: 'fluidsynth' });
+    const renderer = providers.resolve('music', config);
+    if (!renderer || renderer.id !== 'fluidsynth') {
+        return json(res, 503, { error: 'the local instrument renderer is not registered' });
+    }
+    const result = await renderer.generate('music', {
+        midi_path: asset.file_path, length_ms: ctx.length.ms, duration_ms: ctx.length.ms,
+        frame_ms: ctx.frame_ms, cue_id: ctx.cue.id,
+    });
+    if (!result || !result.ok) {
+        return json(res, (result && result.status) || 500, {
+            error: (result && result.error) || 'the render failed', code: result && result.code, stage: result && result.stage,
+        });
+    }
+
+    const fileName = `cue_${ctx.cue.id.slice(0, 8)}_instruments.wav`;
+    const filePath = saveFile(ctx.projectId, 'music', fileName, result.data);
+    const prior = db.prepare(
+        `SELECT id FROM film_assets WHERE asset_type = 'audio_music' AND json_valid(metadata)
+            AND json_extract(metadata, '$.kind') = 'instrument_render' AND json_extract(metadata, '$.cue_id') = ?`).all(ctx.cue.id);
+    for (const row of prior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
+
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, scene_id, asset_type, file_path, file_name, format, mime_type,
+         size_bytes, duration_ms, version, provider, license_source, license_status, metadata)
+        VALUES (?, ?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, ?, ?, 'fluidsynth', '', 'unknown', ?)`)
+        .run(assetId, ctx.projectId, ctx.cue.scene_id || null, filePath, fileName, result.data.length,
+            result.duration_ms, prior.length + 1, JSON.stringify({
+                kind: 'instrument_render', cue_id: ctx.cue.id,
+                midi_asset_id: asset.id, midi_version: asset.version,
+                renderer: 'fluidsynth', library: result.library, library_id: result.library_id,
+                // What the cue is MADE of: the samples' licence, recorded with the render.
+                library_license: result.license, levels: result.levels,
+            }));
+    const linked = require('./music-gen')._internal.linkCueAsset(ctx.cue.id, assetId);
+
+    return json(res, 201, {
+        asset_id: assetId, url: getFileUrl('music', ctx.projectId, fileName, assetId),
+        duration_ms: result.duration_ms, levels: result.levels,
+        library: result.library, license: result.license, cue_linked: linked,
+        note: `Rendered through ${result.library} (${result.license}). It is now this cue’s audio; `
+            + 'change a part and render again to replace it.',
+    });
+}
+
 function handleMusicMidi(req, res, parts) {
     const cueId = parts[2];
     if (!UUID_RE.test(String(cueId || ''))) return json(res, 400, { error: 'Invalid cue ID' });
@@ -322,6 +410,8 @@ function handleMusicMidi(req, res, parts) {
         if (req.method === 'PUT') return writeMidi(req, res, ctx);
         if (req.method === 'DELETE') return deleteMidi(res, ctx);
     }
+    if (parts[4] === 'render' && !parts[5] && req.method === 'POST') return renderCueNotes(res, ctx);
+    if (parts[4] === 'render' && parts[5] === 'plan' && req.method === 'GET') return renderPlan(res, ctx);
     if (parts[4] === 'parts' && parts[5] && parts[6] === 'import' && req.method === 'POST') {
         let name;
         try { name = decodeURIComponent(parts[5]).trim(); } catch (_) { name = ''; }

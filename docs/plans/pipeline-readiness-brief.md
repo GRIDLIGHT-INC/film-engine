@@ -79,6 +79,7 @@ Current resolution with the credentials on this machine:
 | `image` | `muapi` → `google` → `meshy` → `bfl` → `openai` | preference is an ordered walk; `muapi` leads when keyed — one MuAPI account key reaches the Nano Banana models (and the Seedance video ones), so a single credential covers what would otherwise be two. `google` reaches the same Gemini image models directly; `bfl` (FLUX.2) and `openai` follow |
 | `video` | `seedance` → `runway` | `seedance` (Seedance 2.5, via MuAPI) leads when keyed — its omni-reference workflow takes 30 reference images where Runway's gen4.5 takes two |
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
+| `music` (a cue’s written notes, played) | `fluidsynth` | local: FluidSynth and a SoundFont on this machine; composes nothing, never a default |
 | `model3d` | `meshy` | keyed |
 | `lipsync` | `gridlight` | no hosted adapter; handed to the NLE |
 | `post` | `seedance` | hosted video-edit finishing pass |

@@ -127,6 +127,10 @@ and `pull_plan`.
 |---|---|---|---|
 | `ABLETON_SIDECAR_TOKEN` | the sidecar and this server | none | Required by both processes, and the same value in each. The sidecar refuses to start with a token shorter than 24 characters. The server treats the Ableton adapter as not configured until the token is set. The health report never shows it. |
 | `ABLETON_SIDECAR_URL` | this server | `http://127.0.0.1:3190` | Where the sidecar listens. It must be a loopback address. |
+| `FLUIDSYNTH_PATH` | this server | the system PATH | The FluidSynth executable that plays a cue’s notes through instruments. Probed at runtime, never bundled. |
+| `FILM_SOUNDFONT` | this server | searched for | The `.sf2` sample library a render uses. Without it the usual SoundFont folders are searched, preferring a library whose licence is known. |
+| `FILM_SOUNDFONT_LICENSE` | this server | the library’s own | `cc0`, `mit`, `ni_eula` or `third_party`, for a library this engine cannot name. A render whose instruments’ licence is unknown is refused. |
+| `FILM_SOUNDFONT_DIR` | this server | none | An extra folder searched for SoundFonts. |
 | `ABLETON_SIDECAR_PORT` | the sidecar | `3190` | The port the sidecar listens on, on 127.0.0.1 only. |
 | `ABLETON_OSC_HOST` | the sidecar | `127.0.0.1` | The host where Live runs. It must be a loopback address; the sidecar refuses to start with any other host. |
 | `ABLETON_OSC_SEND_PORT` | the sidecar | `11000` | The port AbletonOSC listens on. |
@@ -149,14 +153,14 @@ reports a status for each workflow, and a "no" always comes with a reason. The
 live answer for a project is `GET /film/projects/:id/music/capabilities`
 (`music_capabilities`, free). This table shows the default contracts.
 
-| Workflow | gridlight | elevenlabs | What it is |
-|---|---|---|---|
-| `music_compose` | available: 1 s to 10 min | available: 3 s to 10 min, `music_v1`/`music_v2`, sections of 3 to 120 s | a whole cue from a brief |
-| `music_parts` | unsupported: no endpoint for native parts | unsupported: one mixed cue only | the native instrument parts of one cue |
-| `music_separate` | unsupported: no separation endpoint | available: 2 or 6 stems; wav, aiff, flac, mp3, m4a in | a recording split into stems, kept beside its source |
-| `music_reference` | unsupported | unsupported: prompt or plan only | a cue conditioned on reference audio or a melody |
-| `music_video` | unsupported | unsupported: no picture input | a cue conditioned on the picture |
-| `music_inpaint` | unsupported | unsupported: whole cues only | a range regenerated in context |
+| Workflow | gridlight | elevenlabs | fluidsynth | What it is |
+|---|---|---|---|---|
+| `music_compose` | available: 1 s to 10 min | available: 3 s to 10 min, `music_v1`/`music_v2`, sections of 3 to 120 s | unsupported: renders notes a cue already has through a SoundFont; it composes nothing from words | a whole cue from a brief |
+| `music_parts` | unsupported: no endpoint for native parts | unsupported: one mixed cue only | unsupported: plays the parts a cue’s notes already have; it generates no new parts | the native instrument parts of one cue |
+| `music_separate` | unsupported: no separation endpoint | available: 2 or 6 stems; wav, aiff, flac, mp3, m4a in | unsupported: renders MIDI; it cannot split a recording into stems | a recording split into stems, kept beside its source |
+| `music_reference` | unsupported | unsupported: prompt or plan only | unsupported: takes notes and a SoundFont, never a reference recording or melody | a cue conditioned on reference audio or a melody |
+| `music_video` | unsupported | unsupported: no picture input | unsupported: takes notes and a SoundFont, never the picture | a cue conditioned on the picture |
+| `music_inpaint` | unsupported | unsupported: whole cues only | unsupported: re-renders the whole note file; it cannot regenerate a range of a recording in context | a range regenerated in context |
 
 Each output is stored as one of six kinds, and the clip records which:
 `whole_cue`, `native_part`, `separated_stem`, `inpainted_range`,

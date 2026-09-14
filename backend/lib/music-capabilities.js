@@ -157,6 +157,9 @@ const MUSIC_CALL_SITES = Object.freeze([
     { file: 'routes/music-gen.js', fn: 'generateMusicStream', workflow: 'music_compose' },
     { file: 'routes/music-gen.js', fn: 'batchMusicStream', workflow: 'music_compose' },
     { file: 'lib/music-separation.js', fn: 'resolveSeparator', workflow: 'music_separate' },
+    // Renders a cue's WRITTEN notes through local instruments (GRD-3995). It performs
+    // none of the six workflows — it composes nothing — so it names none.
+    { file: 'routes/music-midi.js', fn: 'renderCueNotes', workflow: null, workflows: [] },
     // One resolver for the five generating workflows (MUS-012); `workflows`
     // names every one it performs, `workflow` the first for older readers.
     { file: 'lib/music-generation.js', fn: 'musicProviderFor', workflow: 'music_compose', workflows: ['music_compose', 'music_parts', 'music_reference', 'music_video', 'music_inpaint'] },

@@ -112,6 +112,7 @@ film-engine/
 │   │   ├── scene-score.js        # A score for THIS scene, from facts the engine already holds
 │   │   ├── music-sections.js     # A cue that changes over its own length
 │   │   ├── midi.js               # Notes in milliseconds, validated against the cue; a Standard MIDI File written and read back
+│   │   ├── instrument-render.js  # Notes become sound: FluidSynth probed, a SoundFont whose licence is known, a render judged by its volume
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
@@ -238,6 +239,7 @@ film-engine/
 │   │   ├── consistency-context.js # Locked profiles → reference payloads
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
 │   │   ├── providers/worldlabs.js # World Labs Marble: a location's plates become a navigable world
+│   │   ├── providers/fluidsynth.js # A cue's written notes played through local instruments; composes nothing, never a default
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
@@ -635,6 +637,7 @@ film-engine/
 │       ├── music-rights.test.js # Every origin, every derivative writer, every gate × status: rights follow the music and the policy acts where it is stated
 │       ├── music-docs-ops.test.js # The workstation documented from its own registries; health readable without a secret or a path
 │       ├── music-e2e.test.js # Screenplay → final movie, scored, through MCP: once with no DAW, once through Ableton; recovery, bundle, opt-in real Live
+│       ├── instrument-render.test.js # A render the cue's length and not silent; a missing SoundFont caught on volume; licence recorded
 │       ├── music-midi.test.js # Parts over a plan survive the file within a frame; a played part replaces one part and outlives a rewrite
 │       ├── music-registries.test.js # Every role, clip kind, file kind, workflow, tool, package section and DAW mutation held to its consumers; page and agent editing one session
 │       └── helpers.js                # Test utilities
@@ -3942,6 +3945,21 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### The Notes, Played Through Instruments on This Machine
+GRD-3995. Phase 1 gave a cue notes; this plays them through a sample library, offline, for nothing per render. The shape is the conform’s: an executable **probed at runtime and never bundled** (a library is gigabytes and operator-installed), reported when absent, and every result **read back before it is believed**.
+
+**A render is judged on its volume, never on an exit code.** A SoundFont that loads but holds no instrument for a part — a drum part on a font with no percussion bank — renders, exits 0 and writes silence, so `renderMidi` measures the file: read back with `inspectMedia`, length within one frame of the cue (it pads, then cuts, because a release tail runs past the last note), and a peak above -60 dB, refused at stage `silence` otherwise. The research assumed a MISSING SoundFont renders silence too; FluidSynth 2.6 refuses that path outright (exit 255, no file), found by running it, and it is refused at stage `renderer`. The stitcher’s audio sat at -91 dB for months while every "is there an audio stream" check passed.
+
+**A render is made of somebody’s samples, so the licence travels with it.** `resolveSoundfont` names the library (VSCO 2 CE is `cc0`, FluidR3 GM is `mit`) and a library it cannot name is **refused** unless whoever installed it states `FILM_SOUNDFONT_LICENSE` (`cc0`, `mit`, `ni_eula`, `third_party`). The licence is recorded on the rendered `audio_music` asset as `library_license`, so the rights report can say what a cue is made of.
+
+**The adapter composes nothing, and says so.** `lib/providers/fluidsynth.js` serves `music`, answers all six workflows `unsupported` with the reason, and is never a default — `PREFERRED_WHEN_CONFIGURED` still names ElevenLabs. With no notes on the request it answers `PRECONDITION`, and the orchestrator now treats an adapter’s PRECONDITION exactly as a builder’s: a skip, not a failure retried three times. Priced at zero **explicitly** (`fluidsynth:music`, `self_hosted`). `sfz-render` is named and not wired: the sfizz project was archived in June 2026.
+
+**A keyless adapter is ready only when its probe says so.** `isProviderConfigured` read every no-key adapter other than Gridlight as ready, which would have reported go for a render that produces silence; an adapter with `available()` is now asked. The preflight’s `fluidsynth` checker lives in `DEPENDENCY_CHECKS` but deliberately **not** in `STEP_EXTERNAL_DEPENDENCY`: the music step needs it only on a project whose music resolves to the renderer, so `checkCapability` consults it through `ADAPTER_DEPENDENCY` — declared on the step, it would block every project’s music stage — and reports what is missing instead of "has no credential".
+
+The render route resolves through the registry with music pinned to FluidSynth **for that call only**, so it is metered and attributed and the project’s stored choice is untouched; it is in `MUSIC_CALL_SITES` naming **no** workflow, because it performs none of the six. The test builds a few-kilobyte SoundFont of sine wave, so it needs FluidSynth and nothing downloaded, and skips with the reason where FluidSynth is absent.
+
+Served at `GET /film/music-cues/:id/midi/render/plan` (free) and `POST /film/music-cues/:id/midi/render`, as a **Render with instruments** button on the MIDI panel, and as `music_midi_render_plan` / `music_midi_render` (**343 tools**). Environment: `FLUIDSYNTH_PATH`, `FILM_SOUNDFONT`, `FILM_SOUNDFONT_LICENSE`, `FILM_SOUNDFONT_DIR`.
+
 ### The Model Proposes the Arc; a Person Accepts It
 The emotional arc of a picture is the judgement the whole score hangs on, and
 the connected agent **is** the model here — so MUS-010 is not a "run the
@@ -5937,6 +5955,7 @@ node --test backend/tests/music-docs-ops.test.js
 node --test backend/tests/music-e2e.test.js
 node --test backend/tests/music-registries.test.js
 node --test backend/tests/music-midi.test.js
+node --test backend/tests/instrument-render.test.js
 node --test backend/tests/stock-capability.test.js
 node --test backend/tests/e2e-readiness.test.js
 node --test backend/tests/e2e-first-film-plan.test.js
