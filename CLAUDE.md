@@ -30,7 +30,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (107 migrations)
+│   │   └── migrations/     # SQL migration files (108 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
@@ -119,6 +119,7 @@ film-engine/
 │   │   ├── instrument-host.js    # The director’s own plugins, held by a sidecar: loopback, token, an allowlist, a render finished by the shared rule
 │   │   ├── instruments.js        # One SOUND out of one library: a plugin and the state that recalls the patch
 │   │   ├── instrument-presets.js # An NKS preset read without opening anything: its PCHK chunk IS the patch
+│   │   ├── instrument-catalogue.js # The director’s own sounds, read LIVE out of Kontakt’s index and never copied
 │   │   ├── music-session.js      # What a score session IS, and the one read model every consumer receives
 │   │   ├── music-context.js      # Everything the engine knows about a picture unit, compiled once and fingerprinted per field
 │   │   ├── music-stems.js        # A composer's stems, aligned: the original is sacred, the placement shares one start
@@ -3954,6 +3955,17 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### The Name Comes From Kontakt, and the Library Holds Only What You Used
+*"You should dynamically have the library name and the patch name when we load it into Film Engine so I know the source of the file in the future."* A capture called "Kontakt capture (rename me)" is useless in six months.
+
+**Every route to detecting it was a dead end, and each was measured rather than assumed.** The state is compressed binary — no readable paths in 547KB. The plugin's **4145 parameters** carry no text values. Kontakt writes no log of what it loaded, and touches nothing in its preferences when it does. Access times are stamped by NI's own scan (12:59 on every snapshot), not by loading.
+
+**Kontakt already knows.** `komplete.db3` indexes every sound it can play — 844 on the director's machine, across Action Strings, Ethereal Earth, Maximo, Indie and Kontakt's factory content — with the name, the product, the bank, what kind of sound it is and the file it lives in. `lib/instrument-catalogue.js` reads it **read-only and live**, so an instrument is created FROM that row: "Vortex Bells, Ethereal Earth, tags Percussion/Bell/Metallic", with `source_ref` (`kontakt:1423`) and `source_file` recorded (migration 111).
+
+**Nothing is copied into Film Engine, and that is the point.** *"Are you sure you want to index all sounds into our DB? We'll have hundreds of thousands of entries... maybe we add the patch when we use it."* Right, and the first build got it wrong: `instrument_scan` inserted a row per preset it found. Browsing is now **live and storage-free** — the catalogue reads Kontakt's index on every request, and the NKS scan lists rather than indexes — while `film_instruments` holds **one row per sound actually used**. A preset can be played by path (`preset_path`) and joins the library at that moment, once; a test asserts that browsing 100,000 presets writes zero rows.
+
+**What still needs a person, stated plainly:** a plugin exposes its state and not its browser, so a captured sound is one somebody loaded in Kontakt. Choosing it from the catalogue first is what makes the result self-describing; without a `sound_id` the capture is kept but says so.
+
 ### A Plugin Is Somebody Else's Code, and It Falls Over
 Three things were learned by running Kontakt rather than reading about it, and each changed the design.
 
@@ -5560,7 +5572,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (107 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (108 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

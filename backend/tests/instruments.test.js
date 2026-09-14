@@ -190,7 +190,7 @@ function call(handler, method, parts, body, query) {
     });
 }
 
-test('scanning indexes presets where the libraries put them, and never twice', async () => {
+test('browsing presets stores nothing: a patch joins the library when it is played', async () => {
     const libraryDir = path.join(TMP, 'library');
     fs.mkdirSync(path.join(libraryDir, 'Chamber Strings'), { recursive: true });
     fs.writeFileSync(path.join(libraryDir, 'Chamber Strings', 'cello.nksf'), nksf({ name: 'Cello Soft' }));
@@ -198,23 +198,25 @@ test('scanning indexes presets where the libraries put them, and never twice', a
     fs.writeFileSync(path.join(libraryDir, 'Chamber Strings', 'broken.nksf'), Buffer.from('nope'));
     const plugin = fakePlugin('Scanner.vst3');
 
+    const before = db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n;
     const first = await call(handleInstruments, 'POST', ['film', 'instruments', 'scan'], { roots: [libraryDir], plugin });
     assert.strictEqual(first.status, 200, JSON.stringify(first.body));
-    assert.strictEqual(first.body.added, 2);
+    assert.strictEqual(first.body.found, 2, 'the readable presets were not listed');
     assert.strictEqual(first.body.unreadable_count, 1, 'a broken preset was not reported');
     assert.match(first.body.spends, /nothing/);
-
-    const again = await call(handleInstruments, 'POST', ['film', 'instruments', 'scan'], { roots: [libraryDir], plugin });
-    assert.strictEqual(again.body.added, 0, 'scanning twice indexed the same presets again');
-
-    const listed = await call(handleInstruments, 'GET', ['film', 'instruments'], null, { q: 'viola' });
-    assert.strictEqual(listed.body.instruments.length, 1);
-    assert.strictEqual(listed.body.instruments[0].source, 'nks');
+    assert.deepStrictEqual(first.body.presets.map(p => p.name).sort(), ['Cello Soft', 'Viola Con Sord']);
+    /*
+     * The rule the director asked for: "maybe we add the patch when we use it."
+     * A machine with a hundred thousand presets must not put a hundred thousand
+     * rows in this database for having been looked at.
+     */
+    assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n, before,
+        'browsing presets wrote rows into the library');
 
     // A scan where nothing is installed says so rather than reporting success.
     const nowhere = await call(handleInstruments, 'POST', ['film', 'instruments', 'scan'], { roots: [path.join(TMP, 'nothing-here')], plugin });
-    assert.strictEqual(nowhere.body.added, 0);
-    assert.match(nowhere.body.note, /not NKS-ready|No new presets/);
+    assert.strictEqual(nowhere.body.found, 0);
+    assert.strictEqual(nowhere.body.stored_here, 0);
 });
 
 test('capture needs the sidecar, and says how to get one', async () => {
@@ -347,4 +349,145 @@ test('an agent can find an instrument and play a part with it', () => {
     for (const t of ['instrument_list', 'instrument_get', 'instrument_scan', 'instrument_update', 'instrument_delete', 'music_midi_render_part']) {
         assert.ok(names.has(t), `${t} is not on the MCP surface`);
     }
+});
+
+// ── the catalogue: the director's own sounds, read live ──────────────────
+
+/** A Kontakt index, built here: nobody's library is in the repository. */
+function kontaktCatalogue(sounds) {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fe-kontakt-')), 'komplete.db3');
+    const db2 = require('better-sqlite3')(file);
+    db2.exec(`CREATE TABLE k_sound_info (id INTEGER PRIMARY KEY, name TEXT, vendor TEXT, comment TEXT,
+                                         file_name TEXT, file_ext TEXT);
+              CREATE TABLE v_sound_info (id INTEGER PRIMARY KEY, name TEXT, product TEXT, brand TEXT, bank TEXT,
+                                         type TEXT, character TEXT, author TEXT, comment TEXT, file_ext TEXT);`);
+    const a = db2.prepare('INSERT INTO k_sound_info VALUES (?,?,?,?,?,?)');
+    const b = db2.prepare('INSERT INTO v_sound_info VALUES (?,?,?,?,?,?,?,?,?,?)');
+    sounds.forEach((s2, i) => {
+        a.run(i + 1, s2.name, s2.vendor || 'NI', s2.comment || '', s2.file, s2.ext || 'nksn');
+        b.run(i + 1, s2.name, s2.product, s2.product, s2.bank || '', s2.type || '', s2.character || '', s2.vendor || 'NI', s2.comment || '', s2.ext || 'nksn');
+    });
+    db2.close();
+    return file;
+}
+
+async function withCatalogue(file, fn) {
+    // AWAITED, not returned: a `finally` around a promise restores the
+    // environment before the awaits inside have run, and the test then reads
+    // the real Kontakt index instead of the one it built.
+    const saved = process.env.KONTAKT_DB;
+    process.env.KONTAKT_DB = file;
+    try { return await fn(); } finally {
+        if (saved == null) delete process.env.KONTAKT_DB; else process.env.KONTAKT_DB = saved;
+    }
+}
+
+test('the catalogue is read live from Kontakt and stores nothing here', async () => {
+    const real = path.join(TMP, 'Vortex Bells.nksn');
+    fs.writeFileSync(real, nksf({ name: 'Vortex Bells' }));
+    const file = kontaktCatalogue([
+        { name: 'Vortex Bells', product: 'Ethereal Earth', bank: 'Ethereal Earth 2.0', type: 'Percussion, Bell', character: 'Metallic', file: real },
+        { name: 'Martial 8th Notes', product: 'Action Strings', type: 'Strings', file: path.join(TMP, 'gone.nksn') },
+    ]);
+    await withCatalogue(file, async () => {
+        const before = db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n;
+        const all = await call(handleInstruments, 'GET', ['film', 'instruments', 'catalogue'], null, {});
+        assert.strictEqual(all.status, 200, JSON.stringify(all.body));
+        assert.strictEqual(all.body.sounds.length, 2);
+        assert.strictEqual(all.body.stored_here, 0);
+        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n, before,
+            'reading the catalogue wrote rows into the library');
+
+        const one = all.body.sounds.find(s2 => s2.name === 'Vortex Bells');
+        assert.strictEqual(one.library, 'Ethereal Earth');
+        assert.deepStrictEqual(one.tags, ['Percussion', 'Bell', 'Metallic']);
+        assert.strictEqual(one.available, true);
+        assert.strictEqual(all.body.sounds.find(s2 => s2.name === 'Martial 8th Notes').available, false,
+            'a sound whose file is gone was offered as playable');
+
+        // Searchable by name, by library and by tag — that is what makes 844 usable.
+        for (const [q, expect] of [['vortex', 'Vortex Bells'], ['Action Strings', 'Martial 8th Notes'], ['metallic', 'Vortex Bells']]) {
+            const found = await call(handleInstruments, 'GET', ['film', 'instruments', 'catalogue'], null, { q });
+            assert.deepStrictEqual(found.body.sounds.map(s2 => s2.name), [expect], `searching ${q}`);
+        }
+    });
+});
+
+test('a capture names itself from the catalogue, and records where the sound came from', async () => {
+    const real = path.join(TMP, 'Maya.nksn');
+    fs.writeFileSync(real, nksf({ name: 'Maya' }));
+    const file = kontaktCatalogue([{ name: 'Maya', product: 'Ethereal Earth', bank: 'Metallic', type: 'Pad', vendor: 'Native Instruments', file: real }]);
+    const plugin = fakePlugin('Named.vst3');
+
+    // A sidecar that answers a capture with a state.
+    const server = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', c => { body += c; });
+        req.on('end', () => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ state_b64: Buffer.from('PATCH-BYTES').toString('base64'), bytes: 11 }));
+        });
+    });
+    await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+    const saved = { url: process.env.INSTRUMENT_SIDECAR_URL, token: process.env.INSTRUMENT_SIDECAR_TOKEN };
+    process.env.INSTRUMENT_SIDECAR_URL = `http://127.0.0.1:${server.address().port}`;
+    process.env.INSTRUMENT_SIDECAR_TOKEN = TOKEN;
+    try {
+        await withCatalogue(file, async () => {
+            const r = await call(handleInstruments, 'POST', ['film', 'instruments', 'capture'],
+                { plugin, sound_id: 'kontakt:1' });
+            assert.strictEqual(r.status, 201, JSON.stringify(r.body));
+            const kept = r.body.instrument;
+            assert.strictEqual(kept.name, 'Maya', 'the capture was not named from the catalogue');
+            assert.strictEqual(kept.library, 'Ethereal Earth');
+            assert.strictEqual(kept.vendor, 'Native Instruments');
+            assert.strictEqual(kept.source_ref, 'kontakt:1', 'the sound it came from was not recorded');
+            assert.strictEqual(kept.source_file, real, 'the file it came from was not recorded');
+            assert.match(r.body.note, /Ethereal Earth/);
+
+            // A sound that is not in the catalogue is refused rather than invented.
+            const wrong = await call(handleInstruments, 'POST', ['film', 'instruments', 'capture'],
+                { plugin, sound_id: 'kontakt:999' });
+            assert.strictEqual(wrong.status, 404);
+            assert.match(wrong.body.find, /catalogue/);
+        });
+    } finally {
+        server.close();
+        for (const [k, v] of [['INSTRUMENT_SIDECAR_URL', saved.url], ['INSTRUMENT_SIDECAR_TOKEN', saved.token]]) {
+            if (v == null) delete process.env[k]; else process.env[k] = v;
+        }
+    }
+});
+
+test('a preset joins the library the moment it plays, and only once', async () => {
+    const { cueId } = seedCue();
+    await call(handleMusicMidi, 'PUT', ['film', 'music-cues', cueId, 'midi'], score());
+    const preset = path.join(TMP, 'Played Once.nksf');
+    fs.writeFileSync(preset, nksf({ name: 'Played Once', bank: 'Chamber Strings' }));
+    const plugin = fakePlugin('OnUse.vst3');
+    const server = await sidecarServing(tone(path.join(TMP, 'on-use.wav'), 6));
+    try {
+        const before = db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n;
+        const first = await call(handleMusicMidi, 'POST', ['film', 'music-cues', cueId, 'midi', 'parts', 'cello', 'render'],
+            { preset_path: preset, plugin });
+        assert.strictEqual(first.status, 201, JSON.stringify(first.body));
+        assert.strictEqual(first.body.instrument, 'Played Once', 'the preset did not name the instrument');
+        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n, before + 1,
+            'playing a preset did not add exactly one instrument');
+
+        const again = await call(handleMusicMidi, 'POST', ['film', 'music-cues', cueId, 'midi', 'parts', 'pad', 'render'],
+            { preset_path: preset, plugin });
+        assert.strictEqual(again.status, 201, JSON.stringify(again.body));
+        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM film_instruments').get().n, before + 1,
+            'playing the same preset twice added it twice');
+    } finally { server.close(); }
+});
+
+test('with no Kontakt on the machine the catalogue says so, rather than looking empty', async () => {
+    await withCatalogue(path.join(TMP, 'no-such-komplete.db3'), async () => {
+        const r = await call(handleInstruments, 'GET', ['film', 'instruments', 'catalogue'], null, {});
+        assert.strictEqual(r.status, 503);
+        assert.match(r.body.error, /Kontakt/);
+        assert.strictEqual(r.body.sounds, 0);
+    });
 });

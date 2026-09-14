@@ -6,7 +6,8 @@
  *   GET    /film/instruments/host            is the plugin sidecar there, and what does it hold (free)
  *   GET    /film/instruments/plugins         the plugins installed on this machine (free)
  *   POST   /film/instruments/capture         open a plugin's editor, keep what was loaded (supervised)
- *   POST   /film/instruments/scan            index NKS presets from installed libraries
+ *   GET    /film/instruments/catalogue       the director's own sounds, read live from Kontakt (free, stores nothing)
+ *   POST   /film/instruments/scan            what NKS presets are on this machine (free, stores nothing)
  *   GET    /film/instruments/:id             one instrument
  *   PUT    /film/instruments/:id             rename, re-tag, re-file
  *   DELETE /film/instruments/:id             forget it (a preset file is the library's, and is left alone)
@@ -20,6 +21,7 @@ const { db, generateId } = require('../db/database');
 const instruments = require('../lib/instruments');
 const presets = require('../lib/instrument-presets');
 const host = require('../lib/instrument-host');
+const catalogue = require('../lib/instrument-catalogue');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,6 +64,30 @@ async function handleInstruments(req, res, parts, query) {
         return json(res, 200, { plugins: found.instruments, folders: found.folders, spends: 'nothing' });
     }
 
+    if (tail === 'catalogue' && req.method === 'GET') {
+        /*
+         * THE DIRECTOR'S OWN SOUNDS, READ LIVE FROM KONTAKT.
+         *
+         * "Are you sure you want to index all sounds into our DB? We'll have
+         * hundreds of thousands of entries." No: this reads Kontakt's own
+         * index every time and stores NOTHING. Film Engine's library holds the
+         * sounds that have been used, one row each.
+         */
+        const state = catalogue.availability();
+        if (!state.available) return json(res, 503, { error: state.reason, path: state.path, sounds: 0 });
+        try {
+            const sounds = catalogue.searchSounds({
+                q: query && query.q, library: query && query.library,
+                kind: query && query.kind, limit: query && query.limit,
+            });
+            return json(res, 200, {
+                sounds, total_indexed_by_kontakt: state.sounds, libraries: state.products,
+                stored_here: 0, spends: 'nothing',
+                note: 'Read live from Kontakt; nothing is copied. A sound becomes an instrument here when you capture or play it.',
+            });
+        } catch (err) { return json(res, err.status || 500, { error: err.message }); }
+    }
+
     if (tail === 'capture' && req.method === 'POST') return capture(req, res);
     if (tail === 'scan' && req.method === 'POST') return scan(req, res);
 
@@ -92,7 +118,27 @@ async function handleInstruments(req, res, parts, query) {
 async function capture(req, res) {
     const body = req.body || {};
     if (!body.plugin) return json(res, 400, { error: 'name the plugin to open, from /film/instruments/plugins' });
-    if (!body.name) return json(res, 400, { error: 'name the sound you are about to capture, so you can find it later' });
+
+    /*
+     * WHERE THE NAME COMES FROM.
+     *
+     * A captured patch is compressed binary: it carries no name, the plugin's
+     * parameters do not either, and Kontakt logs nothing about what it loaded.
+     * So the sound is NAMED BY THE CATALOGUE — say which sound you are about to
+     * load and the library, vendor, tags and source file come from NI's own
+     * index rather than from typing.
+     */
+    let sound = null;
+    if (body.sound_id) {
+        try { sound = catalogue.soundById(body.sound_id); } catch (err) { return json(res, err.status || 503, { error: err.message }); }
+        if (!sound) return json(res, 404, { error: `no sound ${body.sound_id} in the catalogue`, find: 'GET /film/instruments/catalogue?q=' });
+    }
+    if (!body.name && !sound) {
+        return json(res, 400, {
+            error: 'say which sound this is: pass sound_id from the catalogue, or a name',
+            find: 'GET /film/instruments/catalogue?q=cello',
+        });
+    }
 
     const got = await host.capture({ plugin: body.plugin, state: body.state, supervised: true });
     if (!got.ok) {
@@ -103,12 +149,16 @@ async function capture(req, res) {
     }
     try {
         const kept = instruments.createCaptured({
-            name: body.name, plugin: body.plugin, state: got.state_b64,
-            library: body.library, vendor: body.vendor, tags: body.tags, notes: body.notes,
+            name: body.name || (sound && sound.name), plugin: body.plugin, state: got.state_b64,
+            library: body.library || (sound && sound.library), vendor: body.vendor || (sound && sound.vendor),
+            tags: body.tags || (sound && sound.tags), notes: body.notes || (sound && sound.comment),
+            source_ref: sound && sound.id, source_file: sound && sound.file,
         });
         return json(res, 201, {
-            instrument: kept,
-            note: 'Captured. Assign it to a part and render — the patch comes back exactly as you left it.',
+            instrument: kept, sound: sound || null, recovered: got.recovered || undefined,
+            note: sound
+                ? `Captured as ${sound.name} (${sound.library}). The source is recorded, so you will know what this is later.`
+                : 'Captured. Pass sound_id next time and the name, library and source come from Kontakt\u2019s own catalogue.',
         });
     } catch (err) {
         return json(res, err.status || 400, { error: err.message });
@@ -150,8 +200,11 @@ function keepPreset(req, res) {
 }
 
 /**
- * Index the NKS presets the installed libraries ship. Free, local, and additive:
- * a preset already in the library is left alone rather than duplicated.
+ * What NKS presets are on this machine. FREE, local, and it stores NOTHING.
+ *
+ * "Maybe we add the patch when we use it in the index." Exactly: a library of
+ * hundreds of thousands of presets is browsed, not copied. A preset becomes a
+ * row in Film Engine's own library the first time something plays it.
  */
 function scan(req, res) {
     const body = req.body || {};
@@ -160,42 +213,32 @@ function scan(req, res) {
         : PRESET_ROOTS.filter(r => r && fs.existsSync(r));
     if (!roots.length) {
         return json(res, 200, {
-            added: 0, found: 0, roots: [], searched: PRESET_ROOTS,
-            note: 'No Native Instruments content folders exist on this machine yet. Install a library, then scan again.',
+            found: 0, presets: [], roots: [], searched: PRESET_ROOTS, stored_here: 0,
+            note: 'No Native Instruments preset folders exist on this machine. Kontakt libraries usually ship '
+                + '.nki instruments and snapshots instead — browse those with /film/instruments/catalogue.',
         });
     }
-    const plugin = body.plugin || '/Library/Audio/Plug-Ins/VST3/Kontakt 8.vst3';
-    const format = instruments.formatOf(plugin);
-    if (!format) return json(res, 400, { error: `${plugin} is not a plugin this engine can play` });
 
-    const known = new Set(db.prepare("SELECT preset_path FROM film_instruments WHERE source = 'nks'").all().map(r => r.preset_path));
     const files = roots.flatMap(r => presets.findPresets(r, { limit: Number(body.limit) || 5000 }));
-    const unreadable = [];
-    let added = 0;
-    const insert = db.prepare(`INSERT INTO film_instruments
-        (id, name, plugin_path, plugin_format, source, preset_path, state_bytes, library, vendor, tags_json, notes)
-        VALUES (?, ?, ?, ?, 'nks', ?, ?, ?, ?, ?, ?)`);
-    const write = db.transaction(rows => {
-        for (const r of rows) {
-            insert.run(generateId(), r.name.slice(0, 200), plugin, format, r.file, r.state_bytes,
-                String(r.library || '').slice(0, 120), String(r.vendor || '').slice(0, 120),
-                JSON.stringify(r.tags || []), String(r.comment || '').slice(0, 2000));
-        }
-    });
-    const rows = [];
+    const known = new Set(db.prepare("SELECT preset_path FROM film_instruments WHERE source = 'nks'").all().map(r => r.preset_path));
+    const found = [], unreadable = [];
     for (const file of files) {
-        if (known.has(file)) continue;
-        try { rows.push(presets.readPreset(file)); } catch (err) { unreadable.push({ file: path.basename(file), reason: err.message }); }
+        try {
+            const read = presets.readPreset(file);
+            found.push({
+                name: read.name, library: read.library, vendor: read.vendor, tags: read.tags,
+                preset_path: file, state_bytes: read.state_bytes, in_library: known.has(file),
+            });
+        } catch (err) {
+            unreadable.push({ file: path.basename(file), reason: err.message });
+        }
     }
-    if (rows.length) { write(rows); added = rows.length; }
-
     return json(res, 200, {
-        added, found: files.length, already_known: files.length - rows.length - unreadable.length,
+        found: found.length, presets: found.slice(0, Number(body.limit) || 500),
         unreadable: unreadable.slice(0, 20), unreadable_count: unreadable.length,
-        roots, plugin, spends: 'nothing',
-        note: added
-            ? 'Indexed. These are read where Native Access installed them; nothing was copied.'
-            : 'No new presets. A library that is not NKS-ready ships no .nksf — capture those patches from the plugin instead.',
+        roots, stored_here: found.filter(f => f.in_library).length, spends: 'nothing',
+        note: 'Nothing was stored. Play a part with preset_path and that preset joins your instruments then, '
+            + 'so the library holds what you have used rather than everything you own.',
     });
 }
 

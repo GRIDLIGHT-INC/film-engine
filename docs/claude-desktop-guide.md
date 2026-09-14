@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**349 tools, 74 families.** Everything the app can do, you can ask for in a
+**350 tools, 74 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -585,11 +585,19 @@ asset on the scene and cost money to make.
 
 ### Playing a part on the director's own instruments
 
-`instrument_list` · `instrument_get` · `instrument_scan` · `instrument_update` ·
-`instrument_delete` · `music_midi_render_part`
+`instrument_catalogue` · `instrument_list` · `instrument_get` · `instrument_scan` ·
+`instrument_update` · `instrument_delete` · `music_midi_render_part`
+
+**Start with `instrument_catalogue`.** It reads the director's own Kontakt index
+live — every sound they own, by name, library and tag ("cello", "Ethereal
+Earth", "metallic") — and stores nothing. That is how you choose a sound: find
+it there, and the capture that follows records its real name, library, vendor
+and source file rather than something typed.
 
 The director owns 248 sample libraries. An **instrument** is one sound out of
-one of them: a plugin plus the patch that recalls it. `instrument_list` is how
+one of them: a plugin plus the patch that recalls it — and Film Engine's own
+library holds only the sounds that have actually been used, never a copy of
+somebody's collection. `instrument_list` is how
 you find one — search by name, library, vendor or tag — and an instrument marked
 unavailable has lost its plugin or its patch and will not play.
 

@@ -449,7 +449,25 @@ async function renderCuePart(req, res, ctx, partName) {
     }
 
     const instruments = require('../lib/instruments');
-    const instrument = body.instrument_id ? instruments.getInstrument(body.instrument_id) : null;
+    let instrument = body.instrument_id ? instruments.getInstrument(body.instrument_id) : null;
+    /*
+     * A PRESET JOINS THE LIBRARY WHEN IT IS PLAYED, not because it exists.
+     *
+     * "Are you sure you want to index all sounds into our DB? We'll have
+     * hundreds of thousands of entries... maybe we add the patch when we use
+     * it." So a preset can be named here directly, and the row is created at
+     * the moment something plays it.
+     */
+    if (!instrument && body.preset_path) {
+        try {
+            instrument = instruments.instrumentForPreset({
+                preset_path: body.preset_path,
+                plugin: body.plugin || '/Library/Audio/Plug-Ins/VST3/Kontakt 8.vst3',
+            });
+        } catch (err) {
+            return json(res, err.status || 400, { error: err.message });
+        }
+    }
     if (!instrument) {
         return json(res, 400, { error: 'name the instrument to play this part, from instrument_list',
             instruments: instruments.listInstruments({ limit: 20 }).map(i => ({ id: i.id, name: i.name, library: i.library })) });

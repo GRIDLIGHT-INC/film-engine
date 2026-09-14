@@ -2585,12 +2585,36 @@ const PRODUCTION_TOOLS = [
         schema: { instrument_id: { type: 'string' } }, required: ['instrument_id'],
     },
     {
+        name: 'instrument_catalogue',
+        handler: handleInstruments, method: 'GET',
+        description: 'FREE, and it stores NOTHING. The director\u2019s own sounds, read live out of Kontakt\u2019s index: '
+            + 'name, the library it came from, its bank, what kind of sound it is and the file it lives in. Search with '
+            + 'q (a name, a library, a tag \u2014 "cello", "Ethereal Earth", "metallic"). This is how you choose a sound '
+            + 'for a part: find it here, then it is captured or played and only THEN does it become a row in Film '
+            + 'Engine\u2019s own instrument library. A sound marked unavailable has lost its file.',
+        path: a => {
+            const q = [];
+            if (a.q) q.push(`q=${encodeURIComponent(a.q)}`);
+            if (a.library) q.push(`library=${encodeURIComponent(a.library)}`);
+            if (a.kind) q.push(`kind=${encodeURIComponent(a.kind)}`);
+            if (a.limit) q.push(`limit=${encodeURIComponent(a.limit)}`);
+            return `/film/instruments/catalogue${q.length ? `?${q.join('&')}` : ''}`;
+        },
+        schema: {
+            q: { type: 'string', description: 'a name, a library or a tag' },
+            library: { type: 'string', description: 'exactly one library, e.g. "Ethereal Earth"' },
+            kind: { type: 'string', description: 'nki (an instrument), nksn (a snapshot), nkt, nksf' },
+            limit: { type: 'number' },
+        },
+        required: [],
+    },
+    {
         name: 'instrument_scan',
         handler: handleInstruments, method: 'POST',
-        description: 'FREE and local. Index the NKS presets the installed libraries ship, so their sounds can be chosen '
-            + 'by name. Nothing is copied: each row points at the preset where Native Access installed it. A library '
-            + 'that is not NKS-ready ships no preset and is reported rather than skipped \u2014 those patches are '
-            + 'captured from the plugin instead.',
+        description: 'FREE, local, and it stores NOTHING. What NKS presets (.nksf) are on this machine, with their '
+            + 'names and libraries. A preset becomes a row in Film Engine only when something PLAYS it \u2014 pass its '
+            + 'preset_path to music_midi_render_part. Kontakt libraries usually ship .nki instruments and snapshots '
+            + 'rather than NKS presets; browse those with instrument_catalogue.',
         path: () => '/film/instruments/scan',
         body: a => { const { ...rest } = a || {}; return rest; },
         schema: {
@@ -2630,13 +2654,16 @@ const PRODUCTION_TOOLS = [
             + 'instrument_list, render them, and the cue exists part by part. Needs the instrument sidecar running; a '
             + 'render that comes back silent is refused rather than kept.',
         path: a => `/film/music-cues/${a.cue_id}/midi/parts/${encodeURIComponent(a.part)}/render`,
-        body: a => ({ instrument_id: a.instrument_id }),
+        body: a => ({ instrument_id: a.instrument_id, preset_path: a.preset_path, plugin: a.plugin }),
         schema: {
             cue_id: { type: 'string' },
             part: { type: 'string', description: 'The part to play, by name, from music_midi_get.' },
-            instrument_id: { type: 'string', description: 'From instrument_list.' },
+            instrument_id: { type: 'string', description: 'From instrument_list \u2014 a sound already in the library.' },
+            preset_path: { type: 'string', description: 'Or an NKS preset from instrument_scan: it joins the library the '
+                + 'moment it plays, so nothing is indexed until it is used.' },
+            plugin: { type: 'string', description: 'Which plugin plays that preset. Defaults to Kontakt 8.' },
         },
-        required: ['cue_id', 'part', 'instrument_id'],
+        required: ['cue_id', 'part'],
     },
     {
         name: 'music_midi_render_plan',

@@ -55,6 +55,9 @@ function rowToInstrument(row) {
         id: row.id, name: row.name, plugin: row.plugin_path, format: row.plugin_format,
         source: row.source, library: row.library, vendor: row.vendor, tags, notes: row.notes,
         state_bytes: row.state_bytes, preset_path: row.preset_path || null,
+        // Where the sound came from, so it is recognisable in six months:
+        // the catalogue row NI has for it, and the file it lives in.
+        source_ref: row.source_ref || null, source_file: row.source_file || null,
         // The plugin has to still be installed for this to play anything.
         available: fs.existsSync(row.plugin_path)
             && (row.source === 'nks' ? !!row.preset_path && fs.existsSync(row.preset_path) : !!row.state_path && fs.existsSync(row.state_path)),
@@ -95,7 +98,7 @@ function stateOf(id) {
  * Keep a captured patch. The state is written to our own root — never a path a
  * caller chose, because a caller-supplied path is how a write escapes.
  */
-function createCaptured({ name, plugin, state, library, vendor, tags, notes }) {
+function createCaptured({ name, plugin, state, library, vendor, tags, notes, source_ref, source_file }) {
     const format = formatOf(plugin);
     if (!format) throw Object.assign(new Error(`${plugin} is not a plugin this engine can play (${FORMATS.join(', ')})`), { status: 400 });
     if (!fs.existsSync(plugin)) throw Object.assign(new Error(`there is no plugin at ${plugin}`), { status: 400 });
@@ -110,12 +113,14 @@ function createCaptured({ name, plugin, state, library, vendor, tags, notes }) {
     const file = statePath(id);
     fs.writeFileSync(file, blob);
     db.prepare(`INSERT INTO film_instruments
-        (id, name, plugin_path, plugin_format, source, state_path, state_bytes, library, vendor, tags_json, notes)
-        VALUES (?, ?, ?, ?, 'captured', ?, ?, ?, ?, ?, ?)`)
+        (id, name, plugin_path, plugin_format, source, state_path, state_bytes, library, vendor, tags_json, notes, source_ref, source_file)
+        VALUES (?, ?, ?, ?, 'captured', ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(id, clean.slice(0, 200), plugin, format, file, blob.length,
             String(library || '').slice(0, 120), String(vendor || '').slice(0, 120),
             JSON.stringify(Array.isArray(tags) ? tags.map(t => String(t).slice(0, 40)).slice(0, 20) : []),
-            String(notes || '').slice(0, 2000));
+            String(notes || '').slice(0, 2000),
+            source_ref ? String(source_ref).slice(0, 120) : null,
+            source_file ? String(source_file).slice(0, 500) : null);
     return getInstrument(id);
 }
 
@@ -161,8 +166,34 @@ function deleteInstrument(id) {
     };
 }
 
+/**
+ * The instrument for an NKS preset, created on FIRST USE.
+ *
+ * "Are you sure you want to index all sounds into our DB? We'll have hundreds of
+ * thousands of entries." Right: a library is browsed live, and Film Engine's own
+ * library holds what has actually been played. So a preset becomes a row here
+ * the moment somebody renders with it, and never because it exists on a disk.
+ */
+function instrumentForPreset({ preset_path, plugin, name, library, vendor, tags }) {
+    const file = path.resolve(String(preset_path || ''));
+    const existing = db.prepare('SELECT * FROM film_instruments WHERE preset_path = ?').get(file);
+    if (existing) return rowToInstrument(existing);
+    if (!fs.existsSync(file)) throw Object.assign(new Error(`there is no preset at ${file}`), { status: 400 });
+    const read = require('./instrument-presets').readPreset(file);
+    const format = formatOf(plugin);
+    if (!format) throw Object.assign(new Error(`${plugin} is not a plugin this engine can play`), { status: 400 });
+    const id = generateId();
+    db.prepare(`INSERT INTO film_instruments
+        (id, name, plugin_path, plugin_format, source, preset_path, state_bytes, library, vendor, tags_json, notes, source_file)
+        VALUES (?, ?, ?, ?, 'nks', ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, String(name || read.name).slice(0, 200), plugin, format, file, read.state_bytes,
+            String(library || read.library || '').slice(0, 120), String(vendor || read.vendor || '').slice(0, 120),
+            JSON.stringify(tags && tags.length ? tags : (read.tags || [])), String(read.comment || '').slice(0, 2000), file);
+    return getInstrument(id);
+}
+
 module.exports = {
-    FORMATS, SOURCES, MAX_STATE_BYTES,
+    FORMATS, SOURCES, MAX_STATE_BYTES, instrumentForPreset,
     listInstruments, getInstrument, stateOf, createCaptured, updateInstrument, deleteInstrument,
     formatOf, statePath, root,
 };

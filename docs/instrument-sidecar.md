@@ -58,7 +58,13 @@ accident:
 
 ## Getting your sounds in
 
-An **instrument** is one sound: a plugin plus the patch that recalls it.
+An **instrument** is one sound: a plugin plus the patch that recalls it. Film
+Engine stores one row per sound you actually use — your libraries are browsed
+live, never copied into it.
+
+* **Browse** — `GET /film/instruments/catalogue?q=cello` reads Kontakt's own index
+  (`komplete.db3`, read-only) and lists your sounds with their library, bank and
+  tags. Nothing is stored. Set `KONTAKT_DB` if yours lives somewhere unusual.
 
 * **Scan** — `POST /film/instruments/scan` (or `instrument_scan`) reads the NKS
   presets your libraries ship and indexes them by name, vendor and tags. Nothing
