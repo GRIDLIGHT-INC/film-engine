@@ -19595,6 +19595,42 @@ THREE.GLTFLoader = GLTFLoader;
         if (!document.hidden) refreshCurrentPage('visible');
     });
 
+    /*
+     * THE URL IS WHERE YOU ARE.
+     *
+     * Reloading dropped you on the project list, so every refresh cost the page
+     * you were working on — and checking a change meant walking back to it
+     * through the project, which is how a shipped change reads as not shipped.
+     * The hash carries the project and the page and nothing else, so it is also
+     * a link somebody can paste.
+     */
+    const ROUTE = { writing: false };
+    function writeRoute() {
+        const id = state.currentProject && state.currentProject.id;
+        const want = '#/' + (id ? id + '/' : '') + (state.currentPage || 'projects');
+        if (location.hash === want) return;
+        ROUTE.writing = true;
+        // replaceState, not a hash assignment: navigating pages inside one
+        // project must not fill the back button with every click.
+        if (history.replaceState) history.replaceState(null, '', want);
+        else location.hash = want;
+        ROUTE.writing = false;
+    }
+    function readRoute() {
+        const m = /^#\/(?:([0-9a-fA-F-]{36})\/)?([A-Za-z0-9_-]+)/.exec(location.hash || '');
+        return m ? { project: m[1] || null, page: m[2] } : null;
+    }
+    /** Put the app where the URL says. Returns false when the URL says nothing. */
+    function applyRoute() {
+        const r = readRoute();
+        if (!r) return false;
+        const here = state.currentProject && state.currentProject.id;
+        if (r.project && r.project !== here) { openProject(r.project, r.page); return true; }
+        if (!r.project && here) { backToProjectList(); return true; }
+        if (r.page && r.page !== state.currentPage) navigateTo(r.page);
+        return true;
+    }
+
     function navigateTo(page) {
         // On a phone the drawer covers the page you just chose.
         if (window.closeDrawer) window.closeDrawer();
@@ -19665,19 +19701,25 @@ THREE.GLTFLoader = GLTFLoader;
         // loader has had a chance to render. Idempotent by design.
         setTimeout(initCollapsibleCards, 60);
         revealNavGroupFor(page);
+        writeRoute();
     }
 
-    function openProject(id) {
-        api('/projects/' + id).then(p => {
+    function openProject(id, page) {
+        return api('/projects/' + id).then(p => {
             state.currentProject = p;
             document.getElementById('sidebarProjectList').classList.add('hidden');
             document.getElementById('sidebarProjectNav').classList.remove('hidden');
             document.getElementById('navProjectName').textContent = p.title;
             paintProjectType(p);
             setStatusDot(p.status);
-            navigateTo('dashboard');
-            setTimeout(maybeShowProjectOnboarding, 250);
-        }).catch(err => setStatus('Error: ' + err.message));
+            navigateTo(page || 'dashboard');
+            if (!page) setTimeout(maybeShowProjectOnboarding, 250);
+        }).catch(err => {
+            // A URL naming a project that is gone must not strand the app on a
+            // blank page: it falls back to the list and says why.
+            setStatus('Error: ' + err.message);
+            if (page) backToProjectList();
+        });
     }
 
     function backToProjectList() {
@@ -44270,7 +44312,8 @@ ${fountainText.slice(0, 50000)}`;
     initCollapsibleCards();
     initCollapsibleNav();
     checkHealth();
-    loadProjects();
+    loadProjects().then(() => { if (!applyRoute()) writeRoute(); });
+    window.addEventListener('hashchange', () => { if (!ROUTE.writing) applyRoute(); });
     liveConnect();
     </script>
 <!-- ══════════════════════════════════════════════════════════════

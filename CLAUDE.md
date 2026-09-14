@@ -438,6 +438,7 @@ film-engine/
 │       ├── dev-server.test.js           # An edit you cannot see is an edit that did not happen
 │       ├── mobile-shell.test.js         # The shell on a 390px screen, computed rather than grepped
 │       ├── page-handlers.test.js       # A button wired to nothing, and a modal shown with a class the CSS ignores
+│       ├── page-route.test.js          # A refresh keeps the page you were on; every page is reachable by URL
 │       ├── ios-app.test.js              # The iOS wrapper ships the real page, and can reach a Mac
 │       ├── plate-lens.test.js          # The API the ticket named does not exist; the maths is executed, not read
 │       ├── plate-exposure.test.js      # A lock that survives a lens change, or crashes on one
@@ -3956,6 +3957,36 @@ GRD-3994, the first instrument-render phase. The director’s answer to *editabl
 
 Served at `GET|PUT|DELETE /film/music-cues/:id/midi` and `POST /film/music-cues/:id/midi/parts/:part/import`, on a **MIDI** panel on each sound cue card, and as `music_midi_get` / `music_midi_write` / `music_midi_import_part` / `music_midi_delete` (**341 tools**).
 
+### A Refresh Keeps the Page You Were On
+*"Whenever I refresh in a page it goes back to the project list."*
+
+Nothing recorded where you were, so every reload cost the page being worked on
+and getting back meant the project list, the project, then the page. That is
+tedious, and it is worse than tedious: it makes a shipped change read as not
+shipped. A piano roll built under the lane was reported missing by somebody who
+reloaded onto the project list and never arrived back at the Score page to see
+it.
+
+The hash carries **the project and the page and nothing else**, so it is also a
+link that can be pasted: `#/<project id>/musicws`. `navigateTo` writes it,
+`applyRoute` puts the app where it points, and `hashchange` honours back and
+forward.
+
+**`replaceState`, not an assignment to `location.hash`.** Clicking through four
+pages inside one project must not put four entries in the back button, and the
+guard (`ROUTE.writing`) is what stops write → hashchange → navigate → write
+being a loop.
+
+**A URL naming a project that is gone falls back to the list and says why**, and
+a hash the app does not recognise is left alone rather than acted on — an
+unparsed fragment must not navigate anywhere.
+
+`tests/page-route.test.js` EXECUTES the router against a fake location and
+history, because a grep cannot tell a hash that is written from one that is read
+back, and the loop between them is the whole risk. Its page set is **derived
+from the app's own loader map**, so a page added later is reachable by URL or
+the test fails.
+
 ### A Track's Details Live Under the Track, and the Part Is a Piano Roll
 *"All the details about a track should be below each track, able to expand or
 close, with tabs for each section."* And: *"let's add a piano roll we can expand
@@ -5974,6 +6005,7 @@ node --test backend/tests/staleness-accept.test.js
 node --test backend/tests/dev-server.test.js
 node --test backend/tests/mobile-shell.test.js
 node --test backend/tests/page-handlers.test.js
+node --test backend/tests/page-route.test.js
 node --test backend/tests/ios-app.test.js
 node --test backend/tests/plate-lens.test.js
 node --test backend/tests/plate-exposure.test.js
