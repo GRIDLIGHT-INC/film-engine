@@ -138,7 +138,7 @@ is exactly the judgement NeonCore's README already made.
 
 ### Option A — the agent surface, which already works ✅ zero cost
 
-**363 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
+**364 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
 codebase it is the native mobile interface. You can already, from a phone:
 
 - read the screenplay, revise a scene, re-run a breakdown

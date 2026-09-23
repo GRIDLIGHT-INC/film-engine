@@ -40597,7 +40597,35 @@ ${fountainText.slice(0, 50000)}`;
                 Nothing is blocked &mdash; edit the card to match the new scene, or delete the shots and break
                 that scene down again. The affected frames are marked below.
             </p>
+            <p class="text-sm text-muted" style="margin:8px 0 0;line-height:1.55;">
+                If you have re-read ${where} and the cards still hold, say so and this clears. No card is
+                changed and nothing is regenerated; a later rewrite of the scene will warn again.
+            </p>
+            <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="acceptScreenplayDrift(this)"
+                    title="Record these shot cards as still matching the screenplay as it stands — free">
+                These cards still match the screenplay
+            </button>
         </div>`;
+    }
+
+    /** "I read the new scene, and these cards still hold." One act, stated. */
+    async function acceptScreenplayDrift(btn) {
+        if (!state.currentProject) return;
+        const shots = DRIFT.scenes.reduce((n, s) => n + s.shots_behind.length, 0);
+        if (!confirm(`Record ${shots} shot card(s) as still matching the screenplay?\n\n`
+            + 'Only if you have re-read the changed scene and the cards still describe it. No card is changed '
+            + 'and nothing is regenerated. If a card genuinely no longer fits, edit that card instead.')) return;
+        const label = btn && btn.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = 'Recording…'; }
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/screenplay-drift/accept`, { method: 'POST', body: '{}' });
+            setStatus(r.note);
+            loadStoryboard();
+        } catch (err) {
+            setStatus('Could not record it: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = label || 'These cards still match the screenplay'; }
+        }
     }
 
     /** The per-frame mark, so the banner has somewhere to point. */
@@ -40699,14 +40727,25 @@ ${fountainText.slice(0, 50000)}`;
      */
     async function acceptAllStale(btn) {
         if (!state.currentProject) return;
-        if (!confirm('Record all generated work as still current?\n\n'
-            + 'Nothing is regenerated and nothing is spent. This says the pictures you have are still '
-            + 'the film you want, for the inputs they have now.\n\n'
-            + 'If a subject or a shot card genuinely did change, regenerate that one instead.')) return;
+        /*
+         * BOTH HALVES, CARDS FIRST. The "behind" report is rooted in the shot
+         * cards: a card the screenplay moved on without is the top of every
+         * chain below it. Accepting only the generated work left that root in
+         * place, so the button could be pressed forever and the banner stayed —
+         * which is how this was reported. "All still current" includes the
+         * cards, and says so.
+         */
+        const cards = DRIFT.scenes.reduce((n, s) => n + s.shots_behind.length, 0);
+        if (!confirm('Record all of this as still current?\n\n'
+            + (cards ? `- ${cards} shot card(s) still match the screenplay as it stands now\n` : '')
+            + '- the generated pictures are still the film you want, for the inputs they have now\n\n'
+            + 'Nothing is regenerated, no card is changed and nothing is spent. '
+            + 'If a subject or a shot card genuinely did change, fix that one instead.')) return;
 
         const label = btn && btn.textContent;
         if (btn) { btn.disabled = true; btn.textContent = 'Accepting…'; }
         try {
+            if (cards) await api(`/projects/${state.currentProject.id}/screenplay-drift/accept`, { method: 'POST', body: '{}' });
             const r = await api(`/projects/${state.currentProject.id}/staleness/accept`,
                 { method: 'POST', body: JSON.stringify({}) });
             const kinds = Object.entries(r.by_kind || {}).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`);

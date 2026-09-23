@@ -2442,6 +2442,18 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'screenplay_drift_accept',
+        handler: handleProductionReports, method: 'POST',
+        description: 'Record shots the screenplay moved on without as STILL MATCHING it — the answer when the '
+            + 'scene was rewritten but its shot cards still hold (a line of weather, a fixed name). Clears '
+            + 'the drift warning without editing any card; a later revision warns again. Only after the '
+            + 'person has re-read the scene and said the cards still hold. scene_id or shot_ids narrow it.',
+        path: a => `/film/projects/${a.project_id}/screenplay-drift/accept`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: { project_id: { type: 'string' }, scene_id: { type: 'string' }, shot_ids: { type: 'array', items: { type: 'string' } } },
+        required: ['project_id'],
+    },
+    {
         name: 'screenplay_baseline',
         handler: handleProductionReports, method: 'POST',
         description: 'Record every shot that has no draft recorded as matching the screenplay AS IT STANDS NOW. Run this once on a project that predates drift tracking, and only when you believe the current cards do describe the current script — it is a claim about the work, not a cleanup. Shots already known to be behind are left alone.',

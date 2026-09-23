@@ -321,6 +321,16 @@ function handleProductionReports(req, res, urlParts, query) {
     // GET /film/projects/:id/screenplay-drift — the work a rewrite left behind.
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'screenplay-drift') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        // The director read the new scene and the cards still hold.
+        if (urlParts[4] === 'accept' && req.method === 'POST') {
+            const { acceptDrift } = require('../lib/screenplay-drift');
+            const b = req.body || {};
+            const result = acceptDrift(urlParts[2], { scene_id: b.scene_id, shot_ids: b.shot_ids });
+            return json(res, 200, {
+                project_id: urlParts[2], ...result,
+                note: `${result.shots_accepted} shot card(s) recorded as still matching the screenplay as it stands. No card was changed. A later revision of the scene will flag them again.`,
+            });
+        }
         if (urlParts[4] === 'baseline' && req.method === 'POST') {
             const { adoptBaseline } = require('../lib/screenplay-drift');
             const result = adoptBaseline(urlParts[2]);

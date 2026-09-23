@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**363 tools, 76 families.** Everything the app can do, you can ask for in a
+**364 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -93,7 +93,7 @@ Each stage names the tools it uses; you can still just describe the goal.
 `scene_restore` ·
 `scene_card_write` · `outline_get` · `outline_write` ·
 `beats_get` · `beats_apply` · `beat_link` · `directives_get` ·
-`directives_write` · `screenplay_drift` · `screenplay_baseline` ·
+`directives_write` · `screenplay_drift` · `screenplay_drift_accept` · `screenplay_baseline` ·
 `treatment_get` · `treatment_write` · `treatment_versions` · `treatment_delete` ·
 `analysis_brief` · `analysis_write` · `analysis_get` · `analysis_delete` ·
 `script_timing`

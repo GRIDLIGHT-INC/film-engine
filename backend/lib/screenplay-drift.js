@@ -321,5 +321,37 @@ function adoptBaseline(projectId) {
     return { shots_stamped: stamped, scenes_touched: scenes.size };
 }
 
+/**
+ * "I read the new scene, and these cards still hold."
+ *
+ * The answer to a drift warning that is NOT "edit every card". A rewrite that
+ * adds a line of weather, or fixes a name, leaves the shots it was broken into
+ * exactly as good as they were — and the only ways out used to be editing each
+ * card (to the same words) or deleting the shots and breaking the scene down
+ * again, which throws away every frame built on them. So the warning could not
+ * be cleared by a director who had done what it asked: re-read the scene.
+ *
+ * Stamps only the shots that are BEHIND, to their scene as it stands now. It
+ * is a claim only the director can make, so it is an explicit act — never a
+ * read, never a save — and it changes no card. A later revision of the scene
+ * warns again, because the stamp is to THIS draft.
+ *
+ * `opts.scene_id` limits it to one scene; `opts.shot_ids` to named shots.
+ */
+function acceptDrift(projectId, opts) {
+    const o = opts || {};
+    const scenes = drift(projectId).filter(s => !o.scene_id || s.scene_id === o.scene_id);
+    const wanted = Array.isArray(o.shot_ids) && o.shot_ids.length ? new Set(o.shot_ids) : null;
+    const accepted = [];
+    for (const scene of scenes) {
+        for (const shot of scene.shots_behind) {
+            if (wanted && !wanted.has(shot.shot_id)) continue;
+            if (stampShot(shot.shot_id, scene.scene_id)) accepted.push({ shot_id: shot.shot_id, shot_code: shot.shot_code, scene_number: scene.scene_number });
+        }
+    }
+    return { shots_accepted: accepted.length, scenes: [...new Set(accepted.map(a => a.scene_number))], accepted };
+}
+
 module.exports = {
+    acceptDrift,
     legacySceneFingerprint, sceneFingerprint, matchesScene, stampScene, stampShot, drift, adoptBaseline, tracking };

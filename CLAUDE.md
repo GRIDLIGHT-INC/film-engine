@@ -329,6 +329,7 @@ film-engine/
 │       ├── data-paths.test.js   # Every path column, a real move, and a registry that cannot go stale
 │       ├── project-folders.test.js # Every kind of file has its folder, lands in it, is found, served, and moved
 │       ├── edits.test.js           # Every cut format round-trips; every reader of a score's picture follows the edit
+│       ├── warnings-clear.test.js  # Every storyboard warning is cleared by the button it offers
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── ios-previz-brief.test.js  # ...and so is a brief whose facts drifted
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
@@ -2856,6 +2857,15 @@ The failure mode is what made it worth replacing rather than remembering, becaus
 `backend/dev-server.js` sends `no-store` and **no validator at all**. `no-cache` would not have been enough: it still permits a stored copy revalidated by ETag, and a revalidation answering 304 is exactly the stale page this exists to prevent. The file is read on every request rather than held, since caching it here would reintroduce the same staleness one layer down.
 
 It is still a server, so containment is by **resolved path** — the database, the git directory and every provider credential sit one level above `src/` — and the URL is **decoded before resolving**, because `%2e%2e` is the same escape as `..` and a check on the raw string misses it. No dependency: Node's own `http` and `fs`, which is precisely what [ADR-002](docs/adr/002-vanilla-http-no-framework.md) is about.
+
+### A Warning Must Be Clearable by the Button It Offers
+*"What are those warnings and how can I remove them? I clicked twice on 'This is all still current'."*
+
+The storyboard shows two warnings: the screenplay moved on without some shots (drift), and generated work is behind its inputs (impact). The only button accepted ARTEFACT staleness, and the impact report is rooted one level higher, in the shot cards the screenplay moved on without — which nothing on the page could answer except editing every card or deleting the shots and breaking the scene down again. On The Glass Harbour, measured on a copy of the real database: 12 cards behind, 12 to redo, 12 waiting, and pressing the button twice changed none of them.
+
+`acceptDrift` (`POST /projects/:id/screenplay-drift/accept`, `screenplay_drift_accept`) is the missing answer: *I re-read the scene and the cards still hold.* It stamps only the shots that are behind, to their scene as it stands, changes no card, and is narrowed by `scene_id` or `shot_ids`; a later rewrite warns again. It differs from the baseline on purpose — the baseline adopts shots that were never tracked and refuses to silence a known one; this is the director answering a known one. The drift banner now has its own button, and **"This is all still current" answers both halves, cards first**, because the cards are the root of the chain. On the same copy it went 12/12/12 → 0/0/0.
+
+`tests/warnings-clear.test.js` is set-based over `WARNINGS` — every banner, the report it is drawn from, and the route its own button sends — and asserts each report is empty afterwards, and that the "all" button sends every route in root-first order.
 
 ### A Warning You Cannot Act On Is One You Learn to Ignore
 *"I got shots for all my views, but it still says generated work is behind what it was made from… what does that mean?"*
@@ -5989,6 +5999,7 @@ node --test backend/tests/reference-match.test.js
 node --test backend/tests/data-paths.test.js
 node --test backend/tests/project-folders.test.js
 node --test backend/tests/edits.test.js
+node --test backend/tests/warnings-clear.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js
