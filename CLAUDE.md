@@ -680,7 +680,7 @@ All routes prefixed with `/film`:
 | Category | Endpoints |
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
-| Folders | `GET /projects/:id/storage`, `POST /projects/:id/storage/move`, `GET /storage/{layout,suggest,browse}` (free) |
+| Folders | `GET /projects/:id/storage`, `POST /projects/:id/storage/move`, `GET /storage/{layout,suggest,browse}` (free), `POST /storage/choose` (the Mac folder dialog) |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
 | Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history`, `POST /scenes/:id/edit` |
 | Story | `GET/POST /projects/:id/beats`, `PUT/DELETE /beats/:id`, `GET/PUT /projects/:id/directives` |
@@ -808,6 +808,8 @@ Every file used to be stored kind-first, `data/<kind>/<project id>/…`, so one 
 **A move is files first, rows second, both or neither.** The files are renamed (or copied across disks and verified), counted at the destination, and only then is every stored path rewritten: every TEXT column of every table, not a list of path columns, because paths also live inside JSON and lists go stale. If the rewrite fails the files are put back. The destination must be new or empty. The folder cannot be edited as a field; `PUT /projects/:id` refuses `assets_dir` and names the move.
 
 `tests/project-folders.test.js` derives every kind that reaches storage from the source (every storage call and `subdir` declaration, plus the media registries) and holds each to its own folder: landing in it, round-tripping through `locate`, being served, and arriving after a move from either layout. The rollback is proven with a trigger that refuses the rewrite.
+
+**Browse… opens the Mac's own "Choose Folder" dialog.** A browser cannot hand a page a folder's path, so the server, a process on the Mac, runs `osascript` and returns the POSIX path chosen (`POST /storage/choose`). Only for a request whose socket is loopback: from a phone or another machine the dialog would open on a screen nobody is looking at, so those get 501 and the page falls back to its own folder list. The prompt and starting folder are passed to the script as arguments, never spliced into its text. No MCP tool opens it; an agent has `storage_browse`.
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).

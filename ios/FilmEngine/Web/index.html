@@ -19980,12 +19980,44 @@ THREE.GLTFLoader = GLTFLoader;
     /* The folder picker: where it writes its answer, and what to do after. */
     const FOLDER_PICKER = { target: null, then: null, path: null, parent: null };
 
-    function openFolderPicker(targetId, then) {
+    /**
+     * Choose a folder — with the Mac's own "Choose Folder" dialog when the page
+     * is open on the Mac running Film Engine, and the in-page list otherwise.
+     *
+     * The browser cannot hand a page a folder's path, so the SERVER opens the
+     * Finder dialog (osascript) and returns what was chosen. From a phone or
+     * another machine it answers 501 — the dialog would open on a screen
+     * nobody is looking at — and the in-page list takes over. Cancelling the
+     * Finder dialog changes nothing.
+     */
+    async function openFolderPicker(targetId, then) {
         FOLDER_PICKER.target = targetId;
         FOLDER_PICKER.then = typeof then === 'function' ? then : null;
-        showModal('folderPickerModal');
         const start = ((document.getElementById(targetId) || {}).value || '').trim();
+        setStatus('Choose a folder in the Finder window…', true);
+        let r = null;
+        try {
+            // refresh: false — choosing a folder writes nothing, and a repaint
+            // would redraw the field the answer is about to be written into.
+            r = await api('/storage/choose', { method: 'POST', body: JSON.stringify({ start, prompt: 'Where should Film Engine save this film?' }), refresh: false });
+        } catch (_) { r = null; }         // 501 (not on this Mac) or no dialog: the in-page list
+        setStatus('');
+        if (r && r.native && r.path) {
+            FOLDER_PICKER.path = r.path;
+            folderPickerApply();
+            return;
+        }
+        if (r && r.native && r.cancelled) return;
+        showModal('folderPickerModal');
         loadFolderPicker(start);
+    }
+
+    /** Write the chosen folder where it was asked for, and do what follows. */
+    function folderPickerApply() {
+        const el = document.getElementById(FOLDER_PICKER.target);
+        if (el && FOLDER_PICKER.path) el.value = FOLDER_PICKER.path;
+        if (FOLDER_PICKER.target === 'newProjectLocation') previewProjectFolder();
+        if (FOLDER_PICKER.then) FOLDER_PICKER.then();
     }
 
     async function loadFolderPicker(p) {
@@ -20010,11 +20042,8 @@ THREE.GLTFLoader = GLTFLoader;
     function folderPickerUp() { if (FOLDER_PICKER.parent) loadFolderPicker(FOLDER_PICKER.parent); }
 
     function folderPickerChoose() {
-        const el = document.getElementById(FOLDER_PICKER.target);
-        if (el && FOLDER_PICKER.path) el.value = FOLDER_PICKER.path;
         closeModal('folderPickerModal');
-        if (FOLDER_PICKER.target === 'newProjectLocation') previewProjectFolder();
-        if (FOLDER_PICKER.then) FOLDER_PICKER.then();
+        folderPickerApply();
     }
 
     function fmtBytes(n) {

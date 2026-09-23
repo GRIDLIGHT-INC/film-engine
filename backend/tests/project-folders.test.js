@@ -400,3 +400,68 @@ test('the page asks where on every new project, and the Settings card can move o
     assert.ok(/\/storage\/move/.test(page) && /loadProjectFolder\(\);\n    \}/.test(page),
         'Settings must paint the folder card and reach the move route');
 });
+
+// ── The Mac's own folder dialog ──────────────────────────────────────────────
+
+function callChoose(remoteAddress, body) {
+    const { handleProjectStorage } = require('../routes/project-storage');
+    return new Promise(resolve => {
+        const res = { writeHead(s) { this.status = s; }, end(b) { resolve({ status: this.status, body: JSON.parse(b) }); } };
+        handleProjectStorage({ method: 'POST', body: body || {}, socket: remoteAddress ? { remoteAddress } : undefined },
+            res, ['film', 'storage', 'choose'], {});
+    });
+}
+
+test('Browse opens the Mac folder dialog for a page on this Mac, and returns the path chosen', async () => {
+    const route = require('../routes/project-storage');
+    const start = mkTmp('native');
+    const seen = [];
+    route.setChooser(async (promptText, from) => { seen.push({ promptText, from }); return { path: '/Users/someone/Films' }; });
+    try {
+        for (const addr of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+            const r = await callChoose(addr, { start: path.join(start, 'not-made-yet', 'deeper') });
+            assert.strictEqual(r.status, 200, addr);
+            assert.deepStrictEqual([r.body.native, r.body.path], [true, '/Users/someone/Films']);
+        }
+        // A starting folder that does not exist opens at its nearest existing parent.
+        assert.strictEqual(seen[0].from, start);
+
+        route.setChooser(async () => ({ cancelled: true }));
+        const c = await callChoose('127.0.0.1', {});
+        assert.deepStrictEqual([c.status, c.body.cancelled, c.body.path], [200, true, undefined]);
+
+        // Not from this Mac — a phone on the LAN, or an agent through MCP (no
+        // socket at all) — gets no dialog: it would open on nobody's screen.
+        for (const addr of ['192.168.4.20', '10.0.0.5', null]) {
+            const r = await callChoose(addr, {});
+            assert.strictEqual(r.status, 501, `${addr} was given a dialog on the Mac`);
+            assert.strictEqual(r.body.native, false);
+            assert.ok(r.body.reason);
+        }
+        const viaAgent = await callTool('storage_browse', {});
+        assert.strictEqual(viaAgent._status, 200, 'an agent still has the listing');
+    } finally {
+        route.setChooser(null);
+    }
+});
+
+test('the dialog script takes its prompt and folder as arguments, never spliced into its text', () => {
+    const { CHOOSE_SCRIPT } = require('../routes/project-storage');
+    const text = CHOOSE_SCRIPT.join('\n');
+    assert.match(text, /item 1 of argv/);
+    assert.match(text, /item 2 of argv/);
+    assert.ok(!/\$\{|"\s*\+|'\s*\+/.test(text), 'the script is built from values, which a folder name with a quote would break');
+    assert.match(text, /choose folder/);
+});
+
+test('the page tries the Mac dialog before its own list, and a cancel changes nothing', () => {
+    const page = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+    const at = page.indexOf('async function openFolderPicker(');
+    assert.ok(at > 0, 'openFolderPicker is not async — it cannot wait for the Finder dialog');
+    const end = page.indexOf('\n    }\n', at);
+    const body = page.slice(at, end);
+    const native = body.indexOf("'/storage/choose'");
+    const fallback = body.indexOf("showModal('folderPickerModal')");
+    assert.ok(native > 0 && fallback > native, 'the in-page list must be the FALLBACK, after asking for the Mac dialog');
+    assert.match(body, /r\.native && r\.cancelled\) return;/, 'cancelling the Finder dialog must not open a second picker');
+});
