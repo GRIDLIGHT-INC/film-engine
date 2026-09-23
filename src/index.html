@@ -6907,8 +6907,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 folder typed here with the files left behind is a project whose
                 every plate reads "unavailable".
             -->
+            <!--
+                TWO QUESTIONS, TWO CARDS: where the project that is OPEN keeps
+                its files (and moving them), and where NEW projects go. One card
+                held both, and which field answered which was a guess.
+            -->
             <div class="card mt-16" style="max-width:640px;" id="settingsFolderCard">
-                <h3 class="mb-8">Project folder</h3>
+                <h3 class="mb-8" id="settingsFolderTitle">Where this project is saved</h3>
                 <div id="settingsFolderInfo" class="text-sm text-muted">Open a project to see where its files are.</div>
                 <div class="form-group mt-8" id="settingsFolderMoveRow" style="display:none;">
                     <label>Move this project to</label>
@@ -6919,12 +6924,15 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     </div>
                     <span class="text-sm text-muted">A folder for this film is made inside the one you pick. Every file moves and every record follows it; nothing is regenerated.</span>
                 </div>
-                <div class="form-group mt-8">
-                    <label>New projects are saved in</label>
+            </div>
+            <div class="card mt-16" style="max-width:640px;" id="settingsNewProjectsFolderCard">
+                <h3 class="mb-8">Where new projects are saved</h3>
+                <div class="form-group">
                     <div style="display:flex;gap:6px;">
                         <input type="text" id="settingsProjectsRoot" placeholder="~/Film Engine" style="flex:1;" onchange="saveProjectsRoot()">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsProjectsRoot', saveProjectsRoot)">Browse&hellip;</button>
                     </div>
+                    <span class="text-sm text-muted">The default offered when you start a new project &mdash; each one gets its own folder inside this one. Changing it does not move any project that already exists.</span>
                 </div>
             </div>
             <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
@@ -20064,11 +20072,14 @@ THREE.GLTFLoader = GLTFLoader;
             const root = document.getElementById('settingsProjectsRoot');
             if (root) root.value = (l.settings && l.settings.projects_root) || '';
         } catch (_) { /* leave it blank: the default applies */ }
+        const title = document.getElementById('settingsFolderTitle');
         if (!state.currentProject) {
+            if (title) title.textContent = 'Where this project is saved';
             info.textContent = 'Open a project to see where its files are.';
             if (row) row.style.display = 'none';
             return;
         }
+        if (title) title.textContent = `Where "${state.currentProject.title || 'this project'}" is saved`;
         try {
             const r = await api(`/projects/${state.currentProject.id}/storage`);
             const rows = r.folders.filter(f => f.files > 0 || r.layout === 'project')

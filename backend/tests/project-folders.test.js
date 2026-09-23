@@ -465,3 +465,66 @@ test('the page tries the Mac dialog before its own list, and a cancel changes no
     assert.ok(native > 0 && fallback > native, 'the in-page list must be the FALLBACK, after asking for the Mac dialog');
     assert.match(body, /r\.native && r\.cancelled\) return;/, 'cancelling the Finder dialog must not open a second picker');
 });
+
+// ── Two questions, two cards ─────────────────────────────────────────────────
+//
+// "New projects save is the bottom choice and the first one is where the
+// current project is… correct?" One card held both, so a person had to work out
+// which field belonged to which question. Set-based over the controls the
+// folder functions actually touch: every control the PROJECT functions use sits
+// in the open project's card, every control the DEFAULT function uses sits in
+// the new-projects card, and neither card contains the other's.
+
+function cardBody(page, id) {
+    const start = page.indexOf(`id="${id}"`);
+    if (start < 0) return null;
+    const open = page.lastIndexOf('<div', start);
+    const re = /<div\b|<\/div>/g;
+    re.lastIndex = open;
+    let depth = 0, m;
+    while ((m = re.exec(page))) {
+        depth += m[0] === '</div>' ? -1 : 1;
+        if (depth === 0) return page.slice(open, m.index + 6);
+    }
+    return null;
+}
+
+function idsUsedBy(page, fnNames) {
+    const ids = new Set();
+    for (const fn of fnNames) {
+        const at = page.indexOf(`function ${fn}(`);
+        assert.ok(at > 0, `${fn} is not defined`);
+        const end = page.indexOf('\n    }\n', at);
+        for (const m of page.slice(at, end).matchAll(/getElementById\('([A-Za-z]+)'\)/g)) ids.add(m[1]);
+    }
+    return ids;
+}
+
+test('where THIS project is kept and where NEW projects go are two cards, each saying which', () => {
+    const page = fs.readFileSync(path.join(ROOT, '..', 'src', 'index.html'), 'utf8');
+    const project = cardBody(page, 'settingsFolderCard');
+    const defaults = cardBody(page, 'settingsNewProjectsFolderCard');
+    assert.ok(project, 'no card for the open project\'s folder');
+    assert.ok(defaults, 'no separate card for where new projects are saved');
+
+    const projectIds = idsUsedBy(page, ['loadProjectFolder', 'moveProjectFolder']);
+    const defaultIds = idsUsedBy(page, ['saveProjectsRoot']);
+    projectIds.delete('settingsProjectsRoot');      // loadProjectFolder fills both cards on open
+    assert.ok(projectIds.size >= 4 && defaultIds.size >= 1, 'the scan found too few controls to mean anything');
+    for (const id of projectIds) {
+        assert.ok(project.includes(`id="${id}"`), `${id} (this project) is not in the project card`);
+        assert.ok(!defaults.includes(`id="${id}"`), `${id} (this project) is in the new-projects card`);
+    }
+    for (const id of defaultIds) {
+        assert.ok(defaults.includes(`id="${id}"`), `${id} (new projects) is not in the new-projects card`);
+        assert.ok(!project.includes(`id="${id}"`), `${id} (new projects) is in the open project's card`);
+    }
+    // The headings answer the question the person asked.
+    assert.match(project, /<h3[^>]*id="settingsFolderTitle"/, 'the project card heading cannot name the project');
+    const load = page.slice(page.indexOf('function loadProjectFolder('), page.indexOf('function moveProjectFolder('));
+    assert.match(load, /getElementById\('settingsFolderTitle'\)/);
+    assert.match(load, /textContent = `Where "\$\{state\.currentProject\.title/,
+        'the project card never says WHICH project it is about');
+    assert.match(defaults, /<h3[^>]*>Where new projects are saved<\/h3>/);
+    assert.match(defaults, /does not move/i, 'the default card must say it moves nothing that already exists');
+});
