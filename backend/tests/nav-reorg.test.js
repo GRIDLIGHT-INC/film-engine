@@ -84,7 +84,9 @@ const WANTED = [
     ['Plan',           ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget']],
     ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
         'pipeline', 'flows']],
-    ['Post',           ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
+    // `edits` was asked for later: "where do I place this edit so we can see it
+    // in Film Engine, and compose a score for it" — the cut comes home first.
+    ['Post',           ['edits', 'exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
         'jobsqueue', 'renderhistory']],
 ];
 

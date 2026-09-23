@@ -85,6 +85,8 @@ const URLS = [
     '/style-book/e1/media',                   // ends in `media`, not `import`
     '/music-sessions/s1/stems',               // a batch of stems: files, not JSON
     '/music-cues/c1/audio',                   // ordinary JSON ceiling
+    '/uploads/0123456789abcdef0123456789abcdef', // one piece of a resumable upload (an edit)
+    '/edits/e1/cut',                          // an edit's XML or EDL, as JSON
     '/projects/p1/script',
 ];
 

@@ -1,7 +1,8 @@
 # The music workstation
 
-A score session is a soundtrack written against a picture sequence (or a single
-scene when there is no sequence). It holds tracks, clips, an emotional arc,
+A score session is a soundtrack written against an edit imported from Premiere
+(the finished cut: its length, its timing, and stems that line up at 00:00 of
+the sequence), a picture sequence, or a single scene. It holds tracks, clips, an emotional arc,
 markers and automation, and it records every operation on it. It is rendered by
 a deterministic bounce. Once approved, the whole film uses it: the timeline,
 playback, the audio mix, the pipeline, NLE exports and the conformed master.
@@ -213,6 +214,7 @@ states:
 - `unplaced`
 - `overlapping`
 - `shadowed`: a finished project mix replaces it
+- `on_edit`: scored to an edit made in an editor; delivered with that edit (stems or a score package dropped at 00:00 of the sequence), never laid on Film Engine's own assembly, whose timing is different
 
 ## Operations and health
 
@@ -286,6 +288,7 @@ starting a server that will apply a new migration to live data.
 | `110_instruments.sql` | `film_instruments`, `instrument_id` on tracks | The director's own plugins and patches, not project-scoped: a library outlives a film. A track whose instrument is removed keeps its arrangement and its takes. |
 | `111_instrument_source.sql` | `source_ref`, `source_file` on `film_instruments` | Which catalogue row the sound is, and the file it lives in, so a capture is recognisable in six months. |
 | `112_track_notes.sql` | `notes_json` on `film_music_tracks` | The part a lane plays, in milliseconds. NULL means a lane with no part, which is every lane that exists today. |
+| `114_edits.sql` | `film_edits`, `edit_id` on `film_music_sessions` | A cut made in Premiere, by version, with the cut list read from its XML or EDL. A session can be written against one; NULL is every session that exists today, which keeps its sequence or scene. Deleting an edit leaves the score with no picture rather than deleting the music. |
 
 ## Proving it end to end
 

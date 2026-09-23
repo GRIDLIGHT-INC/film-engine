@@ -78,6 +78,7 @@ const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
 const { handleProjectStorage } = require('./routes/project-storage');
+const { handleEdits } = require('./routes/edits');
 const { handleEvents } = require('./routes/events');
 const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
@@ -1066,6 +1067,12 @@ const server = http.createServer(async (req, res) => {
         }
         // ==== CLAUDE:END ====
 
+        // Route: /film/edits/* and /film/projects/:id/edits[/import] — cuts made
+        // in an editor. Before the project catch-all, or it answers 405.
+        if (parts[1] === 'edits' || (parts[1] === 'projects' && parts[2] && parts[3] === 'edits')) {
+            return await handleEdits(req, res, parts, query);
+        }
+
         // Route: /film/storage/* and /film/projects/:id/storage[/move] — where a
         // project's files live. Before the project catch-all, or it answers 405.
         if (parts[1] === 'storage' || (parts[1] === 'projects' && parts[2] && parts[3] === 'storage')) {
@@ -1435,6 +1442,12 @@ function start() {
             // find, and a count is the only honest thing to say about them.
             console.log(`  ${repair.unresolvable} stored path(s) resolve nowhere — the files are missing, not moved.`);
         }
+        // Project folders made before a layout change catch up here, once.
+        try {
+            const up = require('./lib/project-storage').upgradeLayouts();
+            for (const r of up.renamed) console.log(`  Project folder: ${r.from} → ${r.to}`);
+            for (const r of up.skipped) console.log(`  Project folder NOT renamed (${r.reason}): ${r.from}`);
+        } catch (e) { console.log(`  Project folder upgrade skipped: ${e.message}`); }
     } catch (err) {
         console.error('Failed to initialize database:', err.message);
         process.exit(1);

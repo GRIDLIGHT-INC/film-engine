@@ -96,13 +96,17 @@ function fail(error) { return { ok: false, error, brief: null, fingerprints: nul
 function compileScoreContext(db, target) {
     const t = target || {};
     const warnings = [];
-    let session = null, projectId = null, sequence = null, scene = null;
+    let session = null, projectId = null, sequence = null, scene = null, edit = null;
 
     if (t.sessionId) {
         session = db.prepare('SELECT * FROM film_music_sessions WHERE id = ?').get(t.sessionId);
         if (!session) return fail(`no score session ${t.sessionId}`);
         projectId = session.project_id;
-        if (session.sequence_id) {
+        if (session.edit_id) {
+            edit = db.prepare('SELECT * FROM film_edits WHERE id = ?').get(session.edit_id);
+            if (!edit) warnings.push('the session names an edit that no longer exists');
+        }
+        if (!edit && session.sequence_id) {
             sequence = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(session.sequence_id);
             if (!sequence) warnings.push('the session names a sequence that no longer exists');
         }
@@ -110,7 +114,11 @@ function compileScoreContext(db, target) {
             scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(session.scene_id);
             if (!scene) warnings.push('the session names a scene that no longer exists');
         }
-        if (!sequence && !scene) return fail('the session is attached to no sequence and no scene, so there is no picture to brief');
+        if (!edit && !sequence && !scene) return fail('the session is attached to no edit, no sequence and no scene, so there is no picture to brief');
+    } else if (t.editId) {
+        edit = db.prepare('SELECT * FROM film_edits WHERE id = ?').get(t.editId);
+        if (!edit) return fail(`no edit ${t.editId}`);
+        projectId = edit.project_id;
     } else if (t.sequenceId) {
         sequence = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(t.sequenceId);
         if (!sequence) return fail(`no sequence ${t.sequenceId}`);
@@ -120,7 +128,7 @@ function compileScoreContext(db, target) {
         if (!scene) return fail(`no scene ${t.sceneId}`);
         projectId = scene.project_id;
     } else {
-        return fail('name a sessionId, a sequenceId or a sceneId');
+        return fail('name a sessionId, an editId, a sequenceId or a sceneId');
     }
 
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId) || {};
@@ -128,7 +136,17 @@ function compileScoreContext(db, target) {
 
     // ── Picture: the shots, in the order the picture plays ──────────────────
     let shotRows;
-    if (sequence) {
+    // An edit's picture is its CUT: events in the edit's own time, each a
+    // Film Engine shot or not. Rows are fetched per matched shot; the timing
+    // comes from the edit, never from the assembly.
+    let cutEvents = null;
+    if (edit) {
+        try { cutEvents = edit.cut_json ? (JSON.parse(edit.cut_json).events || []) : null; } catch (_) { cutEvents = null; }
+        if (!cutEvents) warnings.push(`edit v${edit.version} has no cut imported, so the brief knows its length but not which shots play where — import the XML or EDL it was cut from`);
+        const ids = [...new Set((cutEvents || []).map(e => e.shot_id).filter(Boolean))];
+        shotRows = ids.map(id => db.prepare(
+            `SELECT sh.*, s.scene_number, s.project_id FROM film_shots sh JOIN film_scenes s ON s.id = sh.scene_id WHERE sh.id = ?`).get(id)).filter(Boolean);
+    } else if (sequence) {
         const ids = parseJson(sequence.shot_ids, []) || [];
         if (!Array.isArray(ids)) warnings.push('the sequence\'s shot list is not readable');
         const byId = new Map();
@@ -148,7 +166,7 @@ function compileScoreContext(db, target) {
     const cast = new Set();
     let dialogueLines = 0;
     let cursor = 0;
-    const shots = shotRows.map(r => {
+    const describe = r => {
         let card = parseJson(r.scene_card_yaml || '{}', {});
         if (card === undefined || typeof card !== 'object') {
             warnings.push(`shot ${r.shot_code}: its scene card is not valid JSON and was read as empty`);
@@ -172,37 +190,68 @@ function compileScoreContext(db, target) {
             for (const [k, v] of Object.entries(eff)) camera[k] = v && typeof v === 'object' && 'value' in v ? v.value : v;
         } catch (_) { camera = { ...(card.camera || {}) }; }
 
-        const m = measured.get(r.id);
-        const written = Number(r.duration_ms) || 0;
-        const duration = m > 0 ? m : written;
-        const source = m > 0 ? 'measured' : written > 0 ? 'card' : 'none';
-        const shot = {
+        return {
             id: r.id, shot_code: r.shot_code, scene_id: r.scene_id, scene_number: String(r.scene_number),
-            start_ms: cursor, duration_ms: duration, duration_source: source,
             action: String(card.description || card.action || ''),
             characters, dialogue, camera,
         };
-        cursor += duration;
-        return shot;
-    });
+    };
+    let shots;
+    if (edit) {
+        const rowById = new Map(shotRows.map(r => [r.id, r]));
+        const described = new Map();
+        shots = (cutEvents || []).map(ev => {
+            const r = ev.shot_id ? rowById.get(ev.shot_id) : null;
+            if (r && !described.has(r.id)) described.set(r.id, describe(r));
+            const base = r ? described.get(r.id) : {
+                // Part of the cut Film Engine did not make: a title, a stock
+                // shot. It is still time the score has to cover.
+                id: null, shot_code: null, scene_id: null, scene_number: null,
+                action: '', characters: [], dialogue: [], camera: {},
+            };
+            return { ...base, name: ev.name || ev.file_name || '', start_ms: ev.start_ms, duration_ms: ev.end_ms - ev.start_ms,
+                duration_source: 'edit', source_in_ms: ev.source_in_ms || 0, matched_by: ev.matched_by || null };
+        });
+        // Cast and dialogue counted once per event, the way the cut plays.
+        cast.clear(); dialogueLines = 0;
+        for (const sh of shots) {
+            for (const c of sh.characters) cast.add(c);
+            for (const d of sh.dialogue) { dialogueLines++; if (d.character) cast.add(d.character); }
+        }
+        cursor = Number(edit.duration_ms) || Math.max(0, ...shots.map(x => x.start_ms + x.duration_ms));
+    } else {
+        shots = shotRows.map(r => {
+            const shot = describe(r);
+            const m = measured.get(r.id);
+            const written = Number(r.duration_ms) || 0;
+            const duration = m > 0 ? m : written;
+            const source = m > 0 ? 'measured' : written > 0 ? 'card' : 'none';
+            const out = { ...shot, start_ms: cursor, duration_ms: duration, duration_source: source };
+            cursor += duration;
+            return out;
+        });
+    }
     const measuredCount = shots.filter(s => s.duration_source === 'measured').length;
     const cardCount = shots.filter(s => s.duration_source === 'card').length;
     const picture = {
-        kind: sequence ? 'sequence' : 'scene',
-        id: sequence ? sequence.id : scene.id,
-        name: sequence ? sequence.name : `scene ${scene.scene_number}`,
+        kind: edit ? 'edit' : sequence ? 'sequence' : 'scene',
+        id: edit ? edit.id : sequence ? sequence.id : scene.id,
+        name: edit ? `edit v${edit.version}${edit.name ? ' — ' + edit.name : ''}` : sequence ? sequence.name : `scene ${scene.scene_number}`,
+        ...(edit ? { version: edit.version, has_cut: !!cutEvents } : {}),
         shot_count: shots.length,
         total_ms: cursor,
         shots,
     };
     provenance.picture = {
-        from: BRIEF_FIELDS.picture.from,
-        ids: [picture.id, ...shots.map(s => s.id)],
-        timing: `${measuredCount} shot(s) measured from footage, ${cardCount} from the card, ${shots.length - measuredCount - cardCount} with no length`,
+        from: edit ? ['film_edits', ...BRIEF_FIELDS.picture.from] : BRIEF_FIELDS.picture.from,
+        ids: [picture.id, ...shots.map(s => s.id).filter(Boolean)],
+        timing: edit
+            ? `the cut of edit v${edit.version}: ${shots.length} event(s), ${shots.filter(x => x.id).length} of them Film Engine shots, timed by the edit`
+            : `${measuredCount} shot(s) measured from footage, ${cardCount} from the card, ${shots.length - measuredCount - cardCount} with no length`,
     };
 
     // ── Scenes the picture covers, in play order ────────────────────────────
-    const sceneIds = [...new Set(shots.map(s => s.scene_id))];
+    const sceneIds = [...new Set(shots.map(s => s.scene_id).filter(Boolean))];
     if (scene && !sceneIds.includes(scene.id)) sceneIds.push(scene.id);
     const sceneRows = sceneIds.map(id => db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(id)).filter(Boolean);
     const scenes = sceneRows.map(s => ({
@@ -237,9 +286,10 @@ function compileScoreContext(db, target) {
     cast.delete('');
     const characters = [...cast].sort();
     provenance.characters = { from: BRIEF_FIELDS.characters.from, ids: shots.map(s => s.id) };
-    const dialogueMs = shots.length ? db.prepare(
+    const shotIdsHere = [...new Set(shots.map(s => s.id).filter(Boolean))];
+    const dialogueMs = shotIdsHere.length ? db.prepare(
         `SELECT COALESCE(SUM(duration_ms), 0) AS ms FROM film_assets
-          WHERE asset_type = 'audio_dialogue' AND shot_id IN (${shots.map(() => '?').join(',')})`).get(...shots.map(s => s.id)).ms || 0 : 0;
+          WHERE asset_type = 'audio_dialogue' AND shot_id IN (${shotIdsHere.map(() => '?').join(',')})`).get(...shotIdsHere).ms || 0 : 0;
     const weight = dialogueWeight(dialogueLines);
     const dialogue = { lines: dialogueLines, measured_ms: dialogueMs, band: weight.band, note: weight.note };
     provenance.dialogue = { from: BRIEF_FIELDS.dialogue.from, ids: shots.map(s => s.id) };
@@ -282,7 +332,9 @@ function compileScoreContext(db, target) {
     provenance.emotion = { from: BRIEF_FIELDS.emotion.from, ids: emotion.map(e => e.id) };
 
     // ── Length ──────────────────────────────────────────────────────────────
-    const length = cursor > 0
+    const length = edit && cursor > 0
+        ? { ms: cursor, source: `edit v${edit.version}, measured from the exported picture` }
+        : cursor > 0
         ? { ms: cursor, source: `${measuredCount} shot(s) measured from footage and ${cardCount} from the card` }
         : dialogueMs > 0
             ? { ms: dialogueMs, source: 'the measured dialogue, because no shot has a length yet' }
@@ -311,6 +363,8 @@ function driftView(field, value) {
     if (field === 'picture') {
         return {
             kind: value.kind, id: value.id,
+            // An edit's timing IS its picture: a trim that moves a cut moves where the music must turn.
+            ...(value.kind === 'edit' ? { total_ms: value.total_ms, starts: value.shots.map(s => s.start_ms) } : {}),
             shots: value.shots.map(s => ({ id: s.id, code: s.shot_code, duration_ms: s.duration_ms, action: s.action, characters: s.characters, dialogue: s.dialogue, camera: s.camera })),
         };
     }
@@ -355,7 +409,19 @@ function sessionDrift(db, sessionId) {
         fields = DRIFT_FIELDS.filter(f => (f === 'screenplay' && script.changed) || (f === 'picture' && picture.changed));
         if (!fields.length) fields = ['context'];
     }
-    return { ok: true, tracked, drifted: tracked && context.changed, script, picture, context, fields, warnings: now.warnings };
+    /*
+     * A NEWER CUT. A session is pinned to the edit version it was written
+     * against, so a v3 arriving changes nothing about v2 — and that is exactly
+     * why it has to be said: the film is now v3 and the score is timed to v2.
+     * Reported, never applied; moving the session to v3 is the rebase.
+     */
+    let newer_edit = null;
+    if (session.edit_id) {
+        const mine = db.prepare('SELECT project_id, version FROM film_edits WHERE id = ?').get(session.edit_id);
+        const latest = mine && db.prepare('SELECT id, version, name FROM film_edits WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(mine.project_id);
+        if (latest && latest.version > mine.version) newer_edit = { id: latest.id, version: latest.version, name: latest.name, written_against: mine.version };
+    }
+    return { ok: true, tracked, drifted: tracked && context.changed, script, picture, context, fields, newer_edit, warnings: now.warnings };
 }
 
 /**

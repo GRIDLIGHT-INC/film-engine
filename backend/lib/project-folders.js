@@ -17,8 +17,9 @@
  *     02 Storyboard/                 frames, with versions/ beside them
  *     03 Previs/Stages/ …            blocking stills, worlds, 3D models
  *     04 Video/Clips/ …              generated and uploaded footage, repairs
- *     05 Sound/Dialogue/ …           dialogue, auditions, music and effects
- *     06 Delivery/Exports/ …         NLE exports, provenance
+ *     05 Edit/                       cuts finished in an editor, every version kept
+ *     06 Sound/Dialogue/ …           dialogue, auditions, music and effects
+ *     07 Delivery/Exports/ …         NLE exports, provenance
  *
  * THIS MODULE IS PURE: no database. `lib/file-storage.js` asks the database
  * which folder a project has chosen and asks this module what goes where.
@@ -61,12 +62,29 @@ const PROJECT_LAYOUT = Object.freeze({
     '3d':        Object.freeze({ folder: '03 Previs/3D Models', what: 'meshes for characters, props and stages' }),
     video:       Object.freeze({ folder: '04 Video/Clips', what: 'generated, uploaded, lip-synced and finished clips, and the film master' }),
     repairs:     Object.freeze({ folder: '04 Video/Repairs', what: 'frames extracted and made while repairing a clip' }),
-    audio:       Object.freeze({ folder: '05 Sound/Dialogue', what: 'generated and uploaded dialogue' }),
-    auditions:   Object.freeze({ folder: '05 Sound/Auditions', what: 'voice auditions and table reads' }),
-    music:       Object.freeze({ folder: '05 Sound/Music and Effects', what: 'score, cues, ambience, effects, stems, bounces and packages' }),
-    exports:     Object.freeze({ folder: '06 Delivery/Exports', what: 'FCPXML, EDL, Premiere and FDX exports and handover packages' }),
-    provenance:  Object.freeze({ folder: '06 Delivery/Provenance', what: 'provenance sidecars' }),
+    edits:       Object.freeze({ folder: '05 Edit', what: 'cuts finished in an editor (Premiere, Resolve), every version kept, with the XML or EDL each was cut from' }),
+    audio:       Object.freeze({ folder: '06 Sound/Dialogue', what: 'generated and uploaded dialogue', formerly: ['05 Sound/Dialogue'] }),
+    auditions:   Object.freeze({ folder: '06 Sound/Auditions', what: 'voice auditions and table reads', formerly: ['05 Sound/Auditions'] }),
+    music:       Object.freeze({ folder: '06 Sound/Music and Effects', what: 'score, cues, ambience, effects, stems, bounces and packages', formerly: ['05 Sound/Music and Effects'] }),
+    exports:     Object.freeze({ folder: '07 Delivery/Exports', what: 'FCPXML, EDL, Premiere and FDX exports and handover packages', formerly: ['06 Delivery/Exports'] }),
+    provenance:  Object.freeze({ folder: '07 Delivery/Provenance', what: 'provenance sidecars', formerly: ['06 Delivery/Provenance'] }),
 });
+
+/*
+ * FOLDERS THAT WERE RENAMED, in the order to apply them — last first, so no
+ * rename lands on a folder still waiting to move. `05 Edit` arrived between
+ * the clips and the sound, because that is where an edit happens, and pushed
+ * Sound and Delivery down one. A project folder made before that is renamed
+ * at boot (lib/project-storage.js upgradeLayouts), and every kind still
+ * answers to its former name, so a path recorded under it is never orphaned.
+ */
+const LAYOUT_RENAMES = Object.freeze([
+    Object.freeze({ from: '06 Delivery', to: '07 Delivery' }),
+    Object.freeze({ from: '05 Sound', to: '06 Sound' }),
+]);
+
+/** Every name a kind's folder answers to: its folder, then any it was renamed from. */
+function namesOf(spec) { return [spec.folder, ...(spec.formerly || [])]; }
 
 /** Where a kind this registry does not name ends up. Never a destination by design. */
 const OTHER_FOLDER = 'Other';
@@ -109,7 +127,7 @@ function kindInRoot(root, filePath) {
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const relPosix = rel.split(path.sep).join('/');
     const entries = Object.entries(PROJECT_LAYOUT)
-        .map(([subdir, s]) => ({ subdir, folder: s.folder }))
+        .flatMap(([subdir, s]) => namesOf(s).map(folder => ({ subdir, folder })))
         .sort((a, b) => b.folder.length - a.folder.length);
     for (const e of entries) {
         if (relPosix.startsWith(e.folder + '/')) {
@@ -151,7 +169,7 @@ function parseStored(filePath) {
     if (legacy) return { subdir: legacy.subdir, rest: legacy.rest, projectId: legacy.projectId };
     const posix = String(filePath || '').replace(/\\/g, '/');
     const entries = Object.entries(PROJECT_LAYOUT)
-        .map(([subdir, s]) => ({ subdir, folder: s.folder }))
+        .flatMap(([subdir, s]) => namesOf(s).map(folder => ({ subdir, folder })))
         .sort((a, b) => b.folder.length - a.folder.length);
     for (const e of entries) {
         const at = posix.lastIndexOf('/' + e.folder + '/');
@@ -294,7 +312,7 @@ function scaffold(root, title) {
 }
 
 module.exports = {
-    DATA_DIR, PROJECT_LAYOUT, OTHER_FOLDER, README_NAME,
+    DATA_DIR, PROJECT_LAYOUT, LAYOUT_RENAMES, OTHER_FOLDER, README_NAME, namesOf,
     legacyDir, layoutDir, layoutList, kindInRoot, parseLegacy, parseStored,
     folderNameFor, expandHome, defaultProjectsRoot, suggestAssetsDir,
     validateAssetsDir, overlaps, isEmptyDir, readmeText, scaffold,

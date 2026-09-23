@@ -121,6 +121,12 @@ function asset(projectId) {
         .run(id, projectId);
     return id;
 }
+function edit(projectId) {
+    const id = generateId();
+    const v = (db.prepare('SELECT MAX(version) AS v FROM film_edits WHERE project_id = ?').get(projectId).v || 0) + 1;
+    db.prepare('INSERT INTO film_edits (id, project_id, version, duration_ms) VALUES (?, ?, ?, 1000)').run(id, projectId, v);
+    return id;
+}
 /** An instrument belongs to the director rather than to a project: no project id. */
 function instrument() {
     const id = generateId();
@@ -196,6 +202,8 @@ function parentFor(fk, projectId) {
         // An instrument is the director's, not a project's: one sound out of one
         // of their libraries, which a track may be played by.
         case 'film_instruments': return instrument();
+        // A cut made in an editor, which a session may be written against.
+        case 'film_edits': return edit(projectId);
         default: throw new Error(`no parent fixture for ${fk.table}`);
     }
 }

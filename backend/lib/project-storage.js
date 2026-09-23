@@ -325,7 +325,66 @@ async function moveProject(projectId, target) {
     }
 }
 
+/**
+ * Bring every project folder up to the current layout.
+ *
+ * `05 Edit` arrived between the clips and the sound, so `05 Sound` became
+ * `06 Sound` and `06 Delivery` became `07 Delivery`. A folder made before that
+ * is renamed here, at boot, and every row that recorded a path under the old
+ * name is rewritten the way a move rewrites them — one transaction, and the
+ * folder is renamed back if the rows cannot follow.
+ *
+ * Never destructive: a rename whose destination already holds something is
+ * skipped and reported, because two folders of one kind merged silently is
+ * two sets of work nobody can tell apart. Paths under a former name still
+ * resolve (`namesOf`), so a skipped upgrade costs tidiness, not files.
+ */
+function upgradeLayouts() {
+    const report = { projects: 0, renamed: [], skipped: [] };
+    let rows = [];
+    try {
+        rows = db().prepare("SELECT id, title, assets_dir FROM film_projects WHERE assets_dir IS NOT NULL AND assets_dir <> ''").all();
+    } catch (_) { return report; }
+    for (const p of rows) {
+        report.projects++;
+        if (!fs.existsSync(p.assets_dir)) continue;
+        for (const r of folders.LAYOUT_RENAMES) {
+            const from = path.join(p.assets_dir, r.from), to = path.join(p.assets_dir, r.to);
+            if (!fs.existsSync(from)) continue;
+            if (fs.existsSync(to) && !folders.isEmptyDir(to)) {
+                report.skipped.push({ project_id: p.id, from, to, reason: `${r.to} already holds files` });
+                continue;
+            }
+            try {
+                if (fs.existsSync(to)) fs.rmSync(to, { recursive: true, force: true });
+                fs.renameSync(from, to);
+            } catch (e) {
+                report.skipped.push({ project_id: p.id, from, to, reason: e.message });
+                continue;
+            }
+            try {
+                db().transaction(() => rewritePrefixes([{ from, to }]))();
+                report.renamed.push({ project_id: p.id, from, to });
+            } catch (e) {
+                try { fs.renameSync(to, from); } catch (_) { /* reported below */ }
+                report.skipped.push({ project_id: p.id, from, to, reason: `records could not follow: ${e.message}` });
+            }
+        }
+        // The note at the top describes the layout, so it follows it. Only
+        // ours is rewritten — a file a person wrote there is theirs.
+        const readme = path.join(p.assets_dir, folders.README_NAME);
+        try {
+            if (fs.existsSync(readme) && /a Film Engine project folder\./.test(fs.readFileSync(readme, 'utf8'))) {
+                fs.writeFileSync(readme, folders.readmeText(p.title));
+            }
+            folders.scaffold(p.assets_dir, p.title);
+        } catch (_) { /* a read-only folder keeps its old note */ }
+    }
+    return report;
+}
+
 module.exports = {
+    upgradeLayouts,
     storageReport, assignOnCreate, moveProject, defaultParent, resolveRequested,
     otherRoots, countFiles, textColumns, rewritePrefixes,
 };

@@ -74,6 +74,8 @@ const EXPORT_TABLES = [
     { table: 'film_screenplay_comments', key: 'id', filter: 'script_id IN (SELECT id FROM film_scripts WHERE project_id = ?)' },
     // The score (MUS-021): the sequences sessions sit on, then every session table, parents first.
     { table: 'film_sequences', key: 'id', filter: 'project_id = ?' },
+    // Cuts made in an editor, before the sessions written against them.
+    { table: 'film_edits', key: 'id', filter: 'project_id = ?' },
     { table: 'film_music_sessions', key: 'id', filter: 'project_id = ?' },
     { table: 'film_music_tracks', key: 'id', filter: 'session_id IN (SELECT id FROM film_music_sessions WHERE project_id = ?)' },
     { table: 'film_music_clips', key: 'id', filter: 'track_id IN (SELECT t.id FROM film_music_tracks t JOIN film_music_sessions s ON s.id = t.session_id WHERE s.project_id = ?)' },
@@ -108,6 +110,7 @@ const FK_REMAP = {
     film_script_elements: { script_id: 'film_scripts' },
     render_ledger: { shot_id: 'film_shots' },
     film_screenplay_comments: { script_id: 'film_scripts' },
+    film_edits: { project_id: 'film_projects', asset_id: 'film_assets', cut_asset_id: 'film_assets' },
 };
 
 /**

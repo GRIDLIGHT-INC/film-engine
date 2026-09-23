@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**356 tools, 75 families.** Everything the app can do, you can ask for in a
+**363 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -480,6 +480,21 @@ takes a parent folder (make the film's folder inside this one) or an exact folde
 nothing, but it changes where the person finds their work, so confirm the
 destination first. A project made before folders existed moves into one the
 same way.
+
+### Bringing an edit back from Premiere
+
+`edit_list` · `edit_get` · `edit_import` · `edit_cut_import` · `edit_cut_rematch` ·
+`edit_update` · `edit_delete`
+
+Export the cut from Premiere and import it with `edit_import`: every import is
+the next version (nothing is overwritten), kept in the project's "05 Edit"
+folder. Add the Final Cut Pro XML or EDL it was exported with (`edit_cut_import`,
+or in the same call) and the cut is read into which Film Engine shot plays
+where, matched by clip file or shot code; titles and stock are kept and named.
+To score the cut, create the session with an edit id on `music_session_create`: the
+brief follows the edit, the session is the edit's length, and the stems line up
+at 00:00 of the Premiere sequence. A newer edit version is reported on the
+session and moved to only when you say so.
 
 ---
 

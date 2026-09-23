@@ -235,6 +235,9 @@ function validateSession(input) {
         frame_rate: i.frame_rate === undefined || i.frame_rate === null ? 24 : Number(i.frame_rate),
         sequence_id: i.sequence_id || null,
         scene_id: i.scene_id || null,
+        // A cut made in an editor (film_edits): the picture is that cut, and
+        // the session is as long as it is.
+        edit_id: i.edit_id || null,
         script_id: i.script_id || null,
         notes: text(i.notes, ''),
     };
@@ -569,8 +572,21 @@ function readScoreSession(db, sessionId, opts) {
     const operations = db.prepare('SELECT * FROM film_music_operations WHERE session_id = ? ORDER BY created_at DESC, id').all(sessionId)
         .map(r => take('film_music_operations', r));
 
-    const picture = { kind: null, sequence: null, scene: null };
-    if (session.sequence_id) {
+    const picture = { kind: null, sequence: null, scene: null, edit: null };
+    if (session.edit_id) {
+        const e = db.prepare('SELECT id, version, name, duration_ms, asset_id FROM film_edits WHERE id = ?').get(session.edit_id);
+        if (e) {
+            picture.kind = 'edit';
+            const a = e.asset_id ? db.prepare('SELECT file_name FROM film_assets WHERE id = ?').get(e.asset_id) : null;
+            picture.edit = { id: e.id, version: e.version, name: e.name, duration_ms: e.duration_ms,
+                video_url: a ? require('./file-storage').getFileUrl('edits', session.project_id, a.file_name) : null };
+            // The score is exactly as long as the cut, so its stems line up
+            // with the edit's first AND last frame in the editor.
+            if (Number(e.duration_ms) > duration) duration = Number(e.duration_ms);
+        } else {
+            warnings.push('the session names an edit that no longer exists');
+        }
+    } else if (session.sequence_id) {
         const seq = db.prepare('SELECT id, name, shot_ids, status FROM film_sequences WHERE id = ?').get(session.sequence_id);
         if (seq) {
             let shotIds = [];

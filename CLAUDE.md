@@ -30,10 +30,11 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (110 migrations)
+│   │   └── migrations/     # SQL migration files (111 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
+│   │   ├── edits.js        # Cuts made in Premiere: import by version, attach the XML/EDL, serve the picture
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
 │   │   ├── scenes.js       # Scene listing
 │   │   ├── shots.js        # Shot creation + shot list
@@ -152,6 +153,8 @@ film-engine/
 │   │   ├── file-storage.js        # Shared file storage utilities
 │   │   ├── project-folders.js     # One folder per film, laid out in the order the film is made
 │   │   ├── project-storage.js     # Choosing a project's folder, reading it, and moving it — files first, rows second, both or neither
+│   │   ├── edits.js               # An editor's cut brought home: versioned, measured, never overwritten
+│   │   ├── edit-cut.js            # Final Cut Pro XML and EDL read back into which shot plays where
 │   │   ├── uploads.js            # A transfer that survives losing the connection
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── orientation-plans.js   # One current plan scan; prior scans move to recoverable storage
@@ -325,6 +328,7 @@ film-engine/
 │       ├── reference-match.test.js # Marks not pixels, a confidence that is earned, and seven traceable exports
 │       ├── data-paths.test.js   # Every path column, a real move, and a registry that cannot go stale
 │       ├── project-folders.test.js # Every kind of file has its folder, lands in it, is found, served, and moved
+│       ├── edits.test.js           # Every cut format round-trips; every reader of a score's picture follows the edit
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── ios-previz-brief.test.js  # ...and so is a brief whose facts drifted
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
@@ -680,6 +684,7 @@ All routes prefixed with `/film`:
 | Category | Endpoints |
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
+| Edits | `GET /projects/:id/edits`, `POST /projects/:id/edits/import`, `GET/PUT/DELETE /edits/:id`, `POST /edits/:id/cut[/rematch]`, `GET /edits/:pid/:file` |
 | Folders | `GET /projects/:id/storage`, `POST /projects/:id/storage/move`, `GET /storage/{layout,suggest,browse}` (free), `POST /storage/choose` (the Mac folder dialog) |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
 | Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history`, `POST /scenes/:id/edit` |
@@ -799,7 +804,7 @@ All three formats support dynamic project settings (resolution, fps, aspect rati
 ### One Folder Per Film
 *"When we start a new project I'd like to be asked where to save the assets, to be able to change this in the middle of a project, and the folder should be well structured so I can easily find things."*
 
-Every file used to be stored kind-first, `data/<kind>/<project id>/…`, so one film was spread across fifteen UUID-named folders inside a hidden directory. A project now has **one folder** (`film_projects.assets_dir`, migration 113), chosen in the New Project dialog (defaulting to `~/Film Engine/<Title>`, or the `projects_root` setting), laid out in the order the film is made: `01 References`, `02 Storyboard`, `03 Previs`, `04 Video`, `05 Sound`, `06 Delivery`, with a note at the top saying what each holds.
+Every file used to be stored kind-first, `data/<kind>/<project id>/…`, so one film was spread across fifteen UUID-named folders inside a hidden directory. A project now has **one folder** (`film_projects.assets_dir`, migration 113), chosen in the New Project dialog (defaulting to `~/Film Engine/<Title>`, or the `projects_root` setting), laid out in the order the film is made: `01 References`, `02 Storyboard`, `03 Previs`, `04 Video`, `05 Edit`, `06 Sound`, `07 Delivery`, with a note at the top saying what each holds. `05 Edit` arrived later and pushed Sound and Delivery down one; `LAYOUT_RENAMES` renames folders made before that at boot and rewrites their records the way a move does, and every kind still answers to its former folder name, so a path recorded under it resolves either way.
 
 **Only the disk moved.** `PROJECT_LAYOUT` is keyed by the `subdir` every storage call already passes, which is also the URL segment the file is served from, so no serving route changed. `file-storage.dirFor` is the one place that decides; it asks the database on every call rather than caching, because the HTTP and MCP servers are two processes and a project moved by one would keep being written to its old folder by the other. It consults the database only if something in the process already opened it, so a unit test asking for a path cannot open the real database. A project with no folder (every project made before this) keeps the old layout, unchanged.
 
@@ -810,6 +815,19 @@ Every file used to be stored kind-first, `data/<kind>/<project id>/…`, so one 
 `tests/project-folders.test.js` derives every kind that reaches storage from the source (every storage call and `subdir` declaration, plus the media registries) and holds each to its own folder: landing in it, round-tripping through `locate`, being served, and arriving after a move from either layout. The rollback is proven with a trigger that refuses the rewrite.
 
 **Browse… opens the Mac's own "Choose Folder" dialog.** A browser cannot hand a page a folder's path, so the server, a process on the Mac, runs `osascript` and returns the POSIX path chosen (`POST /storage/choose`). Only for a request whose socket is loopback: from a phone or another machine the dialog would open on a screen nobody is looking at, so those get 501 and the page falls back to its own folder list. The prompt and starting folder are passed to the script as arguments, never spliced into its text. No MCP tool opens it; an agent has `storage_browse`.
+
+### An Edit Made in Premiere Comes Home
+*"Let's say I grab all the clips into Premiere, finish an edit — where do I place this in the folder structure so we can see it in Film Engine, and possibly compose a score for it?"*
+
+Nowhere, before this. Film Engine exported to Premiere and read nothing back, and a score session was written against the ASSEMBLY — shots in running order at their own lengths — while the film that will play is the editor's cut: trimmed, reordered, shots dropped. A score timed to the assembly is timed to a film that does not exist.
+
+**An edit is a version, never an overwrite** (`film_edits`, migration 114). The exported picture (H.264 or ProRes) lands in the project's `05 Edit` folder as `edit_v1.mp4`, `edit_v2.mov`…, measured by the encoder; a container is recognised from its first bytes and the encoder must then read a picture and a length out of it, or nothing is written. A large export travels as a resumable upload that is **moved into place** (`uploads.claimUpload`), never read into memory. It is recorded external/unknown, like any upload: an edit is made of clips whose rights may not be cleared.
+
+**The XML or EDL is read into a cut list** (`lib/edit-cut.js`, no dependency). Premiere's File → Export → Final Cut Pro XML (xmeml) or a CMX 3600 EDL; FCPXML is refused by name rather than misread. The picture is the lowest video track with anything on it; higher tracks are overlays. A clip item carrying `-1` beside a transition is cut at the transition's centre; a disabled clip is no picture. Every event is matched to a shot **by the clip file** Film Engine stored, else **by shot code as a whole token** (`2AA_v3` is 2AA, never 2A; `SC2A` is nothing), else it is **none** — a title or a stock shot, kept and named, because it is still time the score has to cover. Each format is round-tripped through this engine's own exporter for it in the test.
+
+**A score session can be written against an edit** (`film_music_sessions.edit_id`). Every reader of a session's picture follows the cut: the brief's shots are the cut's events at the cut's times; the session is exactly the edit's length, so a bounce's stems line up with the edit's first and last frame in Premiere; the score package carries the edit as its reference picture and names it; the Score page plays the edit above the lanes, following the playhead. **Approval never lays an edit-scored mix on the assembly** — its timing is the editor's — it is reported `on_edit` and delivered with that edit. A newer edit version is **reported** on the session (`newer_edit`) and applied only when asked; an edit a score is written against is not deleted out from under it without `force`.
+
+Served on the **Edit** page (Post), at the routes above, and as `edit_list` / `edit_get` / `edit_import` / `edit_cut_import` / `edit_cut_rematch` / `edit_update` / `edit_delete`.
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
@@ -3910,7 +3928,7 @@ It returns **null when nothing has been shot, never 0**: "no footage" and "a zer
 
 The handle is required **lazily** rather than threaded through the call sites. This module is used by the route, the orchestrator and the flow canvas; passing a database through all three to fix one number is how two of them end up still guessing.
 
-**The NLE seam is one-way, and that is the honest limit.** There is no FCPXML, EDL or xmeml *parser* anywhere here — export only. So the engine can score its own assembly and cannot follow a re-cut made in Premiere. A test asserts the absence, so building an importer forces the claim to be revisited rather than left stale.
+**The NLE seam now runs both ways, for the score.** It was export-only, and a test pinned the absence of any importer so that building one would force this to be revisited — it was. An edit made in Premiere is imported with its Final Cut Pro XML or EDL (see *An Edit Made in Premiere Comes Home*), and a score SESSION written against it follows the cut. A scene CUE's length is still measured from the engine's own assembly: a cue is per scene, an edit is the whole film, and reading one scene's length out of a cut is a claim nobody has built. The test pins that too.
 
 **And an agent can write the brief, not only press generate.** `node_gen_music` was reachable and the cue that carries the direction was not — the thing that spends money was fully exposed while the field deciding *what the music is* could only be typed by hand. Four tools close it (`music_cue_create`, `_list`, `_update`, `_delete`, **179 tools**), and the routes they needed did not exist either: only POST and GET, so a cue's direction could be written once and never revised. `music_cue_update` **merges**, because a cue is a whole brief and rewriting one sentence must not clear the instruments; deleting a cue **keeps the audio**, which is an asset on the scene that cost money.
 
@@ -5814,7 +5832,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (110 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (111 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5970,6 +5988,7 @@ node --test backend/tests/world-spike.test.js
 node --test backend/tests/reference-match.test.js
 node --test backend/tests/data-paths.test.js
 node --test backend/tests/project-folders.test.js
+node --test backend/tests/edits.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js

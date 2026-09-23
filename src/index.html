@@ -5198,6 +5198,9 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <span class="nav-icon">&#128176;</span> Budget
                 </button>
                 <div class="sidebar-divider"></div>
+                <button class="nav-item" data-page="edits" onclick="navigateTo('edits')" data-tooltip="Cuts finished in Premiere, brought back — every version, which shot plays where, and a score timed to the edit" data-tooltip-pos="right">
+                    <span class="nav-icon">&#9986;</span> Edit
+                </button>
                 <button class="nav-item" data-page="exportpage" onclick="navigateTo('exportpage')" data-tooltip="Export timelines to FCPXML, EDL, Premiere XML, or FDX formats" data-tooltip-pos="right">
                     <span class="nav-icon">&#128228;</span> Export
                 </button>
@@ -6051,6 +6054,32 @@ table, .render-table { border-radius:12px; overflow:hidden; }
         </div>
 
         <!-- ── 16. EXPORT ──────────────────────────────────────── -->
+        <!--
+            EDITS MADE IN AN EDITOR, brought back. The picture is versioned in
+            the project's 05 Edit folder; the XML or EDL it was cut from says
+            which Film Engine shot plays where; a score can be written to it.
+        -->
+        <div class="page" id="page-edits">
+            <div class="flex-between mb-16">
+                <h2>Edit</h2>
+                <div>
+                    <label class="btn btn-primary" style="cursor:pointer;margin:0;" id="editImportLabel">Import an edit&hellip;
+                        <input type="file" id="editImportFile" accept="video/mp4,video/quicktime,video/x-matroska,.mp4,.mov,.mkv" style="display:none" onchange="importEditFile(this)">
+                    </label>
+                </div>
+            </div>
+            <p class="text-sm text-muted" style="max-width:760px;line-height:1.5;">
+                Export your cut from Premiere (H.264 or ProRes) and import it here. Then add the
+                <strong>Final Cut Pro XML</strong> (File &rarr; Export &rarr; Final Cut Pro XML) or an <strong>EDL</strong>
+                it was cut from, so Film Engine knows which shot plays where. Every import is a new version &mdash;
+                nothing is overwritten &mdash; and the files are kept in the project&rsquo;s <em>05 Edit</em> folder.
+                <strong>Score this edit</strong> opens a score session timed to the cut, whose stems drop onto the
+                Premiere sequence at 00:00.
+            </p>
+            <div id="editImportProgress" class="text-sm" style="margin:8px 0;"></div>
+            <div id="editsList"><p class="text-muted">Loading&hellip;</p></div>
+        </div>
+
         <div class="page" id="page-exportpage">
             <div class="page-header"><h2>Export</h2></div>
             <div id="exportInfo" class="card mb-16">
@@ -13368,6 +13397,20 @@ THREE.GLTFLoader = GLTFLoader;
       },
 
       // ── Delivery ──────────────────────────────────────────────────────────────
+      edits: {
+        title: 'Edit', icon: '&#9986;', group: 'Delivery', stage: 'deliver', order: 21.5,
+        tooltip: 'Cuts finished in Premiere, brought back — every version, which shot plays where, and a score timed to the edit',
+        purpose: 'Where the editor\'s cut comes home. The exported picture is kept by version, the XML or EDL it was cut from says which shot plays where, and a score can be written against the cut rather than the assembly.',
+        does: [
+          'Import an exported cut as a new version — nothing is overwritten',
+          'Read the Final Cut Pro XML or EDL into a cut list, matched to shots by file and by shot code',
+          'Name what the cut uses that Film Engine did not make: titles, stock, pickups',
+          'Open a score session timed to the edit, whose stems line up at 00:00 in Premiere'
+        ],
+        needs: ['A cut exported from Premiere (H.264 or ProRes), and ideally its XML or EDL.'],
+        next: ['musicws', 'exportpage'],
+        pro: 'Assistant editor + music editor'
+      },
       exportpage: {
         title: 'Export', icon: '&#128228;', group: 'Delivery', stage: 'deliver', order: 22,
         tooltip: 'Hand off to Premiere, Final Cut, or Resolve — FCPXML, EDL, XML, FDX',
@@ -19782,6 +19825,7 @@ THREE.GLTFLoader = GLTFLoader;
             milestones: loadMilestones,
             notes: loadNotesPage,
             renderhistory: loadRenderPage,
+            edits: loadEditsPage,
             exportpage: loadExportPage,
             pipeline: loadPipeline,
             flows: loadFlowsPage,
@@ -19950,6 +19994,164 @@ THREE.GLTFLoader = GLTFLoader;
             + 'Deliverables and Brand apply to it; a film simply never opens them.';
         el.style.display = '';
     }
+
+    // ── Edits made in an editor ─────────────────────────────────────
+
+    async function loadEditsPage() {
+        const list = document.getElementById('editsList');
+        if (!list) return;
+        if (!state.currentProject) { list.innerHTML = '<p class="text-muted">Open a project to see its edits.</p>'; return; }
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/edits`);
+            state.edits = r.edits || [];
+            list.innerHTML = state.edits.length ? state.edits.map(editCardHtml).join('')
+                : '<p class="text-muted">No edit yet. Export your cut from Premiere and import it with the button above.</p>';
+        } catch (err) {
+            list.innerHTML = `<p class="text-sm" style="color:var(--danger,#e66);">The edits could not be read: ${esc(err.message)}</p>`;
+        }
+    }
+
+    function editCardHtml(e) {
+        const c = e.cut;
+        const facts = [mwTime(e.duration_ms), e.frame_rate ? `${Math.round(e.frame_rate * 1000) / 1000} fps` : '',
+            e.width ? `${e.width}×${e.height}` : '', e.has_audio ? 'with sound' : 'no sound', e.size_bytes ? fmtBytes(e.size_bytes) : '']
+            .filter(Boolean).join(' · ');
+        const cutLine = c
+            ? `<strong>${c.summary.events}</strong> events in “${esc(c.sequence || '')}”, <strong>${c.summary.matched}</strong> of them Film Engine shots`
+              + ` (${c.summary.by.file} by file, ${c.summary.by.code} by shot code)`
+              + (c.summary.unmatched ? ` · not ours: ${esc(c.summary.unmatched_names.slice(0, 6).join(', '))}${c.summary.unmatched > 6 ? '…' : ''}` : '')
+              + (c.summary.shots_not_in_cut.length ? ` · shots not in this cut: ${esc(c.summary.shots_not_in_cut.slice(0, 8).join(', '))}${c.summary.shots_not_in_cut.length > 8 ? '…' : ''}` : '')
+            : 'No cut yet — add the XML or EDL this edit was exported with, so the score knows which shot plays where.';
+        const rows = c ? c.events.map(ev => `<tr>
+                <td style="padding:2px 8px 2px 0;">${mwTime(ev.start_ms)}</td>
+                <td style="padding:2px 8px;">${mwTime(ev.duration_ms)}</td>
+                <td style="padding:2px 8px;"><strong>${esc(ev.shot_code || '—')}</strong></td>
+                <td style="padding:2px 8px;">${esc(ev.name || ev.file_name || '')}</td>
+                <td style="padding:2px 0;" class="text-muted">${esc(ev.matched_by ? 'by ' + ev.matched_by : 'not a Film Engine shot')}</td></tr>`).join('') : '';
+        return `<div class="card mb-16" data-edit-id="${esc(e.id)}">
+            <div class="flex-between">
+                <h3 style="margin:0;">v${esc(e.version)} · ${esc(e.name || '')}${e.is_latest ? ' <span class="badge">latest</span>' : ''}</h3>
+                <div class="btn-row" style="margin:0;">
+                    <button class="btn btn-primary btn-sm" onclick="scoreThisEdit(${jsAttr(e.id)}, ${e.version})">Score this edit</button>
+                    <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;">${c ? 'Replace XML / EDL' : 'Add XML / EDL'}
+                        <input type="file" accept=".xml,.edl,application/xml,text/xml,text/plain" style="display:none" onchange="importEditCut(${jsAttr(e.id)}, this)">
+                    </label>
+                    ${c ? `<button class="btn btn-secondary btn-sm" onclick="rematchEditCut(${jsAttr(e.id)})">Re-match shots</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="renameEdit(${jsAttr(e.id)})">Rename</button>
+                    <button class="btn btn-secondary btn-sm" onclick="deleteEditVersion(${jsAttr(e.id)}, ${e.version})">Delete</button>
+                </div>
+            </div>
+            <div class="text-sm text-muted" style="margin:4px 0 8px;">${facts}</div>
+            ${e.available && e.video_url ? `<video src="${esc(API_BASE + e.video_url)}" controls preload="metadata" playsinline style="width:100%;max-height:40vh;background:#000;display:block;"></video>`
+              : '<p class="text-sm" style="color:var(--danger,#e66);">The picture file is missing from the project folder.</p>'}
+            <div class="text-sm" style="margin-top:8px;">${cutLine}</div>
+            ${e.sessions.length ? `<div class="text-sm" style="margin-top:4px;">Scored in: ${e.sessions.map(x => `<a href="#" onclick="openScoreSession(${jsAttr(x.id)});return false;">${esc(x.name || 'untitled')}</a> (${esc(x.status)})`).join(', ')}</div>` : ''}
+            ${e.file_path ? `<div class="text-sm text-muted" style="margin-top:4px;user-select:all;">${esc(e.file_path)}</div>` : ''}
+            ${rows ? `<details style="margin-top:8px;"><summary class="text-sm">The cut, event by event</summary>
+                <table class="text-sm" style="border-collapse:collapse;margin-top:6px;">${rows}</table></details>` : ''}
+        </div>`;
+    }
+
+    /*
+     * Sent in pieces, and resumed rather than restarted. An edit exported at
+     * ProRes is gigabytes; one request that dies at 90% on a flaky connection
+     * is a transfer that never finishes. The server says how much it holds,
+     * and only that number is trusted.
+     */
+    const EDIT_CHUNK = 8 * 1024 * 1024;
+    async function importEditFile(input) {
+        const file = input.files && input.files[0];
+        if (!file || !state.currentProject) return;
+        const out = document.getElementById('editImportProgress');
+        const label = document.getElementById('editImportLabel');
+        const say = t => { if (out) out.textContent = t; };
+        if (label) label.classList.add('disabled');
+        try {
+            const opened = await api('/uploads', { method: 'POST', body: JSON.stringify({ total_bytes: file.size, mime: file.type || 'application/octet-stream', name: file.name }) });
+            let at = 0, failures = 0;
+            while (at < file.size) {
+                const piece = file.slice(at, Math.min(file.size, at + EDIT_CHUNK));
+                // The whole edit has no ceiling — it travels in pieces — but each
+                // piece does, and one over it is refused here rather than as a 413.
+                checkUploadSize(piece, `/uploads/${opened.id}`);
+                try {
+                    const res = await fetch(`${API_BASE}/uploads/${opened.id}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'X-Upload-Offset': String(at) }, body: piece,
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+                    at = body.received; failures = 0;
+                } catch (err) {
+                    if (++failures > 5) throw err;
+                    // Ask the server where it got to, and carry on from there.
+                    const st = await api(`/uploads/${opened.id}`).catch(() => null);
+                    if (st) at = st.received;
+                    await new Promise(r => setTimeout(r, 1000 * failures));
+                }
+                say(`Uploading ${file.name}: ${Math.floor(at / file.size * 100)}% of ${fmtBytes(file.size)}`);
+            }
+            say('Measuring the picture…');
+            const r = await api(`/projects/${state.currentProject.id}/edits/import`, { method: 'POST', body: JSON.stringify({ upload_id: opened.id, name: file.name.replace(/\.[^.]+$/, '') }) });
+            say(`Imported as edit v${r.edit.version} (${mwTime(r.edit.duration_ms)}). Add the XML or EDL it was exported with to see which shot plays where.`);
+            loadEditsPage();
+        } catch (err) {
+            say(`${file.name} was not imported: ${err.message}`);
+        } finally {
+            if (label) label.classList.remove('disabled');
+            input.value = '';
+        }
+    }
+
+    async function importEditCut(editId, input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+            checkUploadSize(file, `/edits/${editId}/cut`);
+            const text = await file.text();
+            const r = await api(`/edits/${editId}/cut`, { method: 'POST', body: JSON.stringify({ text, name: file.name }) });
+            const sm = r.edit.cut.summary;
+            setStatus(`${file.name}: ${sm.events} events, ${sm.matched} matched to shots${sm.unmatched ? `, ${sm.unmatched} not ours` : ''}`);
+            loadEditsPage();
+        } catch (err) { setStatus(`${file.name} was not read: ${err.message}`); }
+        finally { input.value = ''; }
+    }
+
+    async function rematchEditCut(editId) {
+        try { await api(`/edits/${editId}/cut/rematch`, { method: 'POST', body: '{}' }); loadEditsPage(); setStatus('Matched against the shots as they are now'); }
+        catch (err) { setStatus('Could not re-match: ' + err.message); }
+    }
+
+    async function renameEdit(editId) {
+        const e = (state.edits || []).find(x => x.id === editId);
+        const name = prompt('Name this version', e ? e.name : '');
+        if (name === null) return;
+        try { await api(`/edits/${editId}`, { method: 'PUT', body: JSON.stringify({ name }) }); loadEditsPage(); }
+        catch (err) { setStatus('Could not rename: ' + err.message); }
+    }
+
+    async function deleteEditVersion(editId, version) {
+        if (!confirm(`Delete edit v${version}?\n\nThe files move to 05 Edit/deleted, so they can be recovered by hand.`)) return;
+        try { await api(`/edits/${editId}`, { method: 'DELETE' }); loadEditsPage(); setStatus(`Edit v${version} deleted`); }
+        catch (err) {
+            // Refused while a score is written against it: say so, and offer the choice.
+            if (/written against this edit/.test(err.message) && confirm(err.message + '\n\nDelete anyway and leave those scores with no picture?')) {
+                try { await api(`/edits/${editId}?force=true`, { method: 'DELETE' }); loadEditsPage(); } catch (e2) { setStatus('Could not delete: ' + e2.message); }
+            } else setStatus('Not deleted: ' + err.message);
+        }
+    }
+
+    /** Open a score session timed to this edit, and go to it. */
+    async function scoreThisEdit(editId, version) {
+        try {
+            const out = await api(`/projects/${state.currentProject.id}/music-sessions`, {
+                method: 'POST', body: JSON.stringify({ edit_id: editId, name: `Score — edit v${version}` }),
+            });
+            MW.session = out.session;
+            navigateTo('musicws');
+        } catch (err) { setStatus('Could not open a score for this edit: ' + err.message); }
+    }
+
+    function openScoreSession(sessionId) { MW.session = { id: sessionId }; navigateTo('musicws'); }
 
     /**
      * Open the new-project dialog with the place its files will go already
@@ -30108,12 +30310,14 @@ ${fountainText.slice(0, 50000)}`;
      * reason: two rules that disagree is how a fix survives in the tests and
      * not on the screen.
      */
-    const UPLOAD_BODY_LIMITS = { json: 10 * 1048576, file: 150 * 1048576, bundle: 500 * 1048576 };
+    const UPLOAD_BODY_LIMITS = { json: 10 * 1048576, file: 150 * 1048576, bundle: 500 * 1048576, chunk: 16 * 1048576 };
 
     /** The BODY ceiling this URL is allowed, matching what the server enforces. */
     function uploadLimitFor(url) {
         const parts = String(url || '').split('?')[0].split('/').filter(Boolean);
         if (parts[0] === 'projects' && parts[1] === 'import') return UPLOAD_BODY_LIMITS.bundle;
+        // One piece of a resumable upload: the server's CHUNK_LIMIT.
+        if (parts[0] === 'uploads' && parts[1]) return UPLOAD_BODY_LIMITS.chunk;
         const last = parts[parts.length - 1];
         const carriesFile = parts.length > 1 && (last === 'import' || last === 'media' || last === 'stems');
         return carriesFile ? UPLOAD_BODY_LIMITS.file : UPLOAD_BODY_LIMITS.json;
@@ -36304,7 +36508,7 @@ ${fountainText.slice(0, 50000)}`;
         if (!root) return;
         if (!MW.session) {
             root.innerHTML = `<div class="mw-bar">${mwSessionListHtml()}</div>
-                <p class="text-muted" style="margin-top:12px;">No score session yet. Create one for a picture sequence, or a scene, and the brief, the ruler and the lanes appear here.</p>`;
+                <p class="text-muted" style="margin-top:12px;">No score session yet. Create one for an edit imported from Premiere, a picture sequence, or a scene, and the brief, the ruler and the lanes appear here.</p>`;
             return;
         }
         const m = MW.model;
@@ -36319,6 +36523,7 @@ ${fountainText.slice(0, 50000)}`;
             ${(m.warnings || []).length ? `<div class="mw-warn text-sm">${m.warnings.map(w => esc(w)).join(' · ')}</div>` : ''}
             <div class="mw-grid">
                 <div class="mw-main" ondragover="mwDragOver(event)" ondrop="mwDrop(event)">
+                    ${mwPictureHtml(m)}
                     <div class="mw-transport">
                         <button class="btn btn-secondary btn-sm" onclick="mwTogglePlay()" id="mwPlayBtn">${MW.playing ? '&#10073;&#10073; Pause' : '&#9654; Play'}</button>
                         <button class="btn btn-secondary btn-sm" onclick="mwStop()">&#9632; Stop</button>
@@ -36402,14 +36607,62 @@ ${fountainText.slice(0, 50000)}`;
     }
 
     function mwDriftHtml(drift) {
-        if (!drift || !drift.tracked) return drift && drift.error ? `<div class="mw-warn text-sm">Drift could not be read: ${esc(drift.error)}</div>` : '';
-        if (!drift.drifted) return '';
+        /*
+         * A NEWER CUT. The session is pinned to the edit version it was written
+         * against; a new version from Premiere changes nothing here until the
+         * director says so — and it has to be SAID, or the score goes on being
+         * timed to a cut the film no longer is.
+         */
+        const newer = drift && drift.newer_edit
+            ? `<div class="mw-drift"><strong>Edit v${esc(drift.newer_edit.version)} is newer than the v${esc(drift.newer_edit.written_against)} this score is timed to.</strong>
+                <span class="text-sm">Nothing moves until you say so. Moving re-times the brief to the new cut; your clips stay where they are, so check the hits.</span>
+                <button class="btn btn-secondary btn-sm" onclick="mwMoveToEdit(${jsAttr(drift.newer_edit.id)})">Move this score to v${esc(drift.newer_edit.version)}</button></div>`
+            : '';
+        if (!drift || !drift.tracked) return newer + (drift && drift.error ? `<div class="mw-warn text-sm">Drift could not be read: ${esc(drift.error)}</div>` : '');
+        if (!drift.drifted) return newer;
         const sides = ['script', 'picture', 'context'].filter(k => drift[k] && drift[k].changed);
         return `<div class="mw-drift">
             <strong>The ${esc(sides.join(' and ') || 'brief')} moved since this session was written.</strong>
             <span class="text-sm">The score is being judged against a picture or a screenplay that no longer exists. Rebase only once you accept the new cut.</span>
             <button class="btn btn-secondary btn-sm" onclick="mwRebase()">Rebase to the current brief</button>
-        </div>`;
+        </div>` + newer;
+    }
+
+    /** Point this score at a newer edit version, then adopt its brief. */
+    async function mwMoveToEdit(editId) {
+        if (!MW.session) return;
+        try {
+            await api('/music-sessions/' + MW.session.id, { method: 'PUT', body: JSON.stringify({ edit_id: editId }) });
+            await api('/music-sessions/' + MW.session.id + '/rebase', { method: 'POST', body: '{}' });
+            await mwLoadSession(MW.session.id);
+            setStatus('The score is now written against the newer cut');
+        } catch (e) { setStatus('Could not move the score: ' + e.message); }
+    }
+
+    /*
+     * THE PICTURE, when the score is written against an edit: the cut itself,
+     * following the playhead, so a hit is placed while watching the frame it
+     * lands on. Its own sound is on by default — scoring under dialogue is
+     * scoring blind without it — and one switch turns it off.
+     */
+    function mwPictureHtml(m) {
+        const e = m && m.picture && m.picture.kind === 'edit' ? m.picture.edit : null;
+        if (!e || !e.video_url) return '';
+        return `<div class="mw-picture" style="margin-bottom:8px;">
+            <video id="mwPicture" src="${esc(API_BASE + e.video_url)}" preload="auto" playsinline
+                   style="width:100%;max-height:34vh;background:#000;display:block;" ${MW.pictureMuted ? 'muted' : ''}></video>
+            <div class="text-sm text-muted" style="display:flex;gap:12px;align-items:center;margin-top:4px;">
+                <span>Edit v${esc(e.version)} · ${esc(e.name || '')} · ${mwTime(e.duration_ms)}</span>
+                <label><input type="checkbox" ${MW.pictureMuted ? '' : 'checked'} onchange="mwPictureSound(this.checked)"> edit sound</label>
+            </div></div>`;
+    }
+    function mwPictureSound(on) { MW.pictureMuted = !on; const v = document.getElementById('mwPicture'); if (v) v.muted = !on; }
+    /** Put the picture where the playhead is, playing or not. */
+    function mwPictureFollow(play) {
+        const v = document.getElementById('mwPicture');
+        if (!v) return;
+        try { v.currentTime = MW.playheadMs / 1000; } catch (_) { /* not loaded yet */ }
+        if (play) { const p = v.play(); if (p && p.catch) p.catch(() => {}); } else v.pause();
     }
 
     async function mwRebase() {
@@ -36947,6 +37200,7 @@ ${fountainText.slice(0, 50000)}`;
             title = 'Session';
             body = c('name', row.name) + c('status', row.status) + c('sample_rate', row.sample_rate)
                 + c('frame_rate', row.frame_rate, { type: 'number', step: 0.001 })
+                + c('edit_id', row.edit_id, { label: 'edit id', note: 'A cut imported from Premiere. When set, it IS the picture: its length and its timing.' })
                 + c('sequence_id', row.sequence_id, { label: 'picture sequence id', note: 'The ordered picture this score is for; a scene is the fallback.' })
                 + c('scene_id', row.scene_id, { label: 'scene id' })
                 + c('script_id', row.script_id, { label: 'screenplay version id', note: 'Stamped by the rebase; change it only to pin a draft on purpose.' })
@@ -37170,10 +37424,13 @@ ${fountainText.slice(0, 50000)}`;
     async function mwCreateSession() {
         if (!state.currentProject) return;
         const pid = state.currentProject.id;
-        let sequences = [], scenes = [];
+        let sequences = [], scenes = [], edits = [];
+        // A finished cut is what a film is scored to, so edits come first.
+        try { edits = (await api('/projects/' + pid + '/edits')).edits || []; } catch (_) { edits = []; }
         try { sequences = (await api('/projects/' + pid + '/sequences')).sequences || []; } catch (_) { sequences = []; }
         try { scenes = (await api('/projects/' + pid + '/scenes')).scenes || []; } catch (_) { scenes = []; }
         const opts = [
+            ...edits.map(e => `<option value="edit:${esc(e.id)}">Edit v${esc(e.version)} · ${esc(e.name || '')} · ${mwTime(e.duration_ms)}</option>`),
             ...sequences.map(s => `<option value="sequence:${esc(s.id)}">Sequence · ${esc(s.name || s.id)}</option>`),
             ...scenes.map(s => `<option value="scene:${esc(s.id)}">Scene ${esc(s.scene_number)} · ${esc(s.location || '')}</option>`),
         ].join('');
@@ -37182,7 +37439,7 @@ ${fountainText.slice(0, 50000)}`;
             <div class="modal-body">
                 <label style="display:block;margin-bottom:10px;">Name<input id="mwNewName" class="form-control" placeholder="Reel 1 score"></label>
                 <label style="display:block;margin-bottom:10px;">Picture<select id="mwNewPicture" class="form-control">${opts || '<option value="">no sequences or scenes yet</option>'}</select></label>
-                <p class="text-sm text-muted">A session is written against an ordered sequence; a scene is the fallback when the project has none. It is stamped with the brief as it stands, so drift is sayable from the first read.</p>
+                <p class="text-sm text-muted">A session is written against an edit made in Premiere (the finished cut: its length, its timing, and stems that line up at 00:00), an ordered sequence, or a scene. It is stamped with the brief as it stands, so drift is sayable from the first read.</p>
             </div>
             <div class="modal-footer"><button class="btn btn-primary" onclick="mwCreateSessionSubmit()">Create</button></div>`);
     }
@@ -37190,7 +37447,7 @@ ${fountainText.slice(0, 50000)}`;
         const pick = String((document.getElementById('mwNewPicture') || {}).value || '');
         const [kind, id] = pick.split(':');
         const body = { name: (document.getElementById('mwNewName') || {}).value || '' };
-        if (kind === 'sequence') body.sequence_id = id; else if (kind === 'scene') body.scene_id = id;
+        if (kind === 'edit') body.edit_id = id; else if (kind === 'sequence') body.sequence_id = id; else if (kind === 'scene') body.scene_id = id;
         try {
             const out = await api('/projects/' + state.currentProject.id + '/music-sessions', { method: 'POST', body: JSON.stringify(body) });
             closeModal('mwNewSessionModal');
@@ -37205,7 +37462,7 @@ ${fountainText.slice(0, 50000)}`;
         MW.playheadMs = Math.max(0, Math.round(Number(ms) || 0));
         const ph = document.getElementById('mwPlayhead'); if (ph) ph.style.left = mwX(MW.playheadMs) + 'px';
         const clock = document.getElementById('mwClock'); if (clock) clock.textContent = mwTime(MW.playheadMs);
-        if (MW.playing) mwRestartAudio();
+        if (MW.playing) mwRestartAudio(); else mwPictureFollow(false);
     }
     function mwZoom(v) { MW.pxPerSec = Math.max(10, Math.min(200, Number(v) || 40)); mwRepaint(); }
 
@@ -37959,6 +38216,7 @@ ${fountainText.slice(0, 50000)}`;
             MW.sources.push(src);
         }
         const btn = document.getElementById('mwPlayBtn'); if (btn) btn.innerHTML = '&#10073;&#10073; Pause';
+        mwPictureFollow(true);
         cancelAnimationFrame(MW.raf);
         const tick = () => {
             if (!MW.playing) return;
@@ -37973,6 +38231,7 @@ ${fountainText.slice(0, 50000)}`;
     function mwStopSources() { for (const s of MW.sources) { try { s.stop(); } catch (_) { /* already ended */ } } MW.sources = []; }
     function mwPause() {
         MW.playing = false; mwStopSources(); cancelAnimationFrame(MW.raf);
+        mwPictureFollow(false);
         const btn = document.getElementById('mwPlayBtn'); if (btn) btn.innerHTML = '&#9654; Play';
     }
     function mwStop() { mwPause(); mwSeek(0); }
@@ -44666,7 +44925,7 @@ ${fountainText.slice(0, 50000)}`;
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
       pages:['shotboard','videoshots','music','musiccues','musicws','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',
-      pages:['exportpage','titles','subtitles','rights','marketing','assets','jobsqueue','renderhistory'] }
+      pages:['edits','exportpage','titles','subtitles','rights','marketing','assets','jobsqueue','renderhistory'] }
   ];
   var RAIL = [
     { id:'dashboard', label:'Home',  icon:'M3 7.5L9 3l6 4.5V15H3V7.5Z' },

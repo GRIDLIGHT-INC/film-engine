@@ -99,17 +99,19 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 35 pages is phone work?
+## 3. Which of the 36 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:
 
-**Genuinely good on a phone — review and judgement (11).**
+**Genuinely good on a phone — review and judgement (12).**
 `dashboard`, `storyboard`, `shotboard`, `playback`, `notes`, `characters`, `locations`,
-`props`, `stylebook`, `jobsqueue`, `moodboard`. These are look-at-it-and-decide surfaces: is
+`props`, `stylebook`, `jobsqueue`, `moodboard`, `edits`. These are look-at-it-and-decide surfaces: is
 this frame right, is that plate the character, what is running, add a note, capture a shot idea
 while it is in your head. The style book in particular is a phone feature that happens to live
-on a desktop — you think of an angle away from the desk.
+on a desktop — you think of an angle away from the desk. `edits` is watching the editor's latest
+cut and reading which shots made it in; importing a ProRes export is desk work, but it resumes
+if a phone does start it and loses the connection.
 
 **Read-only on a phone, edited elsewhere (12).**
 `scenes`, `milestones`, `budget`, `assets`, `renderhistory`, `provenance`, `rights`,
@@ -127,7 +129,7 @@ that shape: a credit roll and a cue list are read to check a spelling, and typed
 precision work on a large canvas. A phone version of the previs stage would be a worse tool that
 took weeks.
 
-So a mobile companion covering **11 pages properly** is worth more than 38 covered badly — which
+So a mobile companion covering **12 pages properly** is worth more than 38 covered badly — which
 is exactly the judgement NeonCore's README already made.
 
 ---
@@ -136,7 +138,7 @@ is exactly the judgement NeonCore's README already made.
 
 ### Option A — the agent surface, which already works ✅ zero cost
 
-**356 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
+**363 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
 codebase it is the native mobile interface. You can already, from a phone:
 
 - read the screenplay, revise a scene, re-run a breakdown

@@ -167,6 +167,28 @@ function completeUpload(id) {
     return { id, bytes, mime: m.mime, target: m.target, name: m.name, owner: m.owner };
 }
 
+/**
+ * Close a finished transfer WITHOUT reading it: hand over the path of the
+ * bytes on disk, for a destination that moves the file into place itself.
+ *
+ * `completeUpload` reads the whole file into memory, which is right for a
+ * plate and wrong for an edit exported at ProRes — gigabytes that only need
+ * to change directory. Same refusal of a short file; the caller owns the
+ * returned path from here and must move or delete it.
+ */
+function claimUpload(id) {
+    const m = readMeta(id);
+    if (m.received !== m.total_bytes) {
+        throw new Error(`upload is incomplete: ${m.received} of ${m.total_bytes} bytes arrived. `
+            + `Resume from ${m.received} rather than finalising a truncated file.`);
+    }
+    const { part, meta } = pathsFor(id);
+    const claimed = `${part}.claimed`;
+    fs.renameSync(part, claimed);
+    fs.rmSync(meta, { force: true });
+    return { id, path: claimed, bytes: m.total_bytes, mime: m.mime, name: m.name, owner: m.owner };
+}
+
 /** Give up on a transfer and give the disk back. */
 function abandonUpload(id) {
     const { part, meta } = pathsFor(id);
@@ -200,6 +222,7 @@ function sweepUploads(maxAgeMs = STALE_AFTER_MS) {
 }
 
 module.exports = {
+    claimUpload,
     beginUpload, appendChunk, uploadStatus, completeUpload, abandonUpload, sweepUploads,
     STALE_AFTER_MS,
 };

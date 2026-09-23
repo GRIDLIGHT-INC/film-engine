@@ -136,30 +136,31 @@ test('every caller measures the cut, without having to ask', () => {
         'a caller that passes no handle falls back instead of measuring');
 });
 
-test('the NLE seam is one-way, and that is stated', () => {
+test('the NLE seam: a cut is read back, a score can follow it, and a scene cue still does not', () => {
     /*
-     * There is no FCPXML, EDL or xmeml PARSER in this repo — export only. So a
-     * re-cut made in Premiere cannot be read back, and a cue written to the
-     * engine's own assembly may not match the finished edit. Pinned as a fact
-     * rather than left for someone to assume otherwise.
+     * This pinned the ABSENCE of any FCPXML/EDL/xmeml parser, so that building
+     * one would force the claim to be revisited rather than left stale — and it
+     * did. lib/edit-cut.js reads Premiere's XML and EDLs back, and a score
+     * SESSION written against an imported edit takes the edit's length and
+     * timing (tests/edits.test.js holds every consumer to it).
+     *
+     * What is still true, and pinned: a scene CUE (film_music_cues) is measured
+     * from the engine's own assembly (sceneCutLength), not from an edit. A cue
+     * is written per scene; the edit is a whole film, and reading a scene's
+     * length out of a cut is a different claim nobody has built. Stated here so
+     * it is not assumed.
      */
-    const dir = path.join(__dirname, '..');
-    const files = [];
-    (function walk(d) {
-        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-            if (e.name === 'node_modules' || e.name === 'tests') continue;
-            const full = path.join(d, e.name);
-            if (e.isDirectory()) walk(full);
-            else if (e.name.endsWith('.js')) files.push(full);
-        }
-    }(dir));
-
-    const importers = files.filter(f => /parseFcpxml|parseEdl|parseXmeml|importTimeline/
-        .test(fs.readFileSync(f, 'utf8')));
-    assert.deepStrictEqual(importers, [],
-        'an NLE importer now exists — the cue length can follow the finished edit, '
-        + 'and this test and the docs should say so');
+    const lib = path.join(__dirname, '..', 'lib');
+    const reader = fs.readFileSync(path.join(lib, 'edit-cut.js'), 'utf8');
+    assert.match(reader, /function parseXmeml\(/, 'the xmeml reader is gone');
+    assert.match(reader, /function parseEdl\(/, 'the EDL reader is gone');
+    const context = fs.readFileSync(path.join(lib, 'music-context.js'), 'utf8');
+    assert.match(context, /film_edits/, 'a score session no longer reads its edit');
+    const prompt = fs.readFileSync(path.join(lib, 'music-prompt.js'), 'utf8');
+    assert.ok(!/film_edits|edit-cut/.test(prompt),
+        'a scene cue now reads an edit — this test and the docs should say what it follows');
 });
+
 
 test('a reference track reaches the prompt as a style, not a title', () => {
     /*

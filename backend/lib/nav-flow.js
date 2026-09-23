@@ -82,7 +82,9 @@ const NAV_FLOW = {
         // cannot hear it. Both routes shipped with the delivery work and
         // neither had a page, so every field they accept could only be written
         // by curl or by an agent.
-        pages: ['exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
+        // `edits` leads: the cut comes back from the editor before anything is
+        // delivered, and a score is written against it.
+        pages: ['edits', 'exportpage', 'titles', 'subtitles', 'rights', 'marketing', 'assets',
             'jobsqueue', 'renderhistory'],
     },
 };

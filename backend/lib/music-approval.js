@@ -42,7 +42,7 @@ const SCORE_CONSUMERS = Object.freeze([
     { id: 'conform', file: 'backend/lib/conform.js', what: 'The conformed master mixes the approved score over the film’s audio at its offset.' },
 ]);
 
-const REPORT_STATES = Object.freeze(['unapproved', 'stale', 'missing', 'unplaced', 'overlapping', 'shadowed']);
+const REPORT_STATES = Object.freeze(['unapproved', 'stale', 'missing', 'unplaced', 'overlapping', 'shadowed', 'on_edit']);
 
 function refuse(status, code, error) { return { ok: false, status, code, error }; }
 
@@ -137,6 +137,20 @@ function approvedScores(db, projectId) {
         const asset = s.approved_mix_asset_id ? db.prepare('SELECT id, file_path, duration_ms FROM film_assets WHERE id = ?').get(s.approved_mix_asset_id) : null;
         if (!asset) { reports.push({ ...who, state: 'missing', reason: 'approved with no mix selected; approve a bounce' }); continue; }
         if (!asset.file_path || !fs.existsSync(asset.file_path)) { reports.push({ ...who, state: 'missing', reason: `the approved mix is not on disk (${asset.file_path || 'no path'}); the scene music it would have replaced stays` }); continue; }
+        /*
+         * SCORED TO AN EDIT: delivered with that edit, never laid on the
+         * assembly. The score's zero is the edit's first frame and its timing
+         * is the editor's cut — placing it at the first shot of Film Engine's
+         * own running order would put every hit point in the wrong place,
+         * silently, in a film that plays. Its stems and package go to the
+         * editor, where the cut it was written for lives.
+         */
+        if (s.edit_id) {
+            const e = db.prepare('SELECT version FROM film_edits WHERE id = ?').get(s.edit_id);
+            reports.push({ ...who, state: 'on_edit', edit_id: s.edit_id, asset_id: asset.id,
+                reason: `scored to edit v${e ? e.version : '?'} made in an editor; it is delivered with that edit (bounce stems or a score package into the editor at 00:00), not laid on Film Engine's assembly, whose timing is different` });
+            continue;
+        }
         const pic = sessionShots(db, s);
         if (!pic.shot_ids.length) { reports.push({ ...who, state: 'unplaced', reason: 'the session has no picture in this film to sit under' }); continue; }
         const clash = pic.shot_ids.map(id => taken.get(id)).find(Boolean);

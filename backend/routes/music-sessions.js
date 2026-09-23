@@ -144,7 +144,7 @@ function listSessions(projectId) {
         sessions: rows.map(r => {
             const s = fromRow('film_music_sessions', r);
             delete s.warnings;
-            return { ...s, picture_kind: r.sequence_id ? 'sequence' : r.scene_id ? 'scene' : null };
+            return { ...s, picture_kind: r.edit_id ? 'edit' : r.sequence_id ? 'sequence' : r.scene_id ? 'scene' : null };
         }),
     });
 }
@@ -152,17 +152,23 @@ function listSessions(projectId) {
 /** The picture unit a session is attached to must be the project's own. */
 function pictureFor(projectId, body) {
     const b = body || {};
+    // An edit made in an editor is the picture a finished film is scored to.
+    if (b.edit_id) {
+        const e = db.prepare('SELECT id FROM film_edits WHERE id = ? AND project_id = ?').get(b.edit_id, projectId);
+        if (!e) return { error: reply(404, { error: 'That edit is not in this project' }) };
+        return { sequence_id: null, scene_id: null, edit_id: e.id };
+    }
     if (b.sequence_id) {
         const seq = db.prepare('SELECT id FROM film_sequences WHERE id = ? AND project_id = ?').get(b.sequence_id, projectId);
         if (!seq) return { error: reply(404, { error: 'That sequence is not in this project' }) };
-        return { sequence_id: seq.id, scene_id: null };
+        return { sequence_id: seq.id, scene_id: null, edit_id: null };
     }
     if (b.scene_id) {
         const sc = db.prepare('SELECT id FROM film_scenes WHERE id = ? AND project_id = ?').get(b.scene_id, projectId);
         if (!sc) return { error: reply(404, { error: 'That scene is not in this project' }) };
-        return { sequence_id: null, scene_id: sc.id };
+        return { sequence_id: null, scene_id: sc.id, edit_id: null };
     }
-    return { error: reply(400, { error: 'A session is attached to a picture sequence (sequence_id), or to a scene (scene_id) when the project has none' }) };
+    return { error: reply(400, { error: 'A session is attached to an edit (edit_id) — a cut imported from Premiere — or to a picture sequence (sequence_id), or to a scene (scene_id)' }) };
 }
 
 function createSession(projectId, body) {
@@ -196,8 +202,8 @@ function updateSession(session, body) {
         if (b.status === 'approved') return reply(409, { code: 'USE_APPROVE', error: 'a session is approved by selecting a bounce: POST /film/music-sessions/:id/approve (music_session_approve), which refuses a bounce made before the session last changed' });
     }
     let picture = {};
-    if (b.sequence_id !== undefined || b.scene_id !== undefined) {
-        const p = pictureFor(session.project_id, { sequence_id: b.sequence_id, scene_id: b.scene_id });
+    if (b.sequence_id !== undefined || b.scene_id !== undefined || b.edit_id !== undefined) {
+        const p = pictureFor(session.project_id, { sequence_id: b.sequence_id, scene_id: b.scene_id, edit_id: b.edit_id });
         if (p.error) return p.error;
         picture = p;
     }

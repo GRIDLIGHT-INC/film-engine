@@ -261,8 +261,12 @@ async function buildPackage(db, sessionId, opts) {
     const masterBytes = toBwf(fs.readFileSync(masterFile), `${key('session', s.id)} master`, stamp);
     const masterFl = add('master/score_master.wav', masterBytes);
 
-    // The reference picture, when the film has one small enough to carry.
-    const pic = findProjectMaster(db, s.project_id);
+    // The reference picture, when the film has one small enough to carry. A
+    // session written against an EDIT carries that edit: it is the picture the
+    // stems line up with, and the conformed assembly is a different film.
+    const editPic = s.edit_id ? db.prepare(
+        `SELECT a.* FROM film_edits e JOIN film_assets a ON a.id = e.asset_id WHERE e.id = ?`).get(s.edit_id) : null;
+    const pic = editPic || findProjectMaster(db, s.project_id);
     let picture;
     const shots = (() => {
         try { const b = require('./music-context').compileScoreContext(db, { sessionId }); return ((b.brief && b.brief.picture && b.brief.picture.shots) || []).map(x => ({ code: x.shot_code, start_ms: x.start_ms, duration_ms: x.duration_ms })); }
@@ -281,7 +285,9 @@ async function buildPackage(db, sessionId, opts) {
                 reason: size > PICTURE_MAX_BYTES ? `the conformed film is ${size} bytes, over the ${PICTURE_MAX_BYTES}-byte ceiling for carrying it; it is identified by hash` : 'left out on request' };
         }
     } else {
-        picture = { included: false, frame_rate: s.frame_rate, shots, reason: 'no conformed film exists for this project yet; the shot timings from the brief are listed instead' };
+        picture = { included: false, frame_rate: s.frame_rate, shots, reason: s.edit_id
+            ? 'the edit this session is written against is missing from disk; the cut timings from the brief are listed instead'
+            : 'no conformed film exists for this project yet; the shot timings from the brief are listed instead' };
     }
 
     // Placement, rights, provenance.
@@ -335,7 +341,7 @@ async function buildPackage(db, sessionId, opts) {
         format: FORMAT, version: VERSION,
         package: { id: packageId, name: `${s.name || 'score'} — v${bounce.version}`, built_from: 'score session', note: 'Stems are equal-length Broadcast WAV aligned at sample 0 of the session; place each at the start of the timeline.' },
         session: { id: s.id, key: key('session', s.id), name: s.name, project_id: s.project_id, status: s.status, sample_rate: s.sample_rate, frame_rate: s.frame_rate,
-            sequence_id: s.sequence_id || null, scene_id: s.scene_id || null, fingerprints: { script: s.script_fingerprint || '', picture: s.picture_fingerprint || '', context: s.context_fingerprint || '' } },
+            sequence_id: s.sequence_id || null, scene_id: s.scene_id || null, edit_id: s.edit_id || null, fingerprints: { script: s.script_fingerprint || '', picture: s.picture_fingerprint || '', context: s.context_fingerprint || '' } },
         operations: { bounce_operation_id: bounce.operation_id, bounce_version: bounce.version, bounce_fingerprint: bounce.fingerprint, session_operation_ids: sessionOps },
         picture,
         timing: { sample_rate: 48000, bit_depth: 24, channels: 2, frame_rate: s.frame_rate, session_sample_rate: s.sample_rate, start_timecode: '00:00:00:00',

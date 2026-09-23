@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleProjectStorage } = require('../routes/project-storage');
+const { handleEdits } = require('../routes/edits');
 const { handleMusicMidi } = require('../routes/music-midi');
 const { handleInstruments } = require('../routes/instruments');
 const { handleProviders } = require('../routes/providers');
@@ -1540,6 +1541,87 @@ const PRODUCTION_TOOLS = [
             model: { type: 'string', description: 'Advanced: pin a specific model, overriding the tier. Normally omitted.' },
         },
         required: ['project_id', 'quality'],
+    },
+    {
+        name: 'edit_list',
+        handler: handleEdits, method: 'GET',
+        description: 'The cuts of this film made in an editor (Premiere), every version, newest first: length, '
+            + 'frame rate, whether the XML/EDL it was cut from is imported and how many of its events are '
+            + 'Film Engine shots, and which score sessions are written against each. Free.',
+        path: a => `/film/projects/${a.project_id}/edits`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'edit_get',
+        handler: handleEdits, method: 'GET',
+        description: 'One edit version with its full cut list: every event in the edit\'s own time, the Film '
+            + 'Engine shot it is (matched by the clip file, else by shot code in its name) or that it is '
+            + 'none (a title, a stock shot), plus overlays on higher tracks. Free.',
+        path: a => `/film/edits/${a.edit_id}`,
+        schema: { edit_id: { type: 'string' } }, required: ['edit_id'],
+    },
+    {
+        name: 'edit_import',
+        handler: handleEdits, method: 'POST',
+        description: 'Bring a cut finished in Premiere back into the project as the NEXT edit version (nothing '
+            + 'is overwritten). Send the exported picture as a data URI, or — for anything large — the id of '
+            + 'a finished resumable upload (upload_id). Optionally send the Final Cut Pro XML or EDL it was '
+            + 'cut from as `cut` in the same call. Stored in the project\'s "05 Edit" folder. Spends nothing.',
+        path: a => `/film/projects/${a.project_id}/edits/import`,
+        body: a => { const { project_id, ...rest } = a || {}; return rest; },
+        schema: {
+            project_id: { type: 'string' },
+            data: { type: 'string', description: 'data:video/mp4;base64,… or data:video/quicktime;base64,…' },
+            upload_id: { type: 'string', description: 'A finished resumable upload (POST /film/uploads), for files too big for a data URI.' },
+            name: { type: 'string', description: 'What to call this version, e.g. "Director\'s cut".' },
+            notes: { type: 'string' },
+            cut: { type: 'string', description: 'The Final Cut Pro XML (xmeml) or CMX 3600 EDL text the edit was exported with.' },
+            sequence: { type: 'string', description: 'Which sequence in the XML, when it has several. Default: the one with the most picture.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'edit_cut_import',
+        handler: handleEdits, method: 'POST',
+        description: 'Attach (or replace) the cut an edit version was made from: Premiere\'s File → Export → '
+            + 'Final Cut Pro XML, or an EDL. Read into a cut list saying which Film Engine shot plays where '
+            + 'in the edit; unmatched events (titles, stock) are kept and named. FCPXML is refused by name. '
+            + 'Spends nothing.',
+        path: a => `/film/edits/${a.edit_id}/cut`,
+        body: a => { const { edit_id, ...rest } = a || {}; return rest; },
+        schema: {
+            edit_id: { type: 'string' },
+            text: { type: 'string', description: 'The XML or EDL text.' },
+            sequence: { type: 'string', description: 'Which sequence in the XML, when it has several.' },
+        },
+        required: ['edit_id', 'text'],
+    },
+    {
+        name: 'edit_cut_rematch',
+        handler: handleEdits, method: 'POST',
+        description: 'Match an edit\'s stored cut against the shots as they are NOW — after adding shots or '
+            + 'uploading clips the edit uses. Free.',
+        path: a => `/film/edits/${a.edit_id}/cut/rematch`,
+        schema: { edit_id: { type: 'string' } }, required: ['edit_id'],
+    },
+    {
+        name: 'edit_update',
+        handler: handleEdits, method: 'PUT',
+        description: 'Rename an edit version or change its notes.',
+        path: a => `/film/edits/${a.edit_id}`,
+        body: a => { const { edit_id, ...rest } = a || {}; return rest; },
+        schema: { edit_id: { type: 'string' }, name: { type: 'string' }, notes: { type: 'string' } },
+        required: ['edit_id'],
+    },
+    {
+        name: 'edit_delete',
+        handler: handleEdits, method: 'DELETE',
+        description: 'Remove an edit version. REFUSED while a score session is written against it (the '
+            + 'score would be timed to nothing); `force` removes it anyway and leaves those sessions with no '
+            + 'picture. The files move to "05 Edit/deleted", recoverable.',
+        path: a => `/film/edits/${a.edit_id}${a.force ? '?force=true' : ''}`,
+        schema: { edit_id: { type: 'string' }, force: { type: 'boolean' } },
+        required: ['edit_id'],
     },
     {
         name: 'project_storage_get',
@@ -3831,6 +3913,7 @@ const MUSIC_WHAT = {
     automation: 'a parameter over time on a track (or one clip): gain, pan, mute, send or filter, as sorted { at_ms, value } points',
 };
 const MUSIC_HELP = {
+    edit_id: 'A cut imported from an editor (edit_list). The score is written against THAT cut: its length is the edit\'s, its brief follows the editor\'s timing, and its stems line up with the edit\'s first frame in Premiere.',
     instrument_id: 'Which of the director’s own sounds plays this lane, from instrument_list. Set it with the part, then play it with music_track_render.',
     notes: 'THE PART THIS LANE PLAYS: { program, drums, notes: [{ start_ms, duration_ms, pitch, velocity }] }, in MILLISECONDS, pitch 0-127 with 60 as middle C. Write a melody here and play it with music_track_render.',
     start_ms: 'Whole milliseconds in the session clock — the cut is in milliseconds, never beats.',
@@ -3907,7 +3990,7 @@ function musicSessionTools() {
         },
         {
             name: 'music_session_create', handler: H, method: 'POST',
-            description: 'Creates a score session for a picture sequence (sequence_id) or, when the project has none, a scene (scene_id). Created as a draft and STAMPED with the brief it was written against, so drift is sayable from the first read. Writes one row; spends nothing.',
+            description: 'Creates a score session for an edit made in Premiere (edit_id — the finished cut, the usual choice once there is one), a picture sequence (sequence_id), or a scene (scene_id). Created as a draft and STAMPED with the brief it was written against, so drift is sayable from the first read. Writes one row; spends nothing.',
             path: a => `/film/projects/${a.project_id}/music-sessions`,
             body: dropIds('project_id'),
             schema: { project_id: { type: 'string' }, sequence_id: { type: 'string', description: 'The ordered picture sequence this score is for.' },
