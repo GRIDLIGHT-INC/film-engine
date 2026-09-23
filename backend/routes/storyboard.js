@@ -41,7 +41,9 @@ const { filmOptics } = require('../lib/look-development');
 
 const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.homedir(), '.gridlight', 'film-engine', 'data');
+// Where a project's frames live is file-storage's decision (a project folder,
+// or the old data/<kind>/<project> layout) — never recomputed here.
+const { dirFor: storageDirFor } = require('../lib/file-storage');
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -51,7 +53,7 @@ function json(res, status, data) {
 }
 
 function ensureStoryboardDir(projectId) {
-    const dir = path.join(DATA_DIR, 'storyboards', projectId);
+    const dir = storageDirFor(projectId, 'storyboards');
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -63,7 +65,7 @@ function storyboardImageUrl(projectId, shotCode) {
 }
 
 function storyboardImagePath(projectId, shotCode) {
-    return path.join(DATA_DIR, 'storyboards', projectId, `${shotCode}.png`);
+    return path.join(storageDirFor(projectId, 'storyboards'), `${shotCode}.png`);
 }
 
 /**
@@ -80,7 +82,7 @@ function storyboardImagePath(projectId, shotCode) {
  * `{shot}.png` has to change; the version being replaced is copied aside first.
  */
 function storyboardVersionPath(projectId, shotCode, version) {
-    return path.join(DATA_DIR, 'storyboards', projectId, 'versions', `${shotCode}_v${version}.png`);
+    return path.join(storageDirFor(projectId, 'storyboards'), 'versions', `${shotCode}_v${version}.png`);
 }
 
 /**
@@ -713,7 +715,7 @@ function serveStoryboardImage(res, projectId, filename, width) {
      * The project root is tried first, so the live frame costs one stat and the
      * common case is unchanged.
      */
-    const projectDir = path.join(DATA_DIR, 'storyboards', projectId);
+    const projectDir = storageDirFor(projectId, 'storyboards');
     const candidates = [
         path.join(projectDir, filename),
         path.join(projectDir, 'versions', filename),
@@ -2378,17 +2380,14 @@ function servedUrlFor(projectId, filePath, fileName) {
          * built `/film/<project>/<project>/x.png`. Caught in review, and the
          * behavioural test only checked the URL was non-null.
          */
-        const dir = path.dirname(filePath);
-        const isStoryboard = path.basename(dir) === 'versions'
-            ? path.basename(path.dirname(path.dirname(dir))) === 'storyboards'
-            : path.basename(path.dirname(dir)) === 'storyboards';
-        if (isStoryboard) return storyboardImageUrl(projectId, path.basename(fileName, '.png'));
-
-        // Everything else is served from its own registered subdir, one level
-        // above the project directory.
-        const parent = path.basename(path.dirname(dir));
-        if (!parent) return null;
-        return require('../lib/file-storage').getFileUrl(parent, projectId, fileName);
+        // WHICH KIND this file is comes from file-storage, which knows both
+        // layouts. Reading it off the folder names ("two directories up") was
+        // only ever true of the old layout; in a project folder two directories
+        // up is "01 References".
+        const where = require('../lib/file-storage').locate(filePath);
+        if (!where) return null;
+        if (where.subdir === 'storyboards') return storyboardImageUrl(projectId, path.basename(fileName, '.png'));
+        return require('../lib/file-storage').getFileUrl(where.subdir, projectId, fileName);
     } catch (_) { return null; }
 }
 

@@ -49,6 +49,21 @@ const SETTINGS = {
      * approval and at final export — allow, warn or block. Blank is the stated
      * default in lib/music-rights.js; a value replaces only the parts it names.
      */
+    /*
+     * WHERE NEW PROJECTS GO. The folder a new project's own folder is made
+     * inside, offered as the default when a project is started and changeable
+     * there. Blank is `~/Film Engine` (lib/project-folders.js).
+     */
+    projects_root: {
+        description: 'The folder new projects are saved in: each project gets its own folder inside it, e.g. "~/Film Engine". Blank uses ~/Film Engine.',
+        default: '',
+        validate: v => {
+            if (v === '' || v === null || v === undefined) return [];
+            const expanded = require('../lib/project-folders').expandHome(String(v));
+            return require('path').isAbsolute(expanded) ? [] : ['projects_root must be a full path (start it with / or ~/)'];
+        },
+        example: '~/Film Engine',
+    },
     music_rights_policy: {
         description: 'JSON: what each music rights status does at each gate, e.g. {"approval":{"unknown":"warn"},"final_export":{"restricted":"block"}}. Statuses: cleared, unknown, restricted, expired, blocked; actions: allow, warn, block. Blank keeps the stated default (unknown and restricted warn; expired blocks final export; blocked blocks both).',
         default: '',

@@ -58,14 +58,13 @@ const KIND_ORDER = ['medium', 'palette', 'lighting', 'lens', 'framing', 'texture
  */
 function withImageUrl(entry) {
     if (!entry || !entry.image_path) return entry;
-    const { getFileUrl } = require('../lib/file-storage');
-    const parts = String(entry.image_path).split(path.sep).filter(Boolean);
-    const filename = parts[parts.length - 1];
-    const projectDir = parts[parts.length - 2];
-    const subdir = parts[parts.length - 3];
-    if (!filename || !projectDir || !subdir) return entry;
+    const { getFileUrl, locate } = require('../lib/file-storage');
+    // Which project and kind, from file-storage — both layouts. The last three
+    // path segments are only project/kind in the OLD layout.
+    const where = locate(entry.image_path);
+    if (!where || where.rest.includes('/')) return entry;
     try {
-        return { ...entry, image_url: getFileUrl(subdir, projectDir, filename, entry.updated_at || entry.created_at) };
+        return { ...entry, image_url: getFileUrl(where.subdir, where.projectId, where.rest, entry.updated_at || entry.created_at) };
     } catch (_) {
         return entry;   // an unservable path is still an entry; it just has no picture
     }

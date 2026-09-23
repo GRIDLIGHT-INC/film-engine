@@ -77,6 +77,7 @@ const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
+const { handleProjectStorage } = require('./routes/project-storage');
 const { handleEvents } = require('./routes/events');
 const { handleStoryBible } = require('./routes/story-bible');
 const { handleBreakdown } = require('./routes/breakdown');
@@ -1064,6 +1065,12 @@ const server = http.createServer(async (req, res) => {
             return handleRenderLedger(req, res, parts, query);
         }
         // ==== CLAUDE:END ====
+
+        // Route: /film/storage/* and /film/projects/:id/storage[/move] — where a
+        // project's files live. Before the project catch-all, or it answers 405.
+        if (parts[1] === 'storage' || (parts[1] === 'projects' && parts[2] && parts[3] === 'storage')) {
+            return await handleProjectStorage(req, res, parts, query);
+        }
 
         // Route: /film/projects[/:id]
         if (parts[1] === 'projects') {

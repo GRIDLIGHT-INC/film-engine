@@ -351,7 +351,7 @@ async function audition(req, res) {
     const fileName = `audition_${generateId()}.${ext}`;
     const data = result.data || result.buffer || result.audio;
     try {
-        saveFile('auditions', projectId, fileName,
+        saveFile(projectId, 'auditions', fileName,
             Buffer.isBuffer(data) ? data : Buffer.from(data || '', 'base64'));
     } catch (err) {
         return json(res, 500, { error: 'could not save the audition: ' + err.message });
@@ -486,7 +486,7 @@ async function runTableRead(req, res, sceneId) {
         const key = lineKey(line, voice_id);
         const existingName = `read_${sceneId}_${line.index}_${key}.mp3`;
         let existingPath = null;
-        try { existingPath = getFilePath('auditions', found.scene.project_id, existingName); } catch (_) {}
+        try { existingPath = getFilePath(found.scene.project_id, 'auditions', existingName); } catch (_) {}
         if (!(req.body && req.body.regenerate === true) && existingPath && fs.existsSync(existingPath)) {
             reused++;
             out.push({ ...line, voice_id, cast: !!voice_id, reused: true,
@@ -508,7 +508,7 @@ async function runTableRead(req, res, sceneId) {
         const fileName = `read_${sceneId}_${line.index}_${key}.mp3`;
         const data = result.data || result.buffer || result.audio;
         try {
-            saveFile('auditions', found.scene.project_id, fileName,
+            saveFile(found.scene.project_id, 'auditions', fileName,
                 Buffer.isBuffer(data) ? data : Buffer.from(data || '', 'base64'));
         } catch (err) { refusal = err.message; notAttempted.push(line.index); continue; }
 
@@ -552,7 +552,7 @@ function serveAudition(req, res, projectId, fileName) {
     try {
         // Throws rather than silently correcting if the name escapes the
         // project directory, which is the contract getFilePath states.
-        filePath = getFilePath('auditions', projectId, fileName);
+        filePath = getFilePath(projectId, 'auditions', fileName);
     } catch (err) {
         return json(res, 400, { error: 'Bad path' });
     }

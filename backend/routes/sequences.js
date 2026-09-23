@@ -1275,7 +1275,7 @@ async function stitchSequence(req, res, id) {
     const project = db.prepare('SELECT target_fps FROM film_projects WHERE id = ?').get(row.project_id);
     const fileName = `sequence_${String(row.name || id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60) || id.slice(0, 8)}.mp4`;
     const outputPath = require('path').join(
-        require('../lib/file-storage').DATA_DIR, 'video', row.project_id, fileName);
+        require('../lib/file-storage').ensureDir(row.project_id, 'video'), fileName);
 
     const result = await stitchClips(clips, outputPath, {
         fps: Number(project && project.target_fps) || 24,

@@ -38,8 +38,14 @@ const crypto = require('crypto');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Asset subdirectories to include in bundle
-const ASSET_SUBDIRS = ['storyboards', 'audio', 'video', 'music', 'refsheets', 'provenance'];
+/*
+ * Every kind of per-project file goes in a bundle — the project-folder layout's
+ * own registry, not a list typed here. The bundle keeps them by kind
+ * (`video/…`), which is portable whichever layout either machine uses.
+ */
+const folders = require('./project-folders');
+const fileStorage = require('./file-storage');
+const ASSET_SUBDIRS = Object.keys(folders.PROJECT_LAYOUT);
 
 // Tables to export, in dependency order (parents before children)
 const EXPORT_TABLES = [
@@ -173,7 +179,7 @@ function exportProject(projectId) {
 
     // Copy asset files
     for (const subdir of ASSET_SUBDIRS) {
-        const srcDir = path.join(DATA_DIR, subdir, projectId);
+        const srcDir = fileStorage.dirFor(projectId, subdir);
         if (fs.existsSync(srcDir)) {
             const destDir = path.join(stagingDir, subdir);
             fs.mkdirSync(destDir, { recursive: true });
@@ -270,6 +276,19 @@ function importProject(archiveBuffer) {
         throw new Error('Invalid bundle: no project data');
     }
 
+    /*
+     * The imported film gets its OWN folder here, named after it — never the
+     * folder the manifest names, which is on the machine it came from (and on
+     * this one may belong to the project it was exported from).
+     */
+    const importedTitle = (manifest.tables.film_projects[0].title || 'Imported Film');
+    const where = require('./project-storage').resolveRequested({}, importedTitle, newProjectId);
+    if (!where.ok) {
+        fs.rmSync(extractDir, { recursive: true, force: true });
+        throw new Error(`Cannot make a folder for the imported project: ${where.error}`);
+    }
+    const destRoot = where.dir;
+
     // Import in a transaction. Foreign keys are enforced by a check over the
     // rows just inserted rather than per statement, so rows may land in any
     // order and a self-reference (a retry naming its parent) cannot fail.
@@ -289,9 +308,16 @@ function importProject(archiveBuffer) {
                     if (['__proto__', 'constructor', 'prototype'].includes(k)) continue;
                     let val = remapIds(v, idMap);
                     if (pathCols.has(k) && typeof val === 'string' && val) {
-                        const tail = tailOf(val);
-                        if (tail) val = path.join(DATA_DIR, tail);
+                        // Rebuilt inside this project's folder from the kind and
+                        // the rest of the path — whichever layout it came from.
+                        const parsed = folders.parseStored(val);
+                        if (parsed) val = path.join(folders.layoutDir(destRoot, parsed.subdir), ...parsed.rest.split('/'));
+                        else {
+                            const tail = tailOf(val);
+                            if (tail) val = path.join(DATA_DIR, tail);
+                        }
                     }
+                    if (table === 'film_projects' && k === 'assets_dir') val = destRoot;
                     remapped[k] = val;
                 }
                 const cols = Object.keys(remapped);
@@ -319,7 +345,7 @@ function importProject(archiveBuffer) {
     for (const subdir of ASSET_SUBDIRS) {
         const srcDir = path.join(extractDir, subdir);
         if (fs.existsSync(srcDir)) {
-            const destDir = path.join(DATA_DIR, subdir, newProjectId);
+            const destDir = folders.layoutDir(destRoot, subdir);
             fs.mkdirSync(destDir, { recursive: true });
             copyAssetTree(srcDir, destDir, () => { stats.assets_copied++; });
         }
@@ -327,6 +353,11 @@ function importProject(archiveBuffer) {
 
     // Clean up extraction directory
     fs.rmSync(extractDir, { recursive: true, force: true });
+
+    // A bundle from before project folders has no assets_dir column in its
+    // row; the folder is recorded here whatever the manifest carried.
+    db.prepare('UPDATE film_projects SET assets_dir = ? WHERE id = ?').run(destRoot, newProjectId);
+    folders.scaffold(destRoot, importedTitle);
 
     // A bounce that was its session's current mix stays current under the new ids.
     stats.restamped_bounces = restampBounces(manifest.music_sessions, idMap);

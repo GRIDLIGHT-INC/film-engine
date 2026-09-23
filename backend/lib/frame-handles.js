@@ -28,7 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { DATA_DIR, isPathContained } = require('./file-storage');
+const { isOwnedPath } = require('./file-storage');
 
 /**
  * Long enough for a provider to fetch and retry, short enough that a URL left
@@ -104,7 +104,8 @@ function mintHandle(filePath, opts) {
      * doing nothing, since everything then looks outside. Recorded once already
      * in the style-book path work; not repeated here.
      */
-    if (!isPathContained(filePath, DATA_DIR)) {
+    // Ours: under the data folder, or under a folder a project chose.
+    if (!isOwnedPath(filePath)) {
         return refuse('path_outside_data',
             'that file is not one this engine stores, and only stored media may be handed to a provider');
     }

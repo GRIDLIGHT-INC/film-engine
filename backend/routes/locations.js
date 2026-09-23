@@ -322,9 +322,9 @@ function plateViewsFor(subjectId, kind) {
         let available = false;
         try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
         const subdir = (() => {
-            const parts = String(r.file_path || '').split(path.sep);
-            const at = parts.lastIndexOf(subject.project_id);
-            return at > 0 ? parts[at - 1] : 'refsheets';
+            // Which kind, from file-storage — both layouts, not folder names.
+            const where = r.file_path ? require('../lib/file-storage').locate(r.file_path) : null;
+            return where ? where.subdir : 'refsheets';
         })();
         let size = null;
         try {
@@ -399,7 +399,9 @@ function listPlateViews(res, subjectId, kind) {
         let available = false;
         try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
         const subdir = (() => {
-            try { return path.basename(path.dirname(path.dirname(r.file_path))); } catch (_) { return null; }
+            // Which kind, from file-storage — both layouts, not folder names.
+            const where = r.file_path ? require('../lib/file-storage').locate(r.file_path) : null;
+            return where ? where.subdir : null;
         })();
         return {
             asset_id: r.id,

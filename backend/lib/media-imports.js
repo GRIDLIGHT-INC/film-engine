@@ -857,7 +857,7 @@ function importMedia(target, input) {
     if (target === 'storyboard-image') filename = `${owner.shotCode}.png`;
     else filename = `${safeStem(input.name)}_${generateId().slice(0, 8)}.${storedFormat}`;
 
-    const prospective = path.join(require('./file-storage').DATA_DIR, subdir, owner.projectId, filename);
+    const prospective = path.join(require('./file-storage').dirFor(owner.projectId, subdir), filename);
     if (target === 'storyboard-image') archiveCurrentStoryboard(owner.projectId, owner.shotId, owner.shotCode, prospective);
     const filePath = saveFile(owner.projectId, subdir, filename, bytes);
 

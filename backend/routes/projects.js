@@ -165,6 +165,21 @@ function createProject(req, res) {
 
     const id = generateId();
     const title = body.title.trim().slice(0, 500);
+
+    /*
+     * WHERE THIS FILM'S FILES GO, decided before the row exists. A folder that
+     * cannot be used is refused now, while nothing depends on it, rather than
+     * at the first generation — after the money. No answer means the default:
+     * a folder named after the film inside the person's projects folder.
+     */
+    const projectStorage = require('../lib/project-storage');
+    const where = projectStorage.resolveRequested(
+        { assets_dir: body.assets_dir, parent: body.assets_parent }, title, id);
+    if (!where.ok) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Project folder: ${where.error}`, field: 'assets_dir' }));
+        return;
+    }
     const logline = (body.logline || '').trim().slice(0, 2000);
     const genre = (body.genre || '').trim().slice(0, 100);
     // 2000, not 100. style_preset stopped being an enum key the moment the
@@ -219,6 +234,17 @@ function createProject(req, res) {
         JSON.stringify({}),
         now, now);
 
+    try {
+        projectStorage.assignOnCreate(id, title, { assets_dir: where.dir });
+    } catch (e) {
+        // The folder passed validation a moment ago; if it cannot be made now,
+        // the project must not exist pointing at nothing.
+        db.prepare('DELETE FROM film_projects WHERE id = ?').run(id);
+        res.writeHead(e.status || 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Project folder: ${e.message}`, field: 'assets_dir' }));
+        return;
+    }
+
     const row = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -251,6 +277,17 @@ function updateProject(req, res, id) {
     const body = req.body;
     const fields = [];
     const values = [];
+
+    // The folder is not a field: changing it MOVES files and repoints every
+    // record, which is an action with its own route and its own confirmation.
+    if (body.assets_dir !== undefined) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            error: 'The project folder is changed by moving it: POST /film/projects/:id/storage/move {"assets_dir": "..."} (or project_storage_move).',
+            field: 'assets_dir',
+        }));
+        return;
+    }
 
     if (body.title !== undefined) {
         fields.push('title = ?');

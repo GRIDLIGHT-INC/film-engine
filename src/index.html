@@ -5084,7 +5084,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 
         <!-- State 1: Project List Mode -->
         <div id="sidebarProjectList">
-            <button class="new-project-btn" onclick="showModal('newProjectModal')">+ New Project</button>
+            <button class="new-project-btn" onclick="openNewProject()">+ New Project</button>
             <div class="sidebar-content">
                 <div class="nav-section">Projects</div>
                 <div id="sidebarProjects"></div>
@@ -5246,7 +5246,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div>
                     <input type="file" id="projectBundleInput" accept=".tar.gz,.tgz" style="display:none" onchange="importBundle(this)">
                     <button class="btn btn-secondary" onclick="document.getElementById('projectBundleInput').click()" style="margin-right:8px;">Import Bundle</button>
-                    <button class="btn btn-primary" onclick="showModal('newProjectModal')">+ New Project</button>
+                    <button class="btn btn-primary" onclick="openNewProject()">+ New Project</button>
                 </div>
             </div>
             <div id="projectImportStatus" class="text-sm mb-8" style="display:none;"></div>
@@ -6900,6 +6900,33 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                     <button class="btn btn-primary" onclick="saveAppSettings()">Save</button>
                 </div>
             </div>
+            <!--
+                WHERE THE FILES ARE. A project's folder, what is in it, and the
+                one action that changes it: a move, which relocates the files
+                AND repoints every record — never a field you edit, because a
+                folder typed here with the files left behind is a project whose
+                every plate reads "unavailable".
+            -->
+            <div class="card mt-16" style="max-width:640px;" id="settingsFolderCard">
+                <h3 class="mb-8">Project folder</h3>
+                <div id="settingsFolderInfo" class="text-sm text-muted">Open a project to see where its files are.</div>
+                <div class="form-group mt-8" id="settingsFolderMoveRow" style="display:none;">
+                    <label>Move this project to</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="settingsFolderMoveTo" placeholder="~/Film Engine" style="flex:1;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsFolderMoveTo')">Browse&hellip;</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="settingsFolderMoveBtn" onclick="moveProjectFolder()">Move</button>
+                    </div>
+                    <span class="text-sm text-muted">A folder for this film is made inside the one you pick. Every file moves and every record follows it; nothing is regenerated.</span>
+                </div>
+                <div class="form-group mt-8">
+                    <label>New projects are saved in</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="settingsProjectsRoot" placeholder="~/Film Engine" style="flex:1;" onchange="saveProjectsRoot()">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsProjectsRoot', saveProjectsRoot)">Browse&hellip;</button>
+                    </div>
+                </div>
+            </div>
             <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
                 <h3 class="mb-8">Project Settings</h3>
                 <div class="form-group">
@@ -7302,7 +7329,19 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                         <option value="spot">Commercial &mdash; bought by the second, delivered in many shapes</option>
                     </select>
                 </div>
-                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="My Film"></div>
+                <div class="form-group"><label>Title</label><input type="text" data-field="title" placeholder="My Film" oninput="previewProjectFolder()"></div>
+                <!--
+                    WHERE THIS FILM'S FILES GO, asked up front. Every plate,
+                    frame, clip and sound lands in one folder named after the
+                    film, laid out in the order the film is made — instead of
+                    being spread across a hidden data folder by kind.
+                -->
+                <div class="form-group"><label>Save files in</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="newProjectLocation" placeholder="~/Film Engine" oninput="previewProjectFolder()" style="flex:1;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('newProjectLocation')">Browse&hellip;</button>
+                    </div>
+                    <span class="text-sm text-muted" id="newProjectFolderPreview">This film gets its own folder here.</span></div>
                 <div class="form-group"><label>Logline</label><textarea data-field="logline" rows="2" placeholder="A brief summary..."></textarea></div>
                 <div class="form-group" data-when="film"><label>Genre</label><input type="text" data-field="genre" placeholder="Drama, Sci-Fi, Thriller"></div>
 
@@ -7351,6 +7390,25 @@ table, .render-table { border-radius:12px; overflow:hidden; }
                 <div class="btn-row">
                     <button class="btn btn-primary" onclick="createProject()">Create Project</button>
                     <button class="btn btn-secondary" onclick="closeModal('newProjectModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Choose a folder: where a project's files are saved. -->
+    <div class="modal-overlay" id="folderPickerModal">
+        <div class="modal" style="max-width:560px;">
+            <div class="modal-header"><h3>Choose a folder</h3><button class="modal-close" onclick="closeModal('folderPickerModal')">&times;</button></div>
+            <div class="modal-body">
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="folderPickerUp" onclick="folderPickerUp()">&uarr; Up</button>
+                    <input type="text" id="folderPickerPath" style="flex:1;" onchange="loadFolderPicker(this.value)">
+                </div>
+                <div id="folderPickerList" style="max-height:320px;overflow:auto;border:1px solid var(--border,#333);border-radius:6px;"></div>
+                <p class="text-sm text-muted" style="margin-top:8px;">The project gets its own folder <em>inside</em> the one you choose.</p>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="folderPickerChoose()">Use this folder</button>
+                    <button class="btn btn-secondary" onclick="closeModal('folderPickerModal')">Cancel</button>
                 </div>
             </div>
         </div>
@@ -19807,7 +19865,7 @@ THREE.GLTFLoader = GLTFLoader;
             if (state.projects.length === 0) {
                 el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No projects yet</h3><p>Create your first film project or load a demo.</p>
                     <div class="project-list-actions" style="justify-content:center;margin-top:12px;">
-                        <button class="btn btn-primary" onclick="showModal('newProjectModal')">New Project</button>
+                        <button class="btn btn-primary" onclick="openNewProject()">New Project</button>
                         <button class="btn btn-secondary" onclick="loadDemoProject()">Load Demo Project</button>
                     </div></div>`;
             } else {
@@ -19885,12 +19943,174 @@ THREE.GLTFLoader = GLTFLoader;
         el.style.display = '';
     }
 
+    /**
+     * Open the new-project dialog with the place its files will go already
+     * filled in — the person's own projects folder — so the question is asked
+     * every time and answering it costs nothing when the default is right.
+     */
+    async function openNewProject() {
+        showModal('newProjectModal');
+        const loc = document.getElementById('newProjectLocation');
+        if (loc && !loc.value) {
+            try {
+                const l = await api('/storage/layout');
+                loc.value = l.default_parent || '';
+            } catch (_) { /* the server picks the default */ }
+        }
+        previewProjectFolder();
+    }
+
+    /** Say exactly which folder will be made, before anything is. Free. */
+    let previewFolderSeq = 0;
+    async function previewProjectFolder() {
+        const out = document.getElementById('newProjectFolderPreview');
+        if (!out) return;
+        const title = ((document.querySelector('#newProjectModal [data-field="title"]') || {}).value || '').trim();
+        const parent = ((document.getElementById('newProjectLocation') || {}).value || '').trim();
+        const seq = ++previewFolderSeq;
+        try {
+            const q = `?title=${encodeURIComponent(title || 'Untitled Film')}` + (parent ? `&parent=${encodeURIComponent(parent)}` : '');
+            const r = await api('/storage/suggest' + q);
+            if (seq !== previewFolderSeq) return;       // a later keystroke already asked
+            out.textContent = r.valid ? `Files will be saved in ${r.assets_dir}` : `Cannot use this: ${r.error}`;
+            out.style.color = r.valid ? '' : 'var(--danger, #e66)';
+        } catch (_) { out.textContent = 'This film gets its own folder here.'; out.style.color = ''; }
+    }
+
+    /* The folder picker: where it writes its answer, and what to do after. */
+    const FOLDER_PICKER = { target: null, then: null, path: null, parent: null };
+
+    function openFolderPicker(targetId, then) {
+        FOLDER_PICKER.target = targetId;
+        FOLDER_PICKER.then = typeof then === 'function' ? then : null;
+        showModal('folderPickerModal');
+        const start = ((document.getElementById(targetId) || {}).value || '').trim();
+        loadFolderPicker(start);
+    }
+
+    async function loadFolderPicker(p) {
+        const list = document.getElementById('folderPickerList');
+        if (!list) return;
+        list.innerHTML = '<div class="text-sm text-muted" style="padding:8px;">Loading folders&hellip;</div>';
+        try {
+            const r = await api('/storage/browse' + (p ? `?path=${encodeURIComponent(p)}` : ''));
+            FOLDER_PICKER.path = r.path;
+            FOLDER_PICKER.parent = r.parent;
+            document.getElementById('folderPickerPath').value = r.path;
+            document.getElementById('folderPickerUp').disabled = !r.parent;
+            list.innerHTML = r.dirs.length
+                ? r.dirs.map(d => `<div class="folder-row" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border,#2a2a2a);" onclick="loadFolderPicker(${jsAttr(d.path)})">&#128193; ${esc(d.name)}</div>`).join('')
+                : '<div class="text-sm text-muted" style="padding:8px;">No folders inside this one.</div>';
+        } catch (err) {
+            // Never leave the placeholder: say why the folder could not be read.
+            list.innerHTML = `<div class="text-sm" style="padding:8px;color:var(--danger,#e66);">${esc(err.message)}</div>`;
+        }
+    }
+
+    function folderPickerUp() { if (FOLDER_PICKER.parent) loadFolderPicker(FOLDER_PICKER.parent); }
+
+    function folderPickerChoose() {
+        const el = document.getElementById(FOLDER_PICKER.target);
+        if (el && FOLDER_PICKER.path) el.value = FOLDER_PICKER.path;
+        closeModal('folderPickerModal');
+        if (FOLDER_PICKER.target === 'newProjectLocation') previewProjectFolder();
+        if (FOLDER_PICKER.then) FOLDER_PICKER.then();
+    }
+
+    function fmtBytes(n) {
+        const b = Number(n) || 0;
+        if (b < 1024) return `${b} B`;
+        if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`;
+        if (b < 1073741824) return `${(b / 1048576).toFixed(1)} MB`;
+        return `${(b / 1073741824).toFixed(2)} GB`;
+    }
+
+    /** The Settings card: where this project's files are, folder by folder. */
+    async function loadProjectFolder() {
+        const info = document.getElementById('settingsFolderInfo');
+        const row = document.getElementById('settingsFolderMoveRow');
+        if (!info) return;
+        try {
+            const l = await api('/settings');
+            const root = document.getElementById('settingsProjectsRoot');
+            if (root) root.value = (l.settings && l.settings.projects_root) || '';
+        } catch (_) { /* leave it blank: the default applies */ }
+        if (!state.currentProject) {
+            info.textContent = 'Open a project to see where its files are.';
+            if (row) row.style.display = 'none';
+            return;
+        }
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/storage`);
+            const rows = r.folders.filter(f => f.files > 0 || r.layout === 'project')
+                .map(f => `<tr><td style="padding:2px 8px 2px 0;">${esc(f.folder)}</td><td style="padding:2px 8px;text-align:right;">${f.files}</td><td style="padding:2px 0;text-align:right;">${fmtBytes(f.bytes)}</td></tr>`).join('');
+            info.innerHTML = (r.layout === 'project'
+                ? `<div><strong style="user-select:all;">${esc(r.assets_dir)}</strong>${r.exists ? '' : ' <span style="color:var(--danger,#e66);">— this folder is missing</span>'}</div>`
+                : `<div style="color:var(--warning,#e0a040);">${esc(r.note)}</div>`)
+                + `<div class="mt-8">${r.totals.files} files, ${fmtBytes(r.totals.bytes)}</div>`
+                + (rows ? `<table class="text-sm mt-8" style="border-collapse:collapse;">${rows}</table>` : '');
+            if (row) row.style.display = '';
+            const to = document.getElementById('settingsFolderMoveTo');
+            if (to && !to.value) {
+                // Suggest the parent a move would use: the folder this project
+                // is already in, or the person's projects folder.
+                const sug = r.suggestion || '';
+                to.value = r.layout === 'project' ? r.assets_dir.replace(/\/[^/]+$/, '') : sug.replace(/\/[^/]+$/, '');
+            }
+            const btn = document.getElementById('settingsFolderMoveBtn');
+            if (btn) btn.textContent = r.layout === 'project' ? 'Move' : 'Move into a project folder';
+        } catch (err) {
+            info.textContent = 'Could not read this project\'s folder: ' + err.message;
+        }
+    }
+
+    /** Move this project's files, after saying exactly what will happen. */
+    async function moveProjectFolder() {
+        if (!state.currentProject) return;
+        const parent = ((document.getElementById('settingsFolderMoveTo') || {}).value || '').trim();
+        if (!parent) return setStatus('Choose where to move the project first');
+        let dest;
+        try {
+            const r = await api(`/storage/suggest?title=${encodeURIComponent(state.currentProject.title || '')}&parent=${encodeURIComponent(parent)}&project_id=${encodeURIComponent(state.currentProject.id)}`);
+            if (!r.valid) return setStatus('Cannot move there: ' + r.error);
+            dest = r.assets_dir;
+        } catch (err) { return setStatus('Error: ' + err.message); }
+        if (!confirm(`Move every file of "${state.currentProject.title}" to\n\n${dest}\n\nThe records follow the files; nothing is regenerated or spent. Don't generate anything while it moves.`)) return;
+        const btn = document.getElementById('settingsFolderMoveBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Moving…'; }
+        try {
+            const out = await api(`/projects/${state.currentProject.id}/storage/move`,
+                { method: 'POST', body: JSON.stringify({ assets_dir: dest }) });
+            state.currentProject.assets_dir = out.to;
+            setStatus(`Moved ${out.files_moved} files to ${out.to}`);
+            document.getElementById('settingsFolderMoveTo').value = '';
+        } catch (err) {
+            setStatus('Move failed, nothing was changed: ' + err.message);
+        } finally {
+            if (btn) btn.disabled = false;
+            loadProjectFolder();
+        }
+    }
+
+    async function saveProjectsRoot() {
+        const el = document.getElementById('settingsProjectsRoot');
+        if (!el) return;
+        try {
+            await api('/settings', { method: 'PUT', body: JSON.stringify({ projects_root: el.value.trim() }) });
+            setStatus('New projects will be saved in ' + (el.value.trim() || '~/Film Engine'));
+        } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
     async function createProject() {
         const data = getModalData('newProjectModal');
         if (!data.title) return;
         const type = (document.getElementById('newProjectType') || {}).value || 'film';
+        const location = ((document.getElementById('newProjectLocation') || {}).value || '').trim();
+        if (location) data.assets_parent = location;
         try {
             const p = await api('/projects', { method: 'POST', body: JSON.stringify(data) });
+            // Where this answer was given becomes the default next time.
+            if (location) api('/settings', { method: 'PUT', body: JSON.stringify({ projects_root: location }) }).catch(() => {});
 
             /*
              * A spot's own facts, and its deliverable set, in the same action.
@@ -19947,7 +20167,7 @@ THREE.GLTFLoader = GLTFLoader;
             clearModal('newProjectModal');
             state.currentProject = p;
             openProject(p.id);
-            if (type !== 'spot') setStatus('Project created');
+            if (type !== 'spot') setStatus(p.assets_dir ? `Project created — files in ${p.assets_dir}` : 'Project created');
         } catch (err) { setStatus('Error: ' + err.message); }
     }
 
@@ -31147,6 +31367,7 @@ ${fountainText.slice(0, 50000)}`;
         loadTechnicalSettings();
         loadProviders();
         loadAppSettings();
+        loadProjectFolder();
     }
 
     async function loadAppSettings() {

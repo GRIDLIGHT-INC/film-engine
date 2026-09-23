@@ -88,7 +88,10 @@ function scene(opts = {}) {
                 VALUES (?, ?, '2AA', ?, 4000)`)
         .run(shotId, sceneId, JSON.stringify({ shot_code: '2AA', description: 'close on her' }));
 
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rc-'));
+    // Plates where plates are kept. A random temp folder is a path no serving
+    // route reads, and the URL the preview links has to actually serve.
+    const dir = path.join(process.env.FILM_DATA_DIR, 'refsheets', projectId);
+    fs.mkdirSync(dir, { recursive: true });
     const bytes = tag => Buffer.concat([PNG, Buffer.from(tag)]);
 
     /*

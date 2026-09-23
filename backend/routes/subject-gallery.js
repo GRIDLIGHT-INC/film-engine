@@ -314,7 +314,7 @@ function addInspiration(req, res, kind, subjectId) {
         if (!m) return json(res, 400, { error: 'data must be a PNG, JPEG or WebP data URI' });
         const ext = m[1].toLowerCase() === 'jpg' ? 'jpeg' : m[1].toLowerCase();
         fileName = `inspiration_${assetId}.${ext === 'jpeg' ? 'jpg' : ext}`;
-        const saved = saveFile('refsheets', subject.project_id, fileName, Buffer.from(m[2], 'base64'));
+        const saved = saveFile(subject.project_id, 'refsheets', fileName, Buffer.from(m[2], 'base64'));
         filePath = typeof saved === 'string' ? saved : (saved && saved.path) || '';
     } else {
         return json(res, 400, { error: 'Provide either data (a data URI) or source_url (a link)' });

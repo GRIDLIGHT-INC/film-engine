@@ -203,7 +203,9 @@ describe('project-bundle', () => {
         it('copies asset files with new project ID', () => {
             if (!importedProjectId) return;
 
-            const storyDir = path.join(DATA_DIR, 'storyboards', importedProjectId);
+            // An import gets its own project folder; file-storage says where the
+            // frames of that project live.
+            const storyDir = require('../lib/file-storage').dirFor(importedProjectId, 'storyboards');
             assert.ok(fs.existsSync(storyDir), 'Storyboard dir should exist');
             assert.ok(fs.existsSync(path.join(storyDir, 'SC1A.png')), 'Storyboard file should exist');
 
@@ -241,7 +243,9 @@ describe('project-bundle', () => {
             db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(importedProjectId);
             db.prepare('DELETE FROM film_scripts WHERE project_id = ?').run(importedProjectId);
             db.prepare('DELETE FROM film_projects WHERE id = ?').run(importedProjectId);
-            const storyDir = path.join(DATA_DIR, 'storyboards', importedProjectId);
+            // An import gets its own project folder; file-storage says where the
+            // frames of that project live.
+            const storyDir = require('../lib/file-storage').dirFor(importedProjectId, 'storyboards');
             if (fs.existsSync(storyDir)) fs.rmSync(storyDir, { recursive: true, force: true });
         });
     });

@@ -30,9 +30,10 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (109 migrations)
+│   │   └── migrations/     # SQL migration files (110 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
+│   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
 │   │   ├── scenes.js       # Scene listing
 │   │   ├── shots.js        # Shot creation + shot list
@@ -149,6 +150,8 @@ film-engine/
 │   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
 │   │   ├── file-storage.js        # Shared file storage utilities
+│   │   ├── project-folders.js     # One folder per film, laid out in the order the film is made
+│   │   ├── project-storage.js     # Choosing a project's folder, reading it, and moving it — files first, rows second, both or neither
 │   │   ├── uploads.js            # A transfer that survives losing the connection
 │   │   ├── media-imports.js       # Every external asset: plates, board images, footage and sound
 │   │   ├── orientation-plans.js   # One current plan scan; prior scans move to recoverable storage
@@ -321,6 +324,7 @@ film-engine/
 │       ├── generation-plate.test.js # The plate leads, travels as bytes, and spends nothing
 │       ├── reference-match.test.js # Marks not pixels, a confidence that is earned, and seven traceable exports
 │       ├── data-paths.test.js   # Every path column, a real move, and a registry that cannot go stale
+│       ├── project-folders.test.js # Every kind of file has its folder, lands in it, is found, served, and moved
 │       ├── redo-between-frames-brief.test.js # A plan whose facts drifted is worse than no plan
 │       ├── ios-previz-brief.test.js  # ...and so is a brief whose facts drifted
 │       ├── ios-previz-epic.test.js   # An epic is a registry: held to itself and to the code
@@ -676,6 +680,7 @@ All routes prefixed with `/film`:
 | Category | Endpoints |
 |----------|-----------|
 | Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
+| Folders | `GET /projects/:id/storage`, `POST /projects/:id/storage/move`, `GET /storage/{layout,suggest,browse}` (free) |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
 | Scenes | `GET /projects/:id/scenes`, `GET/PUT/DELETE /scenes/:id`, `GET/PUT /scenes/:id/card`, `GET /scenes/:id/history`, `POST /scenes/:id/edit` |
 | Story | `GET/POST /projects/:id/beats`, `PUT/DELETE /beats/:id`, `GET/PUT /projects/:id/directives` |
@@ -790,6 +795,19 @@ Export project timelines for professional video editors:
 All three formats support dynamic project settings (resolution, fps, aspect ratio, color space), transition metadata (dissolve, fade, wipe), and rational frame durations for NTSC fps. Exports are registered in the asset registry.
 
 `AUDIO_LANES` is the single source for which audio elements leave on their own track — dialogue, music, SFX, ambient (`audio_mix` is excluded: it is the finished master, and laying it beside its own stems would double every element). It exists because there were two lists: FCPXML laid out four elements and Premiere XML laid out three, so every Premiere export silently dropped the ambient bed. Nothing failed — the file opened and played, and the missing layer looked like a creative choice. Since finishing now happens in the NLE, a lane that never arrives is work that cannot be done at all.
+
+### One Folder Per Film
+*"When we start a new project I'd like to be asked where to save the assets, to be able to change this in the middle of a project, and the folder should be well structured so I can easily find things."*
+
+Every file used to be stored kind-first, `data/<kind>/<project id>/…`, so one film was spread across fifteen UUID-named folders inside a hidden directory. A project now has **one folder** (`film_projects.assets_dir`, migration 113), chosen in the New Project dialog (defaulting to `~/Film Engine/<Title>`, or the `projects_root` setting), laid out in the order the film is made: `01 References`, `02 Storyboard`, `03 Previs`, `04 Video`, `05 Sound`, `06 Delivery`, with a note at the top saying what each holds.
+
+**Only the disk moved.** `PROJECT_LAYOUT` is keyed by the `subdir` every storage call already passes, which is also the URL segment the file is served from, so no serving route changed. `file-storage.dirFor` is the one place that decides; it asks the database on every call rather than caching, because the HTTP and MCP servers are two processes and a project moved by one would keep being written to its old folder by the other. It consults the database only if something in the process already opened it, so a unit test asking for a path cannot open the real database. A project with no folder (every project made before this) keeps the old layout, unchanged.
+
+**Five places read a file's kind off its folder names**, "two directories up is the subdir", which is only true of the old layout. They ask `file-storage.locate` now. **Three calls passed their arguments swapped**: auditions (written to `data/<project>/auditions`, which the old layout kept as-is), `shot_review` (read frames from a path that never existed) and gallery inspiration images (written where nothing served them). A move gathers those strays into their kind's folder, the first time they become reachable.
+
+**A move is files first, rows second, both or neither.** The files are renamed (or copied across disks and verified), counted at the destination, and only then is every stored path rewritten: every TEXT column of every table, not a list of path columns, because paths also live inside JSON and lists go stale. If the rewrite fails the files are put back. The destination must be new or empty. The folder cannot be edited as a field; `PUT /projects/:id` refuses `assets_dir` and names the move.
+
+`tests/project-folders.test.js` derives every kind that reaches storage from the source (every storage call and `subdir` declaration, plus the media registries) and holds each to its own folder: landing in it, round-tripping through `locate`, being served, and arriving after a move from either layout. The rollback is proven with a trigger that refuses the rewrite.
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
@@ -5794,7 +5812,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (109 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (110 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5949,6 +5967,7 @@ node --test backend/tests/glb-parser.test.js
 node --test backend/tests/world-spike.test.js
 node --test backend/tests/reference-match.test.js
 node --test backend/tests/data-paths.test.js
+node --test backend/tests/project-folders.test.js
 node --test backend/tests/redo-between-frames-brief.test.js
 node --test backend/tests/ios-previz-brief.test.js
 node --test backend/tests/ios-previz-epic.test.js

@@ -1061,7 +1061,9 @@ function listRefsheetViews(res, charId) {
         let available = false;
         try { available = !!(r.file_path && fs.existsSync(r.file_path)); } catch (_) { available = false; }
         const subdir = (() => {
-            try { return path.basename(path.dirname(path.dirname(r.file_path))); } catch (_) { return null; }
+            // Which kind, from file-storage — both layouts, not folder names.
+            const where = r.file_path ? require('../lib/file-storage').locate(r.file_path) : null;
+            return where ? where.subdir : null;
         })();
 
         return {

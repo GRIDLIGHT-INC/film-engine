@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { DATA_DIR } = require('./file-storage');
+
 
 const DISCLOSURE_TEXT = 'This project contains AI-generated synthetic image, audio, video, and/or text assets. Film Engine records provider, model, prompt, seed, render ledger, asset, and rights metadata in this sidecar manifest. This manifest is not a C2PA-signed Content Credential and does not provide trust-list signing or certificate-backed authenticity.';
 
@@ -134,8 +134,7 @@ function writeProjectSidecar(db, projectId) {
     const manifest = buildProjectManifest(db, projectId);
     if (!manifest) return null;
 
-    const dir = path.join(DATA_DIR, 'provenance', projectId);
-    fs.mkdirSync(dir, { recursive: true });
+    const dir = require('./file-storage').ensureDir(projectId, 'provenance');
     const filename = `project-provenance-${Date.now()}.json`;
     const fullPath = path.join(dir, filename);
     fs.writeFileSync(fullPath, JSON.stringify(manifest, null, 2));
@@ -143,7 +142,9 @@ function writeProjectSidecar(db, projectId) {
     return {
         manifest,
         sidecar_path: fullPath,
-        relative_path: path.join('provenance', projectId, filename),
+        // Relative to the data folder in the old layout; a project folder is
+        // outside it, so there the path is stored whole (toStored's rule).
+        relative_path: require('./data-paths').toStored(fullPath),
     };
 }
 

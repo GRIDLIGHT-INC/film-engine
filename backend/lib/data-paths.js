@@ -112,7 +112,7 @@ const NOT_PATHS = Object.freeze({
     // These own their own resolution, and rewriting them would fight it.
     'film_backups.file_path': 'resolved by resolveBackupPath in routes/backups.js',
     'film_style_book_media.file_path': 'resolved and contained by stylebookPath in routes/style-book.js',
-    'film_provenance_manifests.sidecar_path': 'already stored relative, so already portable',
+    'film_provenance_manifests.sidecar_path': 'relative to the data folder in the old layout, whole in a project folder (toStored); a project move rewrites it with every other stored path',
 });
 
 /** Turn an absolute path into what should be stored. */

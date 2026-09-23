@@ -181,7 +181,9 @@ test('a scored project carried to a clean machine: every row, every id new, ever
     const byOld = new Map(r.before.film_assets.map(a => [a.file_name + '|' + a.asset_type, a]));
     for (const a of r.after.film_assets.filter(x => x.file_path)) {
         const p = resolveStored(a.file_path);
-        assert.ok(p.startsWith(DATA_DIR) && p.includes(r.newId), `${a.file_name} does not point into the new project (${a.file_path})`);
+        // Inside the imported project's OWN folder — an import is given one.
+        const newRoot = require('../lib/file-storage').projectRoot(r.newId);
+        assert.ok(newRoot && p.startsWith(newRoot + path.sep), `${a.file_name} does not point into the new project (${a.file_path})`);
         assert.ok(fs.existsSync(p), `${a.file_name} is not on disk`);
         const o = byOld.get(a.file_name + '|' + a.asset_type);
         if (o) assert.strictEqual(sha(p), r.hashes[o.id], `${a.file_name} arrived different`);

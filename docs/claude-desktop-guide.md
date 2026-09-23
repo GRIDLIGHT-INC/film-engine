@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**351 tools, 74 families.** Everything the app can do, you can ask for in a
+**356 tools, 75 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -465,6 +465,21 @@ Validate before running, estimate before any fan-out. **`flow_run` costs money.*
 
 `impact_report` answers *what did that change break* — one edit, all the way
 down, splitting **redo now** from **waiting on something above it**.
+
+### Where the files are
+
+`storage_suggest` · `storage_layout` · `storage_browse` · `project_storage_get` ·
+`project_storage_move`
+
+Every film has one folder, laid out in the order the film is made
+(`01 References` … `06 Delivery`). **Ask where to save before `project_create`**:
+`storage_suggest` shows the folder a title would get, free, and `project_create`
+takes a parent folder (make the film's folder inside this one) or an exact folder
+(exactly this folder). `project_storage_get` reports what is in each sub-folder.
+`project_storage_move` moves every file and repoints every record. It spends
+nothing, but it changes where the person finds their work, so confirm the
+destination first. A project made before folders existed moves into one the
+same way.
 
 ---
 

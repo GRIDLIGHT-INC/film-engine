@@ -10,15 +10,61 @@ const path = require('path');
 const os = require('os');
 
 const DATA_DIR = process.env.FILM_DATA_DIR || path.join(os.homedir(), '.gridlight', 'film-engine', 'data');
+const folders = require('./project-folders');
+
+/*
+ * WHICH FOLDER A PROJECT CHOSE.
+ *
+ * Read from the database on every call, never cached: the HTTP server and the
+ * MCP server are two processes sharing one database, and a project moved by one
+ * would otherwise keep being written to its OLD folder by the other — files
+ * scattered across two places with rows pointing at one of them.
+ *
+ * The database is consulted only if something in this process has ALREADY
+ * opened it. Requiring it from here would open whatever database FILM_DATA_DIR
+ * names at import time — including the person's real one, from any unit test
+ * that merely wanted a path helper (tests/test-isolation.test.js exists
+ * because that happened). A process with no database open has no project that
+ * chose a folder, so the old layout is the right answer there.
+ */
+let rootStmt = null;
+function projectRoot(projectId) {
+    if (!projectId) return null;
+    let dbPath;
+    try { dbPath = require.resolve('../db/database'); } catch (_) { return null; }
+    const mod = require.cache[dbPath];
+    if (!mod || !mod.exports || !mod.exports.db) return null;
+    try {
+        if (!rootStmt || rootStmt.database !== mod.exports.db) {
+            // A Statement knows its own database, so a reopened handle (a test
+            // swapping databases) is noticed rather than queried through a dead one.
+            rootStmt = mod.exports.db.prepare('SELECT assets_dir FROM film_projects WHERE id = ?');
+        }
+        const row = rootStmt.get(String(projectId));
+        return row && row.assets_dir ? row.assets_dir : null;
+    } catch (_) {
+        return null;    // an older schema with no column: the old layout
+    }
+}
 
 /**
- * Ensure a directory exists under data/{subdir}/{projectId}/
+ * The directory one kind of file lives in for one project — the ONE place
+ * that decides. A project with a chosen folder gets its structured layout;
+ * one without keeps `data/<kind>/<project>`.
+ */
+function dirFor(projectId, subdir) {
+    const root = projectRoot(projectId);
+    return root ? folders.layoutDir(root, subdir) : folders.legacyDir(projectId, subdir);
+}
+
+/**
+ * Ensure the directory for one kind of file exists.
  * @param {string} projectId
  * @param {string} subdir - e.g. 'storyboards', 'audio', 'video', 'music', '3d', 'exports'
  * @returns {string} The full directory path
  */
 function ensureDir(projectId, subdir) {
-    const dir = path.join(DATA_DIR, subdir, projectId);
+    const dir = dirFor(projectId, subdir);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -34,8 +80,11 @@ function ensureDir(projectId, subdir) {
  * @returns {string} The full file path
  */
 function saveFile(projectId, subdir, filename, buffer) {
-    const dir = ensureDir(projectId, subdir);
-    const filePath = path.join(dir, filename);
+    ensureDir(projectId, subdir);
+    // Through getFilePath, so a write is held to the same containment as a
+    // read — and a nested name (`versions/1A_v1.png`) gets its folder.
+    const filePath = getFilePath(projectId, subdir, filename);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, buffer);
     return filePath;
 }
@@ -48,7 +97,7 @@ function saveFile(projectId, subdir, filename, buffer) {
  * @returns {string}
  */
 function getFilePath(projectId, subdir, filename) {
-    const projectDir = path.join(DATA_DIR, subdir, projectId);
+    const projectDir = dirFor(projectId, subdir);
     const full = path.join(projectDir, filename);
 
     // Containment lives here rather than in each caller. file_name reaches this
@@ -159,7 +208,7 @@ function serveFile(res, projectId, subdir, filename, opts) {
         res.end(JSON.stringify({ error: 'Invalid file path' }));
         return;
     }
-    if (!isPathContained(filePath, DATA_DIR)) {
+    if (!isOwnedPath(filePath)) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid file path' }));
         return;
@@ -313,11 +362,80 @@ function serveFile(res, projectId, subdir, filename, opts) {
     fs.createReadStream(filePath).pipe(res);
 }
 
+/**
+ * Every project folder the database knows about. Only when the database is
+ * already open in this process, for the reason `projectRoot` gives.
+ */
+function allProjectRoots() {
+    let dbPath;
+    try { dbPath = require.resolve('../db/database'); } catch (_) { return []; }
+    const mod = require.cache[dbPath];
+    if (!mod || !mod.exports || !mod.exports.db) return [];
+    try {
+        return mod.exports.db.prepare(
+            "SELECT id, assets_dir FROM film_projects WHERE assets_dir IS NOT NULL AND assets_dir <> ''").all();
+    } catch (_) { return []; }
+}
+
+/**
+ * Is this a file this engine stores? Under the data directory, or under a
+ * folder some project chose. What a provider may be handed, and what the
+ * server may serve, is bounded by this — a chosen folder is ours, the rest of
+ * the disk is not.
+ */
+function isOwnedPath(filePath) {
+    if (isPathContained(filePath, DATA_DIR)) return true;
+    return allProjectRoots().some(r => isPathContained(filePath, r.assets_dir));
+}
+
+/**
+ * What a stored file IS: which project, which kind, and the rest of its path
+ * inside that kind's folder. Works for both layouts.
+ *
+ * Five places used to read the kind off the path's own folder names
+ * ("two directories up is the subdir"). That is only true of the old layout —
+ * in a project folder two directories up is "01 References" — so each of them
+ * asks here instead. Returns null for a path that is not one of ours.
+ */
+function locate(filePath) {
+    if (!filePath) return null;
+    const abs = path.resolve(String(filePath));
+    for (const r of allProjectRoots()) {
+        const hit = folders.kindInRoot(r.assets_dir, abs);
+        if (hit) return { projectId: r.id, subdir: hit.subdir, rest: hit.rest, layout: 'project' };
+    }
+    if (isPathContained(abs, DATA_DIR)) {
+        const hit = folders.parseLegacy(path.relative(DATA_DIR, abs));
+        if (hit) return { projectId: hit.projectId, subdir: hit.subdir, rest: hit.rest, layout: 'legacy' };
+    }
+    /*
+     * Last, the old reading by shape alone: `…/<kind>/<project>/<file>`. A row
+     * written under a data folder that has since moved (and not yet repaired)
+     * is still servable by the name it was saved under — which is all the
+     * callers of this ever did before project folders existed.
+     */
+    const parts = abs.split(path.sep).filter(Boolean);
+    const kind = parts[parts.length - 3];
+    if (parts.length >= 3 && folders.PROJECT_LAYOUT[kind]) {
+        return { projectId: parts[parts.length - 2], subdir: kind, rest: parts[parts.length - 1], layout: 'legacy' };
+    }
+    return null;
+}
+
+/** The URL a stored file is served from, whichever layout it is in; null if none. */
+function urlForPath(filePath, version) {
+    const where = locate(filePath);
+    if (!where || where.rest.includes('/')) return null;
+    return getFileUrl(where.subdir, where.projectId, where.rest, version);
+}
+
 module.exports = {
     // Where everything this engine stores lives. Exported so a store that is
     // NOT project-scoped (the instrument library) roots itself the same way
     // rather than recomputing the rule and drifting from it.
     DATA_DIR,
+    projectRoot,
+    dirFor,
     ensureDir,
     saveFile,
     getFilePath,
@@ -325,5 +443,7 @@ module.exports = {
     fileExists,
     serveFile,
     isPathContained,
-    DATA_DIR,
+    isOwnedPath,
+    locate,
+    urlForPath,
 };

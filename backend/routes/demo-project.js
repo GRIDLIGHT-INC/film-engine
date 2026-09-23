@@ -648,7 +648,13 @@ function createDemoProject() {
         };
     });
 
-    return seed();
+    const seeded = seed();
+    // The demo gets a project folder like any new film. If the default folder
+    // cannot be made the demo still works, in the old layout — a sample must
+    // never fail over where it would have kept its files.
+    try { require('../lib/project-storage').assignOnCreate(projectId, 'Neon Requiem', {}); }
+    catch (_) { /* old layout */ }
+    return seeded;
 }
 
 module.exports = { handleDemoProject };

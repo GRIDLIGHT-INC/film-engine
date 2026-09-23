@@ -32,6 +32,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleProjectStorage } = require('../routes/project-storage');
 const { handleMusicMidi } = require('../routes/music-midi');
 const { handleInstruments } = require('../routes/instruments');
 const { handleProviders } = require('../routes/providers');
@@ -1466,6 +1467,20 @@ const PRODUCTION_TOOLS = [
                     + 'raster it has no tier for (2560x1440 on Seedance) renders one step down — '
                     + 'sequence_plan says so before anything is bought.',
             },
+            assets_dir: {
+                type: 'string',
+                description: 'The folder this film\'s files are saved in — every plate, frame, clip and '
+                    + 'sound, laid out in the order the film is made (01 References … 06 Delivery). '
+                    + 'A full path, e.g. "~/Films/The Glass Harbour"; it must be new or empty. Omit it '
+                    + 'and a folder named after the film is made inside ~/Film Engine (or the '
+                    + 'projects_root setting). ASK the person where they want it before creating — '
+                    + 'storage_suggest shows what the default would be, for free.',
+            },
+            assets_parent: {
+                type: 'string',
+                description: 'Instead of assets_dir: a folder to make this film\'s own folder INSIDE, '
+                    + 'named after the title, e.g. "~/Films".',
+            },
             video_draft: {
                 type: 'boolean',
                 description: 'Generate footage at the model\'s cheapest documented tier instead of '
@@ -1525,6 +1540,68 @@ const PRODUCTION_TOOLS = [
             model: { type: 'string', description: 'Advanced: pin a specific model, overriding the tier. Normally omitted.' },
         },
         required: ['project_id', 'quality'],
+    },
+    {
+        name: 'project_storage_get',
+        handler: handleProjectStorage, method: 'GET',
+        description: 'Where a project\'s files are saved: its folder, whether it is in a project folder '
+            + 'or the old layout (spread across Film Engine\'s data folder by kind), and every '
+            + 'sub-folder with its file count and size. Free; reads only.',
+        path: a => `/film/projects/${a.project_id}/storage`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'project_storage_move',
+        handler: handleProjectStorage, method: 'POST',
+        description: 'MOVE a project\'s files to a new folder and repoint every record at them — also '
+            + 'how a project in the old layout gets a structured folder. The destination must be new '
+            + 'or empty. Files move first and are counted before any record changes; if anything '
+            + 'fails, everything is put back. Nothing is regenerated and nothing is spent, but it '
+            + 'changes where the person finds their work: confirm the destination with them first.',
+        path: a => `/film/projects/${a.project_id}/storage/move`,
+        body: a => {
+            const { project_id, ...rest } = a || {};
+            return rest;
+        },
+        schema: {
+            project_id: { type: 'string' },
+            assets_dir: { type: 'string', description: 'The exact new folder, e.g. "~/Films/The Glass Harbour".' },
+            parent: { type: 'string', description: 'Or: a folder to make the project\'s own folder inside, named after the title.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'storage_suggest',
+        handler: handleProjectStorage, method: 'GET',
+        description: 'The folder a project titled `title` would be saved in — inside `parent`, or the '
+            + 'default projects folder — and whether it can be used. Free; creates nothing. Use it to '
+            + 'offer a location before project_create or project_storage_move.',
+        path: a => `/film/storage/suggest?title=${encodeURIComponent(a.title || '')}`
+            + (a.parent ? `&parent=${encodeURIComponent(a.parent)}` : '')
+            + (a.project_id ? `&project_id=${encodeURIComponent(a.project_id)}` : ''),
+        schema: {
+            title: { type: 'string' },
+            parent: { type: 'string', description: 'The folder to make it inside. Omit for the default.' },
+            project_id: { type: 'string', description: 'When suggesting a move: the project being moved, so its own folder is not counted as taken.' },
+        },
+        required: ['title'],
+    },
+    {
+        name: 'storage_layout',
+        handler: handleProjectStorage, method: 'GET',
+        description: 'What a project folder looks like — every sub-folder and what goes in it — and '
+            + 'where new projects are saved by default. Free.',
+        path: () => '/film/storage/layout',
+        schema: {}, required: [],
+    },
+    {
+        name: 'storage_browse',
+        handler: handleProjectStorage, method: 'GET',
+        description: 'The folders inside a folder (in the home folder or on a mounted drive), for '
+            + 'choosing where to save a project. Free; reads names only.',
+        path: a => `/film/storage/browse${a.path ? `?path=${encodeURIComponent(a.path)}` : ''}`,
+        schema: { path: { type: 'string', description: 'Folder to list. Omit for the home folder.' } },
+        required: [],
     },
     {
         name: 'project_update',
@@ -4496,7 +4573,7 @@ const BATCH_TOOLS = [
                     ${wanted ? 'AND version = ?' : ''}
                   ORDER BY version DESC LIMIT 1`).get(...(wanted ? [a.shot_id, wanted] : [a.shot_id]));
             if (frameRow) {
-                const p = getFilePath('storyboards', shot.project_id, frameRow.file_name);
+                const p = getFilePath(shot.project_id, 'storyboards', frameRow.file_name);
                 const uri = asDataUri(p, 'image/png');
                 if (uri) images.push({ data_uri: uri, label: `storyboard ${shot.shot_code}` });
                 else notes.push('the storyboard row exists but its file could not be read');
@@ -4517,7 +4594,7 @@ const BATCH_TOOLS = [
                 if (!bin || !bin.available) {
                     notes.push('a clip exists but no encoder is available to sample frames from it');
                 } else {
-                    const src = getFilePath('video', shot.project_id, clip.file_name);
+                    const src = getFilePath(shot.project_id, 'video', clip.file_name);
                     /*
                      * THE DURATION WAS ALWAYS ZERO, SO EVERY SAMPLE WAS FRAME 0.
                      *

@@ -83,6 +83,10 @@ const NAMED_DIFFERENTLY = {
     },
     'projects.js updateProject': {
         annotation_feedback: { control: 'annotFeedbackToggle', why: 'a toggle on the storyboard, not in settings' },
+        // Named here because updateProject READS it only to refuse it: the
+        // folder is changed by a move, which relocates the files and every
+        // record, from Settings → Project folder.
+        assets_dir: { control: 'settingsFolderMoveTo', why: 'refused by the update route; changed by moving the project (moveProjectFolder)' },
     },
     /*
      * The sheets edit their structured half through real editors rather than
