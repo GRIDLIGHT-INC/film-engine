@@ -79,10 +79,16 @@ describe('buildStoryboardPrompt', () => {
         assert.ok(negative_prompt.includes('blurry'));
     });
 
-    it('uses action field over description when both present', () => {
-        const card = { ...minimalCard, action: 'Running through rain', description: 'A person runs' };
-        const { prompt } = buildStoryboardPrompt(card, [], null, null);
-        assert.ok(prompt.includes('Running through rain'));
+    it('a STILL is built from description, and action is only its fallback', () => {
+        // description is the look; action is the motion layer, which belongs to
+        // video (lib/motion-prompt.js reads the opposite order, on purpose).
+        const both = { ...minimalCard, action: 'Running through rain', description: 'A person runs' };
+        const { prompt } = buildStoryboardPrompt(both, [], null, null);
+        assert.ok(prompt.includes('A person runs'), 'the still was not built from the description');
+        assert.ok(!prompt.includes('Running through rain'), 'the motion text reached a still');
+        const onlyAction = { ...minimalCard, description: undefined, action: 'Running through rain' };
+        assert.ok(buildStoryboardPrompt(onlyAction, [], null, null).prompt.includes('Running through rain'),
+            'a card carrying only motion painted nothing');
     });
 
     it('maps shot_type to camera description', () => {

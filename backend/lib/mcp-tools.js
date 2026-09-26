@@ -4412,9 +4412,16 @@ function musicSessionTools() {
 }
 PRODUCTION_TOOLS.push(...musicSessionTools());
 
+/*
+ * `route` names the router function each flow tool reaches, for the test that
+ * holds every shipped route to a tool. It is NOT `handler`: dispatch passes
+ * `handler` to callRoute as a function, and a string there broke every flow
+ * tool at call time.
+ */
 const ROUTE_TOOLS = [
     {
         name: 'flow_list',
+        route: 'listFlows',
         method: 'GET',
         description: 'List the flows a project can use — its own plus every library flow. Start here.',
         path: a => `/film/projects/${a.project_id}/flows`,
@@ -4424,6 +4431,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_get',
+        route: 'getFlow',
         method: 'GET',
         description: 'Read one flow: its nodes, its edges and their typed ports.',
         path: a => `/film/flows/${a.flow_id}`,
@@ -4433,6 +4441,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_create',
+        route: 'createFlow',
         method: 'POST',
         description: 'Create a flow from { name, nodes, edges }. Omit project_id in the body to make it a reusable library flow.',
         path: a => `/film/projects/${a.project_id}/flows`,
@@ -4449,6 +4458,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_update',
+        route: 'updateFlow',
         method: 'PUT',
         description: 'Replace a flow graph and bump its version. Built-in flows refuse this — duplicate one first.',
         path: a => `/film/flows/${a.flow_id}`,
@@ -4464,6 +4474,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_delete',
+        route: 'deleteFlow',
         method: 'DELETE',
         description: 'Delete a flow. Built-in flows cannot be deleted.',
         path: a => `/film/flows/${a.flow_id}`,
@@ -4473,6 +4484,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_validate',
+        route: 'validateFlow',
         method: 'POST',
         description: 'Check a graph without running it: port compatibility, cycles, orphans. Cheap — run it before flow_run.',
         path: a => `/film/flows/${a.flow_id}/validate`,
@@ -4487,6 +4499,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_estimate',
+        route: 'estimateFlow',
         method: 'POST',
         description: 'Projected cost and generation-call count for a run, against the project budget. The budget gate uses this, so check it before flow_run on any fan-out.',
         path: a => `/film/flows/${a.flow_id}/estimate`,
@@ -4497,6 +4510,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_run',
+        route: 'runFlowRoute',
         method: 'POST',
         description: 'Run a flow to completion and return every node result. GENERATES MEDIA AND SPENDS MONEY. Refused with status 402 when the projected cost would exceed the project budget; pass ignore_budget to override deliberately.',
         path: a => `/film/flows/${a.flow_id}/run`,
@@ -4513,6 +4527,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_run_get',
+        route: 'getRun',
         method: 'GET',
         description: 'A run with its per-node status, provider routing notes and the graph snapshot it actually ran.',
         path: a => `/film/flow-runs/${a.run_id}`,
@@ -4522,6 +4537,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_run_cancel',
+        route: 'cancelRun',
         method: 'POST',
         description: 'Cancel an in-flight run. Nodes already running finish; nothing new starts.',
         path: a => `/film/flow-runs/${a.run_id}/cancel`,
@@ -4531,6 +4547,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_run_branches',
+        route: 'getBranches',
         method: 'GET',
         description: 'Variants produced by a fan-out, for comparison at a select gate.',
         path: a => `/film/flow-runs/${a.run_id}/branches`,
@@ -4540,6 +4557,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_run_select',
+        route: 'selectBranch',
         method: 'POST',
         description: 'Pick the winning branch at a paused select gate and let the run continue.',
         path: a => `/film/flow-runs/${a.run_id}/select`,
@@ -4550,6 +4568,7 @@ const ROUTE_TOOLS = [
     },
     {
         name: 'flow_create_from_template',
+        route: 'createFromTemplate',
         method: 'POST',
         description: 'Instantiate a built-in template into a new editable flow for a project.',
         path: a => `/film/projects/${a.project_id}/flows/from-template`,

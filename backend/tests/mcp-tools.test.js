@@ -94,7 +94,8 @@ test('every handler reachable from the flows router has an MCP tool', () => {
     const reachable = handlersReachableFromRouter();
     assert.ok(reachable.length >= 14, `router parse found only ${reachable.length} handlers`);
 
-    const covered = new Set(ROUTE_TOOLS.map(t => t.handler).filter(Boolean));
+    // `route` names the router function; `handler` is what dispatch calls.
+    const covered = new Set(ROUTE_TOOLS.map(t => t.route).filter(Boolean));
     const missing = reachable.filter(h => !covered.has(h) && h !== SSE_EXCEPTION);
     assert.deepStrictEqual(missing, [],
         `shipped routes with no MCP tool: ${missing.join(', ')}`);

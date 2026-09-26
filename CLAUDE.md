@@ -3476,7 +3476,7 @@ Three details are load-bearing. The title page is **not** a scene, or scene 1 co
 Scenes reach MCP as `scene_get` and `scene_update`, and `script_get` now returns the **screenplay** rather than the version list it used to fetch while its description promised the source — worse than a missing tool, because the model believes it has read the script and rewrites from a summary. The listing moved to `script_versions`.
 
 ### What Actually Reaches an Image Prompt
-`buildStoryboardPrompt` reads `sceneCard.action || sceneCard.description` and **nothing else** from the writing. The scene's screenplay text is loaded into context and never used. That is the right rule — a card is *this shot*, and pasting the whole scene would describe things out of frame and spend the prompt budget on them — but it makes the card the only place a nuance can live, and whoever edits one was working blind.
+`buildStoryboardPrompt` reads `sceneCard.description || sceneCard.action` (a still is built from the look; `action` is the motion layer, which video reads first) plus the written `direction`, and **nothing else** from the writing. The scene's screenplay text is loaded into context and never used. That is the right rule — a card is *this shot*, and pasting the whole scene would describe things out of frame and spend the prompt budget on them — but it makes the card the only place a nuance can live, and whoever edits one was working blind.
 
 `GET /shots/:id` now returns `scene_text` beside `card`, with the rule stated in the response: only the card reaches the prompt, so anything the screenplay says that the card does not restate will not appear in the frame.
 

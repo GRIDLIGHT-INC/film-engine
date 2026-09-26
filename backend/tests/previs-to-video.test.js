@@ -96,7 +96,16 @@ test('an unblocked shot produces byte-identical output to before phase 3', () =>
          * previs leaks into an unblocked shot, which is the only thing these 54
          * payloads exist to guarantee. Split rather than regenerated.
          */
-        const strip = o => { const { prompt, motion_prompt, model, ...rest } = o; return rest; };
+        /*
+         * `fps` and `generate_audio` are the last two deliberate moves, and
+         * again the fixture is NOT regenerated. `fps` was AnimateDiff's native
+         * 8, which no adapter reads; it now reports the production's own rate
+         * (lib/video-prompt.js says why). `generate_audio` is new: a clip now
+         * carries the diegetic sound its model draws with it, unless asked not
+         * to. Both are the same for a blocked shot and an unblocked one, so
+         * neither can hide previs leaking — camera_control still carries that.
+         */
+        const strip = o => { const { prompt, motion_prompt, model, fps, generate_audio, ...rest } = o; return rest; };
         if (JSON.stringify(strip(actual)) !== JSON.stringify(strip(expected))) {
             drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
         }

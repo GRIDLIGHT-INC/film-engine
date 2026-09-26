@@ -270,7 +270,11 @@ test('the health report: every area by status, what is stalled, what failed and 
     assert.ok(bare.daw.ableton.reason && bare.daw.ableton.guide, 'an unconfigured adapter does not say why or where to read');
 
     const whole = JSON.stringify(rep) + JSON.stringify(bare);
-    for (const bad of [TOKEN, SECRET_KEY, DATA_DIR, os.homedir(), resolveFfmpeg().bin].filter(Boolean)) assert.ok(!whole.includes(bad), `the health report leaks ${bad}`);
+    // The encoder's PATH is the secret-shaped thing; when it resolves from PATH
+    // `bin` is the bare word "ffmpeg", which the report may name like any tool.
+    const ffBin = resolveFfmpeg().bin;
+    const ffPath = ffBin && path.isAbsolute(ffBin) ? ffBin : null;
+    for (const bad of [TOKEN, SECRET_KEY, DATA_DIR, os.homedir(), ffPath].filter(Boolean)) assert.ok(!whole.includes(bad), `the health report leaks ${bad}`);
 });
 
 test('the health route and the music_health tool are the same report, scoped, and free', async () => {

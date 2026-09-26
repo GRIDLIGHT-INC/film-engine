@@ -34,8 +34,11 @@ function makePng(name, w, h) {
     const bin = resolveFfmpeg();
     if (!bin || !bin.available) return null;
     const out = path.join(TMP, name);
+    // NOISE, not testsrc: a flat test pattern compresses to a few kilobytes —
+    // smaller than its own JPEG thumbnail on a current ffmpeg — so it could
+    // not carry the weight comparison below. Grain behaves like a photograph.
     execFileSync(bin.bin, ['-y', '-loglevel', 'error', '-f', 'lavfi',
-        '-i', `testsrc=size=${w}x${h}:rate=1`, '-frames:v', '1', out]);
+        '-i', `testsrc=size=${w}x${h}:rate=1`, '-vf', 'noise=alls=60:allf=t', '-frames:v', '1', out]);
     return out;
 }
 

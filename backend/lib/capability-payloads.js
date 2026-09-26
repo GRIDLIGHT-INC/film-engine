@@ -618,7 +618,16 @@ const CAPABILITY_BUILDERS = {
         // name the same models differently and only the adapter knows which one
         // it is about to call.
         const adapter = videoAdapter(ctx.project);
-        const contract = (adapter && adapter.referenceContract)
+        /*
+         * ONLY WHEN THE MODEL IS THAT ADAPTER'S. A request that names a model
+         * from another provider's catalogue — gen4.5 is Runway's — must keep
+         * that model's own contract; applying the resolved adapter's gave
+         * Gen-4.5 a thirty-reference package it does not take, re-sending the
+         * plates its keyframe was already generated from.
+         */
+        const ownModels = adapter ? (require('./providers').modelIdsFor(adapter, 'video') || []) : [];
+        const adapterOwnsModel = !overrides.model || ownModels.includes(overrides.model);
+        const contract = (adapterOwnsModel && adapter && adapter.referenceContract)
             || videoRef.contractFor(overrides.model);
         const offered = referencesToRoles(ctx);
         const picked = videoRef.selectReferences(offered, contract);

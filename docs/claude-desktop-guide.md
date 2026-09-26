@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**364 tools, 76 families.** Everything the app can do, you can ask for in a
+**365 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -266,7 +266,8 @@ first so the card validates.
 puts a frame you generated yourself onto a shot: read the card and its
 references, make the picture, show it for approval, upload it. It becomes the
 shot's current frame and the one it replaces is kept as a recoverable version.
-Then `video_preview` shows exactly what a clip would cost before you buy one.
+Then `video_preview` shows exactly what a clip would cost before you buy one, and
+`video_generate` buys it — one clip for one shot, from its selected frame.
 
 `storyboard_generate` · `storyboard_regenerate` · `storyboard_refine` ·
 - `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.
