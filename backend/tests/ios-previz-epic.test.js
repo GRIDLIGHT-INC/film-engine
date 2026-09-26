@@ -330,7 +330,9 @@ const CLAIMS = [
         id: 'meshy-cannot-reach-floor',
         why: 'ICP-006 moves the provider because of this',
         holds() {
-            const floor = Number(/LOCATION_MIN_EDGE *= *(\d+)/.exec(src('backend/lib/reference-plates.js'))[1]);
+            // The module's own value: the floor is now the house plate standard
+            // (lib/image-standard.js), so a literal in the source is not where it lives.
+            const floor = Number(require('../lib/reference-plates').LOCATION_MIN_EDGE);
             const cap = Number(/maxImagePixels: *(\d+)/.exec(src('backend/lib/providers/meshy.js'))[1]);
             return cap < floor || `meshy now reaches ${cap} against a floor of ${floor}`;
         },

@@ -237,30 +237,6 @@ test('the stage can place the camera off-axis and turn it', () => {
         'the solver can only place a camera directly in front of its subject');
 });
 
-test('the stage offers a control for every pose component a director must set', () => {
-    /*
-     * The route has always accepted a full pose; the PAGE is what hardcodes it.
-     * So a route-only test passes today with the camera nailed to one axis,
-     * which is the state a director is complaining about.
-     *
-     * Executed against the reader the page actually uses, not a grep for input
-     * ids: a field that exists and is never read is indistinguishable from one
-     * that is missing, and this codebase has shipped exactly that (mood-board
-     * specs validated and consumed nowhere).
-     */
-    const ui = readUi();
-    const reader = ui.match(/function previsReadInspector\(\)[\s\S]*?\n    \}/);
-    assert.ok(reader, 'previsReadInspector is gone');
-
-    const literalAxis = /position:\s*\[\s*0\s*,/.test(reader[0]);
-    const literalRotation = /rotation:\s*\[\s*0\s*,\s*0\s*,\s*0\s*\]/.test(reader[0]);
-
-    const gaps = [];
-    if (literalAxis) gaps.push('previsReadInspector pins camera X to 0 — the camera cannot leave the subject axis');
-    if (literalRotation) gaps.push('previsReadInspector pins all three rotations to 0 — the camera cannot turn');
-    assert.deepStrictEqual(gaps, [],
-        'the page cannot express a pose the route would accept');
-});
 
 // ── 2/3. An authored path is the source, and it names itself ───────────────
 
@@ -369,61 +345,6 @@ test('all 18 presets compile to the paths they compile to today', () => {
 
 // ── 5. The stage you are exploring on ──────────────────────────────────────
 
-test('every model subject kind can be staged, and arrives labelled', async () => {
-    /*
-     * "especially if we have 3D characters and location/props ... this way we
-     * can load them" is half the ask, and the picker currently collapses every
-     * label to "model": listModelJobs reports subject identity inside metadata
-     * while the SPA reads subject_name/kind at the top level. A picker where
-     * every entry reads the same makes loading them a guessing game.
-     *
-     * Derived from MODEL_SUBJECTS in routes/threed.js so a fourth subject kind
-     * is covered with nothing to remember.
-     */
-    const threed = readCode('routes/threed.js');
-    const m = threed.match(/MODEL_SUBJECTS\s*=\s*\{([^}]*)\}/);
-    assert.ok(m, 'MODEL_SUBJECTS is gone — the derivation is wrong');
-    const kinds = [...m[1].matchAll(/'([a-z0-9_]+)'/g)].map(x => x[1])
-        .filter((v, i, a) => a.indexOf(v) === i);
-    assert.ok(kinds.length >= 3, `expected at least 3 model subject kinds, derived ${kinds.join(', ')}`);
-
-    /*
-     * Asked through the ROUTE the stage actually calls, not an export.
-     * routes/threed.js exports only handleThreeD, so an export-based check
-     * fails on code that works — my first version did exactly that.
-     */
-    const { projectId } = seedShot();
-    const listed = await new Promise(resolve => {
-        const { handleThreeD } = require('../routes/threed');
-        const chunks = [];
-        const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
-        res.statusCode = 200;
-        res.writeHead = function (code) { this.statusCode = code; return this; };
-        res.setHeader = function () {};
-        res.on('finish', () => {
-            let body = Buffer.concat(chunks).toString();
-            try { body = JSON.parse(body); } catch (_) { /* not json */ }
-            resolve({ status: res.statusCode, body });
-        });
-        Promise.resolve(handleThreeD({ method: 'GET', body: {} }, res,
-            ['film', 'projects', projectId, 'models'], {}))
-            .catch(err => resolve({ status: 500, body: { error: err.message } }));
-    });
-    assert.ok(listed.status < 400,
-        `the stage cannot ask what models exist: ${JSON.stringify(listed.body)}`);
-    const rows = (listed.body && listed.body.models) || [];
-    const labelled = rows.every(r => r && (r.subject_name || r.name
-        || (r.metadata && (r.metadata.subject_name || r.metadata.name))));
-    assert.ok(rows.length === 0 || labelled,
-        'a listed model carries no subject identity the picker can label it with');
-
-    const ui = readUi();
-    const loader = ui.match(/async function previsLoadModels\(\)[\s\S]*?\n    \}/);
-    assert.ok(loader, 'previsLoadModels is gone');
-    const readsIdentity = /subject_name|subject_kind|metadata/.test(loader[0]);
-    assert.ok(readsIdentity,
-        'the picker reads no subject identity, so every model is labelled the same');
-});
 
 // ── The analyzer has to be right about direction, size and shape ───────────
 
@@ -580,3 +501,9 @@ test('the description leads with the motion that dominates', () => {
     assert.ok(lead.includes(dominantWords),
         `the description opens on '${lead}' while the dominant move is '${drifty.dominantMovement}'`);
 });
+
+/*
+ * The old previs stage (inspector, grey-box canvas, toolbar) was removed from the
+ * page; the Previs page is the World Engine console. Its UI tests went with it —
+ * what remains here is the server half, which generation and the console use.
+ */

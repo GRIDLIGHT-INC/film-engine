@@ -137,7 +137,8 @@ test('a director instruction is additive and never displaces the contract', () =
 /** (surface × operation): where a director can start a recompose. */
 const SURFACES = [
     { id: 'storyboard', opener: 'recomposeFrame(' },
-    { id: 'previs', opener: 'previsRecompose(' },
+    // previs had its own opener until the old previs stage was removed; the
+    // Previs page is the World Engine console, which does not recompose frames.
 ];
 
 test('recompose is reachable from every directing surface', () => {

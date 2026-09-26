@@ -696,28 +696,71 @@ function importCapabilityMedia(spec, target, input) {
         ? owner.shotCode
         : `scene_${String(owner.sceneNumber || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     const stem = `${label}_${spec.capability}`;
-    const fileName = `${stem}.${ext}`;
 
-    /*
-     * Replace the same slot across extensions, exactly as a plate does: an
-     * uploaded .mov landing beside a generated .mp4 leaves two current clips
-     * for one shot and the readers pick whichever row comes back first.
-     */
     const scopeColumn = spec.shotScoped ? 'shot_id' : 'scene_id';
     const scopeValue = spec.shotScoped ? owner.shotId : owner.sceneId;
-    const stale = db.prepare(
-        `SELECT id, file_path, file_name FROM film_assets
-          WHERE project_id = ? AND ${scopeColumn} = ? AND asset_type = ?`)
-        .all(owner.projectId, scopeValue, spec.assetType)
-        .filter(r => String(r.file_name || '').startsWith(`${stem}.`)
-            || String(r.file_path || '').includes(`${path.sep}${stem}.`));
 
+    /*
+     * A CLIP IS A TAKE. A BED IS REPLACED.
+     *
+     * This path used to delete the shot's existing clip and insert the new one
+     * at version 1, so importing a second take of a shot DESTROYED the first —
+     * on a shot where `lib/repair-run.js` and `lib/video-edit.js` have always
+     * registered their output as `MAX(version) + 1` beside what was there. One
+     * capability, two opposite answers to "what happens to the previous clip",
+     * and the destructive one was the path a person reaches through the app.
+     *
+     * The comment that stood here justified replacing by saying an uploaded
+     * .mov beside a generated .mp4 "leaves two current clips and the readers
+     * pick whichever row comes back first". That was true when it was written
+     * and is not now: `pickAsset` in lib/timeline.js resolves the shot's
+     * pointer and otherwise takes the HIGHEST version, so a second clip is
+     * chosen deterministically rather than by row order. Versioning is what
+     * that selection rule was built for.
+     *
+     * The version spans the video types rather than this one asset_type, for
+     * the reason repair-run does it: a raw clip, a lip-synced one and a graded
+     * one are attempts at the same shot, and numbering them per type would put
+     * two different clips at version 1.
+     *
+     * AUDIO STILL REPLACES, and that is not an oversight. The dialogue lane is
+     * assembled by FILENAME — `lib/timeline.js` gathers a shot's lines and
+     * dedupes them, newest row per name winning — so a versioned name is a new
+     * name, and a corrected take would play as an EXTRA line rather than in
+     * place of the one it corrects. Giving beds takes means giving that lane a
+     * selection rule first.
+     */
+    const VIDEO_TYPES = ['video_final', 'video_synced', 'video_raw'];
+    let version = 1;
+    if (spec.kind === 'video') {
+        const prior = db.prepare(
+            `SELECT COALESCE(MAX(version), 0) AS v FROM film_assets
+              WHERE ${scopeColumn} = ? AND asset_type IN (${VIDEO_TYPES.map(() => '?').join(', ')})`)
+            .get(scopeValue, ...VIDEO_TYPES);
+        version = Number((prior && prior.v) || 0) + 1;
+    }
+
+    /*
+     * Version 1 keeps the plain name, so a project with one clip per shot is
+     * byte-identical to what it was and nothing that already points at
+     * `<shot>_video.mp4` moves.
+     */
+    const fileName = version > 1 ? `${stem}_v${version}.${ext}` : `${stem}.${ext}`;
     const filePath = saveFile(owner.projectId, spec.subdir, fileName, bytes);
-    for (const row of stale) {
-        if (row.file_path && path.resolve(row.file_path) !== path.resolve(filePath)) {
-            try { fs.unlinkSync(row.file_path); } catch (_) { /* already gone is fine */ }
+
+    if (spec.kind !== 'video') {
+        const stale = db.prepare(
+            `SELECT id, file_path, file_name FROM film_assets
+              WHERE project_id = ? AND ${scopeColumn} = ? AND asset_type = ?`)
+            .all(owner.projectId, scopeValue, spec.assetType)
+            .filter(r => String(r.file_name || '').startsWith(`${stem}.`)
+                || String(r.file_path || '').includes(`${path.sep}${stem}.`));
+        for (const row of stale) {
+            if (row.file_path && path.resolve(row.file_path) !== path.resolve(filePath)) {
+                try { fs.unlinkSync(row.file_path); } catch (_) { /* already gone is fine */ }
+            }
+            db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
         }
-        db.prepare('DELETE FROM film_assets WHERE id = ?').run(row.id);
     }
 
     /*
@@ -741,11 +784,11 @@ function importCapabilityMedia(spec, target, input) {
     db.prepare(`INSERT INTO film_assets
         (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, format, mime_type,
          size_bytes, duration_ms, version, license_source, license_status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'external', 'unknown', ?)`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external', 'unknown', ?)`)
         .run(assetId, owner.projectId,
             spec.shotScoped ? owner.shotId : null,
             spec.sceneScoped ? owner.sceneId : (owner.sceneId || null),
-            spec.assetType, filePath, fileName, ext, mime, bytes.length, durationMs,
+            spec.assetType, filePath, fileName, ext, mime, bytes.length, durationMs, version,
             JSON.stringify({
                 capability: spec.capability,
                 imported: true,
@@ -759,7 +802,7 @@ function importCapabilityMedia(spec, target, input) {
         scene_id: spec.sceneScoped ? owner.sceneId : null,
         asset_type: spec.assetType, capability: spec.capability,
         duration_ms: durationMs,
-        file_name: fileName, file_path: filePath, version: 1,
+        file_name: fileName, file_path: filePath, version,
         /*
          * The SERVING subdir, which is `subdir` and not `serveDir`.
          *

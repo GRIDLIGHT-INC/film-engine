@@ -103,6 +103,14 @@ const NAMED_DIFFERENTLY = {
         constraints_json: { control: 'ssAddConstraint', why: 'a list of things to hold true' },
         keywords: { control: 'ssAddKeyword', why: 'a list of words that must survive into every frame' },
     },
+    'style-book.js updateEntry': {
+        camera: { control: 'saveStyleBookEntry',
+            why: 'composed from one input per camera facet in the style-book editor, not one field' },
+    },
+    'sequences.js updateSequence': {
+        joins: { control: 'pgSetJoin',
+            why: 'one join per adjacent pair of shots — a type picker and a "how they connect" box per pair, in the production graph\'s sequence drawer' },
+    },
     'locations.js updateLocation': {
         description_sections: { control: 'saveSheetSection',
             why: 'six named folding sections, each with its own length' },

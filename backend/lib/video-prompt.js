@@ -130,10 +130,25 @@ function buildVideoPrompt(sceneCard, characters, location, stylePreset, options)
      */
     let motion_prompt = '';
     try {
-        motion_prompt = require('./motion-prompt').buildMotionPrompt({
+        const mp = require('./motion-prompt');
+        const mctx = {
             card: sceneCard, previs: opts.previs, durationS: opts.duration_s || opts.durationS,
-            limit: opts.promptLimit,
-        }).prompt;
+            limit: Number(opts.promptLimit) > 0 ? Number(opts.promptLimit) : undefined,
+        };
+        /*
+         * COMPILE FOR THE PROVIDER THAT IS ABOUT TO BE CALLED.
+         *
+         * `buildMotionPrompt` with no shape is the generic ordering and a
+         * 1000-character default ceiling. `compileFor` reads both off the
+         * adapter -- Seedance is subject-first with 16,000 characters, Runway
+         * is camera-first -- and those are facts about the provider, so the
+         * provider states them rather than this builder guessing once for all
+         * of them. Falls back to the generic shape when no provider is named,
+         * which is what every existing caller gets.
+         */
+        motion_prompt = opts.provider
+            ? mp.compileFor(opts.provider, mctx).prompt
+            : mp.buildMotionPrompt(mctx).prompt;
     } catch (_) { motion_prompt = ''; }   // never fail a generation over a prompt shape
 
     return {
@@ -235,7 +250,21 @@ function buildVideoFrame(project, override) {
 }
 
 function calculateVideoParams(sceneCard, project) {
-    const durationMs = sceneCard.duration_ms || 4000;
+    /*
+     * A CARD STATES ITS LENGTH IN SECONDS.
+     *
+     * This read `duration_ms`, which no scene card carries — the schema, the
+     * validator and every card ever written use `duration_seconds`. So the
+     * fallback fired every time and EVERY clip in every project was generated
+     * at 4 seconds, whatever the board said. Silent, because 4s is a plausible
+     * number and the shot list is the only place the real one appears.
+     *
+     * `duration_ms` is still read first: a caller that has already converted
+     * should not be second-guessed.
+     */
+    const seconds = Number(sceneCard.duration_seconds);
+    const durationMs = Number(sceneCard.duration_ms) > 0 ? Number(sceneCard.duration_ms)
+        : (Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 4000);
     const durationS = durationMs / 1000;
     const proj = project || {};
 
@@ -279,7 +308,22 @@ function calculateVideoParams(sceneCard, project) {
 
     return {
         num_frames: DEFAULT_NUM_FRAMES,
-        fps: DEFAULT_GEN_FPS,
+        /*
+         * THE FILM'S RATE, not a dead generator's.
+         *
+         * `fps` was pinned to DEFAULT_GEN_FPS — 8, AnimateDiff's native
+         * generation rate — on the reasoning that it states a fact about the
+         * model rather than a choice about the film. That reasoning stopped
+         * being true when AnimateDiff stopped being the generator: no adapter
+         * here reads `payload.fps` at all, so the only thing the 8 did was
+         * appear in every preview and tell a director their 24fps production
+         * was about to render at eight.
+         *
+         * A number nothing consumes and everything displays should be the one
+         * that is true. `target_fps` stays alongside it for the interpolation
+         * block, which is what actually acts on a rate.
+         */
+        fps: targetFps,
         target_fps: targetFps,
         duration_s: durationS,
         width,
@@ -305,6 +349,7 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
         sceneCard, characters, location, stylePreset, opts
     );
     const params = calculateVideoParams(sceneCard, opts.project);
+    const proj_ = opts.project || {};
 
     const payload = {
         prompt,
@@ -327,8 +372,41 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
          * defaults to its own. An explicitly requested model still travels.
          */
         ...(opts.model ? { model: opts.model } : {}),
+        /*
+         * SOUND ON, unless the caller says otherwise.
+         *
+         * Nothing ever set this, so `lib/providers/seedance.js` fell to its own
+         * `false` default and lib/provider-media.js then stripped the track for
+         * certainty. Every clip this engine has ever produced was silent, and
+         * the reason recorded in the adapter -- that the model lays "a mono
+         * music bed" under everything -- is not true of Seedance 2.5, which
+         * documents DIEGETIC SOUND ONLY and an explicit "NO MUSIC".
+         *
+         * So the default is inverted. Rain on a roof, rotor wash, a beacon
+         * ticking: synced to picture by the model that drew the picture, which
+         * is the one thing a separate sound pass cannot do. `audio: false` on
+         * the options still buys silence for anyone who wants a clean plate.
+         */
+        generate_audio: opts.audio === undefined ? true : !!opts.audio,
         width: params.width,
         height: params.height,
+        /*
+         * THE DELIVERY RASTER THE PROJECT ASKED FOR, carried as well as the frame.
+         *
+         * An adapter whose model is chosen by RESOLUTION TIER rather than by a
+         * `model` field — Seedance puts it in the route name — reads
+         * `resolution` or `target_resolution` off the payload and has never been
+         * handed either. `width`/`height` are the frame this shot is composed
+         * in, not a tier, so the lookup missed and every clip fell to that
+         * adapter's own 720p default. A project set to 1920x1080 was billed and
+         * rendered at 720p with nothing said.
+         *
+         * Stated as the raster, not as a tier name, because the tiers belong to
+         * the adapter: Seedance documents four and snaps DOWN to the nearest,
+         * reporting when it does, which is the behaviour a 2560x1440 project
+         * needs to see rather than have guessed for it here.
+         */
+        ...(proj_.target_resolution ? { target_resolution: String(proj_.target_resolution) } : {}),
         num_frames: params.num_frames,
         fps: params.fps,
         duration_s: params.duration_s,

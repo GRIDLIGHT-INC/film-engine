@@ -233,24 +233,27 @@ test('every camera facet the schema validates has a control', () => {
         `the schema validates these camera facets and the page cannot set them: ${missing.join(', ')}`);
 });
 
-test('the pose facets the board excludes are authored on the previs stage', () => {
+test('the pose facets the board excludes are authored in the World Engine console', () => {
     /*
      * An exclusion that is only an exclusion is how a facet goes missing from
-     * every surface at once. These are not offered on the board BECAUSE previs
-     * authors them, so previs has to actually author them — otherwise a
+     * every surface at once. These are not offered on the board BECAUSE the
+     * Previs page authors them — once the old stage's inspector, now the
+     * console's Camera Operate panel — so it has to actually author them, or a
      * director can set a camera position nowhere at all.
      */
-    // Absence is not an empty case here, it is a broken registry: with no pose
-    // facets this test asserts nothing and reports pass, which is how the
-    // exclusion it guards goes missing from every surface at once.
     assert.ok(POSE_FACETS.length,
         'POSE_FACETS is empty, so every assertion below would pass over nothing');
     const ui = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
-    const reader = ui.slice(ui.indexOf('function previsReadInspector()'),
-        ui.indexOf('function previsReadInspector()') + 1600);
-    const orphaned = POSE_FACETS.filter(f => !new RegExp(`${f}:`).test(reader));
+    const m = /const OPERATE_AXES = Object\.freeze\(\[([\s\S]*?)\]\);/.exec(ui);
+    assert.ok(m, 'the console declares no camera-operate axes');
+    const groups = { position: 'TRANSLATION', rotation: 'ROTATION' };
+    const orphaned = POSE_FACETS.filter(f => {
+        const g = groups[f];
+        return !g || (m[1].match(new RegExp(`group: '${g}'`, 'g')) || []).length < 3;
+    });
     assert.deepStrictEqual(orphaned, [],
-        'excluded from the board and not authored in previs either — settable nowhere');
+        'excluded from the board and not authored in the console either — settable nowhere');
+    assert.match(ui, /async function worldNudge\(/, 'the axes have no handler that writes the camera');
 });
 
 test('an unset facet says what it will fall through to', () => {
@@ -297,18 +300,6 @@ test('the machinery is not on the directing surface', () => {
 
 // ── 6. Previs shows the current frame, and feeds directing ──────────────
 
-test('previs shows the CURRENT frame, not a cached older one', () => {
-    // The frame is overwritten at a fixed filename, so the URL never changes
-    // and the browser serves whatever it cached. The board busts this with
-    // ?v=asset_version; previs used the raw src and showed a stale picture.
-    const previs = fs.readFileSync(path.join(__dirname, '..', 'routes', 'previs.js'), 'utf8');
-    assert.ok(/asset_version/.test(previs),
-        'GET /shots/:id/previs does not return the frame version, so the client cannot bust the cache');
-    const fn = HTML.slice(HTML.indexOf('function previsKeyframe('),
-        HTML.indexOf('function previsKeyframe(') + 700);
-    assert.ok(/\?v=|asset_version/.test(fn),
-        'previs paints keyframe.src with no version key, so it shows the browser-cached older frame');
-});
 
 test('directing in previs writes back into the directing elements', () => {
     // "we should be able to manually direct the scene in previz and it adds

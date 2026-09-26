@@ -671,6 +671,9 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
         prompt,
         negative_prompt: REFINE_NEGATIVE,
         aspect_ratio: (project && project.aspect_ratio) || undefined,
+        // 2K, by the house standard. With no size a tiered provider answers at
+        // its smallest tier, and a refined plate came back at 1K.
+        ...require('../lib/image-standard').plateSize(project && project.aspect_ratio),
         // ONE reference: the plate being changed. A second picture is another
         // opinion about what this is, and a refine has only one subject.
         reference_images: [{ name: subject.name, kind: 'refine', tag: 'plate', uri }],
@@ -1818,15 +1821,18 @@ async function generateLocationImage(req, res, locId) {
         // Absent rather than null: a null falls through to the provider's own
         // default, which is the most expensive model it sells.
         ...(model ? { model } : {}),
-        width: 1024,
-        height: 1024,
+        // 2K by the house standard: every picture of a subject is a plate.
+        ...require('../lib/image-standard').plateSize('1:1'),
         steps: 30,
         guidance_scale: 7.5,
         seed,
     };
 
     try {
-        const result = await resolve('image', parseProjectConfig(loc.project_id)).generate('image', payload, { timeout: 300000 });
+        const imageProvider = resolve('image', parseProjectConfig(loc.project_id));
+        // Names the house model (Nano Banana Pro) for whichever vendor of it runs.
+        require('../lib/capability-payloads').withTierModel(payload, { project: { id: loc.project_id } }, imageProvider);
+        const result = await imageProvider.generate('image', payload, { timeout: 300000 });
         if (!result.ok) {
             db.prepare('UPDATE film_location_image_jobs SET status = ?, error_message = ? WHERE id = ?')
                 .run('failed', result.error, jobId);
@@ -1942,15 +1948,18 @@ async function generatePropImage(req, res, propId) {
         // Absent rather than null: a null falls through to the provider's own
         // default, which is the most expensive model it sells.
         ...(model ? { model } : {}),
-        width: 1024,
-        height: 1024,
+        // 2K by the house standard: every picture of a subject is a plate.
+        ...require('../lib/image-standard').plateSize('1:1'),
         steps: 30,
         guidance_scale: 7.5,
         seed,
     };
 
     try {
-        const result = await resolve('image', parseProjectConfig(prop.project_id)).generate('image', payload, { timeout: 300000 });
+        const imageProvider = resolve('image', parseProjectConfig(prop.project_id));
+        // Names the house model (Nano Banana Pro) for whichever vendor of it runs.
+        require('../lib/capability-payloads').withTierModel(payload, { project: { id: prop.project_id } }, imageProvider);
+        const result = await imageProvider.generate('image', payload, { timeout: 300000 });
         if (!result.ok) {
             db.prepare('UPDATE film_prop_image_jobs SET status = ?, error_message = ? WHERE id = ?')
                 .run('failed', result.error, jobId);

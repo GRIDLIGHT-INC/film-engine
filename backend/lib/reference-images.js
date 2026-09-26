@@ -29,6 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 /** gen4_image accepts 1–3. Sending more is a validation failure, not a truncation. */
 const MAX_REFERENCES = 3;
@@ -42,6 +43,88 @@ const MIME_BY_EXT = {
     '.jpeg': 'image/jpeg',
     '.webp': 'image/webp',
 };
+
+/**
+ * WHAT HAPPENS TO A PLATE THAT IS TOO BIG.
+ *
+ * It used to be dropped. `toDataUri` returned null past the ceiling and
+ * `selectReferences` skipped a null uri as an unreadable file, so an oversize
+ * plate travelled with neither picture nor warning. A 2K location plate out of
+ * a current generator is routinely 7-10MB, which on a real project is EVERY
+ * location plate: the prompt still read perfectly, no error was raised, and the
+ * street was reinvented in every frame -- the exact failure reference images
+ * exist to prevent.
+ *
+ * A reference only has to be RECOGNISABLE. It is conditioning, not delivery,
+ * and every provider resizes it on arrival, so shrinking one to fit costs
+ * nothing that matters while dropping it costs the continuity of a whole scene.
+ *
+ * Widest first, so as little is given up as the ceiling demands. JPEG because a
+ * 2K PNG of a photographic frame is several times the size of a visually
+ * identical JPEG, and the ceiling is about bytes.
+ */
+const INLINE_FALLBACK_WIDTHS = [2048, 1536, 1024];
+
+/** Where the shrunk copies live, beside their source, like `.thumbs`. */
+const SENDABLE_DIRNAME = '.sendable';
+
+/**
+ * A copy of an oversize picture small enough to inline, or null.
+ *
+ * Cached beside the source and keyed on the source's mtime AND size, for the
+ * same reason the data-uri cache is: a plate is rewritten to the same filename,
+ * so the path alone is not an identity and a name-keyed copy would serve the
+ * previous plate forever.
+ *
+ * SYNCHRONOUS on purpose. Every caller of `toDataUri` is synchronous, and the
+ * function it sits behind already reads and base64-encodes megabytes on the
+ * calling thread; making this one step async would mean making the reference
+ * gather, the payload builder and four routes async to save nothing.
+ *
+ * Never throws. No encoder, a broken source, a race: the caller gets null and
+ * behaves exactly as it did before this existed.
+ */
+function shrinkToFit(filePath, stat) {
+    let ffmpeg;
+    try { ffmpeg = require('./ffmpeg').resolveFfmpeg(); } catch (_) { return null; }
+    if (!ffmpeg || !ffmpeg.available || !ffmpeg.bin) return null;
+
+    const dir = path.join(path.dirname(filePath), SENDABLE_DIRNAME);
+    const stem = `${path.basename(filePath)}.${stat.mtimeMs.toFixed(0)}.${stat.size}`;
+
+    for (const width of INLINE_FALLBACK_WIDTHS) {
+        const out = path.join(dir, `${stem}.${width}.jpg`);
+        try {
+            const cached = fs.statSync(out);
+            if (cached.isFile() && cached.size > 0 && cached.size <= MAX_INLINE_BYTES) return out;
+        } catch (_) { /* not built yet */ }
+
+        try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { return null; }
+
+        const tmp = `${out}.${process.pid}.tmp.jpg`;
+        try {
+            execFileSync(ffmpeg.bin, [
+                '-y', '-loglevel', 'error', '-i', filePath,
+                // Only ever downscale: min() leaves a source already narrower
+                // than the target alone, and -2 keeps the aspect even.
+                '-vf', `scale='min(${width},iw)':-2:flags=lanczos`,
+                '-q:v', '4', tmp,
+            ], { timeout: 20000, stdio: 'ignore' });
+            // Rename is atomic on one filesystem, so a concurrent reader never
+            // sees a half-written copy.
+            fs.renameSync(tmp, out);
+        } catch (_) {
+            try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
+            continue;
+        }
+
+        try {
+            const built = fs.statSync(out);
+            if (built.size > 0 && built.size <= MAX_INLINE_BYTES) return out;
+        } catch (_) { /* fall through and try a smaller width */ }
+    }
+    return null;
+}
 
 /**
  * A tag the prompt can carry.
@@ -119,9 +202,8 @@ function toDataUri(filePath) {
     if (!filePath) return null;
     try {
         const stat = fs.statSync(filePath);
-        if (!stat.isFile() || stat.size === 0 || stat.size > MAX_INLINE_BYTES) return null;
-        const mime = MIME_BY_EXT[path.extname(filePath).toLowerCase()];
-        if (!mime) return null;
+        if (!stat.isFile() || stat.size === 0) return null;
+        if (!MIME_BY_EXT[path.extname(filePath).toLowerCase()]) return null;
 
         // mtime AND size: a regeneration changes both, and a filesystem with a
         // coarse mtime cannot hide a change of length.
@@ -134,7 +216,17 @@ function toDataUri(filePath) {
             return hit;
         }
 
-        const uri = `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+        /*
+         * Past the ceiling the picture is SHRUNK, not dropped. The cache key
+         * above stays the source's identity either way, because the shrink is
+         * derived from it.
+         */
+        const readPath = stat.size > MAX_INLINE_BYTES ? shrinkToFit(filePath, stat) : filePath;
+        if (!readPath) return null;
+        const mime = MIME_BY_EXT[path.extname(readPath).toLowerCase()];
+        if (!mime) return null;
+
+        const uri = `data:${mime};base64,${fs.readFileSync(readPath).toString('base64')}`;
         DATA_URI_CACHE.set(key, uri);
         while (DATA_URI_CACHE.size > DATA_URI_CACHE_MAX) {
             DATA_URI_CACHE.delete(DATA_URI_CACHE.keys().next().value);
@@ -296,6 +388,9 @@ module.exports = {
     dataUriCacheSize,
     MAX_REFERENCES,
     MAX_INLINE_BYTES,
+    INLINE_FALLBACK_WIDTHS,
+    SENDABLE_DIRNAME,
+    shrinkToFit,
     toTag,
     assignTags,
     toDataUri,

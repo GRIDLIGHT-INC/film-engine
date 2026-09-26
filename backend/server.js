@@ -47,6 +47,7 @@
  *   GET    /film/shots/:id/voice                            — Voice job status
  *   GET    /film/audio/:projectId/:filename                 — Serve audio files
  *   POST   /film/shots/:id/video/generate[/stream]          — Video generation
+ *   GET    /film/projects/:id/production-graph              — The production graph (layout, tidy, version pointers)
  *   POST   /film/projects/:id/video/batch[/stream]          — Batch video generation
  *   GET    /film/video/:projectId/:filename                 — Serve video files
  *   POST   /film/shots/:id/lipsync/generate[/stream]        — Lip-sync generation
@@ -467,6 +468,18 @@ const server = http.createServer(async (req, res) => {
          * trap `/film/locations/:id` already cost once: a handler that exists
          * and is never reached looks exactly like a missing feature.
          */
+        /*
+         * The production graph, and the two version pointers it added. Ahead of
+         * the shot, video and music-cue handlers, which match on the first
+         * segments and would otherwise swallow /video/select and /select.
+         */
+        if ((parts[1] === 'projects' && parts[3] === 'production-graph')
+            || (parts[1] === 'shots' && parts[3] === 'video' && parts[4] === 'select')
+            || (parts[1] === 'music-cues' && parts[3] === 'select')) {
+            const handled = require('./routes/production-graph').handleProductionGraph(req, res, parts);
+            if (handled !== false) return handled;
+        }
+
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'sounds') {
             const sounds = require('./routes/sounds');
             if (parts[4] === 'generate') {

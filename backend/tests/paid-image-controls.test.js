@@ -295,7 +295,9 @@ test('a per-generation provider choice really changes the adapter, for image AND
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(id);
     const resolveWith = (cap, ov) => providersReg.resolveId(cap, spendContext(project, null, null, ov));
 
-    for (const [cap, choices] of [['video', ['runway', 'seedance']], ['image', ['meshy', 'bfl', 'openai']]]) {
+    // Image choices are among the vendors of the house model (Nano Banana Pro);
+    // a choice of any other vendor is overruled by the standard, checked below.
+    for (const [cap, choices] of [['video', ['runway', 'seedance']], ['image', ['meshy', 'google']]]) {
         for (const choice of choices) {
             assert.strictEqual(resolveWith(cap, { [cap]: choice }), choice,
                 `choosing ${choice} for one ${cap} generation resolved somewhere else`);
@@ -305,6 +307,12 @@ test('a per-generation provider choice really changes the adapter, for image AND
         const seen = new Set(choices.map(c => resolveWith(cap, { [cap]: c })));
         assert.strictEqual(seen.size, choices.length,
             `${cap}: ${choices.length} choices produced ${seen.size} distinct providers`);
+    }
+    // A vendor that does not sell the house model is overruled, not honoured.
+    const { isStandardProvider } = require('../lib/image-standard');
+    for (const other of ['bfl', 'openai']) {
+        assert.ok(isStandardProvider(resolveWith('image', { image: other })),
+            `choosing ${other} for an image moved it off Nano Banana Pro`);
     }
 
     // And it must not become a pin: the next generation is unaffected.

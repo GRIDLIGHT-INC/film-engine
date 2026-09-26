@@ -845,8 +845,9 @@ async function generateRefSheet(req, res, charId) {
             // Absent rather than null: a null falls through to the provider's own
             // default, which is the most expensive model it sells.
             ...(model ? { model } : {}),
-            width: 1024,
-            height: 1024,
+            // 2K square, by the house standard: a turnaround view is a plate,
+            // and every plate is 2K (lib/image-standard.js).
+            ...require('../lib/image-standard').plateSize('1:1'),
             steps: 30,
             guidance_scale: 7.5,
             seed,

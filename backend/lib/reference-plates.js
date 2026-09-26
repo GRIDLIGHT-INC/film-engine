@@ -454,11 +454,11 @@ function styleReferencesFor(db, projectId) {
  * Detail that is adequate on a portrait is mush on a crop, and the plate is
  * what every shot in that scene is built against.
  *
- * 2048 on the long edge. Not applied to characters or props: their subject
- * already fills the frame, so a bigger canvas buys detail nobody crops into
- * and costs more on every provider that prices by the megapixel.
+ * 2048 on the long edge — and now for characters and props too, because the
+ * house standard makes every plate 2K (lib/image-standard.js). The name stays
+ * because the floor-reaching logic and its reports were written against it.
  */
-const LOCATION_MIN_EDGE = 2048;
+const LOCATION_MIN_EDGE = require('./image-standard').SIZES.plate.longEdge;
 
 /**
  * Will the provider actually be told this size?
@@ -645,58 +645,16 @@ function capableProviders(floorPixels) {
 
 function plateImageSize(project, maxPixels, kind, adapter) {
     const p = project || {};
-    const { imageBudget } = require('./capability-payloads');
-    const stated = String(p.target_resolution || '').match(/^\s*\d+\s*x\s*\d+\s*$/i);
-
-    if (kind !== 'location') {
-        // Unchanged: a project that stated no resolution gets NOTHING rather
-        // than a guess, because the provider's own default is the right answer
-        // when nobody has said, and inventing a size would silently reframe
-        // every plate in every existing project.
-        if (!stated) return null;
-        const d = imageBudget(p.aspect_ratio, p.target_resolution, maxPixels);
-        return {
-            width: d.width, height: d.height, clamped: !!d.clamped, below_floor: false,
-            honoured: sizeIsHonoured(adapter),
-        };
-    }
-
     /*
-     * The floor holds whether or not the project settings are filled in.
-     * "Always at least 2K" is somebody stating a size for this kind of plate,
-     * which is a different thing from a project having stated none.
+     * EVERY PLATE IS 2K — character, location and prop alike — by the house
+     * standard (lib/image-standard.js). The long edge is exactly 2048 in the
+     * project's shape, whatever the project delivers at: a plate is a reference
+     * the frames are built from, not a deliverable, and a plate at the delivery
+     * size made a 720p project's references soft and a character turnaround a
+     * literal 1024 square. `kind` is still taken so a caller reads the same
+     * signature; it no longer changes the answer.
      */
-    /*
-     * The base SHAPE, unclamped.
-     *
-     * `imageBudget(…, null)` does not mean "no ceiling" — it falls back to a
-     * default one, which returned 1672x944 for a 16:9 1920x1080 project and
-     * made the floor calculation start from an already-shrunk frame. The cap
-     * is applied deliberately below, once, against the real provider.
-     */
-    const UNCAPPED = Number.MAX_SAFE_INTEGER;
-    const base = stated
-        ? imageBudget(p.aspect_ratio, p.target_resolution, UNCAPPED)
-        : imageBudget(p.aspect_ratio, `${LOCATION_MIN_EDGE}x${LOCATION_MIN_EDGE}`, UNCAPPED);
-
-    /*
-     * The long edge is set EXACTLY to the floor and the short edge derived
-     * from the ratio. Scaling both by a factor and rounding each to a multiple
-     * of eight overshoots — 2048x1160 instead of 2048x1152 — which is 16k
-     * pixels over a provider whose ceiling is exactly 2048x1152, so the clamp
-     * fired and delivered 2040x1152: under the floor, for eight pixels.
-     */
-    const ratio = base.width / base.height;
-    const landscape = ratio >= 1;
-    const even = n => Math.max(256, Math.round(n / 2) * 2);
-    const wanted = landscape
-        ? { width: LOCATION_MIN_EDGE, height: even(LOCATION_MIN_EDGE / ratio) }
-        : { width: even(LOCATION_MIN_EDGE * ratio), height: LOCATION_MIN_EDGE };
-
-    // Already bigger than the floor? Keep what the project asked for.
-    if (Math.max(base.width, base.height) >= LOCATION_MIN_EDGE) {
-        wanted.width = base.width; wanted.height = base.height;
-    }
+    const wanted = require('./image-standard').plateSize(p.aspect_ratio);
 
     const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
     const asked = wanted.width * wanted.height;

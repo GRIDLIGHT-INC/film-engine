@@ -88,19 +88,18 @@ test('the shape survives being raised to the floor', () => {
     }
 });
 
-test('only LOCATION plates get the floor', () => {
+test('every plate kind is 2K, by the house standard', () => {
     /*
-     * A character or prop plate is a close-up filling its own frame — the
-     * subject already occupies most of the pixels, so a bigger canvas buys
-     * detail nobody crops into and costs more on every provider that prices by
-     * megapixel. The floor is not a general "bigger is better".
+     * This used to hold the floor to LOCATIONS only, on the argument that a
+     * character or prop fills its own frame. The house standard overrules it:
+     * every plate — character, location, prop — is a 2048 long edge
+     * (lib/image-standard.js), because a plate is what every frame is built from.
      */
     const roomy = 4194304;
-    const location = plateImageSize(PROJECT, roomy, 'location');
-    for (const kind of ['character', 'prop']) {
-        const other = plateImageSize(PROJECT, roomy, kind);
-        assert.ok(Math.max(other.width, other.height) < Math.max(location.width, location.height),
-            `${kind} was raised to the location floor — it does not need it and it costs more`);
+    for (const kind of ['character', 'location', 'prop']) {
+        const size = plateImageSize(PROJECT, roomy, kind);
+        assert.strictEqual(Math.max(size.width, size.height), LOCATION_MIN_EDGE,
+            `${kind} plate is ${size.width}x${size.height}, not 2K`);
     }
 });
 
@@ -117,9 +116,10 @@ test('a project with no resolution still gets a 2K location plate', () => {
     assert.ok(Math.max(size.width, size.height) >= LOCATION_MIN_EDGE,
         `${size.width}x${size.height} is below the floor`);
 
-    // And the other kinds keep the old behaviour exactly.
-    assert.strictEqual(plateImageSize({ aspect_ratio: '16:9' }, 4194304, 'character'), null,
-        'a character plate now invents a size for a project that stated none');
+    // And so does every other kind: 2K is the house standard, not a project setting.
+    const character = plateImageSize({ aspect_ratio: '16:9' }, 4194304, 'character');
+    assert.ok(character && Math.max(character.width, character.height) === LOCATION_MIN_EDGE,
+        'a character plate for a project with no resolution is not 2K');
 });
 
 test('the floor note never travels to a provider', () => {

@@ -82,20 +82,6 @@ test('a panel is reusable — the same builder serves another surface', () => {
     assert.ok(!other.includes('shotCard'), 'the panel leaks the other surface\'s ids');
 });
 
-test('previs can do both jobs', () => {
-    // Previs already had the camera as live 3D controls, which beat a form —
-    // so it is held to having the two things it genuinely lacked: naming what
-    // it stages, and the camera note.
-    assert.ok(/previsSetObject\(\$\{i\},'name'/.test(HTML),
-        'a staged object cannot be named, so its position can never reach a prompt');
-    assert.ok(HTML.includes('previsCameraNote'), 'previs has no camera note');
-    assert.ok(HTML.includes('function previsStageNamed('),
-        'previs cannot put a named subject from the card onto the stage');
-    for (const id of ['previsShotType', 'previsMovement', 'previsSensor',
-        'previsFocal', 'previsAperture', 'previsHeight']) {
-        assert.ok(HTML.includes(id), `previs lost its directing control ${id}`);
-    }
-});
 
 test('staging reaches the prompt, and is ranked as the shot rather than as decoration', () => {
     const sp = fs.readFileSync(path.join(__dirname, '..', 'lib', 'storyboard-prompt.js'), 'utf8');

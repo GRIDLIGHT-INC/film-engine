@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production graph</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0e0e11}
+a{color:inherit;text-decoration:none}
+a:hover{color:#ffffff}
+</style>
+</helmet>
+<div style="width: 1720px; height: 1040px; position: relative; overflow: hidden; background: #0e0e11; color: #ededf2; font-family: 'Geist', system-ui, sans-serif;">
+
+<!-- ============ TOP BAR ============ -->
+<div style="height: 56px; box-sizing: border-box; padding: 0 20px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #25252c; background: #131317;">
+  <div style="display: flex; align-items: baseline; gap: 10px;">
+    <h1 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">Production</h1>
+    <span style="font-size: 13px; color: #9b9ba8;">Drive-In Outreach</span>
+  </div>
+  <div style="display: flex; gap: 6px; margin-left: 12px;">
+    <button style="height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #3a3a44; background: #1f1f25; color: #ededf2; font: 500 12px 'Geist', sans-serif;">All scenes</button>
+    <button style="height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #2a2a32; background: transparent; color: #a8a8b4; font: 500 12px 'Geist', sans-serif;">Sc 1 · THE OFFICE · DAY</button>
+  </div>
+  <div style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #9b9ba8; display: flex; gap: 14px; margin-left: 8px;">
+    <span>15 shots</span><span>12 framed</span><span>2 video</span><span>3 need a frame</span>
+  </div>
+  <div style="flex-grow: 1;"></div>
+  <div style="display: flex; gap: 6px; align-items: center;">
+    <span style="font-size: 12px; color: #9b9ba8; margin-right: 4px;">Add node</span>
+    <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; color: #ededf2; font: 500 12px 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #e06ad8;"></span>Shot</button>
+    <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; color: #ededf2; font: 500 12px 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f0a04b;"></span>Sequence</button>
+    <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; color: #ededf2; font: 500 12px 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #52d489;"></span>SFX</button>
+    <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; color: #ededf2; font: 500 12px 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #52d489;"></span>Music</button>
+  </div>
+  <div style="width: 1px; height: 24px; background: #2a2a32;"></div>
+  <button title="Re-place every node from the shot list; nodes you dragged stay where you put them" style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Tidy layout</button>
+  <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Lock board</button>
+  <button style="height: 32px; padding: 0 14px; border-radius: 6px; border: none; background: #ededf2; color: #111114; font: 600 12px 'Geist', sans-serif;">Run pending (4) · est. $[x.xx]</button>
+</div>
+
+<!-- ============ CANVAS ============ -->
+<div style="position: absolute; left: 0; top: 56px; width: 1720px; height: 784px; overflow: hidden; background-color: #111114; background-image: radial-gradient(#2a2a31 1px, transparent 1.2px); background-size: 20px 20px;">
+
+  <!-- group backdrops -->
+  <div style="position: absolute; left: 20px; top: 14px; width: 1180px; height: 726px; border: 1px dashed #34343d; border-radius: 14px; background: rgba(255,255,255,0.012);">
+    <div style="position: absolute; left: 14px; top: 8px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad;">SC 1 · THE PITCH — sequence group</div>
+  </div>
+  <div style="position: absolute; left: 1220px; top: 14px; width: 486px; height: 666px; border: 1px dashed #34343d; border-radius: 14px; background: rgba(255,255,255,0.012);">
+    <div style="position: absolute; left: 14px; top: 8px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad;">SC 1 · THE REVEAL — sequence group</div>
+  </div>
+
+  <!-- wires -->
+  <svg width="1720" height="784" viewBox="0 0 1720 784" style="position: absolute; left: 0; top: 0; pointer-events: none;" aria-hidden="true">
+    <path d="M240 213 C280 213 280 260 320 260" stroke="#e06ad8" stroke-width="2" fill="none"></path>
+    <path d="M240 433 C290 433 270 282 320 282" stroke="#e06ad8" stroke-width="2" fill="none"></path>
+    <path d="M240 653 C300 653 260 304 320 304" stroke="#e06ad8" stroke-width="2" fill="none"></path>
+    <path d="M580 260 C620 260 620 230 660 230" stroke="#f0a04b" stroke-width="2" fill="none"></path>
+    <path d="M580 282 C630 282 610 440 660 440" stroke="#9d8cff" stroke-width="2" fill="none" stroke-dasharray="5 4"></path>
+    <path d="M580 282 C640 282 600 620 660 620" stroke="#9d8cff" stroke-width="2" fill="none" stroke-dasharray="5 4"></path>
+    <path d="M880 440 L960 440" stroke="#52d489" stroke-width="2" fill="none"></path>
+    <path d="M880 620 L960 620" stroke="#52d489" stroke-width="2" fill="none"></path>
+    <path d="M1440 185 C1465 185 1455 260 1480 260" stroke="#e06ad8" stroke-width="2" fill="none" stroke-dasharray="6 4"></path>
+    <path d="M1440 393 C1465 393 1455 282 1480 282" stroke="#e06ad8" stroke-width="2" fill="none"></path>
+    <path d="M1440 623 C1470 623 1450 304 1480 304" stroke="#6b6b76" stroke-width="2" fill="none" stroke-dasharray="3 4"></path>
+  </svg>
+
+  <!-- ===== SHOT EX-1 ===== -->
+  <a href="ShotInspector.dc.html" aria-label="Open shot EX-1" style="position: absolute; left: 40px; top: 50px; width: 200px; height: 200px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #52d489;"></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">EX-1</span>
+      <span style="font-size: 11px; color: #9b9ba8; flex-grow: 1;">wide · 6s</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #26262e; color: #c9c9d3;">v2 / 2</span>
+    </div>
+    <div style="position: relative; height: 112px; overflow: hidden;">
+      <svg viewBox="0 0 160 90" width="198" height="112" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="108" y="24" width="34" height="27" rx="3" fill="#6d8ea3"></rect><circle cx="70" cy="36" r="11" fill="#9a7a62"></circle><path d="M50 90 L55 56 Q70 48 85 56 L90 90 Z" fill="#3b3c47"></path></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #ededf2;"></span></div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #54c8e0; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>plates 3</span><span>image</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 20px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span>video</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #f0a04b;"></span>
+    </div>
+  </a>
+
+  <!-- ===== SHOT EX-2 (selected) ===== -->
+  <a href="ShotInspector.dc.html" aria-label="Open shot EX-2" style="position: absolute; left: 40px; top: 270px; width: 200px; height: 200px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #ededf2; border-radius: 10px; box-shadow: 0 0 0 3px rgba(237,237,242,0.14);">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #52d489;"></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">EX-2</span>
+      <span style="font-size: 11px; color: #9b9ba8; flex-grow: 1;">medium · 3s</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #26262e; color: #c9c9d3;">v3 / 3</span>
+    </div>
+    <div style="position: relative; height: 112px; overflow: hidden;">
+      <svg viewBox="0 0 160 90" width="198" height="112" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path><path d="M64 70 L72 90 L80 70 Z" fill="#7a2f35"></path></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #ededf2;"></span></div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #54c8e0; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>plates 3</span><span>image</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 20px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span>video</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #f0a04b;"></span>
+    </div>
+  </a>
+
+  <!-- ===== SHOT EX-3 ===== -->
+  <a href="ShotInspector.dc.html" aria-label="Open shot EX-3" style="position: absolute; left: 40px; top: 490px; width: 200px; height: 200px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #52d489;"></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">EX-3</span>
+      <span style="font-size: 11px; color: #9b9ba8; flex-grow: 1;">close · 3s</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #26262e; color: #c9c9d3;">v1 / 1</span>
+    </div>
+    <div style="position: relative; height: 112px; overflow: hidden;">
+      <svg viewBox="0 0 160 90" width="198" height="112" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 14px; height: 4px; border-radius: 2px; background: #ededf2;"></span></div>
+      <div style="position: absolute; right: 6px; top: 6px; font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 5px; border-radius: 3px; background: rgba(14,14,17,0.82); border: 1px dashed #e06ad8; color: #f3c6ef;">↗ starts The reveal</div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #54c8e0; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>plates 2</span><span>image</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 20px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span>video</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #f0a04b;"></span>
+    </div>
+  </a>
+
+  <!-- ===== SEQUENCE: The pitch ===== -->
+  <a href="SequenceInspector.dc.html" aria-label="Open sequence The pitch" style="position: absolute; left: 320px; top: 180px; width: 260px; height: 300px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32; background: #221e19; border-radius: 9px 9px 0 0;">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #f0a04b;"></span>
+      <span style="font-size: 13px; font-weight: 600; flex-grow: 1;">The pitch</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #d8b894;">SEQUENCE</span>
+    </div>
+    <div style="height: 32px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">3 shots · 12s · 2 joins</div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #c9c9d3;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>1 · EX-1</span><span style="color: #a0a0ad;">video</span>
+      <span style="position: absolute; right: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #f0a04b; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #c9c9d3;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>2 · EX-2</span><span style="color: #a0a0ad;">scene</span>
+      <span style="position: absolute; right: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #9d8cff; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #c9c9d3;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>3 · EX-3</span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #8a8a96;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #6b6b76;"></span>
+      <span>+ drop a shot</span>
+    </div>
+    <div style="margin: 10px 12px 0; display: flex; flex-direction: column; gap: 6px;">
+      <div style="padding: 8px 10px; border-radius: 6px; background: #232329;">
+        <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #d8b894;">EX-1 → EX-2 · CONTINUOUS MOVE</div>
+        <div style="font-size: 11px; color: #c9c9d3; margin-top: 3px; line-height: 1.35;">Push in from wide to his chest; the pitch starts mid-move.</div>
+      </div>
+      <div style="padding: 8px 10px; border-radius: 6px; background: #232329;">
+        <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #d8b894;">EX-2 → EX-3 · HARD CUT</div>
+        <div style="font-size: 11px; color: #c9c9d3; margin-top: 3px; line-height: 1.35;">Cut on the blink — his head is already the monitor.</div>
+      </div>
+    </div>
+  </a>
+
+  <!-- ===== OUTPUT: sequence video take ===== -->
+  <a href="TakeViewer.dc.html" aria-label="Open sequence video version 2" style="position: absolute; left: 660px; top: 180px; width: 220px; height: 190px; box-sizing: border-box; display: block; background: #17171b; border: 1px solid #3a3226; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #f0a04b;">VIDEO</span>
+      <span style="font-size: 12px; font-weight: 500; flex-grow: 1;">v2 of 2</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">12.0s</span>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #f0a04b; box-shadow: 0 0 0 2px #17171b;"></span>
+      <span>from The pitch</span>
+    </div>
+    <div style="position: relative; margin: 6px 10px 0; height: 112px; border-radius: 6px; overflow: hidden;">
+      <svg viewBox="0 0 160 90" width="198" height="112" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="112" y="20" width="38" height="32" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="36" r="14" fill="#9a7a62"></circle><path d="M44 90 L50 58 Q72 46 94 58 L100 90 Z" fill="#3b3c47"></path></svg>
+      <div style="position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: rgba(14,14,17,0.72); display: flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4 2 L12 7 L4 12 Z" fill="#ededf2"></path></svg>
+      </div>
+      <div style="position: absolute; right: 6px; top: 6px; font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 5px; border-radius: 3px; background: #ededf2; color: #111114;">▶ PLAYING</div>
+    </div>
+  </a>
+
+  <!-- ===== SFX node ===== -->
+  <a href="SoundInspector.dc.html" aria-label="Open sound effect node" style="position: absolute; left: 660px; top: 390px; width: 220px; height: 150px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32; background: #18211c; border-radius: 9px 9px 0 0;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #52d489;">SFX</span>
+      <span style="font-size: 12px; font-weight: 600; flex-grow: 1;">Office room tone</span>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #9d8cff; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>scene</span><span>audio</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #52d489; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="padding: 6px 12px 0; font-size: 11px; line-height: 1.4; color: #c9c9d3;">CRT whine, fluorescent hum, a chair creak under something heavy.</div>
+    <div style="padding: 8px 12px 0; display: flex; gap: 4px;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #262631; color: #c4bcff;">+ scene details</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #26262e; color: #c9c9d3;">12s · match</span>
+    </div>
+  </a>
+
+  <!-- ===== MUSIC node ===== -->
+  <a href="SoundInspector.dc.html" aria-label="Open music node" style="position: absolute; left: 660px; top: 570px; width: 220px; height: 150px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32; background: #18211c; border-radius: 9px 9px 0 0;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #52d489;">MUSIC</span>
+      <span style="font-size: 12px; font-weight: 600; flex-grow: 1;">Pitch cue</span>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #9d8cff; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>scene</span><span>audio</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #52d489; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="padding: 6px 12px 0; font-size: 11px; line-height: 1.4; color: #c9c9d3;">Deadpan lounge — upright bass and brushes, lands on the cut to the monitor.</div>
+    <div style="padding: 8px 12px 0; display: flex; gap: 4px;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #26262e; color: #c9c9d3;">custom</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #2b2418; color: #f0c48a;">not generated</span>
+    </div>
+  </a>
+
+  <!-- ===== SFX output ===== -->
+  <a href="TakeViewer.dc.html" aria-label="Play room tone version 1" style="position: absolute; left: 960px; top: 390px; width: 220px; height: 130px; box-sizing: border-box; display: block; background: #17171b; border: 1px solid #243429; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #52d489;">AUDIO</span>
+      <span style="font-size: 12px; font-weight: 500; flex-grow: 1;">v1 · playing</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">12.0s</span>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #52d489; box-shadow: 0 0 0 2px #17171b;"></span>
+      <span>from Office room tone</span>
+    </div>
+    <div style="margin: 8px 12px 0; height: 44px; display: flex; align-items: center; gap: 2px;">
+      <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true" style="flex-shrink: 0; margin-right: 6px;"><path d="M4 2 L12 7 L4 12 Z" fill="#ededf2"></path></svg>
+      <sc-for list="{{waveA}}" as="b" hint-placeholder-count="40"><span style="display: block; width: 2px; flex-shrink: 0; border-radius: 1px; background: #52d489; height: {{b.h}}px;"></span></sc-for>
+    </div>
+  </a>
+
+  <!-- ===== MUSIC output (empty) ===== -->
+  <div style="position: absolute; left: 960px; top: 570px; width: 220px; height: 130px; box-sizing: border-box; background: transparent; border: 1px dashed #3a3a44; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px dashed #2f2f38;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #8a8a96;">AUDIO</span>
+      <span style="font-size: 12px; color: #a0a0ad; flex-grow: 1;">no version yet</span>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 3px; padding: 0 12px;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #52d489; box-shadow: 0 0 0 2px #111114;"></span>
+    </div>
+    <div style="padding: 6px 12px 0; display: flex; gap: 6px;">
+      <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #3a3a44; background: #1b1b20; color: #ededf2; font: 500 11px 'Geist', sans-serif;">Generate</button>
+      <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Upload</button>
+    </div>
+  </div>
+
+  <!-- ===== LINKED FRAME: EX-3 borrowed from The pitch ===== -->
+  <a href="SequenceInspector.dc.html" aria-label="Linked frame EX-3 from The pitch" style="position: absolute; left: 1240px; top: 50px; width: 200px; height: 150px; box-sizing: border-box; display: block; background: #17171b; border: 1px dashed #e06ad8; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px dashed #3a2a3a;">
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600; color: #f3c6ef;">↳ EX-3</span>
+      <span style="font-size: 11px; color: #a0a0ad; flex-grow: 1;">linked frame</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #26262e; color: #c9c9d3;">v1</span>
+    </div>
+    <div style="position: relative; height: 84px; overflow: hidden; opacity: 0.85;">
+      <svg viewBox="0 0 160 90" width="198" height="84" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+      <div style="position: absolute; left: 6px; bottom: 5px; font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 5px; border-radius: 3px; background: rgba(14,14,17,0.82); color: #ededf2;">from The pitch · last shot</div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span>start frame</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #17171b;"></span>
+    </div>
+  </a>
+
+  <!-- ===== SHOT MV-2 ===== -->
+  <a href="ShotInspector.dc.html" aria-label="Open shot MV-2" style="position: absolute; left: 1240px; top: 230px; width: 200px; height: 200px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #52d489;"></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">MV-2</span>
+      <span style="font-size: 11px; color: #9b9ba8; flex-grow: 1;">medium · 8s</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #26262e; color: #c9c9d3;">v3 / 4</span>
+    </div>
+    <div style="position: relative; height: 112px; overflow: hidden;">
+      <svg viewBox="0 0 160 90" width="198" height="112" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#3a3f47"></rect><rect x="8" y="20" width="40" height="32" rx="2" fill="#7fa0b3"></rect><rect x="92" y="24" width="30" height="26" rx="4" fill="#77726a"></rect><path d="M78 90 L84 54 Q107 44 130 54 L136 90 Z" fill="#5c5852"></path><rect x="0" y="74" width="160" height="16" fill="#2c3036"></rect></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #ededf2;"></span><span style="width: 14px; height: 4px; border-radius: 2px; background: #6b6b76;"></span></div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #54c8e0; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>plates 1</span><span>image</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+    </div>
+    <div style="position: relative; height: 20px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span>video</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #f0a04b;"></span>
+    </div>
+  </a>
+
+  <!-- ===== SHOT MV-6 (no frame) ===== -->
+  <div style="position: absolute; left: 1240px; top: 460px; width: 200px; height: 200px; box-sizing: border-box; background: #1b1b20; border: 1px solid #4a2a2e; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #ef6b6b;"></span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600;">MV-6</span>
+      <span style="font-size: 11px; color: #9b9ba8; flex-grow: 1;">medium · 6s</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #2e1d20; color: #f3a3a3;">failed</span>
+    </div>
+    <div style="height: 112px; box-sizing: border-box; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: repeating-linear-gradient(135deg, #1b1b20 0 8px, #202026 8px 16px);">
+      <span style="font-size: 11px; color: #c9c9d3;">No frame yet</span>
+      <div style="display: flex; gap: 6px;">
+        <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: none; background: #ededf2; color: #111114; font: 600 11px 'Geist', sans-serif;">Generate</button>
+        <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #3a3a44; background: #1b1b20; color: #ededf2; font: 500 11px 'Geist', sans-serif;">Upload</button>
+      </div>
+    </div>
+    <div style="position: relative; height: 20px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+      <span style="position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #54c8e0; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>plates 1</span><span>image</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #e06ad8;"></span>
+    </div>
+    <div style="position: relative; height: 20px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-family: 'Geist Mono', monospace; font-size: 10px; color: #8a8a96;">
+      <span>video</span>
+      <span style="position: absolute; right: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #6b6b76;"></span>
+    </div>
+  </div>
+
+  <!-- ===== SEQUENCE: The reveal ===== -->
+  <a href="SequenceInspector.dc.html" aria-label="Open sequence The reveal" style="position: absolute; left: 1480px; top: 180px; width: 212px; height: 250px; box-sizing: border-box; display: block; background: #1b1b20; border: 1px solid #2f2f38; border-radius: 10px;">
+    <div style="height: 36px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #2a2a32; background: #221e19; border-radius: 9px 9px 0 0;">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #f0a04b;"></span>
+      <span style="font-size: 13px; font-weight: 600; flex-grow: 1;">The reveal</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #d8b894;">SEQ</span>
+    </div>
+    <div style="height: 32px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">2 shots + start frame</div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #f3c6ef;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>start · ↳ EX-3</span><span style="color: #a0a0ad;">video</span>
+      <span style="position: absolute; right: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #f0a04b;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #c9c9d3;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e06ad8; box-shadow: 0 0 0 2px #1b1b20;"></span>
+      <span>1 · MV-2</span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #f3a3a3;">
+      <span style="position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px #6b6b76;"></span>
+      <span>2 · MV-6 — no frame</span>
+    </div>
+    <div style="margin: 12px 12px 0; padding: 8px 10px; border-radius: 6px; background: #232329;">
+      <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #d8b894;">EX-3 → MV-2 · CONTINUOUS</div>
+      <div style="font-size: 11px; color: #c9c9d3; margin-top: 3px; line-height: 1.35;">EX-3 isn't played twice — it's only the clip's first frame.</div>
+    </div>
+    <div style="margin: 8px 12px 0; font-size: 11px; color: #f3a3a3;">Needs MV-6's frame to generate.</div>
+  </a>
+
+  <!-- zoom + legend -->
+  <div style="position: absolute; left: 20px; top: 748px; display: flex; gap: 14px; align-items: center; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">
+    <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #e06ad8;"></span>image</span>
+    <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f0a04b;"></span>video</span>
+    <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #52d489;"></span>audio</span>
+    <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #9d8cff;"></span>scene context</span>
+    <span style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #54c8e0;"></span>plates</span>
+  </div>
+  <div style="position: absolute; right: 20px; top: 604px; width: 200px; height: 130px; box-sizing: border-box; border: 1px solid #2f2f38; border-radius: 8px; background: #15151a; overflow: hidden;">
+    <div style="position: absolute; left: 12px; top: 12px; width: 12px; height: 24px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 30px; top: 22px; width: 16px; height: 28px; background: #4a3e2c; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 52px; top: 22px; width: 14px; height: 60px; background: #2e3a32; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 72px; top: 22px; width: 14px; height: 60px; background: #2e3a32; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 150px; top: 12px; width: 12px; height: 50px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 168px; top: 12px; width: 14px; height: 20px; background: #4a3e2c; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 6px; top: 6px; width: 120px; height: 86px; border: 1px solid #ededf2; border-radius: 3px;"></div>
+    <div style="position: absolute; right: 8px; bottom: 6px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">82%</div>
+  </div>
+</div>
+
+<!-- ============ PLAYBACK ============ -->
+<div style="position: absolute; left: 0; top: 840px; width: 1720px; height: 200px; box-sizing: border-box; border-top: 1px solid #25252c; background: #131317; display: flex; gap: 20px; padding: 20px;">
+  <div style="width: 256px; height: 144px; flex-shrink: 0; border-radius: 6px; overflow: hidden; position: relative; background: #000;">
+    <svg viewBox="0 0 160 90" width="256" height="144" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path><path d="M64 70 L72 90 L80 70 Z" fill="#7a2f35"></path></svg>
+    <div style="position: absolute; left: 6px; top: 6px; font-family: 'Geist Mono', monospace; font-size: 9px; padding: 2px 5px; border-radius: 3px; background: #f0a04b; color: #111114;">SEQ VIDEO</div>
+    <div style="position: absolute; left: 6px; bottom: 6px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #ededf2;">EX-2</div>
+  </div>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+    <div style="height: 32px; display: flex; align-items: center; gap: 8px;">
+      <button aria-label="Previous shot" style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1 V11 M10 1 L4 6 L10 11 Z" stroke="#ededf2" stroke-width="1.5" fill="#ededf2"></path></svg></button>
+      <button aria-label="Pause" style="width: 40px; height: 32px; border-radius: 6px; border: none; background: #ededf2; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1" width="3" height="10" fill="#111114"></rect><rect x="7" y="1" width="3" height="10" fill="#111114"></rect></svg></button>
+      <button aria-label="Next shot" style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid #2f2f38; background: #1b1b20; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M10 1 V11 M2 1 L8 6 L2 11 Z" stroke="#ededf2" stroke-width="1.5" fill="#ededf2"></path></svg></button>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 13px; margin-left: 8px;">01:00:07:12</span>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 13px; color: #8a8a96;">/ 01:01:00:00</span>
+      <span style="font-size: 12px; color: #c9c9d3; margin-left: 12px;">Playing <b style="font-weight: 600;">The pitch</b> — video v2 (the selected version)</span>
+      <div style="flex-grow: 1;"></div>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c9c9d3;"><input type="checkbox" checked="checked"> Stills hold for the shot's length</label>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c9c9d3; margin-left: 12px;"><input type="checkbox" checked="checked"> Audio</label>
+      <button style="height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif; margin-left: 12px;">Send to Premiere</button>
+    </div>
+    <div style="position: relative; height: 104px;">
+      <div style="display: flex; gap: 0; font-family: 'Geist Mono', monospace; font-size: 9px; color: #8a8a96; height: 14px;">
+        <span style="width: 234px;">00:00</span><span style="width: 234px;">00:10</span><span style="width: 234px;">00:20</span><span style="width: 234px;">00:30</span><span style="width: 234px;">00:40</span><span>00:50</span>
+      </div>
+      <div style="display: flex; gap: 2px; height: 52px; margin-top: 4px;">
+        <div style="width: 279px; flex-shrink: 0; border-radius: 4px; background: #3a3226; border: 1px solid #f0a04b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-size: 11px; font-weight: 600;">The pitch</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #f0c48a;">VIDEO v2 · EX-1 → EX-3 · 12s</span>
+        </div>
+        <div style="width: 115px; flex-shrink: 0; border-radius: 4px; background: #24242b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">LT-A</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #e7a4e2;">IMAGE · 5s</span>
+        </div>
+        <div style="width: 115px; flex-shrink: 0; border-radius: 4px; background: #24242b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">LT-B</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #e7a4e2;">IMAGE · 5s</span>
+        </div>
+        <div style="width: 185px; flex-shrink: 0; border-radius: 4px; background: #3a3226; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">MV-2</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #f0c48a;">VIDEO · 8s</span>
+        </div>
+        <div style="width: 185px; flex-shrink: 0; border-radius: 4px; background: #24242b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">MV-3</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #e7a4e2;">IMAGE · 8s</span>
+        </div>
+        <div style="width: 185px; flex-shrink: 0; border-radius: 4px; background: #24242b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">MV-4</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #e7a4e2;">IMAGE · 8s</span>
+        </div>
+        <div style="width: 185px; flex-shrink: 0; border-radius: 4px; background: #24242b; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px;">MV-5</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #e7a4e2;">IMAGE · 8s</span>
+        </div>
+        <div style="flex-grow: 1; border-radius: 4px; border: 1px dashed #4a2a2e; box-sizing: border-box; padding: 6px 8px; display: flex; flex-direction: column; justify-content: space-between;">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #c9c9d3;">MV-6</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 9px; color: #f3a3a3;">NO FRAME · slate</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 2px; height: 12px; margin-top: 4px;">
+        <div style="width: 279px; flex-shrink: 0; border-radius: 3px; background: #1f3a2a; font-family: 'Geist Mono', monospace; font-size: 8px; color: #8fe0b0; padding-left: 6px; line-height: 12px; box-sizing: border-box;">SFX room tone</div>
+      </div>
+      <div style="display: flex; gap: 2px; height: 12px; margin-top: 2px;">
+        <div style="width: 279px; flex-shrink: 0; border-radius: 3px; border: 1px dashed #2f5a40; box-sizing: border-box; font-family: 'Geist Mono', monospace; font-size: 8px; color: #8fe0b0; padding-left: 6px; line-height: 10px;">MUSIC pitch cue — not generated</div>
+      </div>
+      <div style="position: absolute; left: 164px; top: 12px; width: 2px; height: 94px; background: #ededf2;"></div>
+      <div style="position: absolute; left: 159px; top: 8px; width: 12px; height: 8px; background: #ededf2; border-radius: 2px;"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1720,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const waveA = [];
+    for (let i = 0; i < 44; i++) {
+      const h = 6 + Math.round(Math.abs(Math.sin(i * 0.9) * 14 + Math.sin(i * 2.3) * 8 + Math.cos(i * 0.37) * 6));
+      waveA.push({ h: Math.min(h, 40) });
+    }
+    return { waveA };
+  }
+}
+</script>
+</body>
+</html>

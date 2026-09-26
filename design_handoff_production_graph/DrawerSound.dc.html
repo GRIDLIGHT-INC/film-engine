@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawer — music</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 420px; height: 1080px; box-sizing: border-box; background: #1a1a1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="height: 56px; box-sizing: border-box; padding: 0 14px 0 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <span style="width: 10px; height: 10px; border-radius: 50%; background: #57c98a;"></span>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 16px; font-weight: 600;">Pitch cue</span><span style="font-size: 11.5px; color: #8e8e97;">Music · wired to The pitch</span></div>
+      <div style="font-size: 11px; color: #8e8e97; margin-top: 1px;">Wire it to a shot instead and it scores only that shot</div>
+    </div>
+    <button aria-label="Close" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; display: flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#c9c9d0" stroke-width="1.5"></path></svg></button>
+  </div>
+
+  <div style="padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 20px;">
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Kind</h3>
+      <div style="display: flex; background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 3px;">
+        <button style="flex: 1; height: 30px; border-radius: 7px; border: none; background: transparent; color: #b7b7be; font: 500 11.5px -apple-system, sans-serif;">Sound effect</button>
+        <button style="flex: 1; height: 30px; border-radius: 7px; border: none; background: transparent; color: #b7b7be; font: 500 11.5px -apple-system, sans-serif;">Room tone</button>
+        <button style="flex: 1; height: 30px; border-radius: 7px; border: none; background: #2b2b30; color: #f4f4f5; font: 600 11.5px -apple-system, sans-serif;">Music</button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Written from</h3>
+      <label style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.08); font-size: 12px;"><input type="checkbox" checked="checked"><span><span style="font-weight: 600;">Scene details</span> <span style="color: #8e8e97;">from the wired sequence</span></span></label>
+      <div style="padding: 9px 11px; border-radius: 8px; background: rgba(138,138,255,0.08); border: 1px solid rgba(138,138,255,0.3); font-size: 11.5px; line-height: 1.5; color: #c4c4ff;">THE OFFICE, DAY. A large creature in an ill-fitting suit pitches to lens; slow push in, hard cut at 9.0s to his head as an 80s monitor. 12.0s.</div>
+      <label for="md" style="font-size: 10.5px; color: #8e8e97; margin-top: 4px;">Your direction — added on top</label>
+      <textarea id="md" rows="3" style="width: 100%; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px/1.45 -apple-system, sans-serif; padding: 7px 9px; resize: vertical;">Deadpan lounge — upright bass and brushes, unhurried. Drops out on the cut to the monitor, then one synth stab.</textarea>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Mood<input type="text" value="deadpan" style="height: 32px; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Genre<input type="text" value="lounge jazz" style="height: 32px; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Length<select style="height: 32px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"><option>Match 12s</option><option>Custom</option></select></label>
+      </div>
+      <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Avoid<input type="text" value="vocals, big drums" style="height: 32px; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"></label>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">What will be sent</h3><span style="font-size: 10.5px; color: #8e8e97;">ElevenLabs · music</span></div>
+      <pre style="margin: 0; padding: 10px 12px; border-radius: 8px; background: #131315; border: 1px solid rgba(255,255,255,0.08); font: 400 10.5px/1.6 'SF Mono', ui-monospace, Menlo, monospace; color: #c9c9d0; white-space: pre-wrap;">Deadpan lounge jazz, upright bass and brushes,
+unhurried. Scene: a dim office, daytime; a large
+creature in an ill-fitting suit makes a sales pitch
+straight to camera. Drops out completely at 9.0s,
+then one synth stab. 12 seconds.
+No vocals, no big drums.</pre>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Versions</h3>
+      <div style="padding: 12px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.14); font-size: 11.5px; color: #8e8e97;">None yet. Each generation adds an audio version node; the selected one plays.</div>
+      <button style="align-self: flex-start; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Open in Score workspace →</button>
+    </section>
+    <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; color: #6f6f77; text-align: center;">— end of drawer · footer is sticky, see screens —</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

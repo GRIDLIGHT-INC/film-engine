@@ -49,6 +49,7 @@ const FREE_ENDPOINTS = {
     stitchSequence: 'joins finished clips with the bundled ffmpeg; no provider is called',
     approveStrip: 'records an approval fingerprint',
     createSequence: 'writes a plan row; planning is deliberately free',
+    pgCreateSequence: 'the production graph\'s empty sequence node — a plan row, shots wired in afterwards',
     importThreeDModel: 'uploads bytes the director already has',
     /*
      * The directing layer computes; it never generates. Both of these match

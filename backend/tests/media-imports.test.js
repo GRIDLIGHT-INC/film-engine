@@ -217,7 +217,10 @@ test('every registered director import persists, registers, serves and has a UI 
          * goes; if the route is deleted too, the target leaves MEDIA_IMPORTS
          * and this entry goes with it. A stale exemption fails below.
          */
-        const NO_UI = { 'continuity-ref': 'the Continuity page was removed; the route and MCP path remain' };
+        const NO_UI = {
+            'continuity-ref': 'the Continuity page was removed; the route and MCP path remain',
+            'previs-image': 'the old previs stage was removed; the route and previs_image_upload remain',
+        };
         if (NO_UI[id]) {
             assert.ok(MEDIA_IMPORTS[id], `stale exemption: '${id}' is no longer a registered import`);
             continue;
@@ -256,10 +259,12 @@ test('a valid Meshy GLB is accepted even when the browser labels it as generic b
     assert.ok(imported.asset_id);
 });
 
-test('3D model upload is available directly in Previs as well as the model catalogue', () => {
-    assert.match(UI, /data-import-target="three-d-model" data-import-surface="previs"/);
-    assert.ok((UI.match(/data-import-target="three-d-model"/g) || []).length >= 2,
-        'the 3D catalogue import exists, but Previs has no direct model import');
+test('3D model upload is available from the model catalogue', () => {
+    // It was on the previs stage as well until that stage was removed; the
+    // 3D Models page is where a .glb comes in now.
+    assert.ok((UI.match(/data-import-target="three-d-model"/g) || []).length >= 1,
+        'there is no way to import a .glb from the page');
+    assert.ok(!/data-import-surface="previs"/.test(UI), 'an import still names the removed previs stage');
 });
 
 test('storyboard imports become the current version and model imports enter the previs catalogue', () => {
@@ -475,4 +480,74 @@ test('an uploaded MKV keeps an MKV filename instead of being mislabeled WebM', (
     });
     assert.match(result.file_name, /\.mkv$/,
         'MKV bytes were stored under .webm, so browsers and editors may choose the wrong demuxer');
+});
+
+/*
+ * A SECOND CLIP IS A TAKE, NOT A REPLACEMENT.
+ *
+ * This path deleted the shot's existing clip and inserted the new one at
+ * version 1, so importing a second take DESTROYED the first — while
+ * lib/repair-run.js and lib/video-edit.js, writing to the same shot and the
+ * same asset types, have always registered theirs as MAX(version)+1 beside
+ * what was there. The destructive answer was the one a person reached through
+ * the app, and it is silent: the upload succeeds and the earlier take is gone.
+ *
+ * Asserted over BOTH rows and BOTH files, because keeping the row while
+ * unlinking the bytes is the same loss wearing a record of itself.
+ */
+test('a second clip on a shot is a new take rather than replacing the first', () => {
+    const owner = seed();
+    const args = { ...owner, name: 'take.mp4' };
+    const data = `data:${MEDIA_MIME.video};base64,${MEDIA_BYTES.video.toString('base64')}`;
+
+    const first = importMedia('video-media', { ...args, data });
+    const second = importMedia('video-media', { ...args, data });
+
+    assert.strictEqual(first.version, 1);
+    assert.strictEqual(second.version, 2, 'the second import did not become a new version');
+    assert.notStrictEqual(first.file_name, second.file_name,
+        'both takes were written to one filename, so the first clip\'s bytes were overwritten');
+
+    const rows = db.prepare(
+        `SELECT id, version, file_path FROM film_assets
+          WHERE shot_id = ? AND asset_type = 'video_raw' ORDER BY version`).all(owner.shotId);
+    assert.deepStrictEqual(rows.map(r => r.version), [1, 2],
+        'importing a second take did not leave two takes on the shot');
+    for (const row of rows) {
+        assert.ok(fs.existsSync(row.file_path),
+            `version ${row.version} is registered but its file is gone`);
+    }
+
+    // The newest take is the one the film lays down. Asserted through the
+    // timeline's own resolver rather than by reading the highest version back
+    // out of the rows: an import that versioned but did not win selection
+    // would leave the board looking exactly as if nothing had happened.
+    const { resolveShotMedia } = require('../lib/timeline');
+    const media = resolveShotMedia(
+        rows.map(r => ({ ...r, asset_type: 'video_raw', current_frame_version: null })));
+    assert.strictEqual(media.video.path, second.file_path,
+        'the newly imported take is registered but is not the clip that plays');
+});
+
+/*
+ * And the asymmetry is deliberate, so it is pinned rather than left to be
+ * "fixed" into consistency later. The dialogue lane is assembled by FILENAME —
+ * lib/timeline.js gathers a shot's lines and keeps the newest row per name —
+ * so a versioned audio name is a NEW line, and a corrected take would play as
+ * an extra one rather than in place of what it corrects.
+ */
+test('an imported bed still replaces, because the dialogue lane is keyed on filename', () => {
+    const owner = seed();
+    const args = { ...owner, name: 'line.wav' };
+    const data = `data:${MEDIA_MIME.audio};base64,${MEDIA_BYTES.audio.toString('base64')}`;
+
+    importMedia('voice-media', { ...args, data });
+    const second = importMedia('voice-media', { ...args, data });
+
+    const rows = db.prepare(
+        `SELECT id, version FROM film_assets WHERE shot_id = ? AND asset_type = 'audio_dialogue'`)
+        .all(owner.shotId);
+    assert.deepStrictEqual(rows.map(r => r.id), [second.asset_id],
+        'audio began accumulating takes, which the dialogue lane would play as extra lines');
+    assert.strictEqual(second.version, 1);
 });

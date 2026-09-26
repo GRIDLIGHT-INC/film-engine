@@ -62,56 +62,64 @@ test('every image adapter declares how large an image it can produce', () => {
     }
 });
 
-test('the board frame is sized from the project, not from a constant', () => {
-    /*
-     * The specific fault: dimensionsForAspect was handed IMAGE_DEFAULTS
-     * (1024x1024) as the pixel budget, so a project set to 4K and a project set
-     * to 720p boarded at exactly the same size.
-     */
+/*
+ * SUPERSEDED FOR IMAGES BY THE HOUSE STANDARD (lib/image-standard.js):
+ *
+ *   "When we create image storyboard shots, let's create them in 4K. Plates
+ *    (location, characters, props) in 2K."
+ *
+ * The delivery resolution still sizes the footage and the exports. It no longer
+ * sizes a picture: a board frame is 4K and a plate is 2K whatever the project
+ * delivers at, in the shot's (or project's) own shape.
+ */
+
+test('the board frame is 4K in the shot’s shape, whatever the project delivers at', () => {
     const hd = buildCapabilityPayload('image', ctxFor('16:9', '1920x1080')).payload;
     const sd = buildCapabilityPayload('image', ctxFor('16:9', '1280x720')).payload;
+    assert.deepStrictEqual([hd.width, hd.height], [3840, 2160], `a 1080p project boards at ${hd.width}x${hd.height}`);
+    assert.deepStrictEqual([sd.width, sd.height], [3840, 2160], `a 720p project boards at ${sd.width}x${sd.height}`);
 
-    assert.ok(hd.width > sd.width,
-        `a 1920x1080 project boards at ${hd.width}x${hd.height} and a 1280x720 project at `
-        + `${sd.width}x${sd.height} — the delivery size reaches nothing`);
-    assert.ok(Math.abs(hd.width / hd.height - 16 / 9) < 0.02, 'the board frame lost its aspect');
+    const scope = buildCapabilityPayload('image', ctxFor('2.39:1', '1920x1080')).payload;
+    assert.ok(scope.width <= 3840 && scope.width >= 3800, `scope boards ${scope.width} wide, not 4K`);
+    assert.ok(Math.abs(scope.width / scope.height - 2.39) < 0.02, 'the scope frame lost its aspect');
+
+    const vertical = buildCapabilityPayload('image', ctxFor('9:16', '1080x1920')).payload;
+    assert.deepStrictEqual([vertical.width, vertical.height], [2160, 3840],
+        `a vertical board is ${vertical.width}x${vertical.height}, not 4K on its side`);
 });
 
-test('a request beyond what any provider can make is clamped, and says so', () => {
-    const uhd = buildCapabilityPayload('image', ctxFor('16:9', '3840x2160'));
+test('a provider that cannot make 4K is clamped, and says so', () => {
+    const uhd = buildCapabilityPayload('image', { ...ctxFor('16:9', '1920x1080'), maxImagePixels: 1920 * 1080 });
     const p = uhd.payload;
 
-    assert.ok(p.width * p.height <= 4096 * 4096, 'nothing clamped a 4K request');
+    assert.ok(p.width * p.height <= 1920 * 1080, `nothing clamped a 4K board on a 1080p provider: ${p.width}x${p.height}`);
     assert.ok(Math.abs(p.width / p.height - 16 / 9) < 0.02,
         `clamping changed the shape: ${p.width}x${p.height}`);
 
     /*
-     * Reported, not silent. "I set the project to 4K" and "my boards are 4K"
-     * are different claims, and a director who is not told will believe the
-     * second because they did the first.
+     * Reported, not silent. "The standard is 4K" and "this board is 4K" are
+     * different claims, and a director who is not told will believe the second.
      */
     const said = JSON.stringify(uhd.meta || {});
     assert.ok(/clamp|max|provider/i.test(said),
         `the clamp is invisible: ${said}`);
 });
 
-test('plates are sized the same way the board is', () => {
-    /*
-     * A plate conditions every frame its subject appears in. Generated at a
-     * different size from the frames that reference it, it is either upscaled
-     * detail nobody asked for or a soft reference on a sharp board.
-     */
+test('every plate is 2K, whatever the project delivers at', () => {
     const plates = require('../lib/reference-plates');
     assert.strictEqual(typeof plates.plateImageSize, 'function',
         'nothing sizes a plate, so it generates at whatever the provider defaults to');
 
-    const hd = plates.plateImageSize({ aspect_ratio: '16:9', target_resolution: '1920x1080' });
-    const sd = plates.plateImageSize({ aspect_ratio: '16:9', target_resolution: '1280x720' });
-    assert.ok(hd && hd.width > 0, 'no size for an HD project');
-    assert.ok(hd.width > sd.width, 'the project resolution does not reach a plate');
-
-    // A project with no resolution set must not be reshaped by a guess.
-    const none = plates.plateImageSize({});
-    assert.ok(!none || !none.width,
-        'a project with no resolution had one invented for its plates');
+    for (const project of [
+        { aspect_ratio: '16:9', target_resolution: '1920x1080' },
+        { aspect_ratio: '16:9', target_resolution: '1280x720' },
+        { aspect_ratio: '16:9', target_resolution: '3840x2160' },
+        {},
+    ]) {
+        for (const kind of ['character', 'location', 'prop']) {
+            const size = plates.plateImageSize(project, 4096 * 4096, kind);
+            assert.ok(size && Math.max(size.width, size.height) === 2048,
+                `${kind} plate for ${JSON.stringify(project)} is ${size && `${size.width}x${size.height}`}, not 2K`);
+        }
+    }
 });

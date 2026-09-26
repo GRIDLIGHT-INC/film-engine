@@ -82,7 +82,10 @@ const WANTED = [
     ['Write & Design', ['screenplay', 'scenes', 'notes', 'moodboard',
         'characters', 'locations', 'props', 'threed']],
     ['Plan',           ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget']],
-    ['Production',     ['shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
+    // `productiongraph` was asked for later (design_handoff_production_graph):
+    // the eight pages as one graph. The `production_graph` setting decides which
+    // the menu SHOWS; every page stays in exactly one group either way.
+    ['Production',     ['productiongraph', 'shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
         'pipeline', 'flows']],
     // `edits` was asked for later: "where do I place this edit so we can see it
     // in Film Engine, and compose a score for it" — the cut comes home first.

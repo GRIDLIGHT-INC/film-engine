@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production side panel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 232px; height: 808px; box-sizing: border-box; display: flex; flex-direction: column; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="padding: 15px 15px 12px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97; margin-bottom: 5px;">Phase 3 of 4</div>
+    <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.015em;">Production</div>
+    <div style="font-size: 11.5px; color: #8e8e97; line-height: 1.45; margin-top: 4px;">Run the pipeline: picture, voice, score.</div>
+  </div>
+
+  <div style="padding: 10px 8px 6px;">
+    <label for="outlineSearch" style="position: absolute; left: -9999px;">Find a shot</label>
+    <input id="outlineSearch" type="search" placeholder="Find a shot…" style="width: 100%; box-sizing: border-box; height: 30px; padding: 0 10px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, BlinkMacSystemFont, sans-serif;">
+  </div>
+
+  <div style="flex: 1; overflow: hidden; padding: 0 8px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 6px 4px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #8e8e97;"><span>Sc 1 · The office</span><span style="opacity: 0.55;">15</span></div>
+    <sc-for list="{{shots}}" as="s" hint-placeholder-count="15">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 9px; font-size: 12.5px; color: #a3a3ab; background: {{s.bg}}; border: 1px solid {{s.bd}};">
+        <span style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: {{s.dot}};"></span>
+        <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11.5px; color: {{s.fg}}; flex-grow: 1;">{{s.code}}</span>
+        <span style="font-size: 10px; color: #8e8e97;">{{s.note}}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="padding: 10px 8px 12px; border-top: 1px solid rgba(255,255,255,0.07);">
+    <div style="padding: 0 6px 6px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #8e8e97;">Add node · drag onto graph</div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px;">
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px solid #2c2c34; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #c07ce0;"></span>Shot</button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px solid #2c2c34; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #e2c15a;"></span>Sequence</button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px solid #2c2c34; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #57c98a;"></span>SFX</button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px solid #2c2c34; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #57c98a;"></span>Ambient</button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px solid #2c2c34; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #57c98a;"></span>Music</button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #232329; border: 1px dashed #4a4a55; color: #e7e7ea; font: 400 12px -apple-system, sans-serif;"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px dashed #c07ce0; box-sizing: border-box;"></span>Linked frame</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"sel":{"editor":"text","default":""},"$preview":{"width":232,"height":808}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const rows = [
+      ['EX-1', 'ok', 'Pitch', false], ['EX-2', 'ok', 'Pitch', true], ['EX-3', 'ok', 'Pitch', false],
+      ['LT-A', 'ok', '', false], ['LT-B', 'ok', '', false],
+      ['MV-1', 'fail', 'off graph', false], ['MV-2', 'ok', 'Reveal', false], ['MV-3', 'ok', '', false],
+      ['MV-4', 'ok', '', false], ['MV-5', 'ok', '', false], ['MV-6', 'fail', 'Reveal', false],
+      ['MV-CRT', 'fail', 'off graph', false]
+    ];
+    const pick = this.props.sel ?? '';
+    const shots = rows.map(([code, st, note]) => ({ code, st, note, sel: code === pick })).map(({ code, st, note, sel }) => ({
+      code, note,
+      dot: st === 'ok' ? '#4fd39c' : '#f08a8a',
+      fg: sel ? '#ffffff' : '#c9c9d0',
+      bg: sel ? '#141d3f' : 'transparent',
+      bd: sel ? 'rgba(102,144,255,0.55)' : 'transparent'
+    }));
+    return { shots };
+  }
+}
+</script>
+</body>
+</html>

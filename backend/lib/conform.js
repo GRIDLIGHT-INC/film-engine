@@ -109,9 +109,12 @@ function planConform(projectId) {
         const asset = db.prepare(
             `SELECT id, asset_type, file_path, file_name FROM film_assets
               WHERE shot_id = ? AND asset_type IN (${VIDEO_PRECEDENCE.map(() => '?').join(',')})
-           ORDER BY CASE asset_type ${VIDEO_PRECEDENCE.map((t, i) => `WHEN '${t}' THEN ${i}`).join(' ')} END,
+           -- The clip a person SELECTED leads, so the master is the cut playback
+           -- shows; the precedence decides only when nothing was chosen.
+           ORDER BY (id = COALESCE((SELECT selected_video_asset_id FROM film_shots WHERE id = ?), '')) DESC,
+                    CASE asset_type ${VIDEO_PRECEDENCE.map((t, i) => `WHEN '${t}' THEN ${i}`).join(' ')} END,
                     version DESC, created_at DESC
-              LIMIT 1`).get(shot.id, ...VIDEO_PRECEDENCE);
+              LIMIT 1`).get(shot.id, ...VIDEO_PRECEDENCE, shot.id);
 
         if (!asset) { missing.push({ shot_id: shot.id, shot_code: shot.shot_code }); continue; }
         clips.push({

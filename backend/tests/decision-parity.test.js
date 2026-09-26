@@ -376,10 +376,16 @@ test('unapplied previs staging is disclosed as staged (3b)', () => {
     // anonymous helpers are scaffolding, and serialising them puts literal
     // boxes and markers in the image. The rule is right; the silence is not --
     // a director stages a wall, it never appears, and nothing says why.
-    const uiDiscloses = /unnamed[^;]{0,80}(not sent|won't be sent|will not be sent|excluded|ignored)/i.test(UI)
-        || /(not sent|excluded)[^;]{0,60}unnamed/i.test(UI);
-    if (!uiDiscloses) {
-        gaps.push('the surface never counts or warns about unnamed staging objects that generation drops');
+    // The surface that STAGES objects must say so. That was the old previs
+    // stage; since it was removed, objects are staged only through the agent's
+    // previs_set tool, so the disclosure lives in that tool's own description.
+    const MCP = fs.readFileSync(path.join(__dirname, '..', 'lib', 'mcp-tools.js'), 'utf8');
+    const disclose = /unnamed[^;]{0,80}(not sent|won't be sent|will not be sent|excluded|ignored)/i;
+    const setTool = MCP.slice(MCP.indexOf("name: 'previs_set'"), MCP.indexOf("name: 'previs_set'") + 1400);
+    const uiStages = /function previsAddObject\(/.test(UI);
+    const discloses = (uiStages ? disclose.test(UI) : true) && disclose.test(setTool);
+    if (!discloses) {
+        gaps.push('the surface that stages objects never says unnamed ones are dropped from generation');
     }
 
     assert.deepStrictEqual(gaps, [], 'the Apply boundary is not disclosed');

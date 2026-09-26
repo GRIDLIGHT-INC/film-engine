@@ -73,6 +73,10 @@ test('every picture with real weight asks for a size', () => {
         [/style-book\/media/, 'author-supplied reference, served whole by design'],
         [/marketingImgSrc/, 'posters are judged at full size'],
         [/openPlateViewer/, 'the tile hands its own src to the full-size viewer'],
+        // The production graph's drawer shows the SELECTED frame at the size it
+        // is judged at, like the viewer; its node thumbnails ask for w=320.
+        [/class="pg-dimg"/, 'the drawer is where a frame is judged, full size'],
+        [/src\(m\.still\.path\)/, 'the playback monitor plays the frame the cut holds, like the Playback page'],
     ];
     const offenders = [];
     for (const tag of servedImageTags()) {

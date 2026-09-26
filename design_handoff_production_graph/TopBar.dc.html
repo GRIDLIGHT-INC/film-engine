@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Top bar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1420px; height: 62px; box-sizing: border-box; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="display: flex; align-items: center; gap: 9px; padding-right: 16px; border-right: 1px solid rgba(255,255,255,0.08);">
+    <div style="width: 26px; height: 26px; border-radius: 7px; background: #3559cc; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">FE</div>
+    <div>
+      <div style="font-size: 13px; font-weight: 600; line-height: 1.15;">Drive-In Outreach</div>
+      <div style="font-size: 10px; color: #8e8e97; font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;">Commercial · 16:9 · 24 fps</div>
+    </div>
+  </div>
+  <div style="display: flex; gap: 2px; flex: 1; min-width: 0;">
+    <button style="flex: 1; min-width: 0; padding: 7px 10px 6px; border-radius: 9px; border: none; background: transparent; text-align: left; font-family: inherit;">
+      <span style="display: flex; align-items: center; gap: 6px; margin-bottom: 5px;"><span style="font-size: 12.5px; font-weight: 500; color: #8e8e97;">Write &amp; Design</span><span style="margin-left: auto; font-size: 9.5px; color: #8e8e97; font-family: 'SF Mono', ui-monospace, Menlo, monospace;">[6/8]</span></span>
+      <span style="display: block; height: 3px; border-radius: 3px; background: #2c2c31;"><span style="display: block; height: 3px; width: 75%; border-radius: 3px; background: #5f5f67;"></span></span>
+    </button>
+    <button style="flex: 1; min-width: 0; padding: 7px 10px 6px; border-radius: 9px; border: none; background: transparent; text-align: left; font-family: inherit;">
+      <span style="display: flex; align-items: center; gap: 6px; margin-bottom: 5px;"><span style="font-size: 12.5px; font-weight: 500; color: #8e8e97;">Plan</span><span style="margin-left: auto; font-size: 9.5px; color: #8e8e97; font-family: 'SF Mono', ui-monospace, Menlo, monospace;">[3/6]</span></span>
+      <span style="display: block; height: 3px; border-radius: 3px; background: #2c2c31;"><span style="display: block; height: 3px; width: 50%; border-radius: 3px; background: #5f5f67;"></span></span>
+    </button>
+    <button style="flex: 1; min-width: 0; padding: 7px 10px 6px; border-radius: 9px; border: none; background: rgba(102,144,255,0.14); text-align: left; font-family: inherit;">
+      <span style="display: flex; align-items: center; gap: 6px; margin-bottom: 5px;"><span style="font-size: 12.5px; font-weight: 600; color: #f4f4f5;">Production</span><span style="margin-left: auto; font-size: 9.5px; color: #8e8e97; font-family: 'SF Mono', ui-monospace, Menlo, monospace;">[0/1]</span></span>
+      <span style="display: block; height: 3px; border-radius: 3px; background: #2c2c31;"><span style="display: block; height: 3px; width: 30%; border-radius: 3px; background: #6690ff;"></span></span>
+    </button>
+    <button style="flex: 1; min-width: 0; padding: 7px 10px 6px; border-radius: 9px; border: none; background: transparent; text-align: left; font-family: inherit;">
+      <span style="display: flex; align-items: center; gap: 6px; margin-bottom: 5px;"><span style="font-size: 12.5px; font-weight: 500; color: #8e8e97;">Post</span><span style="margin-left: auto; font-size: 9.5px; color: #8e8e97; font-family: 'SF Mono', ui-monospace, Menlo, monospace;">[0/10]</span></span>
+      <span style="display: block; height: 3px; border-radius: 3px; background: #2c2c31;"><span style="display: block; height: 3px; width: 0%; border-radius: 3px; background: #5f5f67;"></span></span>
+    </button>
+  </div>
+  <div style="display: flex; align-items: center; gap: 4px;">
+    <sc-for list="{{rail}}" as="r" hint-placeholder-count="8">
+      <button aria-label="{{r.label}}" style="width: 52px; padding: 5px 0 4px; border-radius: 9px; border: none; background: transparent; display: flex; flex-direction: column; align-items: center; gap: 4px; color: #9b9ba3; font-family: inherit;">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{r.icon}}"></path></svg>
+        <span style="font-size: 8.5px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase;">{{r.label}}</span>
+      </button>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1420,"height":62}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { rail: [
+      { label: 'Home', icon: 'M3 7.5L9 3l6 4.5V15H3V7.5Z' },
+      { label: 'Jobs', icon: 'M9 3.2a5.8 5.8 0 100 11.6A5.8 5.8 0 009 3.2Zm0 2.4V9l2.2 1.4' },
+      { label: 'Notes', icon: 'M3.2 3h11.6v12H3.2V3Zm2.8 4h6M6 10h4' },
+      { label: 'Guide', icon: 'M9 2.6A6.4 6.4 0 109 15.4 6.4 6.4 0 009 2.6Zm-1.8 4.4a1.9 1.9 0 013.6.8c0 1.3-1.8 1.6-1.8 2.7m0 2.5v.01' },
+      { label: 'Setup', icon: 'M9 6.6A2.4 2.4 0 109 11.4 2.4 2.4 0 009 6.6ZM9 1.8v2M9 14.2v2M1.8 9h2M14.2 9h2M4 4l1.4 1.4M12.6 12.6L14 14M14 4l-1.4 1.4M5.4 12.6L4 14' },
+      { label: 'Style', icon: 'M3 3.6h5.2a2 2 0 012 2V15a1.8 1.8 0 00-1.8-1.4H3V3.6Zm12 0H9.8a2 2 0 00-2 2V15a1.8 1.8 0 011.8-1.4H15V3.6Z' },
+      { label: 'Brand', icon: 'M3 3h8l4 4v8H3V3Zm8 0v4h4' },
+      { label: 'Terms', icon: 'M4 3h8a1 1 0 011 1v10a1 1 0 01-1 1H4V3Zm2.4 3.4h4.2M6.4 9h3' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>

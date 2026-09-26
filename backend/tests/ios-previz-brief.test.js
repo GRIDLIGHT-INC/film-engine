@@ -146,8 +146,9 @@ const CLAIMS = [
         id: 'meshy-cannot-reach-location-floor',
         why: 'the derivable form of the diner-plate resolution finding',
         holds() {
-            const floor = Number(/LOCATION_MIN_EDGE *= *(\d+)/
-                .exec(src('backend/lib/reference-plates.js'))[1]);
+            // The module's own value: the floor is now the house plate standard
+            // (lib/image-standard.js), so a literal in the source is not where it lives.
+            const floor = Number(require('../lib/reference-plates').LOCATION_MIN_EDGE);
             const m = src('backend/lib/providers/meshy.js');
             const cap = Number(/maxImagePixels: *(\d+)/.exec(m)[1]);
             return cap < floor || `meshy now reaches ${cap} against a floor of ${floor}`;

@@ -68,7 +68,7 @@ something. That is the single most useful thing to copy.
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 16 media queries that are not `print` (12 at
+**The responsive layout did not exist.** There are 17 media queries that are not `print` (12 at
 the time of this assessment, plus the one the character sheet's two-up block
 added when its layout was brought back to the reference design), and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They
@@ -99,7 +99,7 @@ the LAN is a decision for whoever owns the network, not a side effect of a feasi
 
 ---
 
-## 3. Which of the 36 pages is phone work?
+## 3. Which of the 37 pages is phone work?
 
 The design question, and the answer is not "all of them". Classified by what the page asks a
 person to *do*:
@@ -124,7 +124,9 @@ that shape: a credit roll and a cue list are read to check a spelling, and typed
 `screenplay` (a full-page editor with pagination), `previs` (a 3D stage with six-axis drag),
 `flows` (an SVG graph canvas), `timeline`-adjacent work in `videoshots` and `selects`,
 `colorgrading`, `colorpipeline`, `broadcastqc`, `dubbing`, `consistency`, `continuity`,
-`exportpage`, `pipeline`, `projects`, `settings`, `threed`, `marketing`, `music`,
+`exportpage`, `pipeline`, `projects`, `settings`, `threed`, `marketing`, `music`, `productiongraph` (the Production
+node graph — a pan-and-zoom canvas with a 420px inspector; on a phone its drawer becomes a full-screen sheet and the
+playback bar collapses to transport and monitor, which is enough to review a version, not to wire a graph),
 `deliverables` (a spec table of rasters and rates — read on a phone, filled in at a desk). These are
 precision work on a large canvas. A phone version of the previs stage would be a worse tool that
 took weeks.

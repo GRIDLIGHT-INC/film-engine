@@ -63,6 +63,7 @@ const IMAGE_TARGETS = Object.entries(MEDIA_IMPORTS)
  * must come back into the denominator rather than staying quietly excused.
  */
 const NO_CONTROL = {
+    'previs-image': 'the old previs stage was removed; the route and the previs_image_upload tool remain',
     'continuity-ref': 'the continuity board was one of the nine pages removed; the route and the '
         + 'table stayed, so this is reachable over HTTP and by an agent and has no page to sit on',
 };

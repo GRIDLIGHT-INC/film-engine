@@ -124,6 +124,9 @@ test('an explicit project choice still wins over the preference', () => {
     providers.refreshLocalGateway();
 
     for (const capability of Object.keys(PREFERRED_WHEN_CONFIGURED)) {
+        // Images are the one policy, not a preference: the house standard
+        // (lib/image-standard.js) overrules a pin to a vendor without Nano Banana Pro.
+        if (capability === 'image') continue;
         assert.strictEqual(providers.resolveId(capability, { [capability]: DEFAULT_PROVIDER }), DEFAULT_PROVIDER,
             `${capability}: an explicit choice was overridden by the preference`);
     }

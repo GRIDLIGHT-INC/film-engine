@@ -288,6 +288,7 @@ starting a server that will apply a new migration to live data.
 | `110_instruments.sql` | `film_instruments`, `instrument_id` on tracks | The director's own plugins and patches, not project-scoped: a library outlives a film. A track whose instrument is removed keeps its arrangement and its takes. |
 | `111_instrument_source.sql` | `source_ref`, `source_file` on `film_instruments` | Which catalogue row the sound is, and the file it lives in, so a capture is recognisable in six months. |
 | `112_track_notes.sql` | `notes_json` on `film_music_tracks` | The part a lane plays, in milliseconds. NULL means a lane with no part, which is every lane that exists today. |
+| `115_production_graph.sql` | `sequence_id` on `film_music_cues` (and the production graph's version pointers and layout) | A sound node wired to a sequence scores that sequence's span; NULL is every cue that exists today, which keeps its shot or scene. Deleting the sequence sets it back to NULL and the cue keeps its scene. |
 | `114_edits.sql` | `film_edits`, `edit_id` on `film_music_sessions` | A cut made in Premiere, by version, with the cut list read from its XML or EDL. A session can be written against one; NULL is every session that exists today, which keeps its sequence or scene. Deleting an edit leaves the score with no picture rather than deleting the music. |
 
 ## Proving it end to end

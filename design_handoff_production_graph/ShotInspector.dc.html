@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shot inspector</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15151a}
+a{color:#c9c9d3;text-decoration:none}
+a:hover{color:#ffffff}
+</style>
+</helmet>
+<div style="width: 560px; height: 1640px; box-sizing: border-box; background: #15151a; color: #ededf2; font-family: 'Geist', system-ui, sans-serif; border-left: 1px solid #2a2a32; display: flex; flex-direction: column;">
+
+  <!-- header -->
+  <div style="height: 64px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #25252c; flex-shrink: 0;">
+    <span style="width: 10px; height: 10px; border-radius: 2px; background: #e06ad8;"></span>
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><h2 style="margin: 0; font-family: 'Geist Mono', monospace; font-size: 18px; font-weight: 600;">EX-2</h2><span style="font-size: 12px; color: #9b9ba8;">Shot · Sc 1 · THE OFFICE · DAY</span></div>
+      <div style="font-size: 11px; color: #9b9ba8; margin-top: 2px;">In sequence <b style="color: #f0c48a; font-weight: 500;">The pitch</b> · position 2 of 3</div>
+    </div>
+    <a href="Main.dc.html" aria-label="Close inspector" style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid #2f2f38; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#c9c9d3" stroke-width="1.6"></path></svg></a>
+  </div>
+
+  <div style="padding: 20px 24px 0; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
+
+    <!-- FRAME -->
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Frame</h3>
+        <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad;">v3 selected · nano-banana-pro · precision</span>
+      </div>
+      <div style="position: relative; width: 512px; height: 288px; border-radius: 8px; overflow: hidden;">
+        <svg viewBox="0 0 160 90" width="512" height="288" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path><path d="M64 70 L72 90 L80 70 Z" fill="#7a2f35"></path></svg>
+        <div style="position: absolute; left: 10px; bottom: 10px; font-family: 'Geist Mono', monospace; font-size: 10px; padding: 3px 6px; border-radius: 4px; background: rgba(14,14,17,0.8);">1920×1080 · 16:9</div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button style="width: 92px; height: 52px; padding: 0; border-radius: 6px; border: 1px solid #2f2f38; background: #3a3f47; position: relative; overflow: hidden;"><span style="position: absolute; left: 4px; bottom: 3px; font-family: 'Geist Mono', monospace; font-size: 9px; color: #ededf2;">v1</span></button>
+        <button style="width: 92px; height: 52px; padding: 0; border-radius: 6px; border: 1px solid #2f2f38; background: #33373f; position: relative; overflow: hidden;"><span style="position: absolute; left: 4px; bottom: 3px; font-family: 'Geist Mono', monospace; font-size: 9px; color: #ededf2;">v2 · upload</span></button>
+        <button style="width: 92px; height: 52px; padding: 0; border-radius: 6px; border: 2px solid #ededf2; background: #2c3037; position: relative; overflow: hidden;"><span style="position: absolute; left: 4px; bottom: 3px; font-family: 'Geist Mono', monospace; font-size: 9px; color: #ededf2;">v3 ●</span></button>
+        <button style="width: 92px; height: 52px; border-radius: 6px; border: 1px dashed #3a3a44; background: transparent; color: #a0a0ad; font: 500 11px 'Geist', sans-serif;">+ version</button>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button style="height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: #1f1f25; color: #ededf2; font: 500 12px 'Geist', sans-serif;">Regenerate image → v4</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: #1f1f25; color: #ededf2; font: 500 12px 'Geist', sans-serif;">Upload image</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Refine</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Set as anchor</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Mark up</button>
+      </div>
+    </section>
+
+    <!-- PLATES -->
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Plates &amp; details to send</h3>
+        <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #54c8e0;">3 of 3 image slots</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; border: 1px solid #2c5560; background: #16222a;"><input type="checkbox" checked="checked"><span style="width: 36px; height: 36px; border-radius: 4px; background: #a07f66; flex-shrink: 0;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 12px; font-weight: 500;">The Creature</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #9bc7d3;">character · front sheet</span></span></label>
+        <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; border: 1px solid #2c5560; background: #16222a;"><input type="checkbox" checked="checked"><span style="width: 36px; height: 36px; border-radius: 4px; background: #2c3037; flex-shrink: 0;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 12px; font-weight: 500;">The Office</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #9bc7d3;">location · plate</span></span></label>
+        <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; border: 1px solid #2c5560; background: #16222a;"><input type="checkbox" checked="checked"><span style="width: 36px; height: 36px; border-radius: 4px; background: #6d8ea3; flex-shrink: 0;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 12px; font-weight: 500;">CRT monitor</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #9bc7d3;">prop · plate</span></span></label>
+        <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; border: 1px solid #2a2a32; background: #1b1b20;"><input type="checkbox"><span style="width: 36px; height: 36px; border-radius: 4px; background: #3b3c47; flex-shrink: 0;"></span><span style="display: flex; flex-direction: column;"><span style="font-size: 12px; font-weight: 500; color: #c9c9d3;">Ill-fitting suit</span><span style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #8a8a96;">wardrobe · named in text</span></span></label>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button style="height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">+ Anchor frame (EX-1)</button>
+        <button style="height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">+ Markup notes (0)</button>
+        <button style="height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">+ Previs blocking</button>
+        <button style="height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">+ Style book entry</button>
+      </div>
+    </section>
+
+    <!-- PROMPT -->
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Video prompt — exactly what is sent</h3>
+        <div style="display: flex; border: 1px solid #2f2f38; border-radius: 6px; overflow: hidden;">
+          <button style="height: 26px; padding: 0 10px; border: none; background: #2a2a32; color: #ededf2; font: 500 11px 'Geist', sans-serif;">By part</button>
+          <button style="height: 26px; padding: 0 10px; border: none; background: transparent; color: #a0a0ad; font: 500 11px 'Geist', sans-serif;">One text</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; border: 1px solid #2a2a32; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 10px 12px; border-bottom: 1px solid #25252c; background: #1b1b20;">
+          <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>DIRECTION · protected</span><span>118 ch</span></div>
+          <label for="dir" style="position: absolute; left: -9999px;">Direction</label>
+          <textarea id="dir" rows="3" style="margin-top: 6px; width: 100%; box-sizing: border-box; border: 1px solid #34343d; border-radius: 6px; background: #121216; color: #ededf2; font: 400 13px/1.45 'Geist', sans-serif; padding: 8px; resize: vertical;">The creature leans an inch toward lens and starts the pitch; nothing else moves. The CRT glow brightens behind him.</textarea>
+        </div>
+        <div style="padding: 10px 12px; border-bottom: 1px solid #25252c; background: #1b1b20;">
+          <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>MOTION · what the model animates</span><span>64 ch</span></div>
+          <div style="margin-top: 6px; font-size: 13px; line-height: 1.45; color: #d6d6de;">Slow lean forward, jaw works as he talks, suit fabric shifts.</div>
+        </div>
+        <div style="padding: 10px 12px; border-bottom: 1px solid #25252c; background: #1b1b20;">
+          <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>CAMERA · from card</span><span>34 ch</span></div>
+          <div style="margin-top: 6px; font-size: 13px; color: #d6d6de;">medium shot, 40mm lens, slow push in</div>
+        </div>
+        <div style="padding: 10px 12px; border-bottom: 1px solid #25252c; background: #1b1b20;">
+          <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>LIGHTING</span><span>27 ch</span></div>
+          <div style="margin-top: 6px; font-size: 13px; color: #d6d6de;">studio lighting, controlled</div>
+        </div>
+        <div style="padding: 10px 12px; background: #18181d; display: flex; align-items: center; gap: 10px;">
+          <div style="flex-grow: 1;">
+            <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>STYLE · project look</span><span>866 ch</span></div>
+            <div style="margin-top: 6px; font-size: 12px; color: #a8a8b4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px;">contemporary commercial photography, photographic — captured on a real camera on a real set with built practical…</div>
+          </div>
+          <button aria-label="Expand style" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3;">+</button>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad;">
+        <span>1,109 / 16,000 characters</span><span>negative: blurry, low quality, text, logo …</span>
+      </div>
+    </section>
+
+    <!-- VIDEO SETTINGS -->
+    <section style="display: flex; flex-direction: column; gap: 12px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Video generation</h3>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Generator
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Runway (project default)</option><option>Seedance</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Quality
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Draft · 720p</option><option>Standard · 1080p</option><option>Precision · 4K</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Duration
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>3 s (card)</option><option>5 s</option><option>8 s</option><option>10 s</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Camera move
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Push in</option><option>Static</option><option>Pull out</option><option>Pan left</option><option>Orbit</option><option>Handheld</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Seed
+          <input type="text" value="locked · 4412" style="height: 36px; box-sizing: border-box; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist Mono', monospace; padding: 0 8px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">End on frame
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>None — free motion</option><option>Next shot's frame (EX-3)</option></select></label>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; background: #1b1b20;">
+        <div style="font-size: 11px; color: #a0a0ad;">Direction mode</div>
+        <div style="display: flex; gap: 8px;">
+          <label style="flex: 1; display: flex; gap: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid #ededf2; font-size: 12px;"><input type="radio" name="dm" checked="checked"><span><b style="font-weight: 600;">Direct the action</b><br><span style="color: #a0a0ad;">built from the card</span></span></label>
+          <label style="flex: 1; display: flex; gap: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid #2f2f38; font-size: 12px; color: #c9c9d3;"><input type="radio" name="dm"><span><b style="font-weight: 600;">Direct the camera</b><br><span style="color: #a0a0ad;">needs an anchor</span></span></label>
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c9c9d3; margin-top: 4px;"><input type="checkbox"> Dialogue + lip-sync (no line on this shot)</label>
+      </div>
+    </section>
+
+    <!-- OUTPUTS -->
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Video versions</h3>
+      <div style="padding: 12px; border-radius: 8px; border: 1px dashed #3a3a44; font-size: 12px; color: #a0a0ad; line-height: 1.5;">None of its own — EX-2 plays inside <b style="color: #f0c48a; font-weight: 500;">The pitch</b> v2. Generating here adds a video version node wired to EX-2; whichever version is selected is what playback shows.</div>
+    </section>
+  </div>
+
+  <!-- sticky footer -->
+  <div style="height: 76px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #25252c; background: #131317; flex-shrink: 0;">
+    <button style="height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: transparent; color: #ededf2; font: 500 13px 'Geist', sans-serif;">Preview request · free</button>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 40px; padding: 0 18px; border-radius: 6px; border: none; background: #ededf2; color: #111114; font: 600 13px 'Geist', sans-serif;">Generate video · est. $[x.xx]</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":1640}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

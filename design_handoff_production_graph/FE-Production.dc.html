@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production — default</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0;background:#0b0b0c}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #0b0b0c; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="position: absolute; left: 10px; top: 10px;"><dc-import name="TopBar" hint-size="1420px,62px"></dc-import></div>
+  <div style="position: absolute; left: 10px; top: 82px;"><dc-import name="SidePanel" sel="" hint-size="232px,808px"></dc-import></div>
+  <div style="position: absolute; left: 252px; top: 82px; width: 1178px; height: 808px; box-sizing: border-box; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden;">
+    <div style="height: 56px;"><dc-import name="MainHeader" hint-size="1176px,56px"></dc-import></div>
+    <div style="height: 582px;"><dc-import name="Graph" sel="none" hint-size="1176px,582px"></dc-import></div>
+    <div style="height: 168px;"><dc-import name="Playback" w="{{w}}" hint-size="1176px,168px"></dc-import></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return { w: 1176 }; }
+}
+</script>
+</body>
+</html>

@@ -409,8 +409,9 @@ test('every surface that sets a location view offers the views that exist', () =
         ...[...html.matchAll(/id="([A-Za-z0-9_]+)LocationView"/g)].map(m => m[1]),
         ...[...html.matchAll(/id="\$\{(\w+)\}LocationView"/g)].map(() => '__panel__'),
     ])];
-    assert.ok(declared.length >= 2,
-        `expected at least two surfaces with a location view control, found ${declared.join(', ') || 'none'}`);
+    // One surface now: previs had the second until its old stage was removed.
+    assert.ok(declared.length >= 1,
+        `expected a surface with a location view control, found ${declared.join(', ') || 'none'}`);
 
     const broken = [];
     for (const prefix of declared) {

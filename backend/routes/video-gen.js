@@ -109,6 +109,12 @@ function videoOverrideOf(req, query) {
     return Object.keys(out).length ? out : null;
 }
 
+/** The project's provider choices, in the shape resolveGenerator reads. */
+function providerConfigFor_(ctx) {
+    try { return JSON.parse((ctx && ctx.project && ctx.project.provider_config) || '{}'); }
+    catch (_) { return {}; }
+}
+
 async function previewVideo(res, shotId, previewOverride, tierChoice) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     const { estimateVideoCost } = require('../lib/video-cost');
@@ -244,6 +250,31 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
             dropped: (payload.references_dropped || []).map(d => ({ role: d.role, subject: d.subject, reason: d.reason })),
         },
         width: payload.width, height: payload.height, fps: payload.fps,
+        /*
+         * WHAT WILL COME BACK, beside what we composed.
+         *
+         * `width`/`height` are the frame this engine built the shot in. On an
+         * adapter whose model is chosen by resolution TIER rather than by a
+         * size field, they are not what the vendor produces -- Seedance holds
+         * the tier's pixel budget and reshapes it to the aspect it is working
+         * in. Quoting only ours meant every preview named a frame that would
+         * never arrive, and nobody could see it without measuring a file.
+         *
+         * Reported rather than reconciled: both numbers are true about
+         * different things, and a director deciding what to buy should see the
+         * one that lands.
+         */
+        ...(function () {
+            try {
+                const a = require('../lib/providers').resolveGenerator('video',
+                    providerConfigFor_(ctx));
+                if (!a || typeof a.predictedFrame !== 'function') return {};
+                const f = a.predictedFrame(payload);
+                if (!f || !(f.width > 0)) return {};
+                const differs = f.width !== payload.width || f.height !== payload.height;
+                return { output_frame: { ...f, differs_from_composed: differs } };
+            } catch (_) { return {}; }
+        }()),
         seed: payload.seed === undefined ? null : payload.seed,
         warnings,
         meta: meta || null,
@@ -310,6 +341,21 @@ function handleVideoGen(req, res, urlParts, query) {
 
 // -- Generate Video for a Shot -------------------------------------------
 
+/**
+ * The name and version of a shot's next clip.
+ *
+ * The name was the shot code alone on every path, so each generation wrote
+ * over the one before: the rows said "three versions" and the disk held one
+ * clip, which made choosing between them meaningless. The first keeps its old
+ * name, so a project with one clip per shot is unchanged on disk.
+ */
+function nextClip(shotId, shotCode) {
+    const made = db.prepare(`SELECT COUNT(*) AS n FROM film_assets WHERE shot_id = ?
+        AND asset_type IN ('video_raw', 'video_synced', 'video_final')`).get(shotId).n;
+    const version = made + 1;
+    return { version, filename: version === 1 ? `${shotCode}.mp4` : `${shotCode}_v${version}.mp4` };
+}
+
 async function generateVideo(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
@@ -329,6 +375,14 @@ async function generateVideo(req, res, shotId) {
         model: chosen.model,
     };
     const payload = buildCapabilityPayload('video', ctx).payload;
+    /*
+     * An edited prompt replaces the composed one WHOLE — the rule an image
+     * override already follows. The production graph's shot drawer shows the
+     * prompt the preview composed and lets it be edited; without this the edit
+     * reached nothing and the clip was generated from the words it replaced.
+     */
+    const override = req.body && typeof req.body.prompt_override === 'string' ? req.body.prompt_override.trim() : '';
+    if (override) payload.prompt = override.slice(0, 16000);
     const startedAt = Date.now();
     const videoRefs = Array.isArray(payload.video_references) ? payload.video_references : [];
     const estimate = require('../lib/video-cost').estimateVideoCost({
@@ -356,7 +410,13 @@ async function generateVideo(req, res, shotId) {
             return json(res, result.status || 500, { error: result.error });
         }
 
-        const filename = `${shot.shot_code}.mp4`;
+        /*
+         * A NEW FILE PER CLIP. The name was the shot code alone, so every
+         * generation wrote over the one before: the rows said "three versions"
+         * and the disk held one picture, which made choosing between them
+         * meaningless. Numbered by what the shot already has.
+         */
+        const { version: clipVersion, filename } = nextClip(shotId, shot.shot_code);
         ensureDir(scene.project_id, 'video');
 
         let filePath;
@@ -376,11 +436,19 @@ async function generateVideo(req, res, shotId) {
                 format, mime_type, duration_ms, version,
                 provider, provider_model, provider_job_id, license_source, license_status, input_refs
              )
-             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, 1, ?, ?, ?, 'generated', 'generated', ?)`
+             VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, ?, ?, ?, ?, 'generated', 'generated', ?)`
         ).run(
-            assetId, scene.project_id, shotId, filePath, filename, durationMs,
+            assetId, scene.project_id, shotId, filePath, filename, durationMs, clipVersion,
             videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
         );
+        // What it was made with, so the version drawer can show the prompt and
+        // the seed rather than reconstructing them.
+        db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+            .run(JSON.stringify({ prompt: payload.prompt, seed: payload.seed === undefined ? null : payload.seed,
+                edited_prompt: !!override }), assetId);
+        // The newest clip plays, as the newest frame does — a new generation
+        // clears the frame pointer for the same reason.
+        db.prepare('UPDATE film_shots SET selected_video_asset_id = ? WHERE id = ?').run(assetId, shotId);
         /*
          * Every attempt, recorded with the SHAPE of the shot. Without this the
          * eventual router has nothing to learn from, and the shape cannot be
@@ -459,7 +527,7 @@ async function generateVideoStream(req, res, shotId) {
 
         const { ok, finalData, error } = await videoProvider.generateStream('video', payload, res, {
             onComplete: (data) => {
-                const filename = `${shot.shot_code}.mp4`;
+                const { version: clipVersion, filename } = nextClip(shotId, shot.shot_code);
                 ensureDir(scene.project_id, 'video');
 
                 const assetId = generateId();
@@ -469,9 +537,9 @@ async function generateVideoStream(req, res, shotId) {
                         id, project_id, shot_id, asset_type, file_name, format, mime_type, version,
                         provider, provider_model, provider_job_id, license_source, license_status, input_refs
                      )
-                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated', ?)`
+                     VALUES (?, ?, ?, 'video_raw', ?, 'mp4', 'video/mp4', ?, ?, ?, ?, 'generated', 'generated', ?)`
                 ).run(
-                    assetId, scene.project_id, shotId, filename,
+                    assetId, scene.project_id, shotId, filename, clipVersion,
                     videoProvider.id, resultModel(data, payload), resultJobId(data), JSON.stringify(consistencyContext.input_refs || [])
                 );
                 recordConsistencyCheck(shot, scene, { id: scene.project_id }, {
@@ -558,7 +626,7 @@ async function batchVideoStream(req, res, projectId, query) {
             const result = await videoProvider.generate('video', payload, { timeout: 300000 });
             if (!result.ok) throw new Error(result.error);
 
-            const filename = `${shot.shot_code}.mp4`;
+            const { version: clipVersion, filename } = nextClip(shot.shot_id, shot.shot_code);
             ensureDir(projectId, 'video');
             const filePath = await persistProviderMedia(projectId, 'video', filename, result.data, { serveDir: 'videos' });
 
@@ -569,9 +637,9 @@ async function batchVideoStream(req, res, projectId, query) {
                     format, mime_type, version,
                     provider, provider_model, provider_job_id, license_source, license_status, input_refs
                  )
-                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated', ?)`
+                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 'video/mp4', ?, ?, ?, ?, 'generated', 'generated', ?)`
             ).run(
-                assetId, projectId, shot.shot_id, filePath, filename,
+                assetId, projectId, shot.shot_id, filePath, filename, clipVersion,
                 videoProvider.id, resultModel(result, payload), resultJobId(result), JSON.stringify(consistencyContext.input_refs || [])
             );
             recordConsistencyCheck(

@@ -43,7 +43,15 @@ function booleanFlags() {
 
 /** The master gates the whole console; the rest gate one region each. */
 const MASTER = 'world_engine';
-const subFlags = () => booleanFlags().filter(f => f !== MASTER);
+/*
+ * Boolean settings that are NOT World Engine flags, each with what it gates and
+ * where that is held. Named rather than filtered by pattern: a pattern would
+ * quietly excuse the next world flag that forgets its region.
+ */
+const NOT_WORLD = {
+    production_graph: 'gates the Production phase (one graph vs eight pages) — held by tests/production-graph.test.js',
+};
+const subFlags = () => booleanFlags().filter(f => f !== MASTER && !NOT_WORLD[f]);
 
 /* ── the design's regions, so a flag cannot gate something imaginary ────── */
 

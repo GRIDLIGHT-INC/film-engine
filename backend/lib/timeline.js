@@ -107,7 +107,17 @@ function dialogueLines(assets = []) {
  * 'video' | 'still' | 'empty'.
  */
 function resolveShotMedia(assets = []) {
-    const video = pickAsset(assets, MEDIA_PREFERENCE);
+    /*
+     * THE SELECTED CLIP PLAYS. A shot with two generated clips used to play
+     * whichever the type ranking and version order preferred, so choosing the
+     * first one over the second changed nothing on screen. The pointer wins
+     * when it names a clip this shot still has; otherwise the old rule.
+     */
+    const selectedId = (assets.find(a => a && a.selected_video_asset_id) || {}).selected_video_asset_id;
+    const chosen = selectedId
+        ? assets.find(a => a.id === selectedId && MEDIA_PREFERENCE.includes(a.asset_type) && a.file_path)
+        : null;
+    const video = chosen || pickAsset(assets, MEDIA_PREFERENCE);
     const still = pickAsset(assets, STILL_PREFERENCE);
     const audio = pickAsset(assets, AUDIO_PREFERENCE);
 

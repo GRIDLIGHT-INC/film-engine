@@ -579,7 +579,25 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
      * The screenplay leads, because it is what the shot is; the direction
      * follows, because it is a modification of that.
      */
-    const written = sceneCard.action || sceneCard.description || '';
+    /*
+     * DESCRIPTION for a still; ACTION is the motion layer and belongs to video.
+     *
+     * This preferred `action`, which inverts what the two fields are for. A card
+     * carrying both — the look in `description`, what MOVES in `action` — had
+     * its FRAME built from the motion text: "a slow dolly pushes in… rain
+     * stipples the puddles" instead of the houses, the siding and the light. The
+     * picture cannot show a dolly, so the budget went on prose the still could
+     * not use and the architecture arrived from nowhere.
+     *
+     * lib/motion-prompt.js reads `action || description` and is right to: there
+     * the motion is the subject and the description is the fallback. The two
+     * precedences are opposite ON PURPOSE, which is what lets one card serve
+     * both without either half being written for the other.
+     *
+     * `action` stays as the fallback because a card that carries only motion
+     * must still paint something rather than nothing.
+     */
+    const written = sceneCard.description || sceneCard.action || '';
     const directed = String(sceneCard.direction || '').trim();
     const subject = [written, directed].filter(Boolean).join('. ').replace(/\.\.\s/g, '. ');
     if (subject) {

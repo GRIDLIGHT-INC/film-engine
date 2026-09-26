@@ -265,12 +265,18 @@ function buildMotionPrompt(ctx, shapeId) {
 
 /** Compile for a named provider, using its own shape and its own ceiling. */
 function compileFor(providerId, ctx) {
-    let limit = 1000;
-    try {
-        const a = require('./providers').get ? require('./providers').get(providerId) : null;
-        const found = a || require('./providers').list().find(x => x.id === providerId);
-        if (found && found.promptLimit) limit = found.promptLimit;
-    } catch (_) { /* the conservative default stands */ }
+    // An explicit ceiling from the caller WINS: a deliberate clamp is a
+    // decision, and reading the provider's own maximum over the top of it
+    // would make the clamp look applied while the prompt ran past it.
+    let limit = Number(ctx && ctx.limit) > 0 ? Number(ctx.limit) : 0;
+    if (!limit) {
+        limit = 1000;
+        try {
+            const a = require('./providers').get ? require('./providers').get(providerId) : null;
+            const found = a || require('./providers').list().find(x => x.id === providerId);
+            if (found && found.promptLimit) limit = found.promptLimit;
+        } catch (_) { /* the conservative default stands */ }
+    }
     const shapeId = SHAPES[providerId] ? providerId : 'default';
     return buildMotionPrompt({ ...ctx, limit }, shapeId);
 }

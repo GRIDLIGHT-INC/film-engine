@@ -19,3 +19,4 @@ backend/.venv/
 # Python bytecode from the sidecar and its workers.
 __pycache__/
 *.pyc
+.neoncore/

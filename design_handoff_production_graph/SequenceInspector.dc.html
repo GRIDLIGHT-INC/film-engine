@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sequence inspector</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15151a}
+a{color:#c9c9d3;text-decoration:none}
+a:hover{color:#ffffff}
+</style>
+</helmet>
+<div style="width: 560px; height: 1640px; box-sizing: border-box; background: #15151a; color: #ededf2; font-family: 'Geist', system-ui, sans-serif; border-left: 1px solid #2a2a32; display: flex; flex-direction: column;">
+
+  <div style="height: 64px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #25252c; flex-shrink: 0;">
+    <span style="width: 10px; height: 10px; border-radius: 2px; background: #f0a04b;"></span>
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><h2 style="margin: 0; font-size: 18px; font-weight: 600;">The pitch</h2><span style="font-size: 12px; color: #9b9ba8;">Sequence · 3 shots · 12s</span></div>
+      <div style="font-size: 11px; color: #9b9ba8; margin-top: 2px;">Every shot has a frame — ready to generate</div>
+    </div>
+    <a href="Main.dc.html" aria-label="Close inspector" style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid #2f2f38; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#c9c9d3" stroke-width="1.6"></path></svg></a>
+  </div>
+
+  <div style="padding: 20px 24px 0; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">The whole sequence</h3>
+      <label for="seqd" style="font-size: 11px; color: #a0a0ad;">Reaches every clip — light, weather, lens, what happens across the move</label>
+      <textarea id="seqd" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #34343d; border-radius: 6px; background: #121216; color: #ededf2; font: 400 13px/1.45 'Geist', sans-serif; padding: 8px; resize: vertical;">One unbroken sales pitch in a dim office. The creature never breaks eye contact with lens. The CRT behind him slowly takes over the light.</textarea>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 0;">
+      <h3 style="margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Shots and how they join</h3>
+
+      <!-- shot 1 -->
+      <div style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; background: #1b1b20; border: 1px solid #2a2a32;">
+        <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><circle cx="4" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="12" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="12" r="1.3" fill="#6b6b76"></circle></svg>
+        <svg viewBox="0 0 160 90" width="96" height="54" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="108" y="24" width="34" height="27" rx="3" fill="#6d8ea3"></rect><circle cx="70" cy="36" r="11" fill="#9a7a62"></circle><path d="M50 90 L55 56 Q70 48 85 56 L90 90 Z" fill="#3b3c47"></path></svg>
+        <div style="flex-grow: 1;"><div style="font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 600;">EX-1</div><div style="font-size: 11px; color: #a0a0ad;">wide · 6s · v2</div></div>
+        <button aria-label="Remove EX-1 from sequence" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #a0a0ad;">×</button>
+      </div>
+
+      <!-- join 1 -->
+      <div style="margin: 0 0 0 28px; padding: 12px 0 12px 20px; border-left: 2px solid #f0a04b; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Cut</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #f0a04b; background: #3a3226; color: #f7d2a5; font: 600 11px 'Geist', sans-serif;">Continuous move</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Dissolve</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Match cut</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Whip pan</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Morph</button>
+        </div>
+        <label for="j1" style="font-size: 11px; color: #a0a0ad;">How EX-1 becomes EX-2</label>
+        <textarea id="j1" rows="2" style="width: 100%; box-sizing: border-box; border: 1px solid #34343d; border-radius: 6px; background: #121216; color: #ededf2; font: 400 13px/1.45 'Geist', sans-serif; padding: 8px; resize: vertical;">Slow push in from the wide to his chest; the pitch starts mid-move, no reframing.</textarea>
+        <div style="display: flex; gap: 12px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>generates 1 clip · starts on EX-1 v2, ends on EX-2 v3</span><span>6s</span></div>
+      </div>
+
+      <!-- shot 2 -->
+      <div style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; background: #1b1b20; border: 1px solid #2a2a32;">
+        <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><circle cx="4" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="12" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="12" r="1.3" fill="#6b6b76"></circle></svg>
+        <svg viewBox="0 0 160 90" width="96" height="54" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path></svg>
+        <div style="flex-grow: 1;"><div style="font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 600;">EX-2</div><div style="font-size: 11px; color: #a0a0ad;">medium · 3s · v3</div></div>
+        <button aria-label="Remove EX-2 from sequence" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #a0a0ad;">×</button>
+      </div>
+
+      <!-- join 2 -->
+      <div style="margin: 0 0 0 28px; padding: 12px 0 12px 20px; border-left: 2px dashed #6b6b76; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #ededf2; background: #2a2a32; color: #ededf2; font: 600 11px 'Geist', sans-serif;">Cut</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Continuous move</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Dissolve</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Match cut</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Whip pan</button>
+          <button style="height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 11px 'Geist', sans-serif;">Morph</button>
+        </div>
+        <label for="j2" style="font-size: 11px; color: #a0a0ad;">How EX-2 becomes EX-3</label>
+        <textarea id="j2" rows="2" style="width: 100%; box-sizing: border-box; border: 1px solid #34343d; border-radius: 6px; background: #121216; color: #ededf2; font: 400 13px/1.45 'Geist', sans-serif; padding: 8px; resize: vertical;">Cut on the blink — his head is already the monitor.</textarea>
+        <div style="display: flex; gap: 12px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;"><span>a cut generates nothing · EX-3 plays its own take</span></div>
+      </div>
+
+      <!-- shot 3 -->
+      <div style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; background: #1b1b20; border: 1px solid #2a2a32;">
+        <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><circle cx="4" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="4" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="8" r="1.3" fill="#6b6b76"></circle><circle cx="4" cy="12" r="1.3" fill="#6b6b76"></circle><circle cx="8" cy="12" r="1.3" fill="#6b6b76"></circle></svg>
+        <svg viewBox="0 0 160 90" width="96" height="54" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+        <div style="flex-grow: 1;"><div style="font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 600;">EX-3</div><div style="font-size: 11px; color: #a0a0ad;">close · 3s · v1</div></div>
+        <button aria-label="Remove EX-3 from sequence" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2f2f38; background: transparent; color: #a0a0ad;">×</button>
+      </div>
+      <button style="margin-top: 10px; height: 36px; border-radius: 8px; border: 1px dashed #3a3a44; background: transparent; color: #a0a0ad; font: 500 12px 'Geist', sans-serif;">+ Add a shot (or wire one in on the graph)</button>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Start and end frames</h3>
+      <div style="display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px 12px; align-items: center; font-size: 12px;">
+        <span style="color: #a0a0ad;">Starts on</span>
+        <select aria-label="Start frame" style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Its own first shot · EX-1</option><option>A frame from another sequence…</option></select>
+        <span style="color: #a0a0ad;">Ends on</span>
+        <select aria-label="End frame" style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Its own last shot · EX-3</option><option>A frame from another sequence…</option></select>
+      </div>
+      <div style="padding: 12px; border-radius: 8px; border: 1px dashed #e06ad8; background: #1b161c; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px;"><b style="font-weight: 600; color: #f3c6ef;">Hands off to The reveal</b> <span style="color: #a0a0ad;">— it starts on this sequence's last frame</span></div>
+        <div style="font-size: 11px; color: #a0a0ad;">What The reveal receives</div>
+        <label style="display: flex; gap: 8px; font-size: 12px;"><input type="radio" name="handoff" checked="checked"><span>EX-3's image — <span style="color: #a0a0ad;">whichever version is selected (v1)</span></span></label>
+        <label style="display: flex; gap: 8px; font-size: 12px; color: #c9c9d3;"><input type="radio" name="handoff"><span>The last frame of this sequence's video — <span style="color: #a0a0ad;">seamless, but changes if you pick another version</span></span></label>
+        <div style="font-size: 11px; color: #a0a0ad; line-height: 1.45;">EX-3 still belongs only to The pitch and plays once. Change its selected version and The reveal is flagged out of date.</div>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">How to make it</h3>
+      <label style="display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #ededf2; font-size: 12px;"><input type="radio" name="mode" checked="checked"><span><b style="font-weight: 600;">Leg by leg</b><br><span style="color: #a0a0ad;">One clip per join that isn't a cut, first frame to last frame. Stitched after.</span></span></label>
+      <label style="display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2f2f38; font-size: 12px; color: #c9c9d3;"><input type="radio" name="mode"><span><b style="font-weight: 600;">One native clip</b><br><span style="color: #a0a0ad;">The whole move in a single generation, frames as keyframes.</span></span></label>
+      <label style="display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2f2f38; font-size: 12px; color: #c9c9d3;"><input type="radio" name="mode"><span><b style="font-weight: 600;">Upload a clip</b><br><span style="color: #a0a0ad;">Made somewhere else — lands as a new version on this node.</span></span></label>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Generator
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Runway (project default)</option><option>Seedance</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Quality
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Draft · 720p</option><option>Standard · 1080p</option></select></label>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Video versions — select one to play it</h3>
+      <div style="display: flex; gap: 8px;">
+        <a href="TakeViewer.dc.html" style="width: 160px; height: 90px; border-radius: 6px; border: 2px solid #ededf2; background: #2a2e35; position: relative; display: block;"><span style="position: absolute; left: 6px; bottom: 5px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #ededf2;">v2 · ▶ playing</span></a>
+        <a href="TakeViewer.dc.html" style="width: 160px; height: 90px; border-radius: 6px; border: 1px solid #2f2f38; background: #24272d; position: relative; display: block;"><span style="position: absolute; left: 6px; bottom: 5px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #c9c9d3;">v1</span></a>
+      </div>
+    </section>
+  </div>
+
+  <div style="height: 76px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #25252c; background: #131317; flex-shrink: 0;">
+    <button style="height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: transparent; color: #ededf2; font: 500 13px 'Geist', sans-serif;">Plan · free</button>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 40px; padding: 0 18px; border-radius: 6px; border: none; background: #ededf2; color: #111114; font: 600 13px 'Geist', sans-serif;">Generate 1 clip · est. $[x.xx]</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":1640}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

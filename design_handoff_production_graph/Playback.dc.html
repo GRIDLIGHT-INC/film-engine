@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Playback bar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: {{w}}px; height: 168px; box-sizing: border-box; display: flex; gap: 16px; padding: 14px 16px; background: #151517; border-top: 1px solid rgba(255,255,255,0.07); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="width: 224px; height: 126px; flex-shrink: 0; position: relative; border-radius: 8px; overflow: hidden; background: #08080a;">
+    <svg viewBox="0 0 160 90" width="224" height="126" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path><path d="M64 70 L72 90 L80 70 Z" fill="#7a2f35"></path></svg>
+    <div style="position: absolute; left: 6px; top: 6px; font-size: 9px; padding: 2px 6px; border-radius: 20px; background: rgba(8,8,10,0.85); color: #e2c15a;">The pitch · video v2</div>
+    <div style="position: absolute; left: 6px; bottom: 6px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; color: #f4f4f5;">EX-2</div>
+  </div>
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;">
+    <div style="height: 30px; display: flex; align-items: center; gap: 6px;">
+      <button aria-label="Previous shot" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; display: flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1 V11 M10 1 L4 6 L10 11 Z" stroke="#c9c9d0" stroke-width="1.4" fill="#c9c9d0"></path></svg></button>
+      <button aria-label="Pause" style="width: 38px; height: 30px; border-radius: 8px; border: none; background: #3559cc; display: flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1" width="3" height="10" fill="#ffffff"></rect><rect x="7" y="1" width="3" height="10" fill="#ffffff"></rect></svg></button>
+      <button aria-label="Next shot" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; display: flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M10 1 V11 M2 1 L8 6 L2 11 Z" stroke="#c9c9d0" stroke-width="1.4" fill="#c9c9d0"></path></svg></button>
+      <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; margin-left: 8px;">01:00:07:12</span>
+      <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: #8e8e97;">/ 01:01:00:00</span>
+      <div style="flex-grow: 1;"></div>
+      <sc-if value="{{wide}}" hint-placeholder-val="{{true}}">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #b7b7be;"><input type="checkbox" checked="checked"> Stills hold for the shot's length</label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #b7b7be; margin-left: 12px;"><input type="checkbox" checked="checked"> Audio</label>
+        <button style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif; margin-left: 12px;">Send to Premiere</button>
+      </sc-if>
+    </div>
+    <div style="position: relative; flex: 1;">
+      <div style="display: flex; justify-content: space-between; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: #6f6f77; height: 12px;"><span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span><span>01:00</span></div>
+      <div style="display: flex; gap: 2px; height: 44px; margin-top: 4px;">
+        <sc-for list="{{tiles}}" as="t" hint-placeholder-count="8">
+          <div style="flex: {{t.d}} 1 0; min-width: 0; box-sizing: border-box; border-radius: 5px; padding: 5px 7px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; background: {{t.bg}}; border: 1px {{t.bs}} {{t.bc}};">
+            <span style="font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{t.fg}};">{{t.name}}</span>
+            <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{t.kc}};">{{t.kind}}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; gap: 2px; height: 10px; margin-top: 4px;">
+        <div style="flex: 12 1 0; border-radius: 3px; background: rgba(87,201,138,0.28); font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 7.5px; line-height: 10px; padding-left: 5px; color: #9fe3bd; overflow: hidden; white-space: nowrap;">SFX room tone v1</div>
+        <div style="flex: 48 1 0;"></div>
+      </div>
+      <div style="display: flex; gap: 2px; height: 10px; margin-top: 2px;">
+        <div style="flex: 12 1 0; box-sizing: border-box; border-radius: 3px; border: 1px dashed rgba(87,201,138,0.45); font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 7.5px; line-height: 8px; padding-left: 5px; color: #9fe3bd; overflow: hidden; white-space: nowrap;">MUSIC — no version</div>
+        <div style="flex: 48 1 0;"></div>
+      </div>
+      <div style="position: absolute; left: 11.7%; top: 12px; width: 2px; height: 76px; background: #f4f4f5; border-radius: 1px;"></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"w":{"editor":"int","default":1176},"$preview":{"width":1176,"height":168}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const w = this.props.w ?? 1176;
+    const vid = { bg: 'rgba(226,193,90,0.14)', bs: 'solid', bc: 'rgba(226,193,90,0.55)', fg: '#f4f4f5', kc: '#e8d08a' };
+    const img = { bg: '#232327', bs: 'solid', bc: 'rgba(255,255,255,0.06)', fg: '#e7e7ea', kc: '#d4a8e8' };
+    const none = { bg: 'transparent', bs: 'dashed', bc: 'rgba(240,138,138,0.45)', fg: '#b7b7be', kc: '#f08a8a' };
+    const tiles = [
+      { name: 'The pitch', kind: 'VIDEO v2 · EX-1→3', d: 12, ...vid },
+      { name: 'LT-A', kind: 'IMAGE v1 · 5s', d: 5, ...img },
+      { name: 'LT-B', kind: 'IMAGE v2 · 5s', d: 5, ...img },
+      { name: 'MV-2', kind: 'IMAGE v3 · 8s', d: 8, ...img },
+      { name: 'MV-3', kind: 'IMAGE v1 · 8s', d: 8, ...img },
+      { name: 'MV-4', kind: 'IMAGE v2 · 8s', d: 8, ...img },
+      { name: 'MV-5', kind: 'IMAGE v1 · 8s', d: 8, ...img },
+      { name: 'MV-6', kind: 'NO FRAME · slate', d: 6, ...none }
+    ];
+    return { w, wide: w > 1000, tiles };
+  }
+}
+</script>
+</body>
+</html>

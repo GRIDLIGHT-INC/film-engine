@@ -156,6 +156,15 @@ const SETTINGS = {
         description: 'Offer Explore Shot: six alternative cameras in one world, each validated against the geometry before it is shown.',
         default: false,
     },
+    /*
+     * THE PRODUCTION GRAPH. One page replaces the eight production pages; off,
+     * the phase is exactly as it was. The eight stay reachable by URL either
+     * way until the graph has proved parity, so turning it on removes nothing.
+     */
+    production_graph: {
+        description: 'Show Production as one node graph (shots, sequences, sound and versions) instead of its eight separate pages.',
+        default: false,
+    },
     world_splats: {
         description: 'Download and render Gaussian splats. Off records the splat URLs and fetches nothing — full_res is 25 MB per world.',
         default: false,

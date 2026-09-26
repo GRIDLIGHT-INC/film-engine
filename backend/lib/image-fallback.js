@@ -131,9 +131,23 @@ function imageProviderChain(projectConfig, opts) {
      * choose — defensible, and it has to be said, or a bill arrives from a
      * company nobody signed up with.
      */
+    /*
+     * THE HOUSE STANDARD NARROWS THE WALK. Every image is Nano Banana Pro, so a
+     * refusal may only be walked to another vendor of that model. Walking onto
+     * FLUX or GPT Image would hand back a frame on a model nobody chose. When
+     * no vendor of it is usable at all the chain is left whole, so the failure
+     * that follows names a real provider rather than an empty list.
+     */
+    const { isStandardProvider } = require('./image-standard');
+    let walk = chain;
+    if (chain.some(a => isStandardProvider(a.id))) {
+        walk = chain.filter(a => isStandardProvider(a.id));
+        walk.resolution = chain.resolution;
+    }
+
     const needsPixels = opts && Number(opts.needsPixels) > 0 ? Number(opts.needsPixels) : 0;
-    if (!needsPixels) return chain;
-    return orderForFloor(chain, needsPixels);
+    if (!needsPixels) return walk;
+    return orderForFloor(walk, needsPixels);
 }
 
 /**
@@ -248,6 +262,9 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
             delete payload.model;
             delete payload.__model_for;
         }
+        // The house model, named for THIS vendor of it (lib/image-standard.js).
+        const house = require('./image-standard').standardModelFor(adapter && adapter.id);
+        if (house && payload) payload.model = house;
 
         const result = await adapter.generate('image', payload, opts || {});
         attempts.push({ provider: adapter.id, ok: !!result.ok, error: result.ok ? null : result.error });

@@ -48,6 +48,13 @@ process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
 
 const providers = require('../lib/providers');
 const CAPS = providers.CAPABILITIES;
+/*
+ * Images are the one capability that CANNOT fall through: the house standard
+ * (lib/image-standard.js) decides them, and a rule the director stated is
+ * reported as explicit. The fallback checks below run over everything else;
+ * images are held to reporting the standard instead.
+ */
+const FALLBACK_CAPS = CAPS.filter(c => c !== 'image');
 
 /*
  * A CREDENTIAL HAS TO EXIST FOR ANYTHING TO FALL THROUGH TO.
@@ -85,7 +92,11 @@ test('every capability can say WHERE its provider choice came from', () => {
 
 test('an unpinned capability is reported as a fallback, a pinned one is not', () => {
     const wrong = [];
-    for (const cap of CAPS) {
+    const img = providers.resolveIdWithReason('image', {});
+    if (img.id && (img.source !== 'house_standard' || !img.explicit)) {
+        wrong.push(`image: resolved "${img.id}" from ${img.source}, not from the house standard`);
+    }
+    for (const cap of FALLBACK_CAPS) {
         const loose = providers.resolveIdWithReason(cap, {});
         if (loose.id && loose.explicit) {
             wrong.push(`${cap}: an empty config resolved "${loose.id}" and called it explicit`);
@@ -196,13 +207,15 @@ test('the settings payload says, per capability, whether anyone chose it', async
 
     // And a pin must flip it, or the flag is decoration: the provider NAME is
     // identical either way, which is exactly why this was invisible.
-    const img = rep.image;
+    // model3d rather than image: images follow the house standard and are
+    // explicit whether or not the project pins them.
+    const img = rep.model3d;
     if (img && img.provider) {
         assert.strictEqual(img.explicit, false,
-            'this project pins nothing and its image provider was reported as explicitly chosen');
-        const pinned = providers.resolutionReport({ image: img.provider }).image;
+            'this project pins nothing and its model3d provider was reported as explicitly chosen');
+        const pinned = providers.resolutionReport({ model3d: img.provider }).model3d;
         assert.strictEqual(pinned.explicit, true,
-            'pinning the image provider did not change the report');
+            'pinning the model3d provider did not change the report');
         assert.strictEqual(pinned.provider, img.provider,
             'pinning changed which provider resolved — the two cases are no longer comparable');
     }
@@ -212,7 +225,7 @@ test('the dry run reports where each capability was routed and why', () => {
     const { describeCapability } = require('../lib/dry-run');
     const silent = [];
     let checked = 0;
-    for (const cap of CAPS) {
+    for (const cap of FALLBACK_CAPS) {
         const loose = describeCapability(cap, {}, {});
         if (!loose.provider) continue;                    // nothing serves it
         /*
@@ -311,6 +324,10 @@ test('the run plan names the vendor each strip would spend at', () => {
         VALUES (?, ?, '1A', ?)`)
         .run(generateId(), lsid, JSON.stringify({ shot_code: '1A', description: 'a room' }));
 
+    // Images never fall through (the house standard decides them), so video
+    // needs a key of its own for the plan to have an unpinned row at all.
+    db.prepare(`INSERT OR REPLACE INTO film_provider_credentials (provider, api_key, meta, updated_at)
+        VALUES ('seedance', 'test-key-not-a-real-one', '{}', datetime('now'))`).run();
     const plan2 = buildRunPlan(loose, {});
     const fellThrough = plan2.routing.filter(r => r.provider && !r.explicit);
     assert.ok(fellThrough.length >= 1,

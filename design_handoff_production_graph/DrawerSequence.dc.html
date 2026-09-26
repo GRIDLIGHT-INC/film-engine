@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drawer — sequence</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 420px; height: 1480px; box-sizing: border-box; background: #1a1a1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="height: 56px; box-sizing: border-box; padding: 0 14px 0 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <span style="width: 10px; height: 10px; border-radius: 50%; background: #e2c15a;"></span>
+    <div style="flex-grow: 1; min-width: 0;">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 16px; font-weight: 600;">The pitch</span><span style="font-size: 11.5px; color: #8e8e97;">Sequence · 3 shots · 12s</span></div>
+      <div style="font-size: 11px; color: #4fd39c; margin-top: 1px;">Every shot has a frame — ready</div>
+    </div>
+    <button aria-label="Close" style="width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; display: flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#c9c9d0" stroke-width="1.5"></path></svg></button>
+  </div>
+
+  <div style="padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 20px;">
+    <section style="display: flex; flex-direction: column; gap: 6px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">The whole sequence</h3>
+      <label for="sqd" style="font-size: 10.5px; color: #8e8e97;">Reaches every clip — light, lens, what happens across the move</label>
+      <textarea id="sqd" rows="3" style="width: 100%; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px/1.45 -apple-system, sans-serif; padding: 7px 9px; resize: vertical;">One unbroken sales pitch in a dim office. He never breaks eye contact with lens. The CRT slowly takes over the light.</textarea>
+    </section>
+
+    <section style="display: flex; flex-direction: column;">
+      <h3 style="margin: 0 0 8px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Shots and joins</h3>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.08);">
+        <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"><circle cx="3" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="11" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="11" r="1.2" fill="#5f5f67"></circle></svg>
+        <svg viewBox="0 0 160 90" width="72" height="40" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="108" y="24" width="34" height="27" rx="3" fill="#6d8ea3"></rect><circle cx="70" cy="36" r="11" fill="#9a7a62"></circle><path d="M50 90 L55 56 Q70 48 85 56 L90 90 Z" fill="#3b3c47"></path></svg>
+        <div style="flex-grow: 1;"><div style="font-size: 12px; font-weight: 600;">EX-1</div><div style="font-size: 10.5px; color: #8e8e97;">wide · 6s · v2</div></div>
+        <button aria-label="Remove EX-1" style="width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #8e8e97;">×</button>
+      </div>
+      <div style="margin-left: 22px; padding: 10px 0 10px 16px; border-left: 2px solid #e2c15a; display: flex; flex-direction: column; gap: 7px;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Cut</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(226,193,90,0.6); background: rgba(226,193,90,0.14); color: #f0d98f; font: 600 10.5px -apple-system, sans-serif;">Continuous move</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Dissolve</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Match cut</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Whip pan</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Morph</button>
+        </div>
+        <label for="jA" style="font-size: 10.5px; color: #8e8e97;">How EX-1 becomes EX-2</label>
+        <textarea id="jA" rows="2" style="width: 100%; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px/1.45 -apple-system, sans-serif; padding: 7px 9px; resize: vertical;">Slow push in from the wide to his chest; the pitch starts mid-move.</textarea>
+        <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; color: #8e8e97;">1 clip · EX-1 v2 → EX-2 v3 · 6s</div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.08);">
+        <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"><circle cx="3" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="11" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="11" r="1.2" fill="#5f5f67"></circle></svg>
+        <svg viewBox="0 0 160 90" width="72" height="40" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path></svg>
+        <div style="flex-grow: 1;"><div style="font-size: 12px; font-weight: 600;">EX-2</div><div style="font-size: 10.5px; color: #8e8e97;">medium · 3s · v3</div></div>
+        <button aria-label="Remove EX-2" style="width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #8e8e97;">×</button>
+      </div>
+      <div style="margin-left: 22px; padding: 10px 0 10px 16px; border-left: 2px dashed #5f5f67; display: flex; flex-direction: column; gap: 7px;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.3); background: #2b2b30; color: #f4f4f5; font: 600 10.5px -apple-system, sans-serif;">Cut</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Continuous move</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Dissolve</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Match cut</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Whip pan</button>
+          <button style="height: 24px; padding: 0 9px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.10); background: transparent; color: #b7b7be; font: 500 10.5px -apple-system, sans-serif;">Morph</button>
+        </div>
+        <label for="jB" style="font-size: 10.5px; color: #8e8e97;">How EX-2 becomes EX-3</label>
+        <textarea id="jB" rows="2" style="width: 100%; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px/1.45 -apple-system, sans-serif; padding: 7px 9px; resize: vertical;">Cut on the blink — his head is already the monitor.</textarea>
+        <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; color: #8e8e97;">a cut generates nothing</div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.08);">
+        <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"><circle cx="3" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="3" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="7" r="1.2" fill="#5f5f67"></circle><circle cx="3" cy="11" r="1.2" fill="#5f5f67"></circle><circle cx="7" cy="11" r="1.2" fill="#5f5f67"></circle></svg>
+        <svg viewBox="0 0 160 90" width="72" height="40" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="border-radius: 4px;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+        <div style="flex-grow: 1;"><div style="font-size: 12px; font-weight: 600;">EX-3</div><div style="font-size: 10.5px; color: #8e8e97;">close · 3s · v1</div></div>
+        <button aria-label="Remove EX-3" style="width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #8e8e97;">×</button>
+      </div>
+      <button style="margin-top: 8px; height: 32px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.16); background: transparent; color: #8e8e97; font: 500 11.5px -apple-system, sans-serif;">+ Add a shot</button>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Start and end frames</h3>
+      <div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px 10px; align-items: center; font-size: 11.5px; color: #8e8e97;">
+        <span>Starts on</span>
+        <select aria-label="Start frame" style="height: 32px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"><option>Its first shot · EX-1</option><option>A frame from another sequence…</option></select>
+        <span>Ends on</span>
+        <select aria-label="End frame" style="height: 32px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"><option>Its last shot · EX-3</option><option>A frame from another sequence…</option></select>
+      </div>
+      <div style="padding: 10px 12px; border-radius: 8px; border: 1px dashed rgba(192,124,224,0.6); background: rgba(192,124,224,0.06); display: flex; flex-direction: column; gap: 7px;">
+        <div style="font-size: 12px;"><span style="font-weight: 600; color: #e3c4f0;">Hands off to The reveal</span> <span style="color: #8e8e97;">— it starts on this sequence's last frame</span></div>
+        <label style="display: flex; gap: 8px; font-size: 11.5px;"><input type="radio" name="ho" checked="checked"><span>EX-3's image <span style="color: #8e8e97;">— follows its selected version (v1)</span></span></label>
+        <label style="display: flex; gap: 8px; font-size: 11.5px; color: #b7b7be;"><input type="radio" name="ho"><span>Last frame of this sequence's video <span style="color: #8e8e97;">— seamless, follows the selected video version</span></span></label>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">How to make it</h3>
+      <div style="display: flex; flex-direction: column; background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 3px; gap: 2px;">
+        <button style="height: 44px; border-radius: 7px; border: none; background: #2b2b30; color: #f4f4f5; font: 600 11.5px -apple-system, sans-serif; text-align: left; padding: 0 10px;">Leg by leg<br><span style="font-weight: 400; color: #8e8e97; font-size: 10.5px;">one clip per join that isn't a cut, stitched after</span></button>
+        <button style="height: 44px; border-radius: 7px; border: none; background: transparent; color: #b7b7be; font: 600 11.5px -apple-system, sans-serif; text-align: left; padding: 0 10px;">One native clip<br><span style="font-weight: 400; color: #8e8e97; font-size: 10.5px;">the whole move, frames as keyframes</span></button>
+        <button style="height: 44px; border-radius: 7px; border: none; background: transparent; color: #b7b7be; font: 600 11.5px -apple-system, sans-serif; text-align: left; padding: 0 10px;">Upload a clip<br><span style="font-weight: 400; color: #8e8e97; font-size: 10.5px;">made elsewhere — lands as a new version</span></button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Generator<select style="height: 32px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"><option>Runway (default)</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: #8e8e97;">Quality<select style="height: 32px; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 8px;"><option>Draft · 720p</option></select></label>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Video versions — select one to play it</h3>
+      <div style="display: flex; gap: 8px;">
+        <button style="width: 120px; height: 68px; border-radius: 6px; border: 2px solid #6690ff; background: #2a2e35; color: #ffffff; font: 500 10px 'SF Mono', ui-monospace, monospace; text-align: left; padding: 0 0 4px 6px; display: flex; align-items: flex-end;">v2 ▶ playing</button>
+        <button style="width: 120px; height: 68px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #24272d; color: #c9c9d0; font: 500 10px 'SF Mono', ui-monospace, monospace; text-align: left; padding: 0 0 4px 6px; display: flex; align-items: flex-end;">v1</button>
+      </div>
+    </section>
+    <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; color: #6f6f77; text-align: center;">— end of drawer · footer is sticky, see screens —</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":1480}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

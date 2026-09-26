@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production — version selected</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0;background:#0b0b0c}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #0b0b0c; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="position: absolute; left: 10px; top: 10px;"><dc-import name="TopBar" hint-size="1420px,62px"></dc-import></div>
+  <div style="position: absolute; left: 10px; top: 82px;"><dc-import name="SidePanel" sel="" hint-size="232px,808px"></dc-import></div>
+  <div style="position: absolute; left: 252px; top: 82px; width: 1178px; height: 808px; box-sizing: border-box; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden;">
+    <div style="height: 56px;"><dc-import name="MainHeader" hint-size="1176px,56px"></dc-import></div>
+    <div style="position: relative; height: 750px;">
+      <div style="position: absolute; left: 0; top: 0;"><dc-import name="Graph" sel="v2" hint-size="1176px,582px"></dc-import></div>
+      <div style="position: absolute; left: 0; top: 582px;"><dc-import name="Playback" w="{{pw}}" hint-size="756px,168px"></dc-import></div>
+      <aside aria-label="Video version 2" style="position: absolute; right: 0; top: 0; width: 420px; height: 750px; box-sizing: border-box; display: flex; flex-direction: column; background: #1a1a1d; border-left: 1px solid rgba(255,255,255,0.08); box-shadow: -16px 0 40px rgba(0,0,0,0.45);">
+        <div style="position: relative; flex: 1; overflow: hidden;">
+          <dc-import name="DrawerVersion" hint-size="420px,960px"></dc-import>
+          <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(rgba(26,26,29,0), #1a1a1d);"></div>
+        </div>
+        <div style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 18px; display: flex; align-items: center; gap: 8px; border-top: 1px solid rgba(255,255,255,0.07); background: #1a1a1d;">
+          <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 12px -apple-system, sans-serif;">Download</button>
+          <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 12px -apple-system, sans-serif;">Show in folder</button>
+          <button style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(240,110,110,0.34); background: rgba(240,110,110,0.12); color: #f08a8a; font: 500 12px -apple-system, sans-serif;">Delete</button>
+          <div style="flex-grow: 1;"></div>
+          <button style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(58,190,128,0.32); background: rgba(58,190,128,0.15); color: #4fd39c; font: 500 12px -apple-system, sans-serif;">Playing ✓</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return { pw: 756 }; }
+}
+</script>
+</body>
+</html>

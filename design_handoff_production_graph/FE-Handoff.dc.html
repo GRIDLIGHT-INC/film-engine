@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production graph — build brief</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0b0b0c}
+code{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11.5px;color:#e8d08a;background:#1d1d20;padding:1px 5px;border-radius:4px}
+</style>
+</helmet>
+<div style="width: 1200px; height: 2320px; box-sizing: border-box; padding: 48px 56px; background: #0b0b0c; color: #e7e7ea; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 28px;">
+  <div>
+    <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Build brief · for Claude Code</div>
+    <h1 style="margin: 8px 0 6px; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: #f4f4f5;">Production graph — one page replaces eight</h1>
+    <p style="margin: 0; color: #b7b7be; max-width: 900px;">Build the Production phase as a single node-graph page. The screens on this page are the target, pixel for pixel; the "Spec &amp; flow" page explains the behaviour. Route paths below were read from the repo's own route headers — confirm each before calling it, and extend rather than duplicate.</p>
+  </div>
+
+  <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">1 · Navigation</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li><code>backend/lib/nav-flow.js</code>: <code>production.pages = ['production']</code>.</li>
+        <li>Move <code>musicws</code> (Score) to <code>post</code>; it opens from a Music node too.</li>
+        <li>Mood board leaves the Shot Board and goes to <code>write</code> (<code>moodboard</code> page exists).</li>
+        <li>Keep old pages behind a flag (<code>production_graph</code>) until parity; <code>tests/nav-reorg.test.js</code> must still pass — every page in exactly one group.</li>
+        <li>Sidebar in this phase shows the shot outline + Add-node palette (SidePanel board).</li>
+      </ul>
+    </div>
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">2 · Page structure</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>New <code>#page-production</code> in <code>src/index.html</code>; mirror to <code>ios/FilmEngine/Web/index.html</code> (byte-identical test).</li>
+        <li>Main panel padding 0: header 56 · canvas flex · playback 168.</li>
+        <li>Drawer 420px right, under header, full height; playback width = main − 420 while open.</li>
+        <li>Canvas: reuse the Flows SVG canvas code (<code>.fnode</code>, <code>.fedge</code>, pan/zoom) — restyle only as in the Spec board. Nodes with images render as HTML overlays or <code>foreignObject</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #f4f4f5;">3 · Nodes → what already exists</h2>
+    <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; font-size: 12px;">
+      <div style="padding: 8px 12px; background: #232327; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.09em; color: #8e8e97;">NODE</div>
+      <div style="padding: 8px 12px; background: #232327; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.09em; color: #8e8e97;">BACKED BY</div>
+      <div style="padding: 8px 12px; background: #232327; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.09em; color: #8e8e97;">DRAWER ACTIONS</div>
+
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); color: #d4a8e8; font-weight: 600;">Shot</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">a shot row + its frames <code>GET /film/shots/:id/frames</code>; prompt preview <code>GET /film/shots/:id/prompt</code></div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">Regenerate <code>POST /film/shots/:id/storyboard/regenerate</code> (prompt_override) · Refine <code>…/storyboard/refine</code> · Upload (existing storyboard upload) · Video <code>POST /film/shots/:id/video/generate</code></div>
+
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); color: #e8d08a; font-weight: 600;">Sequence</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);"><code>/film/projects/:id/sequences</code>, <code>/film/sequences/:id</code> (shot_ids, description)</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">Plan (free) <code>GET …/plan</code> · Generate <code>POST …/generate</code> · Upload <code>POST …/import</code></div>
+
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); color: #9fe3bd; font-weight: 600;">SFX / Ambient / Music</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);"><code>GET /film/projects/:id/sounds</code>; music direction fields from <code>routes/music-gen.js</code> (description, mood, genre, negative_prompt, direction)</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">Preview + Generate <code>POST /film/projects/:id/sounds/generate</code> (kind, prompt, duration_s, shot_id, preview) · Open in Score</div>
+
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); font-weight: 600;">Version</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);"><code>film_shot_versions</code> — "a take IS a version" (<code>routes/takes.js</code>)</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">Select <code>POST /film/versions/:id/select</code> · unselect <code>DELETE</code> · reel <code>GET /film/projects/:id/selects</code>. Rename "take" to "version" in all UI copy.</div>
+
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); color: #e3c4f0; font-weight: 600;">Linked frame</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);"><b>New.</b> On sequences: <code>start_frame_ref</code>, <code>end_frame_ref</code> = { sequence_id, mode: 'shot_image' | 'video_last_frame' }. Migration needed.</div>
+      <div style="padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05);">Resolve at generate time to the selected version. Changing that version marks the receiving sequence stale (reuse <code>staleness_report</code> machinery).</div>
+    </div>
+  </section>
+
+  <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">4 · Layout persistence</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Auto-place from the shot list: one group per sequence, shots in a column, sequence to the right, versions right of their parent, sound nodes under the sequence.</li>
+        <li>Store positions like <code>film_flow_nodes.position_x/y</code> — new table <code>production_node_layout</code> (project_id, node_key, x, y, pinned).</li>
+        <li>Dragging sets <code>pinned=1</code>. "Tidy layout" re-places only unpinned nodes.</li>
+        <li>node_key = <code>shot:&lt;id&gt;</code>, <code>seq:&lt;id&gt;</code>, <code>sound:&lt;id&gt;</code>, <code>ver:&lt;id&gt;</code>, <code>link:&lt;seq&gt;:start|end</code>.</li>
+      </ul>
+    </div>
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">5 · Wiring rules</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Shot image → Sequence slot: adds the shot (a shot belongs to one sequence; wiring it elsewhere asks to move it).</li>
+        <li>Shot/Sequence scene → SFX/Ambient/Music: that node's "scene details" come from it.</li>
+        <li>Sequence end frame → another sequence's start slot: creates a Linked frame node, never membership.</li>
+        <li>Generators → version nodes are created by the server, never drawn by hand.</li>
+        <li>Type-check on drop using port colours; show <code>.fedge-ghost</code> while dragging.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">6 · Playback</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Running order from <code>lib/running-order.js</code> / <code>routes/timeline.js</code>.</li>
+        <li>Per shot: selected video version → else selected image held for the card's <code>duration_seconds</code> → else a slate.</li>
+        <li>A sequence with a selected video version plays once across its members' span.</li>
+        <li>Audio lanes play the selected sound versions under their parent's span.</li>
+        <li>Clicking a tile selects its node and pans to it; the playhead follows selection.</li>
+      </ul>
+    </div>
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">7 · Interactions</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Click node → drawer. Click canvas / Esc / × → close.</li>
+        <li>Drag from the side-panel outline or palette → new node at the drop point.</li>
+        <li>Right-click node or group → Run, Duplicate, Remove from graph.</li>
+        <li>"Run pending" = every node whose selected output is missing; show the free plan / estimate before spending (same rule as the existing run plan).</li>
+        <li>Progress streams onto the node (SSE routes already exist for storyboard and video).</li>
+        <li>Lock board disables every action that replaces a frame.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">8 · Where each board is</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 24px; font-size: 12px;">
+      <span><code>FE-Production</code> default, nothing selected</span>
+      <span><code>FE-Shot</code> shot drawer (full: <code>DrawerShot</code>)</span>
+      <span><code>FE-Sequence</code> sequence drawer (<code>DrawerSequence</code>)</span>
+      <span><code>FE-Sound</code> music drawer (<code>DrawerSound</code>)</span>
+      <span><code>FE-Version</code> version drawer (<code>DrawerVersion</code>)</span>
+      <span><code>FE-Spec</code> tokens, states, layout</span>
+      <span><code>TopBar</code> · <code>SidePanel</code> · <code>MainHeader</code></span>
+      <span><code>Graph</code> canvas, nodes, edges</span>
+      <span><code>Playback</code> bar (prop <code>w</code>)</span>
+    </div>
+    <p style="margin: 12px 0 0; color: #8e8e97; font-size: 12px;">Placeholders to fill from real data: phase fractions in the top bar, $[x.xx] costs (use <code>flow_estimate</code> / the existing plan routes), dates, and the frame pictures (drawn stand-ins).</p>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">9 · Done when</h2>
+    <ul style="margin: 0; padding-left: 18px; columns: 2; column-gap: 32px;">
+      <li>Every capability from the 8 old pages is reachable (see "Where today's 8 pages go").</li>
+      <li>A shot can be generated, uploaded, regenerated and have any version selected from its drawer.</li>
+      <li>A sequence with a continuous join generates one clip per leg; a cut generates nothing.</li>
+      <li>A linked frame resolves to the selected version and flags staleness when it changes.</li>
+      <li>SFX/Music preview is free and shows the exact text sent.</li>
+      <li>Playback plays the selected versions in order with stills and slates filling gaps.</li>
+      <li>Positions survive reload; Tidy layout leaves pinned nodes alone.</li>
+      <li>Tests: nav-reorg, ios byte-identity, and new tests for layout, linked frames and playback order.</li>
+    </ul>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":2320}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -87,6 +87,49 @@ function resolutionDecision(payload) {
     };
 }
 
+/**
+ * THE FRAME THIS WILL ACTUALLY COME BACK AS.
+ *
+ * `width`/`height` on the payload are decoration here: the model is the route
+ * name, and the only size control is which tier that route names. Seedance then
+ * builds its own frame by holding the TIER'S PIXEL BUDGET and reshaping it to
+ * the aspect it is working in -- so a 1080p request on a 2.39:1 keyframe comes
+ * back 2232x934, not the 1920x804 this engine composed.
+ *
+ * Neither number is wrong; they answer different questions. What was wrong was
+ * reporting only ours, so every preview quoted a frame the vendor was never
+ * going to produce, and the mismatch was invisible until someone measured a
+ * delivered file. lib/video-prompt.js has the same arithmetic written down and
+ * rejected for its own use -- "area-preserving gives 2226x932 for scope" -- and
+ * nothing ever reconciled the two.
+ */
+function predictedFrame(payload) {
+    const p = payload || {};
+    const tier = resolutionFor(p);
+    const longEdge = RESOLUTIONS[tier].longEdge;
+    // The tier is named for a 16:9 frame, and its BUDGET is what survives a
+    // reshape: 1080p is 1920x1080 worth of pixels, whatever shape they end up.
+    const budget = longEdge * (longEdge * 9 / 16);
+
+    // The aspect it will actually work in. An explicit ratio wins; otherwise it
+    // follows the picture it was handed, which is what "Auto" does.
+    const declared = aspectFor(p);
+    let ratio = null;
+    const m = /^(\d+):(\d+)$/.exec(String(declared || ''));
+    if (m) ratio = Number(m[1]) / Number(m[2]);
+    if (Number(p.width) > 0 && Number(p.height) > 0) ratio = Number(p.width) / Number(p.height);
+    if (!Number.isFinite(ratio) || ratio <= 0) ratio = 16 / 9;
+
+    const even = n => Math.max(2, Math.round(n / 2) * 2);
+    return {
+        width: even(Math.sqrt(budget * ratio)),
+        height: even(Math.sqrt(budget / ratio)),
+        tier,
+        why: `Seedance sizes by TIER, not by width/height: ${tier} is ${longEdge}x${Math.round(longEdge * 9 / 16)} `
+            + `worth of pixels, reshaped to the aspect it is working in (${ratio.toFixed(3)}:1).`,
+    };
+}
+
 /** The delivery resolution the project asked for, snapped to what exists. */
 function resolutionFor(payload) {
     const explicit = String(payload.resolution || payload.quality || '').toLowerCase();
@@ -149,13 +192,53 @@ function collectImages(p) {
  * four images to an endpoint that reads one and silently drop the rest — the
  * exact failure the reference-limit work exists to prevent.
  */
+/**
+ * KEYFRAMES ONLY. A reference picture is not a frame of the clip.
+ *
+ * `collectImages` returns keyframes and reference images in one flat list
+ * because that is what `images_list` is, and the workflow used to be chosen by
+ * counting that list. So a perfectly ordinary shot -- one storyboard keyframe
+ * plus one location plate sent as a reference -- counted as TWO images and
+ * selected `first-last-frame`, where position IS the meaning: the plate would
+ * have become the frame the clip ENDS on. An establishing plate of an empty
+ * street, as the last thing a five-second shot resolves to, for $4.25.
+ *
+ * Caught in preview on Northline 1B before anything was bought, but only
+ * because a human was reading the payload. Counted here instead.
+ */
+function keyframeCount(p) {
+    return (p.init_image ? 1 : 0)
+        + (Array.isArray(p.keyframes) ? p.keyframes.length : 0)
+        + (p.last_frame ? 1 : 0);
+}
+
 function workflowFor(p, images) {
     const asked = String(p.workflow || '').trim();
     if (WORKFLOWS[asked]) return asked;
     if (p.source_video || p.video_url) return p.extend ? 'video-extend' : 'video-edit';
-    if (images.length >= 3) return 'omni-reference';
-    if (images.length === 2) return 'first-last-frame';
-    if (images.length === 1) return 'image-to-video';
+    const keyframes = keyframeCount(p);
+    // Two real keyframes are a start and an end, and their order is the meaning.
+    if (keyframes >= 2) return 'first-last-frame';
+    /*
+     * ONE keyframe wins over any number of references, and this is the
+     * conservative half of the fix rather than the obvious one.
+     *
+     * `omni-reference` would carry both the keyframe and the plates, which is
+     * what the director asked for -- but every picture in `images_list` on that
+     * workflow is a REFERENCE, composited and weighted, with no documented
+     * guarantee that entry [0] is the frame the clip opens on. MuAPI documents
+     * none, and the endpoint is unreachable from here to probe for free. Trading
+     * a frame-exact opening (which is the approved board) for an unverified
+     * anchor is not a trade to make silently at $0.85/s.
+     *
+     * So the anchor holds and the extra references are dropped -- reported, not
+     * swallowed: `references_dropped` carries them into the preview. A director
+     * who wants the package instead asks for it: `workflow: 'omni-reference'`
+     * is honoured at the top of this function.
+     */
+    if (keyframes === 1) return 'image-to-video';
+    // Nothing to anchor: whatever pictures there are can only be references.
+    if (images.length) return 'omni-reference';
     return 'text-to-video';
 }
 
@@ -634,11 +717,33 @@ async function generate(capability, payload, opts) {
      * prints it without a socket, and an uploader inside it would either spend
      * network on a report or print a payload that is not the one sent.
      */
-    if (Array.isArray(req.body.images_list) && req.body.images_list.length) {
+    /*
+     * BOTH FIELDS, because the workflow decides which one carries the picture.
+     *
+     * This hosted `images_list` only. But `image-to-video` — the ordinary case,
+     * one keyframe and a prompt — puts its single picture in `image_url`, and
+     * that field went out as the raw data URI every time. MuAPI refused it with
+     * the exact error this module's own header documents:
+     *
+     *   {"type":"url_too_long","loc":["body","image_url"], ...}
+     *
+     * So the paths that worked were the ones that happen to send two or more
+     * pictures — a sequence leg, a repair — and generating a clip for ONE shot
+     * was impossible on this adapter. The upload is free and the ceiling is a
+     * property of the vendor rather than of the endpoint, so it applies to
+     * every field that carries an image.
+     */
+    const imageFields = ['images_list', 'image_url', 'first_frame_image', 'last_frame_image'];
+    for (const field of imageFields) {
+        const v = req.body[field];
+        const list = Array.isArray(v) ? v : (typeof v === 'string' && v ? [v] : null);
+        // Only what actually needs hosting: a URL the vendor can already fetch
+        // is left exactly as it is.
+        if (!list || !list.some(x => typeof x === 'string' && x.startsWith('data:'))) continue;
         const { hostImages } = require('./muapi-upload');
-        const hosted = await hostImages(req.body.images_list, apiKey);
+        const hosted = await hostImages(list, apiKey);
         if (!hosted.ok) return { ok: false, status: 422, error: `seedance: ${hosted.error}` };
-        req.body.images_list = hosted.urls;
+        req.body[field] = Array.isArray(v) ? hosted.urls : hosted.urls[0];
     }
 
     let res;
@@ -854,4 +959,4 @@ const seedanceAdapter = {
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
     MIN_DURATION, MAX_DURATION,
     buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
-    VIDEO_MODELS, POST_MODELS, generate, collect, awaitResult, resolutionDecision };
+    VIDEO_MODELS, POST_MODELS, generate, collect, awaitResult, resolutionDecision, predictedFrame };

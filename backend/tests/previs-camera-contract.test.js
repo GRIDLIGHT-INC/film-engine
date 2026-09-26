@@ -62,83 +62,9 @@ const UI = stripComments(HTML.replace(/<!--[\s\S]*?-->/g, ''));
 
 // ── #1 The picker must show what exists ────────────────────────────────────
 
-test('#1 the model catalogue reaches the picker it was loaded for', () => {
-    /*
-     * loadPrevisPage calls previsLoadModels() without awaiting, and the loader
-     * only assigns PREVIS.models — it re-renders nothing. So the first paint of
-     * the object rows reads "No models generated yet" with models sitting in the
-     * database, and stays wrong until some unrelated action rebuilds the DOM.
-     *
-     * "This way we can load them" is half the director's ask, and a picker that
-     * shows nothing is indistinguishable from having generated nothing.
-     */
-    const page = UI.match(/async function loadPrevisPage\(\)[\s\S]*?\n    \}/);
-    assert.ok(page, 'loadPrevisPage is gone');
-    const loader = UI.match(/async function previsLoadModels\(\)[\s\S]*?\n    \}/);
-    assert.ok(loader, 'previsLoadModels is gone');
-
-    const awaited = /await\s+previsLoadModels\s*\(/.test(page[0]);
-    const rerenders = /previsRenderObjects\s*\(|previsRefresh\s*\(/.test(loader[0]);
-    assert.ok(awaited || rerenders,
-        'previsLoadModels is neither awaited before the picker renders nor re-renders '
-        + 'when it lands, so the catalogue arrives after the only paint that would show it');
-});
 
 // ── #2 Every control a director can touch marks the stage ──────────────────
 
-test('#2 every camera control the inspector reads marks the stage staged', () => {
-    /*
-     * Staged-marking is bound from a hand-written array of element ids, and the
-     * pose controls added with the freed camera are not in it. So a director can
-     * change the camera numerically on an APPLIED shot and the badge goes on
-     * reading applied — the 3b boundary from the previous confer, breached by
-     * the first controls added after it.
-     *
-     * The list being hand-written IS the defect, so the expectation is derived
-     * from previsReadInspector's own num()/value reads: anything the inspector
-     * READS is something a director can change, and everything a director can
-     * change must mark the stage. A control added next month is covered with
-     * nothing to remember.
-     */
-    const reader = UI.match(/function previsReadInspector\(\)[\s\S]*?\n    \}/);
-    assert.ok(reader, 'previsReadInspector is gone');
-
-    const read = new Set();
-    for (const m of reader[0].matchAll(/num\(\s*'([A-Za-z0-9_]+)'/g)) read.add(m[1]);
-    for (const m of reader[0].matchAll(/getElementById\(\s*'([A-Za-z0-9_]+)'\s*\)/g)) read.add(m[1]);
-    assert.ok(read.size >= 10, `derived only ${read.size} inspector controls — the derivation is wrong`);
-
-    // A control marks the stage either by being in the bound list or by calling
-    // previsMarkStaged from its own markup.
-    const bound = new Set();
-    const list = UI.match(/\[\s*'previsShotType'[\s\S]{0,600}?\]\s*\.forEach/);
-    if (list) for (const m of list[0].matchAll(/'([A-Za-z0-9_]+)'/g)) bound.add(m[1]);
-
-    /*
-     * A control counts as bound when its handler marks the stage — directly,
-     * or through a function that does. The location-view picker calls
-     * previsLocationViewChanged(), which marks staged and then delegates, and a
-     * literal match reported that correct code as unbound.
-     *
-     * Follow the writer, not the string. This suite has needed that rule five
-     * times now, and every time the literal version has been the one that lied.
-     */
-    const marksStaged = new Set(['previsMarkStaged']);
-    for (const m of UI.matchAll(/function ([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{([\s\S]{0,800}?)\n    \}/g)) {
-        if (/previsMarkStaged\s*\(/.test(m[2])) marksStaged.add(m[1]);
-    }
-    const marks = attrs => [...marksStaged].some(fn => new RegExp(`\\b${fn}\\s*\\(`).test(attrs));
-
-    const inline = new Set();
-    for (const m of HTML.matchAll(/<\w+([^>]*\bid="([A-Za-z0-9_]+)"[^>]*)>/g)) {
-        if (marks(m[1])) inline.add(m[2]);
-    }
-
-    const silent = [...read].filter(id => !bound.has(id) && !inline.has(id));
-    assert.deepStrictEqual(silent, [],
-        'these controls change the staged camera without marking it staged, so an applied '
-        + 'shot goes on reporting applied while the stage has moved underneath it');
-});
 
 // ── #3 The ±180 seam ───────────────────────────────────────────────────────
 //
@@ -207,44 +133,6 @@ const PARITY_SHAPES = [
     { id: 'three-legs',       keys: [degKey(0, 0), degKey(0.5, 90), degKey(1, 0)] },
 ];
 
-test('#4 the browser and the server sample the same keys the same way', () => {
-    /*
-     * previsSampleCameraKeys in the SPA is a SECOND IMPLEMENTATION of
-     * sampleCameraKeys — the same loop and the same mix, one clamp apart. That
-     * is the defect rather than the clamp: the seam fix has to land in both, and
-     * whichever is fixed second is a window in which a director approves one
-     * path and generation stores another.
-     *
-     * Held to one OUTCOME over a derived set of key shapes rather than to one
-     * clamp, so any future divergence fails here whatever causes it.
-     */
-    const drift = [];
-    for (const shape of PARITY_SHAPES) {
-        const server = sampleCameraKeys(shape.keys, { frames: 7 });
-        let client;
-        try { client = runFn('previsSampleCameraKeys', shape.keys, 7); }
-        catch (err) { drift.push(`${shape.id}: the browser sampler would not run (${err.message})`); continue; }
-
-        if (!Array.isArray(client) || client.length !== server.length) {
-            drift.push(`${shape.id}: ${server.length} server frames vs ${client && client.length} in the browser`);
-            continue;
-        }
-        for (let i = 0; i < server.length; i++) {
-            const s = server[i], c = client[i];
-            const near = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-6;
-            const same = s.position.every((v, x) => near(v, c.position[x]))
-                && s.rotation.every((v, x) => near(v, c.rotation[x]))
-                && near(s.focalMm, c.focalMm);
-            if (!same) {
-                drift.push(`${shape.id} frame ${i}: server ${JSON.stringify(s.position)}/${JSON.stringify(s.rotation)}`
-                    + ` vs browser ${JSON.stringify(c.position)}/${JSON.stringify(c.rotation)}`);
-                break;
-            }
-        }
-    }
-    assert.deepStrictEqual(drift, [],
-        'the path the director previews is not the path the server stores');
-});
 
 // ── #5 One unit, or a refusal ──────────────────────────────────────────────
 
@@ -301,7 +189,7 @@ test('#6 sub-perceptual rotation is not narrated as a camera move', () => {
 
 // ── #4b Both samplers held to one recorded outcome ─────────────────────────
 
-test('#4b neither sampler drifts from the corrected sampling contract', () => {
+test('#4b the sampler does not drift from the corrected sampling contract', () => {
     /*
      * The parity test above holds the two samplers to EACH OTHER, which catches
      * one diverging and is blind to both moving together — a rewritten
@@ -339,11 +227,15 @@ test('#4b neither sampler drifts from the corrected sampling contract', () => {
         const server = sampleCameraKeys(keys, { frames: 7 }).map(round);
         if (JSON.stringify(server) !== JSON.stringify(golden[id])) drifted.push(`server:${id}`);
 
-        let client;
-        try { client = runFn('previsSampleCameraKeys', keys, 7).map(round); }
-        catch (err) { drifted.push(`browser:${id} would not run (${err.message})`); continue; }
-        if (JSON.stringify(client) !== JSON.stringify(golden[id])) drifted.push(`browser:${id}`);
+        // The browser sampler went with the old previs stage; the server's is
+        // the one generation and the console read.
     }
     assert.deepStrictEqual(drifted, [],
         'a sampler no longer produces the path recorded when the seam and clamp were fixed');
 });
+
+/*
+ * The old previs stage (inspector, grey-box canvas, toolbar) was removed from the
+ * page; the Previs page is the World Engine console. Its UI tests went with it —
+ * what remains here is the server half, which generation and the console use.
+ */

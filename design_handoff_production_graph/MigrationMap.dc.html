@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where the production pages go</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15151a}
+a{color:#c9c9d3}
+a:hover{color:#ffffff}
+</style>
+</helmet>
+<div style="width: 880px; height: 1040px; box-sizing: border-box; padding: 40px 44px; background: #15151a; color: #ededf2; font-family: 'Geist', system-ui, sans-serif; display: flex; flex-direction: column; gap: 20px;">
+  <div>
+    <div style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad; letter-spacing: 0.06em;">SIDEBAR › PRODUCTION</div>
+    <h1 style="margin: 6px 0 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em;">8 pages become 1 graph</h1>
+    <p style="margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: #b4b4c0; max-width: 700px;">Nothing is dropped. Each capability either becomes a node, lives in a node's inspector, or moves to the page where it already belongs.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 180px minmax(0, 1fr); border: 1px solid #25252c; border-radius: 10px; overflow: hidden;">
+    <div style="padding: 10px 14px; background: #1b1b20; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad; border-bottom: 1px solid #25252c;">TODAY</div>
+    <div style="padding: 10px 14px; background: #1b1b20; font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad; border-bottom: 1px solid #25252c;">IN THE PRODUCTION GRAPH</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Shot Board</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;"><b style="color: #e7a4e2; font-weight: 600;">Shot node</b> — frame, versions, regenerate, upload, refine, anchor, markup. Generate All + Lock board → top bar. Protect-frame overlay → canvas view toggle. Mood board → moves to Write &amp; Design.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Video Shots</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;"><b style="color: #e7a4e2; font-weight: 600;">Shot inspector › Video</b> for per-shot generation. Its Sequences panel → <b style="color: #f0c48a; font-weight: 600;">Sequence node</b>. Generate All Videos → Run pending. Dialogue → shot inspector toggle.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Music &amp; Sound</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;"><b style="color: #8fe0b0; font-weight: 600;">SFX / Ambient / Music nodes</b>; each file is an <b style="color: #8fe0b0; font-weight: 600;">audio version node</b>. Sounds with no parent (the library) → Post › Assets.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Music Cues</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;">A cue <i>is</i> a Music node: its direction, mood, genre and avoid fields live in the inspector.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Score</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;">Stays its own workspace — the emotion ruler, MIDI and Ableton need a full screen. Opened from a Music node (“Open in Score”) and listed under Post.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Playback</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;">The <b style="font-weight: 600;">playback bar</b> at the bottom: shots in running order, the selected version where there is video, the frame held for the shot's length where there isn't, a slate where there's neither.</div>
+
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; font-weight: 600;">Pipeline</div>
+    <div style="padding: 12px 14px; border-bottom: 1px solid #22222a; font-size: 13px; line-height: 1.5; color: #d0d0da;">Run shot / scene / project → right-click a node or group, or Run pending. Progress shows on the nodes. Recent runs → Post › Job queue. Strict consistency → project setting.</div>
+
+    <div style="padding: 12px 14px; font-size: 13px; font-weight: 600;">Flows</div>
+    <div style="padding: 12px 14px; font-size: 13px; line-height: 1.5; color: #d0d0da;">The graph <i>is</i> the flow editor. Templates → “Insert template” in Add node. Same runtime underneath: Shot = in.scene + gen.image, take = gen.video, Sequence = sequences route + tf.stitch, sound = gen.sfx / gen.ambient / gen.music.</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+    <div style="padding: 14px; border-radius: 8px; background: #1b1b20;">
+      <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">DECIDED · LAYOUT</div>
+      <div style="font-size: 13px; line-height: 1.45; margin-top: 6px;">Placed automatically from the shot list. Drag any node and it stays put; Tidy layout only moves the ones you haven't touched.</div>
+    </div>
+    <div style="padding: 14px; border-radius: 8px; background: #1b1b20;">
+      <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">DECIDED · ONE SEQUENCE PER SHOT</div>
+      <div style="font-size: 13px; line-height: 1.45; margin-top: 6px;">A shot belongs to one sequence. Another sequence can borrow its frame as a start or end frame — a linked frame node, never played twice.</div>
+    </div>
+    <div style="padding: 14px; border-radius: 8px; background: #1b1b20;">
+      <div style="font-family: 'Geist Mono', monospace; font-size: 10px; color: #a0a0ad;">DECIDED · VERSIONS</div>
+      <div style="font-size: 13px; line-height: 1.45; margin-top: 6px;">Every image, video and sound has versions. Whatever version is selected is what playback shows — switch it and the cut updates.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

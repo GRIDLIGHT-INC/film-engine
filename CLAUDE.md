@@ -30,10 +30,11 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (111 migrations)
+│   │   └── migrations/     # SQL migration files (112 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
+│   │   ├── production-graph.js # The Production phase as one graph: the graph, layout and Tidy, and the video/sound version pointers
 │   │   ├── edits.js        # Cuts made in Premiere: import by version, attach the XML/EDL, serve the picture
 │   │   ├── scripts.js      # Screenplay upload/versioning + Fountain
 │   │   ├── scenes.js       # Scene listing
@@ -163,7 +164,8 @@ film-engine/
 │   │   ├── capture-settings.js    # What a plate was shot at — a bad field is dropped, never the photograph
 │   │   ├── plate-consistency.js   # Exposure is ISO x shutter; colour is mired, not kelvin
 │   │   ├── capture-to-world.js    # A capture nobody can generate from is a file, not an input
-│   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending
+│   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending; a cut join makes nothing
+│   │   ├── production-graph.js    # Every node, edge and group read in one pass; linked frames resolved to the selected version
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
@@ -181,6 +183,7 @@ film-engine/
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
 │   │   ├── quality-tiers.js      # Draft/Standard/Precision → a provider and a model
+│   │   ├── image-standard.js     # The house rule: Nano Banana Pro, boards 4K, plates 2K — outranks every tier and pin
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
@@ -207,7 +210,6 @@ film-engine/
 │   │   ├── mcp-tools.js          # MCP tool surface, generated from the registries
 │   │   ├── mcp-build.js         # Which build a connection is actually serving
 │   │   ├── shot-motion.js       # A camera move, seen over the still you already have
-│   │   ├── previs-toolbar.js    # What all those buttons are, and which one keeps a move
 │   │   ├── subject-sheets.js    # A location and a prop are workspaces too
 │   │   ├── previs-camera.js      # Previs optics: FOV, framing distance, DOF (Phase 0)
 │   │   ├── previs-blocking.js    # Previs blocking: rigs, movement paths, shot solving (Phase 1)
@@ -295,6 +297,7 @@ film-engine/
 │       ├── image-fallback.test.js      # Image generation survives a provider refusal
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
+│       ├── image-standard.test.js      # Nano Banana Pro at every decision point; boards 4K, plates 2K, in the body MuAPI receives
 │       ├── gridlight-optin.test.js     # The local gateway is off until switched on, for all 10 capabilities
 │       ├── dry-run.test.js             # The report shows the real request, no keys, no printed pictures
 │       ├── paid-image-controls.test.js # Every image AND video button: pick the generator, read the prompt, edit it
@@ -310,7 +313,6 @@ film-engine/
 │       ├── previs-boundary.test.js     # Paid routes share one payload path and honor the Apply boundary
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
-│       ├── previs-explore-ui.test.js   # Every previs operation has a control on the page
 │       ├── glb-parser.test.js          # A synthetic .glb parses, transforms apply, decimation bounds hold
 │       ├── world-spike.test.js     # The Marble request this engine would actually send
 │       ├── world-engine.test.js    # A world exists, is versioned, is pinned — and knows it has no scale
@@ -400,6 +402,7 @@ film-engine/
 │       ├── board-lock.test.js      # A finished board refuses everything that would replace a frame
 │       ├── frame-send.test.js      # A picture moves to another shot as a copy, never a move
 │       ├── reference-limit.test.js  # How many plates fit is the provider's answer, not a constant
+│       ├── oversize-references.test.js # A plate too big to inline is resized, never silently dropped
 │       ├── current-frame.test.js   # Every surface paints the version you selected, not the newest
 │       ├── shot-insert.test.js    # A shot goes in mid-scene without renaming a single thing
 │       ├── playback-start.test.js # Playback opens on the shot you were working on
@@ -424,6 +427,7 @@ film-engine/
 │       ├── inbetween-plan.test.js    # The strip, planned for free, capped by the model's own contract
 │       ├── inbetween-run.test.js     # The chain, the refusal, the correction and the approval
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
+│       ├── production-graph.test.js     # Joins, linked frames, version pointers, playback order and pinned layout, through a real server
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -495,6 +499,7 @@ film-engine/
 │       ├── music-cue-generation.test.js # The cue you wrote is the cue that gets generated
 │       ├── music-cue-fields.test.js  # The fields the cue contract promises must reach the generator
 │       ├── seedance-image-fields.test.js # Each Seedance workflow names its pictures differently
+│       ├── seedance-workflow.test.js # A reference is not a keyframe: plates never become the ending frame
 │       ├── modal-stacking.test.js     # A modal opened on top of another must paint on top of it
 │       ├── generation-busy.test.js    # While a generation runs, the thing you clicked says so
 │       ├── sheet-layout-fidelity.test.js # The three sheets, laid out as the reference images draw them
@@ -528,6 +533,8 @@ film-engine/
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
+│       ├── runway-parity-brief.test.js  # The Runway parity brief, every number derived from the adapter and a dated spec snapshot
+│       ├── runway-parity-epic.test.js   # The epic held to its brief, its milestones, its assumptions and the code
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── motion-prompt.test.js    # Motion, the spatial locks, and the eight techniques
@@ -563,7 +570,6 @@ film-engine/
 │       ├── previs-blocking.test.js       # All 18 moves sample, all framings solve (Phase 1)
 │       ├── previs-plan.test.js           # 3D previs plan conformance (18 moves, 18 shots, 12 ratios)
 │       ├── previs-camera-freedom.test.js  # 6-DOF camera, authored paths, models, preset compatibility
-│       ├── previs-director-readiness.test.js # Model visibility/scale and direct six-axis stage camera actions
 │       ├── previs-camera-contract.test.js # Camera-key units, seams, browser/server parity, staged controls
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── e2e-first-film-plan.test.js    # The plan for the first finished film, held to the stage registry
@@ -700,6 +706,7 @@ All routes prefixed with `/film`:
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
+| Production graph | `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST\|DELETE /shots/:id/video/select`, `POST\|DELETE /sequences/:id/video/select`, `POST\|DELETE /music-cues/:id/select` |
 | Score Sessions | `GET/POST /projects/:id/music-sessions`, `GET/PUT/DELETE /music-sessions/:id` |
 | Score Sessions | `GET /music-sessions/:id/{brief,drift}` (free), `POST /music-sessions/:id/{rebase,batch}` |
 | Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
@@ -830,8 +837,31 @@ Nowhere, before this. Film Engine exported to Premiere and read nothing back, an
 
 Served on the **Edit** page (Post), at the routes above, and as `edit_list` / `edit_get` / `edit_import` / `edit_cut_import` / `edit_cut_rematch` / `edit_update` / `edit_delete`.
 
+### The House Image Standard: Nano Banana Pro, Boards 4K, Plates 2K
+*"First default that we'll never waiver from. When we create image storyboard shots, let's create them in 4K. Plates (location, characters, props) in 2K. All images use nano banana pro."*
+
+Before this, three things decided what a picture was: the quality tier (each tier a different model), the project's delivery resolution (a 1080p project boarded at 1080p), and a per-kind plate rule (locations had a 2K floor, characters and props followed the project, a turnaround was a literal 1024 square). Eight real projects held five combinations of those. `lib/image-standard.js` states the answer once and it is read at the **four** places a picture is decided, because a rule held at three of them is one a refusal or a pin routes around:
+
+| | |
+|---|---|
+| **vendor** | `resolveIdWithReason('image')` answers `house_standard` before any pin, env, tier or account default: MuAPI, then Google, then Meshy — the same model sold three ways. A pin to Google or Meshy is honoured; a pin to anyone else is overruled |
+| **model** | `withTierModel` names Nano Banana Pro for whichever vendor of it runs (`nano-banana-pro` / `gemini-3-pro-image`), over a pinned model or a tier. The fallback chain renames it per vendor too |
+| **walk** | `imageProviderChain` walks a refusal only to another vendor of the same model. Walking onto FLUX or GPT Image would hand back a frame on a model nobody chose |
+| **raster** | a board is fitted inside **3840x2160** in the shot's own shape (9:16 turns the box: 2160x3840; 2.39:1 is 3824x1600, fitted not area-matched, because an area match puts the long edge past MuAPI's largest tier). Every plate — character, location, prop, turnaround, refine — is a **2048 long edge** |
+
+The project's delivery resolution still sizes the **footage** and the exports; it no longer sizes a picture. A provider that cannot make 4K is still clamped and says so. The tier table is left in place and is **inert for images** while the standard stands — every tier on a vendor of Nano Banana Pro now asks for the same model, and `provider-tiers.test.js` asserts exactly that rather than the differential it used to demand. `tests/image-standard.test.js` reads the body MuAPI would receive: `resolution: '4k'` on a board and `'2k'` on a plate, because a 4K request that leaves as a 2K tier is the standard failing silently.
+
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
+
+### The Old Previs Stage Is Removed
+The Previs page is the **World Engine console** and nothing else. The old stage below it — the inspector, the grey-box two-pane canvas, the textured model pane and the twelve-button toolbar — was removed from the page, with its script (99 functions) and its UI tests, at the director's request; a new previs is being designed.
+
+**What stays, because other things read it.** The blocking data model and every `/shots/:id/previs` route (generation still reads applied blocking, the console reads and writes it, and the `previs_*` MCP tools still drive it); the projection maths the console paints with (`previsProject`, `previsAim`, `previsFrameView`, `previsFullView`, `previsAspect`); and `PREVIS.taxonomy`, which the console's timeline names moves from.
+
+**Two things the removal exposed.** The console's shot rail had always been empty: `worldLoadShots` existed and nothing called it, because the old stage's dropdown was the real shot picker. The page loader now loads the console's own shots and opens one, and selecting a shot in the rail loads that shot's world (the old stage used to). The console also painted from the old stage's blocking; it paints from its own now.
+
+Surfaces that were only on the old stage are named, not dropped: uploading a previs image (`previs-image`) is reachable through `previs_image_upload`; staging objects is done through `previs_set`, whose description now says unnamed objects never reach a prompt; camera pose is authored in the console's Camera Operate panel. With `world_engine` off the page says the console is switched off rather than showing nothing.
 
 ### Exploring Shots on the Previs Page
 The blocking loop was reachable two ways — raw HTTP, or an MCP tool from an agent host — and both are *conversations about* a shot. Neither is standing at the monitor trying the 85 and then the 24 and knowing, in your eye, which one is the shot. Seven operations existed in `routes/previs.js`; the page offered **two**, solve and save. So a director could compute a framing and store it, and could not seed the stage from what was written, see the frame an angle would generate, keep an angle, or say "this one" in a way the pipeline respects. The interesting half of the tool had no surface.
@@ -840,7 +870,7 @@ The toolbar now runs the loop in the order you use it: **From card** (seed the s
 
 The generated keyframe is shown over the camera pane, because the question previs exists to answer is whether the shot you staged is the shot you got. An approval badge reads `approved` or `approved · stage changed since`, and the button becomes **Re-approve** or **Withdraw approval** — withdrawing is a normal part of changing your mind and should not need a different screen.
 
-`tests/previs-explore-ui.test.js` is set-based over the operations and checks three separate things per operation: a control exists, it reaches its route, and it is bound to something clickable. The page *did* work for the two it had, so any check written against solve passes in exactly the state this catches — and a handler wired to nothing looks identical to a working page until clicked, which is the bug the flows work shipped once already.
+*(Superseded: the old stage and this test were removed — see **The Old Previs Stage Is Removed**.)* The explore-UI test was set-based over the operations and checks three separate things per operation: a control exists, it reaches its route, and it is bound to something clickable. The page *did* work for the two it had, so any check written against solve passes in exactly the state this catches — and a handler wired to nothing looks identical to a working page until clicked, which is the bug the flows work shipped once already.
 
 ### Storyboard Prerequisites (plate medium, panel, exploring angles)
 Three gaps sat between "entities exist" and "a board a director can work from".
@@ -2995,6 +3025,21 @@ It also makes coverage unsound, which is how it surfaced: a run validated as con
 The displays were fixed a round later than the assemblies, and the reason is worth keeping: the set handed over was *"surfaces that turn shots into a running film"*, and a board does not turn shots into anything. That is true and it is not the question a director is asking, which is *does the thing I am looking at match the thing I get*. `loadProjectShots` is exported so a test can read what the board is actually ordered by — a display whose order nothing can check is how this survived three rounds of fixing the assemblies beside it.
 
 `orderBySql()` takes the **aliases** rather than assuming them. `conform.js` aliases shots `sh` and scenes `s`; `routes/nle-export.js` does the exact opposite. A fixed string plus a regex rewrite at the call site silently produced `s.scene_number` there — a column that does not exist, and a 500 on every export, caught by the integration suite one minute after it was written.
+
+### Production Is One Graph (behind `production_graph`)
+`design_handoff_production_graph/` replaces the eight production pages with one: shots, sequences, SFX/ambient/music and every generated version as nodes on a canvas, a 420px drawer for whichever is selected, and the cut playing underneath. **Off by default** (the `production_graph` setting, switched in Settings). With it off, Production is its eight pages exactly as before; with it on, every one of them is still reachable by address. The Score workspace stays in the menu either way, because a Music node opens it rather than replacing it.
+
+**Every node is a view of rows that already exist.** `lib/production-graph.js` reads the shot and its frames, the sequence, the music cue and the assets a generation made, in one pass (`GET /projects/:id/production-graph`). Every paid action goes through the functions the old pages use (`regenerateStoryboard`, `refineFrame`, `generateSequence`, `confirmPaidImage`), so the graph cannot describe a generation differently from the board.
+
+**A version is an asset, and "selected" is a pointer the player reads.** `film_shot_versions` looked like the home and holds no rows — only the render ledger writes it — so selecting through `/versions/:id/select` would have changed nothing on screen. A frame already had `current_frame_version`. A clip had nothing: playback took the best clip TYPE, so a second generation could not be chosen over the first. Migration 115 adds `film_shots.selected_video_asset_id` and `film_sequences.selected_video_asset_id`, read by the timeline and the conform before their type ranking; a cue's pointer is the `generated_asset_id` it always had. Selecting a **sequence** clip records its coverage (`lib/clip-coverage.js`) — the one mechanism the timeline, the conform and the NLE exports already honour — so it plays once across its members.
+
+**Versions had to be kept to be chosen.** A shot's clip was always written to `{code}.mp4` and a cue's sound to one name per cue, so every regeneration overwrote the file while the rows counted "three versions". The first clip keeps its old name; later ones are `_v2`, `_v3`. A new clip becomes the selected one, as a new frame does. `video/generate` also takes `prompt_override`, so the drawer's edited prompt is the one sent.
+
+**Joins and linked frames.** A sequence's `joins_json` holds one `{ type, prompt }` per adjacent pair — `cut`, `continuous`, `dissolve`, `match_cut`, `whip_pan`, `morph`. **A cut generates nothing**; every other join is one clip, with its type and its words in the request; no joins plans byte-identically to before. `start_frame_ref` / `end_frame_ref` borrow a frame from another sequence (`shot_image` or `video_last_frame`), resolved at **generate** time to the source's *selected* version and travelling as a keyframe, never as membership; `link_fingerprint` records what it resolved to, so a changed source marks the receiver stale. **A shot belongs to one sequence**: a second claim is refused `SHOT_IN_SEQUENCE` unless `move: true`.
+
+**Layout.** Placed automatically from the shot list — one group per sequence, versions right of their parent, sound under it. A node a person drags is pinned in `production_node_layout`; Tidy forgets only the unpinned rows.
+
+Served at `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST|DELETE /shots/:id/video/select`, `POST|DELETE /sequences/:id/video/select`, `POST|DELETE /music-cues/:id/select`, and `GET /music-cues/:id/generate` (the cue's free preview). `tests/production-graph.test.js` drives it through a spawned server, because the dispatch order is part of what breaks.
 
 ### One Clip, Several Shots
 *"I generated a video that includes 1A-B-C… when playing a video in playback it should be playing the entire video, not a few seconds and then switch to the next image. And if I option select which other shots are part of the video, it shouldn't play any of the images that are part of the video."*
@@ -5777,7 +5822,7 @@ Drafting the screenplay from it happens **in the conversation**: Claude reads th
 
 **The music details were behind the wrong door.** They lived only in the cue form on the Music Cues page, reachable through a button called *+ Music Cue* — the wrong door for a scene that already has a score. The direction now sits on the scene, where the score is, and **generates nothing**: the next Regen picks it up, and so does the free brief.
 
-**Twelve buttons, three of them saying "save" about three different things** — the blocking, the scene card, and a PNG. Nothing said which one keeps a camera move, which is what was asked. `lib/previs-toolbar.js` is the answer and is **derived**: a control on the page that is not in it, or an entry with no control, fails. Grouped by the job — stage it, look at it, commit it, take something out — and one line under the bar says plainly that a camera move is kept by **Save blocking**, that **Apply to card** writes the angle onto the shot, and that **Save frame** and **Record move** write files and change nothing.
+**Twelve buttons, three of them saying "save" about three different things** — the blocking, the scene card, and a PNG. Nothing said which one keeps a camera move, which is what was asked. *(Superseded: the toolbar and its registry were removed with the old stage.)* A toolbar registry was the answer and was **derived**: a control on the page that is not in it, or an entry with no control, fails. Grouped by the job — stage it, look at it, commit it, take something out — and one line under the bar says plainly that a camera move is kept by **Save blocking**, that **Apply to card** writes the angle onto the shot, and that **Save frame** and **Record move** write files and change nothing.
 
 **A location and a prop are workspaces too.** The character card became a sheet and these stayed a form in a modal — the same gap seen from two other subjects. `lib/subject-sheets.js` declares **10 location regions** and **9 prop regions** from the design handoffs, each with an `anchor` the renderer must contain, so a sheet cannot draw the plates and silently drop the continuity states. Migration 092 adds what a design department actually keeps: what a prop is made of, what state it is in for this scene, what it must never be, whether it has to *work* on camera. Read-only regions state what they are derived FROM — an omission that is stated is a decision.
 
@@ -5842,7 +5887,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (111 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (112 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -5977,6 +6022,7 @@ node --test backend/tests/reference-plates.test.js
 node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/provider-tiers.test.js
+node --test backend/tests/image-standard.test.js
 node --test backend/tests/gridlight-optin.test.js
 node --test backend/tests/dry-run.test.js
 node --test backend/tests/paid-image-controls.test.js
@@ -5992,7 +6038,6 @@ node --test backend/tests/decision-parity.test.js
 node --test backend/tests/previs-boundary.test.js
 node --test backend/tests/screenplay-to-entities.test.js
 node --test backend/tests/storyboard-prerequisites.test.js
-node --test backend/tests/previs-explore-ui.test.js
 node --test backend/tests/glb-parser.test.js
 node --test backend/tests/world-spike.test.js
 node --test backend/tests/reference-match.test.js
@@ -6076,6 +6121,7 @@ node --test backend/tests/direct-shot-ui.test.js
 node --test backend/tests/board-lock.test.js
 node --test backend/tests/frame-send.test.js
 node --test backend/tests/reference-limit.test.js
+node --test backend/tests/oversize-references.test.js
 node --test backend/tests/current-frame.test.js
 node --test backend/tests/shot-insert.test.js
 node --test backend/tests/playback-start.test.js
@@ -6087,6 +6133,7 @@ node --test backend/tests/inbetweens.test.js
 node --test backend/tests/inbetween-plan.test.js
 node --test backend/tests/inbetween-run.test.js
 node --test backend/tests/clip-coverage.test.js
+node --test backend/tests/production-graph.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
@@ -6126,6 +6173,8 @@ node --test backend/tests/plate-consistency.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js
+node --test backend/tests/runway-parity-brief.test.js
+node --test backend/tests/runway-parity-epic.test.js
 node --test backend/tests/film-engine-camera-brief.test.js
 node --test backend/tests/fcc-parity-epic.test.js
 node --test backend/tests/fcc-recording.test.js
@@ -6158,6 +6207,7 @@ node --test backend/tests/audio-format.test.js
 node --test backend/tests/music-cue-generation.test.js
 node --test backend/tests/music-cue-fields.test.js
 node --test backend/tests/seedance-image-fields.test.js
+node --test backend/tests/seedance-workflow.test.js
 node --test backend/tests/modal-stacking.test.js
 node --test backend/tests/generation-busy.test.js
 node --test backend/tests/sheet-layout-fidelity.test.js

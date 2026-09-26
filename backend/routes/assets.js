@@ -262,6 +262,38 @@ function normalizeCueSections(input) {
     return checked.sections;
 }
 
+/**
+ * WHAT A SOUND IS WIRED TO — a shot, a sequence, or neither.
+ *
+ * The production graph draws a sound node's input from a shot or a sequence,
+ * and the generator reads the SCENE, so wiring sets all three consistently:
+ * a sequence wins and clears the shot, a shot clears the sequence, and the
+ * scene follows whichever it is. Validated against the project, because a cue
+ * pointing into another film would be scored against a scene it cannot see.
+ *
+ * @returns {{fields: object}|{error: string}|null} null when the body says nothing
+ */
+function cueWiring(body, projectId) {
+    const b = body || {};
+    if (b.sequence_id === undefined && b.shot_id === undefined) return null;
+    if (b.sequence_id) {
+        const seq = db.prepare('SELECT id, project_id, shot_ids FROM film_sequences WHERE id = ?').get(b.sequence_id);
+        if (!seq || seq.project_id !== projectId) return { error: 'sequence_id is not a sequence in this project' };
+        let ids = [];
+        try { ids = JSON.parse(seq.shot_ids || '[]'); } catch (_) { ids = []; }
+        const first = ids.length ? db.prepare('SELECT scene_id FROM film_shots WHERE id = ?').get(ids[0]) : null;
+        return { fields: { sequence_id: seq.id, shot_id: null, ...(first ? { scene_id: first.scene_id } : {}) } };
+    }
+    if (b.shot_id) {
+        const shot = db.prepare(`SELECT sh.id, sh.scene_id, s.project_id FROM film_shots sh
+            JOIN film_scenes s ON s.id = sh.scene_id WHERE sh.id = ?`).get(b.shot_id);
+        if (!shot || shot.project_id !== projectId) return { error: 'shot_id is not a shot in this project' };
+        return { fields: { shot_id: shot.id, sequence_id: null, scene_id: shot.scene_id } };
+    }
+    // Both explicitly cleared: the sound keeps its scene and scores it whole.
+    return { fields: { shot_id: null, sequence_id: null } };
+}
+
 function createMusicCue(req, res, projectId) {
     const body = req.body;
     const cueType = VALID_CUE_TYPES.includes(body.cue_type) ? body.cue_type : 'score';
@@ -300,6 +332,19 @@ function createMusicCue(req, res, projectId) {
         JSON.stringify(normalizeCueSections(body.sections)),
         now
     );
+
+    // Wired after the insert so the one rule above decides shot, sequence and
+    // scene together, for a create exactly as for an update.
+    if (body.sequence_id) {
+        const wired = cueWiring({ sequence_id: body.sequence_id }, projectId);
+        if (wired && wired.error) {
+            db.prepare('DELETE FROM film_music_cues WHERE id = ?').run(id);
+            return json(res, 400, { error: wired.error });
+        }
+        const f = wired.fields;
+        db.prepare(`UPDATE film_music_cues SET sequence_id = ?, shot_id = ?, scene_id = COALESCE(?, scene_id) WHERE id = ?`)
+            .run(f.sequence_id, f.shot_id, f.scene_id || null, id);
+    }
 
     const row = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(id);
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -693,6 +738,15 @@ function updateMusicCue(req, res, cueId) {
             : String(body.instruments).split(',').map(x => x.trim()).filter(Boolean);
         fields.push('instruments = ?');
         values.push(JSON.stringify(list));
+    }
+
+    const wired = cueWiring(body, existing.project_id);
+    if (wired && wired.error) return json(res, 400, { error: wired.error });
+    if (wired) {
+        for (const [field, value] of Object.entries(wired.fields)) {
+            fields.push(`${field} = ?`);
+            values.push(value);
+        }
     }
 
     if (!fields.length) return json(res, 400, { error: 'Nothing to change' });

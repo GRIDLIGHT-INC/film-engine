@@ -71,7 +71,10 @@ const NAV_FLOW = {
         // pages are one job. It was not in the requested list and dropping it
         // would have removed the only surface where music direction can be
         // written, which is a capability loss rather than a tidy-up.
-        pages: ['shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
+        // `productiongraph` is the node graph that replaces the eight below it. The
+        // `production_graph` setting decides which the menu shows; every one
+        // stays in the build and reachable by URL until the graph has parity.
+        pages: ['productiongraph', 'shotboard', 'videoshots', 'music', 'musiccues', 'musicws', 'playback',
             'pipeline', 'flows'],
     },
 

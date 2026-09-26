@@ -168,7 +168,7 @@ test('a project can pin a provider, and pinning beats the tier', () => {
 
 // ── The tier has to REACH a request, not just a column ───────────────────
 
-test('the tier changes the model a provider is actually asked for', () => {
+test('no tier moves a Nano Banana Pro vendor off the house model', () => {
     /*
      * DIFFERENTIAL, because a stored tier and an applied tier look identical
      * from the outside. Standard and Precision both resolve to Google — the
@@ -183,20 +183,19 @@ test('the tier changes the model a provider is actually asked for', () => {
         project: { provider_config: JSON.stringify({ image: 'google', ...extra }) },
     });
 
-    const seen = new Map();
+    /*
+     * SUPERSEDED BY THE HOUSE STANDARD (lib/image-standard.js): every image is
+     * Nano Banana Pro. On a vendor of it no tier and no pin may move the model,
+     * so the differential this test used to demand is now the defect.
+     */
     for (const tier of ['draft', 'standard', 'precision']) {
         const payload = withTierModel({ prompt: 'x' }, ctxFor({ image_quality: tier }), adapter);
-        assert.ok(payload.model, `${tier} named no model, so it reaches the provider as a default`);
-        seen.set(tier, payload.model);
+        assert.strictEqual(payload.model, 'gemini-3-pro-image',
+            `${tier} moved Google off Nano Banana Pro to ${payload.model}`);
     }
-    assert.strictEqual(new Set(seen.values()).size, seen.size,
-        `two tiers ask for the same model, so choosing between them changes nothing: `
-        + [...seen].map(([t, m]) => `${t}=${m}`).join(', '));
-
-    // The Advanced pin outranks the table.
     const pinned = withTierModel({ prompt: 'x' },
-        ctxFor({ image_quality: 'draft', image_model: 'gemini-3-pro-image' }), adapter);
-    assert.strictEqual(pinned.model, 'gemini-3-pro-image');
+        ctxFor({ image_quality: 'draft', image_model: 'gemini-3.1-flash-image' }), adapter);
+    assert.strictEqual(pinned.model, 'gemini-3-pro-image', 'a pinned model outranked the house standard');
 
     // A model belonging to one provider must never be sent to another.
     const wrong = withTierModel({ prompt: 'x' }, ctxFor({ image_quality: 'precision' }), providers.get('openai'));
@@ -300,8 +299,9 @@ test('a project that states no tier still gets a named model', () => {
 
     const payload = withTierModel({ prompt: 'x' },
         { project: { provider_config: JSON.stringify({}) } }, providers.get('meshy'));
-    assert.strictEqual(payload.model, 'nano-banana-2',
-        'an unstated tier did not resolve to the standard model');
+    // The house standard, not the Standard tier: every image is Nano Banana Pro.
+    assert.strictEqual(payload.model, 'nano-banana-pro',
+        'an unstated tier did not resolve to the house model');
 });
 
 test('no tier pays a proxy fee for a model it could buy direct', () => {
@@ -359,7 +359,7 @@ test('the tier menu shows what an image costs', () => {
     }
 });
 
-test('a per-generation quality reaches the payload and the project keeps its own', () => {
+test('neither the project tier nor a per-call one moves the house model, and the project is untouched', () => {
     /*
      * The tier is a project setting, which is the right default and the wrong
      * granularity for the moment that matters: a director looking at one frame
@@ -381,8 +381,9 @@ test('a per-generation quality reaches the payload and the project keeps its own
     const overridden = withTierModel({ prompt: 'x' },
         { project, tierOverride: { image_quality: 'precision' } }, adapter);
 
-    assert.strictEqual(standing.model, 'nano-banana', 'the project tier did not apply');
-    assert.strictEqual(overridden.model, 'nano-banana-pro', 'the per-call override did not reach the payload');
+    // The house standard outranks both the project tier and the per-call one.
+    assert.strictEqual(standing.model, 'nano-banana-pro', 'the project tier moved Meshy off the house model');
+    assert.strictEqual(overridden.model, 'nano-banana-pro', 'the per-call tier moved Meshy off the house model');
     assert.strictEqual(project.provider_config, before,
         'the override rewrote the project, so the next frame would inherit it');
 });
@@ -401,7 +402,7 @@ test('no shared image payload names a model', () => {
         `the shared image defaults name "${IMAGE_DEFAULTS.model}", which makes every quality tier a no-op`);
 });
 
-test('a per-generation quality moves the provider as well as the model', () => {
+test('a per-generation quality moves neither the provider nor the model off the house standard', () => {
     /*
      * Both halves, together. The model alone is not enough: Draft's model lives
      * on BFL and Precision's on Google, so an override that changed the model
@@ -439,10 +440,14 @@ test('a per-generation quality moves the provider as well as the model', () => {
         draft: resolveBoth({ image_quality: 'draft' }),
         standard: resolveBoth({ image_quality: 'standard' }),
     };
-    assert.notStrictEqual(seen.draft, seen.standing,
-        'overriding the quality changed nothing about the request');
-    assert.strictEqual(new Set(Object.values(seen)).size, 3,
-        `three different qualities produced fewer than three different requests: ${JSON.stringify(seen)}`);
+    /*
+     * Under the house standard a quality moves NOTHING: every request is Nano
+     * Banana Pro from the first vendor of it that holds a key. Three different
+     * requests here would be three models, which is what the standard forbids.
+     */
+    assert.strictEqual(new Set(Object.values(seen)).size, 1,
+        `a quality moved the request off the house standard: ${JSON.stringify(seen)}`);
+    assert.strictEqual(seen.standing, 'google/gemini-3-pro-image');
     for (const [tier, pair] of Object.entries(seen)) {
         const [provider, model] = pair.split('/');
         assert.ok(model && model !== 'undefined',
@@ -600,7 +605,7 @@ test('a pinned model is checked against the provider that would run it', () => {
     assert.strictEqual(ok.body.config.image_model, 'nano-banana');
 });
 
-test('every Meshy image model is selectable, and an unknown one never reaches the provider', () => {
+test('every Meshy image model is selectable, the house model is what is sent, and an unknown one never reaches the provider', () => {
     /*
      * "Can I go into another project and use nano-banana-2 or nano-banana-pro?"
      *
@@ -616,8 +621,9 @@ test('every Meshy image model is selectable, and an unknown one never reaches th
         const payload = withTierModel({ prompt: 'x' },
             { project: { id: 'p', provider_config: JSON.stringify({ image: 'meshy', image_model: model }) } },
             meshy);
-        assert.strictEqual(payload.model, model,
-            `pinning ${model} sent ${payload.model} instead`);
+        // Selectable, and overruled: the house standard is Nano Banana Pro.
+        assert.strictEqual(payload.model, 'nano-banana-pro',
+            `pinning ${model} moved Meshy off the house model to ${payload.model}`);
     }
 
     /*

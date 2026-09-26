@@ -6,6 +6,13 @@
  *   GET        /film/sequences/:id/plan       — free: what it would send and cost
  *   POST       /film/sequences/:id/generate   — spends
  *   POST       /film/sequences/:id/import     — a clip made elsewhere
+ *   POST|DELETE /film/sequences/:id/video/select — which of its clips plays (free)
+ *
+ * PUT also takes `joins` (one { type, prompt } per adjacent pair — a cut makes
+ * nothing, every other join makes one clip) and `start_frame_ref` /
+ * `end_frame_ref` (a frame borrowed from another sequence, resolved at generate
+ * time to its selected version). A shot belongs to ONE sequence: adding it to a
+ * second is refused with SHOT_IN_SEQUENCE unless `move: true`.
  *
  * The plan is FREE and separate from the generate, on the same reasoning as the
  * run plan and the prompt preview: this is the one control that can spend
@@ -61,8 +68,11 @@ function parseIds(row) {
 const { clipFileName: sequenceFileName, fileSequenceClip } = require('../lib/sequence-delivery');
 
 /** Validate the ordered shot list at the write boundary, before it can drift projects. */
-function validShotIds(projectId, input) {
+function validShotIds(projectId, input, opts) {
     const ids = Array.isArray(input) ? input.filter(x => typeof x === 'string') : [];
+    // An EMPTY sequence is allowed only when asked for: the production graph
+    // drops a sequence node first and wires shots into it afterwards.
+    if (!ids.length && opts && opts.allowEmpty) return { ids: [] };
     if (!ids.length) return { error: 'Pick at least one shot for the sequence' };
     if (new Set(ids).size !== ids.length) return { error: 'A shot can appear only once in a sequence' };
     const placeholders = ids.map(() => '?').join(',');
@@ -282,6 +292,142 @@ function keyframeCeiling(projectId, req) {
     };
 }
 
+/*
+ * A SHOT BELONGS TO ONE SEQUENCE.
+ *
+ * Another sequence may BORROW its frame through a linked frame, but membership
+ * is single, or the same moment plays twice in the cut. A write that would put
+ * a shot in a second sequence is refused and names where it already is; `move`
+ * takes it out of the other one in the same transaction.
+ */
+function membershipConflicts(projectId, ids, exceptId) {
+    if (!ids.length) return [];
+    const out = [];
+    for (const other of db.prepare('SELECT id, name, shot_ids FROM film_sequences WHERE project_id = ? AND id != ?')
+        .all(projectId, exceptId || '')) {
+        const theirs = parseIds(other);
+        const shared = ids.filter(id => theirs.includes(id));
+        if (shared.length) out.push({ sequence_id: other.id, name: other.name, shot_ids: shared });
+    }
+    return out;
+}
+
+function releaseFromOthers(conflicts) {
+    for (const c of conflicts) {
+        const row = db.prepare('SELECT shot_ids FROM film_sequences WHERE id = ?').get(c.sequence_id);
+        const kept = parseIds(row).filter(id => !c.shot_ids.includes(id));
+        db.prepare("UPDATE film_sequences SET shot_ids = ?, updated_at = datetime('now') WHERE id = ?")
+            .run(JSON.stringify(kept), c.sequence_id);
+    }
+}
+
+function conflictReply(res, conflicts) {
+    return json(res, 409, {
+        error: 'SHOT_IN_SEQUENCE',
+        message: 'A shot belongs to one sequence. '
+            + conflicts.map(c => `${c.shot_ids.length} shot(s) are already in ${c.name || 'another sequence'}`).join('; ')
+            + '. Send move: true to move them here, or link the frame instead.',
+        conflicts,
+    });
+}
+
+/** How adjacent shots join, validated. Unknown types are refused, not coerced. */
+function checkJoins(input, shotCount) {
+    const { JOIN_TYPES } = require('../lib/video-sequence');
+    if (!Array.isArray(input)) return { error: 'joins must be a list, one per pair of adjacent shots' };
+    if (input.length > Math.max(0, shotCount - 1)) {
+        return { error: `a sequence of ${shotCount} shot(s) has ${Math.max(0, shotCount - 1)} join(s), not ${input.length}` };
+    }
+    const out = [];
+    for (let i = 0; i < input.length; i += 1) {
+        const j = input[i] || {};
+        const type = j.type || 'continuous';
+        if (!JOIN_TYPES.includes(type)) return { error: `join ${i + 1}: type must be one of ${JOIN_TYPES.join(', ')}` };
+        out.push({ type, prompt: String(j.prompt || '').slice(0, 2000) });
+    }
+    return { joins: out };
+}
+
+function parseJoins(row) {
+    try { const v = JSON.parse(row.joins_json || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; }
+}
+
+/**
+ * What the planner travels through: the shots, plus any borrowed frame at
+ * either end, and the join between each adjacent pair. A borrowed frame is a
+ * KEYFRAME, never a member — it is attached to the first or last real shot so
+ * the clip it makes lands on a shot the timeline and the export can find.
+ */
+function sequenceInput(row) {
+    const list = shotsOf(row);
+    const joins = parseJoins(row).slice(0, Math.max(0, list.length - 1));
+    const links = require('../lib/production-graph').linkState(db, row);
+    const unresolved = [];
+    const out = list.slice();
+    const outJoins = joins.slice();
+    while (outJoins.length < Math.max(0, list.length - 1)) outJoins.push({ type: 'continuous', prompt: '' });
+    if (links.start) {
+        if (!links.start.ok) unresolved.push(`start frame: ${links.start.reason}`);
+        else if (list[0]) {
+            out.unshift({ id: list[0].id, shot_code: `${links.start.label} (linked)`, description: '',
+                duration_ms: list[0].duration_ms, keyframe: links.start.path, linked: 'start' });
+            outJoins.unshift({ type: 'continuous', prompt: '' });
+        }
+    }
+    if (links.end) {
+        const last = list[list.length - 1];
+        if (!links.end.ok) unresolved.push(`end frame: ${links.end.reason}`);
+        else if (last) {
+            out.push({ id: last.id, shot_code: `${links.end.label} (linked)`, description: '',
+                duration_ms: last.duration_ms, keyframe: links.end.path, linked: 'end' });
+            outJoins.push({ type: 'continuous', prompt: '' });
+        }
+    }
+    return { list: out, joins: outJoins, links, unresolved };
+}
+
+/**
+ * Which of this sequence's clips plays.
+ *
+ * A sequence clip plays ONCE across its members, so selecting it records that
+ * the clip covers them (lib/clip-coverage.js) — the one mechanism the timeline,
+ * the conform and all three NLE exports already honour — and points the lead
+ * shot at it. Unselecting takes both back.
+ */
+function selectSequenceVideo(req, res, id) {
+    const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
+    if (!row) return json(res, 404, { error: 'Sequence not found' });
+    const body = req.body || {};
+    const assetId = req.method === 'DELETE' ? null : body.asset_id;
+    const { setCoverage } = require('../lib/clip-coverage');
+    const members = parseIds(row);
+    try {
+        db.transaction(() => {
+            if (row.selected_video_asset_id) {
+                setCoverage(db, row.selected_video_asset_id, []);
+                db.prepare('UPDATE film_shots SET selected_video_asset_id = NULL WHERE selected_video_asset_id = ?')
+                    .run(row.selected_video_asset_id);
+            }
+            if (assetId) {
+                const asset = db.prepare(`SELECT id, project_id, shot_id, asset_type FROM film_assets WHERE id = ?`).get(assetId);
+                if (!asset || asset.project_id !== row.project_id || !/^video_/.test(asset.asset_type)) {
+                    throw Object.assign(new Error('that is not a video in this project'), { status: 400 });
+                }
+                const lead = asset.shot_id && members.includes(asset.shot_id) ? asset.shot_id : members[0];
+                if (!lead) throw Object.assign(new Error('this sequence has no shots for its clip to play across'), { status: 409 });
+                if (asset.shot_id !== lead) db.prepare('UPDATE film_assets SET shot_id = ? WHERE id = ?').run(lead, asset.id);
+                setCoverage(db, asset.id, members);
+                db.prepare('UPDATE film_shots SET selected_video_asset_id = ? WHERE id = ?').run(asset.id, lead);
+            }
+            db.prepare("UPDATE film_sequences SET selected_video_asset_id = ?, updated_at = datetime('now') WHERE id = ?")
+                .run(assetId || null, id);
+        })();
+    } catch (err) {
+        return json(res, err.status || 409, { error: err.message });
+    }
+    return json(res, 200, { sequence_id: id, selected_video_asset_id: assetId || null });
+}
+
 function listSequences(res, projectId) {
     const rows = db.prepare(
         'SELECT * FROM film_sequences WHERE project_id = ? ORDER BY created_at').all(projectId);
@@ -298,9 +444,12 @@ function createSequence(req, res, projectId) {
     const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
     const body = req.body || {};
-    const checked = validShotIds(projectId, body.shot_ids);
+    const checked = validShotIds(projectId, body.shot_ids, { allowEmpty: body.empty === true });
     if (checked.error) return json(res, 400, { error: checked.error });
     const ids = checked.ids;
+    const conflicts = membershipConflicts(projectId, ids, null);
+    if (conflicts.length && body.move !== true) return conflictReply(res, conflicts);
+    if (conflicts.length) releaseFromOthers(conflicts);
 
     const id = generateId();
     db.prepare(`INSERT INTO film_sequences (id, project_id, name, shot_ids, description)
@@ -316,17 +465,43 @@ function updateSequence(req, res, id) {
     const body = req.body || {};
     // Merged, not replaced: renaming a sequence must not silently drop the
     // description someone spent time on, the rule PUT /shots/:id already sets.
-    const checked = body.shot_ids !== undefined ? validShotIds(row.project_id, body.shot_ids) : null;
+    const checked = body.shot_ids !== undefined
+        ? validShotIds(row.project_id, body.shot_ids, { allowEmpty: true }) : null;
     if (checked && checked.error) return json(res, 400, { error: checked.error });
+    const conflicts = checked ? membershipConflicts(row.project_id, checked.ids, id) : [];
+    if (conflicts.length && body.move !== true) return conflictReply(res, conflicts);
+    const shotCount = checked ? checked.ids.length : parseIds(row).length;
+
+    // Joins follow the shots: a list that no longer fits them is trimmed, never
+    // re-assigned to a different pair.
+    let joins = parseJoins(row).slice(0, Math.max(0, shotCount - 1));
+    if (body.joins !== undefined) {
+        const j = checkJoins(body.joins, shotCount);
+        if (j.error) return json(res, 400, { error: j.error });
+        joins = j.joins;
+    }
+    const pg = require('../lib/production-graph');
+    const refs = {};
+    for (const side of ['start', 'end']) {
+        const field = `${side}_frame_ref`;
+        if (body[field] === undefined) { refs[field] = row[field]; continue; }
+        const checkedRef = pg.checkFrameRef(db, row, body[field]);
+        if (!checkedRef.ok) return json(res, 400, { error: `${field}: ${checkedRef.error}` });
+        refs[field] = checkedRef.value;
+    }
     const next = {
         name: body.name !== undefined ? String(body.name).slice(0, 200) : row.name,
         shot_ids: checked ? JSON.stringify(checked.ids) : row.shot_ids,
         description: body.description !== undefined
             ? String(body.description).slice(0, 2000) : row.description,
     };
-    db.prepare(`UPDATE film_sequences SET name = ?, shot_ids = ?, description = ?,
-                updated_at = datetime('now') WHERE id = ?`)
-        .run(next.name, next.shot_ids, next.description, id);
+    db.transaction(() => {
+        if (conflicts.length) releaseFromOthers(conflicts);
+        db.prepare(`UPDATE film_sequences SET name = ?, shot_ids = ?, description = ?, joins_json = ?,
+                    start_frame_ref = ?, end_frame_ref = ?, updated_at = datetime('now') WHERE id = ?`)
+            .run(next.name, next.shot_ids, next.description, JSON.stringify(joins),
+                refs.start_frame_ref || null, refs.end_frame_ref || null, id);
+    })();
     return json(res, 200, { sequence: db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id) });
 }
 
@@ -677,9 +852,11 @@ function planRoute(res, id, query) {
     if (wantsStrip) {
         strip = stripFor(row, { cadenceSeconds: Number(q.cadence_s) || undefined, shape });
     }
-    const planInput = strip ? strip.expanded.stations : shotsOf(row);
+    const input_ = strip ? null : sequenceInput(row);
+    const planInput = strip ? strip.expanded.stations : input_.list;
     const plan = planSequence(planInput, {
         maxKeyframes: ceiling.max, description: row.description,
+        ...(input_ ? { joins: input_.joins } : {}),
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model],
     });
     /*
@@ -988,10 +1165,24 @@ async function generateSequence(req, res, id) {
         }
     }
 
-    const planInput_ = (strip_ && shape_ === 'legs') ? strip_.expanded.stations : shotsOf(row);
+    const input_ = (strip_ && shape_ === 'legs') ? null : sequenceInput(row);
+    /*
+     * A borrowed frame is resolved NOW, to the source's selected version. One
+     * that cannot be resolved refuses the run rather than being generated
+     * around: dropping it silently starts the clip somewhere nobody chose.
+     */
+    if (input_ && input_.unresolved.length) {
+        return json(res, 409, { sequence_id: id, error: 'LINK_UNRESOLVED', message: input_.unresolved.join('; ') });
+    }
+    const planInput_ = input_ ? input_.list : strip_.expanded.stations;
     const plan = planSequence(planInput_, { maxKeyframes: ceiling.max, description: row.description,
+        ...(input_ ? { joins: input_.joins } : {}),
         modelPolicy: runway && runway.RUNWAY_VIDEO_MODELS[model] });
     if (plan.refused) return json(res, 409, { sequence_id: id, ...plan });
+    if (!plan.segments.length) {
+        return json(res, 200, { sequence_id: id, segments: [], cuts: plan.cuts || [],
+            note: 'Every join in this sequence is a cut, so there is nothing to generate — the shots meet on an edit.' });
+    }
 
     const provider = resolve('video', seqConfig(row.project_id, req));
     if (!provider || typeof provider.generate !== 'function') {
@@ -1156,6 +1347,11 @@ async function generateSequence(req, res, id) {
     const failed = results.filter(r => !r.ok);
     db.prepare("UPDATE film_sequences SET status = ?, updated_at = datetime('now') WHERE id = ?")
         .run(failed.length ? 'failed' : 'complete', id);
+    // What the borrowed frames were when this was made, so a changed source
+    // version reads as stale on the graph rather than silently ignored.
+    if (input_ && input_.links && results.some(r => r.ok)) {
+        db.prepare('UPDATE film_sequences SET link_fingerprint = ? WHERE id = ?').run(input_.links.fingerprint || null, id);
+    }
 
     const bought = results.find(r => r.ok && r.resolution);
     return json(res, failed.length && !results.some(r => r.ok) ? 502 : 200, {
@@ -1328,6 +1524,14 @@ function importSequenceClip(req, res, id) {
         });
         db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?")
             .run(imported.asset_id, id);
+        // Tagged as this sequence's, so it is listed as a VERSION of it rather
+        // than as a clip of its first shot.
+        try {
+            const a = db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(imported.asset_id);
+            let m = {}; try { m = JSON.parse((a && a.metadata) || '{}') || {}; } catch (_) { m = {}; }
+            db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+                .run(JSON.stringify({ ...m, sequence_id: id, kind: 'sequence_upload' }), imported.asset_id);
+        } catch (_) { /* the clip is imported either way */ }
         return json(res, 201, {
             sequence_id: id, attached_to: first.shot_code, ...imported,
         });
@@ -1360,6 +1564,10 @@ async function handleSequences(req, res, urlParts, query) {
         if (sub === 'generate' && req.method === 'POST') return generateSequence(req, res, id);
         if (sub === 'generate-native' && req.method === 'POST') return generateNativeSequence(req, res, id);
         if (sub === 'import' && req.method === 'POST') return importSequenceClip(req, res, id);
+        // Which of its clips plays. Free: it moves a pointer.
+        if (sub === 'video' && urlParts[4] === 'select' && (req.method === 'POST' || req.method === 'DELETE')) {
+            return selectSequenceVideo(req, res, id);
+        }
         // Free: joins clips already paid for into one file.
         if (sub === 'stitch' && req.method === 'POST') return stitchSequence(req, res, id);
         // The strip: generate it, correct one station, sign it off.

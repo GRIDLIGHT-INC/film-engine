@@ -255,6 +255,26 @@ function refreshAccountDefaults() { _accountDefaults.clear(); }
 function resolveIdWithReason(capability, projectConfig) {
     const cfg = projectConfig || {};
     /*
+     * IMAGES FOLLOW THE HOUSE STANDARD, above every pin, tier and default:
+     * Nano Banana Pro, from the first vendor of it that holds a key (MuAPI,
+     * then Google, then Meshy — the same model sold three ways). Only when none
+     * of them can run does resolution fall through to the ordinary rules, and
+     * then it says so rather than pretending the standard was met.
+     */
+    if (capability === 'image') {
+        const { STANDARD_PROVIDERS, isStandardProvider } = require('../image-standard');
+        // A pin to ANOTHER vendor of the same model is still honoured: the
+        // model never changes, only who is paid for it.
+        if (cfg.image && isStandardProvider(cfg.image) && _registry.has(cfg.image)) {
+            return { id: cfg.image, source: 'project', explicit: true };
+        }
+        for (const id of STANDARD_PROVIDERS) {
+            if (_registry.has(id) && isProviderConfigured(id)) {
+                return { id, source: 'house_standard', explicit: true };
+            }
+        }
+    }
+    /*
      * An explicit per-project choice wins — EXCEPT a disabled local gateway.
      *
      * Otherwise the switch is advisory: a project pinned to gridlight before it
@@ -407,6 +427,7 @@ function describeResolution(capability, projectConfig) {
     const why = {
         project: 'pinned by this project',
         env: 'set by an environment variable',
+        house_standard: 'the house image standard — Nano Banana Pro',
         quality_tier: 'chosen by the quality tier',
         account_default: 'your account default',
         default_quality_tier: 'FALLBACK — this project pins no provider and set no quality, '

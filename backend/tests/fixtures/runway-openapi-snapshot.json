@@ -1,0 +1,188 @@
+{
+ "source": "https://docs.dev.runwayml.com/openapi.json",
+ "fetched": "2026-09-25",
+ "version": "2024-11-06",
+ "operations": [
+  "DELETE /v1/avatar_conversations/{id}",
+  "DELETE /v1/avatars/{id}",
+  "DELETE /v1/documents/{id}",
+  "DELETE /v1/realtime_sessions/{id}",
+  "DELETE /v1/routers/{id}",
+  "DELETE /v1/tasks/{id}",
+  "DELETE /v1/voices/{id}",
+  "GET /v1/avatar_conversations",
+  "GET /v1/avatar_conversations/{id}",
+  "GET /v1/avatar_usage",
+  "GET /v1/avatars",
+  "GET /v1/avatars/{id}",
+  "GET /v1/documents",
+  "GET /v1/documents/{id}",
+  "GET /v1/organization",
+  "GET /v1/organization/webapp/audit_logs",
+  "GET /v1/organization/webapp/audit_logs/{eventId}",
+  "GET /v1/organization/webapp/usage",
+  "GET /v1/realtime_sessions/{id}",
+  "GET /v1/routers",
+  "GET /v1/routers/{id}",
+  "GET /v1/routers/{id}/requests",
+  "GET /v1/tasks/{id}",
+  "GET /v1/voices",
+  "GET /v1/voices/{id}",
+  "GET /v1/workflow_invocations/{id}",
+  "GET /v1/workflows",
+  "GET /v1/workflows/{id}",
+  "PATCH /v1/avatars/{id}",
+  "PATCH /v1/documents/{id}",
+  "PATCH /v1/routers/{id}",
+  "PATCH /v1/voices/{id}",
+  "POST /v1/avatar_videos",
+  "POST /v1/avatars",
+  "POST /v1/character_performance",
+  "POST /v1/documents",
+  "POST /v1/generate/audio",
+  "POST /v1/generate/image",
+  "POST /v1/generate/video",
+  "POST /v1/image_to_video",
+  "POST /v1/image_upscale",
+  "POST /v1/organization/usage",
+  "POST /v1/realtime_sessions",
+  "POST /v1/recipes/ad_localization",
+  "POST /v1/recipes/marketing_stock_image",
+  "POST /v1/recipes/multi_shot_video",
+  "POST /v1/recipes/product_ad",
+  "POST /v1/recipes/product_campaign_image",
+  "POST /v1/recipes/product_swap",
+  "POST /v1/recipes/product_ugc",
+  "POST /v1/routers",
+  "POST /v1/sound_effect",
+  "POST /v1/speech_to_speech",
+  "POST /v1/text_to_image",
+  "POST /v1/text_to_speech",
+  "POST /v1/text_to_video",
+  "POST /v1/uploads",
+  "POST /v1/video_to_hdr",
+  "POST /v1/video_to_video",
+  "POST /v1/video_upscale",
+  "POST /v1/voice_dubbing",
+  "POST /v1/voice_isolation",
+  "POST /v1/voices",
+  "POST /v1/voices/preview",
+  "POST /v1/workflows/{id}"
+ ],
+ "models": {
+  "/v1/avatar_videos": [
+   "gwm1_avatars"
+  ],
+  "/v1/realtime_sessions": [
+   "gwm1_avatars"
+  ],
+  "/v1/image_to_video": [
+   "gemini_omni_flash",
+   "gemini_omni_flash_1.1",
+   "gen4.5",
+   "gen4_turbo",
+   "grok_imagine_1_5",
+   "h3_max",
+   "hailuo3",
+   "happyhorse_1_0",
+   "seedance2",
+   "seedance2_5",
+   "seedance2_fast",
+   "seedance2_mini",
+   "veo3.1",
+   "veo3.1_fast",
+   "wan3",
+   "wan3_prime"
+  ],
+  "/v1/text_to_video": [
+   "gemini_omni_flash",
+   "gemini_omni_flash_1.1",
+   "gen4.5",
+   "grok_imagine_1_5",
+   "h3_max",
+   "hailuo3",
+   "happyhorse_1_0",
+   "seedance2",
+   "seedance2_5",
+   "seedance2_fast",
+   "seedance2_mini",
+   "veo3.1",
+   "veo3.1_fast",
+   "wan3",
+   "wan3_prime"
+  ],
+  "/v1/video_to_video": [
+   "aleph2",
+   "gemini_omni_flash",
+   "gemini_omni_flash_1.1",
+   "hailuo3",
+   "seedance2",
+   "seedance2_5",
+   "seedance2_fast",
+   "seedance2_mini"
+  ],
+  "/v1/text_to_image": [
+   "gemini_2.5_flash",
+   "gemini_image3.1_flash",
+   "gemini_image3_pro",
+   "gen4_image",
+   "gen4_image_turbo",
+   "gpt_image_2",
+   "gpt_image_2_5_flare",
+   "gpt_image_2_5_sunburst",
+   "grok_imagine_image_2",
+   "muse_image",
+   "seedream5_lite",
+   "seedream5_pro"
+  ],
+  "/v1/image_upscale": [
+   "magnific_precision_upscaler_v2"
+  ],
+  "/v1/video_upscale": [
+   "enhance_frame_rate",
+   "magnific_video_upscaler_creative"
+  ],
+  "/v1/video_to_hdr": [
+   "ruby"
+  ],
+  "/v1/character_performance": [
+   "act_two"
+  ],
+  "/v1/sound_effect": [
+   "eleven_text_to_sound_v2",
+   "seed_audio"
+  ],
+  "/v1/speech_to_speech": [
+   "eleven_multilingual_sts_v2"
+  ],
+  "/v1/text_to_speech": [
+   "eleven_multilingual_v2",
+   "eleven_v3",
+   "seed_audio"
+  ],
+  "/v1/voice_dubbing": [
+   "eleven_voice_dubbing"
+  ],
+  "/v1/voice_isolation": [
+   "eleven_voice_isolation"
+  ]
+ },
+ "image_to_video_last_frame": {
+  "gen4.5": false,
+  "gen4_turbo": false,
+  "veo3.1": true,
+  "veo3.1_fast": true,
+  "hailuo3": false,
+  "happyhorse_1_0": false,
+  "seedance2": true,
+  "seedance2_fast": true,
+  "seedance2_mini": true,
+  "gemini_omni_flash": false,
+  "seedance2_5": true,
+  "grok_imagine_1_5": false,
+  "wan3": false,
+  "gemini_omni_flash_1.1": true,
+  "wan3_prime": false,
+  "h3_max": true
+ }
+}

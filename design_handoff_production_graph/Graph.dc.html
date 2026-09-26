@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production graph canvas</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1176px; height: 582px; position: relative; overflow: hidden; background-color: #18181b; background-image: radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1.3px); background-size: 18px 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #eeeeee;">
+<div style="position: absolute; left: 0; top: 0; width: 1306px; height: 646px; transform: scale(0.9); transform-origin: 0 0;">
+
+  <!-- groups -->
+  <div style="position: absolute; left: 12px; top: 8px; width: 998px; height: 628px; border: 1px dashed rgba(255,255,255,0.09); border-radius: 12px; background: rgba(255,255,255,0.015);">
+    <div style="position: absolute; left: 12px; top: 7px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.08em; color: #8e8e97;">SC 1 · THE PITCH</div>
+  </div>
+  <div style="position: absolute; left: 1030px; top: 8px; width: 420px; height: 628px; border: 1px dashed rgba(255,255,255,0.09); border-radius: 12px; background: rgba(255,255,255,0.015);">
+    <div style="position: absolute; left: 12px; top: 7px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.08em; color: #8e8e97;">SC 1 · THE REVEAL</div>
+  </div>
+
+  <!-- edges -->
+  <svg width="1500" height="646" viewBox="0 0 1500 646" style="position: absolute; left: 0; top: 0; pointer-events: none;" aria-hidden="true">
+    <path d="M232 186 C262 186 262 226 292 226" stroke="#c07ce0" stroke-width="2" fill="none"></path>
+    <path d="M232 386 C272 386 252 248 292 248" stroke="#c07ce0" stroke-width="2" fill="none"></path>
+    <path d="M232 586 C282 586 242 270 292 270" stroke="#c07ce0" stroke-width="2" fill="none"></path>
+    <path d="M532 226 C552 226 552 173 572 173" stroke="#e2c15a" stroke-width="2" fill="none"></path>
+    <path d="M532 248 C562 248 542 383 572 383" stroke="#8a8aff" stroke-width="2" fill="none" stroke-dasharray="5 4"></path>
+    <path d="M532 248 C572 248 532 543 572 543" stroke="#8a8aff" stroke-width="2" fill="none" stroke-dasharray="5 4"></path>
+    <path d="M772 383 L812 383" stroke="#57c98a" stroke-width="2" fill="none"></path>
+    <path d="M772 543 L812 543" stroke="#57c98a" stroke-width="2" fill="none" stroke-dasharray="2 4"></path>
+    <path d="M1250 174 C1270 174 1270 226 1290 226" stroke="#c07ce0" stroke-width="2" fill="none" stroke-dasharray="6 4"></path>
+    <path d="M1250 360 C1270 360 1270 248 1290 248" stroke="#c07ce0" stroke-width="2" fill="none"></path>
+    <path d="M1250 570 C1275 570 1265 270 1290 270" stroke="#5f5f67" stroke-width="2" fill="none" stroke-dasharray="2 4"></path>
+  </svg>
+
+  <!-- ===== SHOT EX-1 ===== -->
+  <div style="position: absolute; left: 32px; top: 36px; width: 200px; height: 180px; box-sizing: border-box; background: #232329; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; color: #eeeeee; flex-grow: 1;">EX-1</span><span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; padding: 1px 5px; border-radius: 4px; background: #2c2c34; color: #b7b7be;">v2/2</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">shot · wide · 6s</div>
+    </div>
+    <div style="position: relative; height: 96px; overflow: hidden; background: #08080a;">
+      <svg viewBox="0 0 160 90" width="197" height="96" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="108" y="24" width="34" height="27" rx="3" fill="#6d8ea3"></rect><circle cx="70" cy="36" r="11" fill="#9a7a62"></circle><path d="M50 90 L55 56 Q70 48 85 56 L90 90 Z" fill="#3b3c47"></path></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 12px; height: 3px; border-radius: 2px; background: #5f5f67;"></span><span style="width: 12px; height: 3px; border-radius: 2px; background: #f4f4f5;"></span></div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #56c8d8; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>plates</span><span>image</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 18px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-size: 9px; color: #9a9aa6;">
+      <span>video</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #e2c15a; background: #232329;"></span>
+    </div>
+  </div>
+
+  <!-- ===== SHOT EX-2 ===== -->
+  <div style="position: absolute; left: 32px; top: 236px; width: 200px; height: 180px; box-sizing: border-box; background: #232329; border: 1.5px solid {{bd.ex2}}; box-shadow: {{sh.ex2}}; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; color: #eeeeee; flex-grow: 1;">EX-2</span><span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; padding: 1px 5px; border-radius: 4px; background: #2c2c34; color: #b7b7be;">v3/3</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">shot · medium · 3s</div>
+    </div>
+    <div style="position: relative; height: 96px; overflow: hidden; background: #08080a;">
+      <svg viewBox="0 0 160 90" width="197" height="96" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2c3037"></rect><rect x="118" y="14" width="42" height="40" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="38" r="17" fill="#a07f66"></circle><path d="M36 90 L44 64 Q72 50 100 64 L108 90 Z" fill="#3b3c47"></path><path d="M64 70 L72 90 L80 70 Z" fill="#7a2f35"></path></svg>
+      <div style="position: absolute; left: 8px; bottom: 6px; display: flex; gap: 3px;"><span style="width: 12px; height: 3px; border-radius: 2px; background: #5f5f67;"></span><span style="width: 12px; height: 3px; border-radius: 2px; background: #5f5f67;"></span><span style="width: 12px; height: 3px; border-radius: 2px; background: #f4f4f5;"></span></div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #56c8d8; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>plates</span><span>image</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 18px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-size: 9px; color: #9a9aa6;">
+      <span>video</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #e2c15a; background: #232329;"></span>
+    </div>
+  </div>
+
+  <!-- ===== SHOT EX-3 ===== -->
+  <div style="position: absolute; left: 32px; top: 436px; width: 200px; height: 180px; box-sizing: border-box; background: #232329; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; color: #eeeeee; flex-grow: 1;">EX-3</span><span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; padding: 1px 5px; border-radius: 4px; background: #2c2c34; color: #b7b7be;">v1/1</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">shot · close · 3s</div>
+    </div>
+    <div style="position: relative; height: 96px; overflow: hidden; background: #08080a;">
+      <svg viewBox="0 0 160 90" width="197" height="96" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+      <div style="position: absolute; right: 6px; top: 6px; font-size: 9px; padding: 2px 6px; border-radius: 20px; background: rgba(8,8,10,0.85); border: 1px dashed #c07ce0; color: #e3c4f0;">↗ starts The reveal</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #56c8d8; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>plates</span><span>image</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 18px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-size: 9px; color: #9a9aa6;">
+      <span>video</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #e2c15a; background: #232329;"></span>
+    </div>
+  </div>
+
+  <!-- ===== SEQUENCE The pitch ===== -->
+  <div style="position: absolute; left: 292px; top: 150px; width: 240px; height: 280px; box-sizing: border-box; background: #232329; border: 1.5px solid {{bd.pitch}}; box-shadow: {{sh.pitch}}; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="font-size: 12px; font-weight: 600; color: #eeeeee;">The pitch</div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">sequence · 3 shots · 12s</div>
+    </div>
+    <div style="height: 24px;"></div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span style="color: #d6d6de;">1 · EX-1</span><span>video</span>
+      <span style="position: absolute; right: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e2c15a; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span style="color: #d6d6de;">2 · EX-2</span><span>scene</span>
+      <span style="position: absolute; right: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #8a8aff; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span style="color: #d6d6de;">3 · EX-3</span><span>end frame</span>
+      <span style="position: absolute; right: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px dashed #c07ce0; background: #232329;"></span>
+    </div>
+    <div style="position: relative; height: 22px; padding: 0 12px; display: flex; align-items: center; font-size: 9px; color: #6f6f77;">
+      <span style="position: absolute; left: -6.5px; top: 6px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #5f5f67; background: #232329;"></span>
+      <span>+ shot</span>
+    </div>
+    <div style="margin: 8px 10px 0; display: flex; flex-direction: column; gap: 5px;">
+      <div style="padding: 6px 8px; border-radius: 6px; background: #1b1b20; border: 1px solid #2e2e36;">
+        <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: #e2c15a;">1→2 · CONTINUOUS MOVE</div>
+        <div style="font-size: 10.5px; color: #c9c9d0; margin-top: 2px; line-height: 1.35;">Push in from wide to his chest.</div>
+      </div>
+      <div style="padding: 6px 8px; border-radius: 6px; background: #1b1b20; border: 1px solid #2e2e36;">
+        <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: #b7b7be;">2→3 · CUT</div>
+        <div style="font-size: 10.5px; color: #c9c9d0; margin-top: 2px; line-height: 1.35;">Cut on the blink — head is the monitor.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VIDEO VERSION of The pitch ===== -->
+  <div style="position: absolute; left: 572px; top: 120px; width: 200px; height: 178px; box-sizing: border-box; background: #1d1d22; border: 1.5px solid {{bd.v2}}; box-shadow: {{sh.v2}}; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; color: #eeeeee; flex-grow: 1;">v2 of 2</span><span style="font-size: 9px; padding: 1px 6px; border-radius: 20px; background: rgba(102,144,255,0.18); color: #9fb6ff;">▶ playing</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">video · runway · 12.0s</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #e2c15a; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>from The pitch</span>
+    </div>
+    <div style="position: relative; margin: 4px 8px 0; height: 102px; border-radius: 6px; overflow: hidden; background: #08080a;">
+      <svg viewBox="0 0 160 90" width="181" height="102" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#2a2e35"></rect><rect y="68" width="160" height="22" fill="#1f2228"></rect><rect x="112" y="20" width="38" height="32" rx="3" fill="#6d8ea3"></rect><circle cx="72" cy="36" r="14" fill="#9a7a62"></circle><path d="M44 90 L50 58 Q72 46 94 58 L100 90 Z" fill="#3b3c47"></path></svg>
+      <div style="position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(8,8,10,0.72); display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M4 2 L12 7 L4 12 Z" fill="#f4f4f5"></path></svg></div>
+    </div>
+  </div>
+
+  <!-- ===== SFX ===== -->
+  <div style="position: absolute; left: 572px; top: 330px; width: 200px; height: 130px; box-sizing: border-box; background: #232329; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="font-size: 12px; font-weight: 600; color: #eeeeee;">Office room tone</div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">gen.sfx · 12s · matches</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #8a8aff; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>scene</span><span>audio</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #57c98a; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="padding: 6px 12px 0; font-size: 10.5px; line-height: 1.4; color: #c9c9d0;">CRT whine, fluorescent hum, a chair creak under something heavy.</div>
+  </div>
+
+  <!-- ===== MUSIC ===== -->
+  <div style="position: absolute; left: 572px; top: 490px; width: 200px; height: 130px; box-sizing: border-box; background: #232329; border: 1.5px solid {{bd.music}}; box-shadow: {{sh.music}}; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="font-size: 12px; font-weight: 600; color: #eeeeee;">Pitch cue</div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">gen.music · 12s · matches</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 3px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #8a8aff; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>scene</span><span>audio</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #57c98a; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="padding: 6px 12px 0; font-size: 10.5px; line-height: 1.4; color: #c9c9d0;">Deadpan lounge — bass and brushes, drops out on the cut.</div>
+  </div>
+
+  <!-- ===== SFX version ===== -->
+  <div style="position: absolute; left: 812px; top: 330px; width: 180px; height: 110px; box-sizing: border-box; background: #1d1d22; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; flex-grow: 1;">v1 of 1</span><span style="font-size: 9px; padding: 1px 6px; border-radius: 20px; background: rgba(102,144,255,0.18); color: #9fb6ff;">▶ playing</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">audio · 12.0s</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 3px; padding: 0 12px;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #57c98a; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="margin: 2px 12px 0; height: 30px; display: flex; align-items: center; gap: 2px;">
+      <sc-for list="{{wave}}" as="b" hint-placeholder-count="40"><span style="display: block; width: 2px; flex-shrink: 0; border-radius: 1px; background: #57c98a; height: {{b.h}}px;"></span></sc-for>
+    </div>
+  </div>
+
+  <!-- ===== Music version: empty ===== -->
+  <div style="position: absolute; left: 812px; top: 490px; width: 180px; height: 110px; box-sizing: border-box; background: transparent; border: 1.5px dashed #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px dashed #2e2e36;">
+      <div style="font-size: 12px; font-weight: 600; color: #b7b7be;">No version yet</div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">audio</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 3px;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #57c98a; box-shadow: 0 0 0 1.5px #18181b;"></span>
+    </div>
+    <div style="padding: 2px 10px 0; display: flex; gap: 6px;">
+      <button style="height: 26px; padding: 0 10px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11px -apple-system, sans-serif;">Generate</button>
+      <button style="height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">Upload</button>
+    </div>
+  </div>
+
+  <!-- ===== LINKED FRAME ===== -->
+  <div style="position: absolute; left: 1050px; top: 36px; width: 200px; height: 150px; box-sizing: border-box; background: #1d1d22; border: 1.5px dashed #c07ce0; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px dashed #3a2f40;">
+      <div style="font-size: 12px; font-weight: 600; color: #e3c4f0;">↳ EX-3 · v1</div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">linked frame · from The pitch</div>
+    </div>
+    <div style="height: 84px; overflow: hidden; background: #08080a; opacity: 0.85;">
+      <svg viewBox="0 0 160 90" width="197" height="84" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#262a31"></rect><path d="M30 90 L40 62 Q80 50 120 62 L130 90 Z" fill="#3b3c47"></path><rect x="54" y="12" width="52" height="42" rx="5" fill="#4a4e57"></rect><rect x="60" y="17" width="40" height="30" rx="3" fill="#8fb3c4"></rect></svg>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-size: 9px; color: #9a9aa6;">
+      <span>start frame</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+  </div>
+
+  <!-- ===== MV-2 ===== -->
+  <div style="position: absolute; left: 1050px; top: 210px; width: 200px; height: 180px; box-sizing: border-box; background: #232329; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; flex-grow: 1;">MV-2</span><span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; padding: 1px 5px; border-radius: 4px; background: #2c2c34; color: #b7b7be;">v3/4</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">shot · medium · 8s</div>
+    </div>
+    <div style="position: relative; height: 96px; overflow: hidden; background: #08080a;">
+      <svg viewBox="0 0 160 90" width="197" height="96" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;"><rect width="160" height="90" fill="#3a3f47"></rect><rect x="8" y="20" width="40" height="32" rx="2" fill="#7fa0b3"></rect><rect x="92" y="24" width="30" height="26" rx="4" fill="#77726a"></rect><path d="M78 90 L84 54 Q107 44 130 54 L136 90 Z" fill="#5c5852"></path><rect x="0" y="74" width="160" height="16" fill="#2c3036"></rect></svg>
+      <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.08);"><div style="width: 62%; height: 3px; background: #6690ff;"></div></div>
+      <div style="position: absolute; right: 6px; top: 6px; font-size: 9px; padding: 2px 6px; border-radius: 20px; background: rgba(8,8,10,0.85); color: #9fb6ff;">generating video · 62%</div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #56c8d8; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>plates</span><span>image</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #c07ce0; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+    </div>
+    <div style="position: relative; height: 18px; padding: 0 12px; display: flex; align-items: center; justify-content: flex-end; font-size: 9px; color: #9a9aa6;">
+      <span>video</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #e2c15a; background: #232329;"></span>
+    </div>
+  </div>
+
+  <!-- ===== MV-6 no frame ===== -->
+  <div style="position: absolute; left: 1050px; top: 420px; width: 200px; height: 180px; box-sizing: border-box; background: #232329; border: 1.5px solid rgba(240,138,138,0.45); border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;">
+      <div style="display: flex; align-items: center; gap: 6px;"><span style="font-size: 12px; font-weight: 600; flex-grow: 1;">MV-6</span><span style="font-size: 9px; padding: 1px 6px; border-radius: 20px; background: rgba(240,110,110,0.12); color: #f08a8a;">failed</span></div>
+      <div style="font-size: 10px; color: #8a8a96; margin-top: 2px;">shot · medium · 6s</div>
+    </div>
+    <div style="height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: repeating-linear-gradient(135deg, #1b1b20 0 7px, #202026 7px 14px);">
+      <span style="font-size: 11px; color: #b7b7be;">No frame yet</span>
+      <div style="display: flex; gap: 6px;">
+        <button style="height: 26px; padding: 0 10px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11px -apple-system, sans-serif;">Generate</button>
+        <button style="height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">Upload</button>
+      </div>
+    </div>
+    <div style="position: relative; height: 18px; margin-top: 4px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #9a9aa6;">
+      <span style="position: absolute; left: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #56c8d8; box-shadow: 0 0 0 1.5px #1a1a1f;"></span>
+      <span>plates</span><span>image</span>
+      <span style="position: absolute; right: -6.5px; top: 4px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid #5f5f67; background: #232329;"></span>
+    </div>
+  </div>
+
+  <!-- ===== The reveal (edge of view) ===== -->
+  <div style="position: absolute; left: 1290px; top: 150px; width: 220px; height: 220px; box-sizing: border-box; background: #232329; border: 1.5px solid #3a3a44; border-radius: 8px;">
+    <div style="height: 40px; box-sizing: border-box; padding: 6px 10px 0; border-bottom: 1px solid #2e2e36;"><div style="font-size: 12px; font-weight: 600;">The reveal</div></div>
+  </div>
+</div>
+
+  <!-- canvas furniture (screen space) -->
+  <div style="position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; align-items: center; background: rgba(20,20,24,0.92); border: 1px solid #2c2c34; border-radius: 8px; padding: 5px 8px;">
+    <button aria-label="Zoom out" style="width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font-size: 13px; line-height: 1;">−</button>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #b7b7be; min-width: 34px; text-align: center;">90%</span>
+    <button aria-label="Zoom in" style="width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font-size: 13px; line-height: 1;">+</button>
+    <button style="height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">Fit</button>
+    <span style="width: 1px; height: 16px; background: #2c2c34; margin: 0 2px;"></span>
+    <span style="display: flex; gap: 10px; font-size: 10px; color: #9a9aa6;">
+      <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #c07ce0;"></span>image</span>
+      <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #e2c15a;"></span>video</span>
+      <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #57c98a;"></span>audio</span>
+      <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #8a8aff;"></span>scene</span>
+      <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #56c8d8;"></span>plates</span>
+    </span>
+  </div>
+  <div style="position: absolute; right: 12px; bottom: 12px; width: 168px; height: 96px; box-sizing: border-box; background: rgba(20,20,24,0.92); border: 1px solid #2c2c34; border-radius: 8px; overflow: hidden;">
+    <div style="position: absolute; left: 10px; top: 12px; width: 11px; height: 62px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 27px; top: 26px; width: 15px; height: 28px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 47px; top: 20px; width: 12px; height: 56px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 64px; top: 30px; width: 11px; height: 42px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 88px; top: 12px; width: 11px; height: 62px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 106px; top: 26px; width: 12px; height: 26px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 130px; top: 30px; width: 14px; height: 40px; background: #3a3a44; border-radius: 2px;"></div>
+    <div style="position: absolute; left: 6px; top: 6px; width: 110px; height: 76px; border: 1px solid #6690ff; border-radius: 3px;"></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"sel":{"editor":"enum","options":["none","ex2","pitch","music","v2"],"default":"none"},"$preview":{"width":1176,"height":582}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sel = this.props.sel ?? 'none';
+    const keys = ['ex2', 'pitch', 'music', 'v2'];
+    const bd = {}, sh = {};
+    keys.forEach(k => {
+      bd[k] = k === sel ? '#f5c451' : '#3a3a44';
+      sh[k] = k === sel ? '0 0 0 1px #f5c451, 0 0 0 5px rgba(245,196,81,0.12)' : 'none';
+    });
+    const wave = [];
+    for (let i = 0; i < 38; i++) {
+      wave.push({ h: Math.min(26, 4 + Math.round(Math.abs(Math.sin(i * 0.9) * 10 + Math.sin(i * 2.3) * 6 + Math.cos(i * 0.37) * 5))) });
+    }
+    return { bd, sh, wave };
+  }
+}
+</script>
+</body>
+</html>

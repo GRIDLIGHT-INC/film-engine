@@ -1,0 +1,51 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-09-26T14:30:00Z"},
+  "title": "Film Engine — Production Graph",
+  "launch": {"view": "canvas"},
+  "pages": [
+    {"id": "spec", "name": "Spec & flow"},
+    {"id": "hifi", "name": "Pixel-perfect"}
+  ],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1720, "h": 1040, "title": "Production — the graph", "is_interactive": true, "page": "spec"},
+    "MigrationMap.dc.html": {"x": 1800, "y": 0, "w": 880, "h": 1040, "title": "Where today's 8 pages go", "page": "spec"},
+    "ShotInspector.dc.html": {"x": 0, "y": 1460, "w": 560, "h": 1640, "title": "Shot node — inspector", "is_interactive": true, "page": "spec"},
+    "SequenceInspector.dc.html": {"x": 640, "y": 1460, "w": 560, "h": 1640, "title": "Sequence node — inspector", "is_interactive": true, "page": "spec"},
+    "SoundInspector.dc.html": {"x": 1280, "y": 1460, "w": 560, "h": 1240, "title": "Sound / Music node — inspector", "is_interactive": true, "page": "spec"},
+    "TakeViewer.dc.html": {"x": 1920, "y": 1460, "w": 560, "h": 1080, "title": "Generated version — viewer", "is_interactive": true, "page": "spec"},
+
+    "FE-Production.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 900, "title": "1 · Production — default", "page": "hifi"},
+    "FE-Shot.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 900, "title": "2 · Shot selected", "page": "hifi"},
+    "FE-Handoff.dc.html": {"x": 3080, "y": 0, "w": 1200, "h": 2320, "title": "Build brief — for Claude Code", "page": "hifi"},
+    "FE-Sequence.dc.html": {"x": 0, "y": 1020, "w": 1440, "h": 900, "title": "3 · Sequence selected", "page": "hifi"},
+    "FE-Sound.dc.html": {"x": 1520, "y": 1020, "w": 1440, "h": 900, "title": "4 · Music selected", "page": "hifi"},
+    "FE-Version.dc.html": {"x": 0, "y": 2040, "w": 1440, "h": 900, "title": "5 · Video version selected", "page": "hifi"},
+    "FE-Spec.dc.html": {"x": 1520, "y": 2040, "w": 1200, "h": 1360, "title": "Tokens, states, layout", "page": "hifi"},
+
+    "DrawerShot.dc.html": {"x": 0, "y": 3760, "w": 420, "h": 1500, "title": "Drawer · Shot (full length)", "page": "hifi"},
+    "DrawerSequence.dc.html": {"x": 500, "y": 3760, "w": 420, "h": 1480, "title": "Drawer · Sequence (full length)", "page": "hifi"},
+    "DrawerSound.dc.html": {"x": 1000, "y": 3760, "w": 420, "h": 1080, "title": "Drawer · Music (full length)", "page": "hifi"},
+    "DrawerVersion.dc.html": {"x": 1500, "y": 3760, "w": 420, "h": 960, "title": "Drawer · Version (full length)", "page": "hifi"},
+
+    "TopBar.dc.html": {"x": 0, "y": 5600, "w": 1420, "h": 62, "title": "Component · TopBar", "page": "hifi"},
+    "MainHeader.dc.html": {"x": 0, "y": 5782, "w": 1176, "h": 56, "title": "Component · MainHeader", "page": "hifi"},
+    "Graph.dc.html": {"x": 0, "y": 5958, "w": 1176, "h": 582, "title": "Component · Graph (prop sel)", "page": "hifi"},
+    "Playback.dc.html": {"x": 0, "y": 6660, "w": 1176, "h": 168, "title": "Component · Playback (prop w)", "page": "hifi"},
+    "SidePanel.dc.html": {"x": 1300, "y": 5782, "w": 232, "h": 808, "title": "Component · SidePanel (prop sel)", "page": "hifi"}
+  },
+  "order": [
+    "Main.dc.html", "MigrationMap.dc.html", "ShotInspector.dc.html", "SequenceInspector.dc.html", "SoundInspector.dc.html", "TakeViewer.dc.html",
+    "FE-Production.dc.html", "FE-Shot.dc.html", "FE-Handoff.dc.html", "FE-Sequence.dc.html", "FE-Sound.dc.html", "FE-Version.dc.html", "FE-Spec.dc.html",
+    "DrawerShot.dc.html", "DrawerSequence.dc.html", "DrawerSound.dc.html", "DrawerVersion.dc.html",
+    "TopBar.dc.html", "MainHeader.dc.html", "Graph.dc.html", "Playback.dc.html", "SidePanel.dc.html"
+  ],
+  "notes": {
+    "t1": {"x": 0, "y": -300, "text": "Production — one node graph replaces eight pages", "kind": "title1", "maxW": 2680, "page": "spec"},
+    "t2": {"x": 0, "y": 1160, "text": "Click any node → its inspector opens as a 560px drawer on the right", "kind": "title1", "maxW": 2480, "page": "spec"},
+    "h1": {"x": 0, "y": -300, "text": "Production — pixel-perfect, in Film Engine's own styles", "kind": "title1", "maxW": 4280, "page": "hifi"},
+    "h2": {"x": 0, "y": 3460, "text": "Drawers at full length", "kind": "title1", "maxW": 1920, "page": "hifi"},
+    "h3": {"x": 0, "y": 5300, "text": "Shared components (dc-import)", "kind": "title1", "maxW": 1540, "page": "hifi"}
+  },
+  "designSystems": []
+}

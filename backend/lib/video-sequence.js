@@ -65,13 +65,29 @@ function planSequence(shots, opts) {
     const degraded = maxKeyframes < 2 && list.length > 1;
 
     const segments = [];
+    const cuts = [];
     if (list.length === 1 || degraded) {
         for (const shot of list) {
             segments.push(buildSegment([shot], shot, shot, description, list, o.modelPolicy));
         }
     } else {
         for (let i = 0; i < list.length - 1; i += 1) {
-            segments.push(buildSegment([list[i], list[i + 1]], list[i], list[i + 1], description, list, o.modelPolicy));
+            const join = joinAt(o.joins, i);
+            /*
+             * A CUT GENERATES NOTHING. The two shots meet on an edit, so there
+             * is no moment between them to invent — buying a clip there would
+             * be paying for a move the director explicitly did not want.
+             */
+            if (join.type === 'cut') {
+                cuts.push({ index: i, from: list[i].shot_code || list[i].id, to: list[i + 1].shot_code || list[i + 1].id });
+                continue;
+            }
+            const seg = buildSegment([list[i], list[i + 1]], list[i], list[i + 1], description, list, o.modelPolicy);
+            if (join.type !== 'continuous' || join.prompt) {
+                seg.prompt = `${seg.prompt} ${joinSentence(join, list[i], list[i + 1])}`.trim();
+            }
+            seg.join = join.type;
+            segments.push(seg);
         }
     }
 
@@ -86,6 +102,9 @@ function planSequence(shots, opts) {
         segments,
         // Two shots is one segment and needs no stitch; three or more do.
         needs_stitching: segments.length > 1,
+        // The joins that were cuts, named: a leg that was not bought must say
+        // so, or a four-shot sequence planning two clips looks like a bug.
+        cuts,
         shot_codes: list.map(s => s.shot_code || s.id),
     };
 }
@@ -100,6 +119,33 @@ function planSequence(shots, opts) {
  * every segment of a five-shot sequence asks for the same thing and the result
  * is five copies of one move.
  */
+/*
+ * THE JOIN BETWEEN TWO SHOTS. Absent means continuous — what every sequence did
+ * before joins existed, so a sequence nobody has edited plans byte-identically.
+ */
+const JOIN_TYPES = Object.freeze(['cut', 'continuous', 'dissolve', 'match_cut', 'whip_pan', 'morph']);
+
+const JOIN_WORDS = Object.freeze({
+    continuous: '',
+    dissolve: 'The first picture dissolves into the second: a slow overlap, both images briefly visible at once.',
+    match_cut: 'A match cut: a shape or motion in the first picture carries straight into the same shape or motion in the second.',
+    whip_pan: 'A whip pan: the camera swings fast enough to smear into motion blur, and the blur resolves on the second picture.',
+    morph: 'A morph: the first picture transforms fluidly and continuously into the second.',
+});
+
+function joinAt(joins, i) {
+    const j = Array.isArray(joins) ? joins[i] : null;
+    const type = j && JOIN_TYPES.includes(j.type) ? j.type : 'continuous';
+    return { type, prompt: j && typeof j.prompt === 'string' ? j.prompt.trim() : '' };
+}
+
+function joinSentence(join, from, to) {
+    const parts = [];
+    if (JOIN_WORDS[join.type]) parts.push(JOIN_WORDS[join.type]);
+    if (join.prompt) parts.push(`How ${from.shot_code || 'it'} becomes ${to.shot_code || 'the next'}: ${join.prompt}`);
+    return parts.join(' ');
+}
+
 function buildSegment(shots, from, to, description, all, modelPolicy) {
     const index = all.indexOf(from);
     const single = shots.length === 1;
@@ -138,4 +184,4 @@ function buildSegment(shots, from, to, description, all, modelPolicy) {
     };
 }
 
-module.exports = { planSequence, buildSegment };
+module.exports = { planSequence, buildSegment, JOIN_TYPES, joinAt };

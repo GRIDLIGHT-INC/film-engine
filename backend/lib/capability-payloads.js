@@ -284,12 +284,29 @@ function imageBudget(aspect, resolution, maxPixels) {
     };
 }
 
+/**
+ * The 4K board frame, clamped to a provider that cannot make one.
+ *
+ * No ceiling stated means the house provider's own, which serves 4K — the
+ * strict fallback in imageBudget exists for an UNKNOWN provider, and the frame
+ * size here is the standard's, not a guess about who is generating.
+ */
+function standardBoardBudget(aspect, maxPixels) {
+    const want = require('./image-standard').storyboardSize(aspect);
+    const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
+    if (!cap || want.width * want.height <= cap) return { ...want, clamped: false };
+    const d = imageBudget(aspect, `${want.width}x${want.height}`, cap);
+    return { ...d, clamped: true, asked_width: want.width, asked_height: want.height };
+}
+
 function imageRequestPayload(fields) {
     const f = fields || {};
-    // An explicit width/height still wins; otherwise follow the project's frame.
+    // An explicit width/height still wins; otherwise the HOUSE STANDARD: a board
+    // frame is 4K in the shot's own shape, whatever the project delivers at
+    // (lib/image-standard.js). The provider's ceiling still clamps, and says so.
     const dims = (f.width && f.height)
         ? { width: f.width, height: f.height }
-        : imageBudget(f.aspect_ratio, f.target_resolution, f.max_image_pixels);
+        : standardBoardBudget(f.aspect_ratio, f.max_image_pixels);
     if (dims.clamped && f.__onClamp) f.__onClamp(dims);
 
     const payload = {
@@ -375,6 +392,43 @@ function videoDraftModel(project) {
     } catch (_) {
         return undefined;
     }
+}
+
+/**
+ * The reference contract of the adapter that will actually run.
+ *
+ * `videoRef.contractFor()` is keyed by RUNWAY's model catalogue — `hailuo3`,
+ * `seedance2_5` — and MuAPI names the same model `seedance-2.5-image-to-video-480p`,
+ * with the resolution in the id. The lookup is exact, so it missed, fell to
+ * KEYFRAME_ONLY, and every character, location, prop and in-between reference
+ * was dropped with "this model takes no X reference" — on the one provider that
+ * documents room for thirty of them.
+ *
+ * The adapter already declares its own `referenceContract` for exactly this
+ * reason, and routes/sequences.js already prefers it. This is that same rule,
+ * applied on the shared payload path, so the board and the sequence agree about
+ * what a model will be shown.
+ *
+ * Resolved from the ADAPTER rather than mapped provider-to-model here, and
+ * guarded: an unresolvable contract falls through to the catalogue exactly as
+ * before, because a reference package that cannot be worked out must never take
+ * down a generation.
+ */
+/** The video adapter this project actually resolves to, or null. */
+function videoAdapter(project) {
+    try {
+        const { resolveGenerator } = require('./providers');
+        let config = {};
+        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+        return resolveGenerator('video', config) || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function videoReferenceContract(project) {
+    const adapter = videoAdapter(project);
+    return (adapter && adapter.referenceContract) || undefined;
 }
 
 function imagePromptLimit(project) {
@@ -560,7 +614,12 @@ const CAPABILITY_BUILDERS = {
          * existing shot builds byte-identically.
          */
         const videoRef = require('./video-reference');
-        const contract = videoRef.contractFor(overrides.model);
+        // The ADAPTER's own contract first, then Runway's catalogue — the two
+        // name the same models differently and only the adapter knows which one
+        // it is about to call.
+        const adapter = videoAdapter(ctx.project);
+        const contract = (adapter && adapter.referenceContract)
+            || videoRef.contractFor(overrides.model);
         const offered = referencesToRoles(ctx);
         const picked = videoRef.selectReferences(offered, contract);
 
@@ -601,6 +660,26 @@ const CAPABILITY_BUILDERS = {
             // The delivery frame rate and size, so generation targets what the
             // film is actually delivered at rather than a constant.
             project: ctx.project,
+            /*
+             * WHOSE CEILING, AND WHOSE SHAPE.
+             *
+             * The motion compiler takes a `limit` and a provider SHAPE, and
+             * this passed neither. `opts.promptLimit` arrived undefined, so
+             * `buildMotionPrompt` fell to its conservative 1000-character
+             * default and the shape fell to `default` -- on a project running
+             * Seedance, which declares 16,000 characters and has a
+             * subject-first shape of its own.
+             *
+             * Measured on Northline 1A: 1000 produced 589 characters with the
+             * spatial locks cut off the end, 16,000 produced 1035 with them
+             * intact. The guards were written, reported as sent, and dropped
+             * between the two -- silently, because dropping the tail is what
+             * the compiler is SUPPOSED to do when it runs out of room. Nothing
+             * was broken; it was simply told the wrong room.
+             */
+            promptLimit: adapter && Number(adapter.promptLimit) > 0
+                ? Number(adapter.promptLimit) : undefined,
+            provider: (adapter && adapter.id) || undefined,
         });
 
         /*
@@ -612,7 +691,22 @@ const CAPABILITY_BUILDERS = {
          * Only when the model takes more than its keyframe, so a Gen-4.5
          * payload gains no new field at all and stays byte-identical.
          */
-        if (picked.selected.length > 1) built.video_references = picked.selected;
+        if (picked.selected.length > 1) {
+            built.video_references = picked.selected;
+            /*
+             * AND under the name an adapter actually reads.
+             *
+             * `video_references` is this engine's word for the package;
+             * lib/providers/* collect `reference_images`. Nothing translated
+             * between the two, so a package that video_preview reported as
+             * "sending 3" reached the provider as nothing at all — the clip was
+             * conditioned on its keyframe alone while the report said otherwise.
+             */
+            built.reference_images = picked.selected
+                .filter(r => r && r.role !== 'keyframe')
+                .map(r => r.uri || r.url || r.file_path)
+                .filter(Boolean);
+        }
         if (picked.dropped.length) built.references_dropped = picked.dropped;
 
         /*
@@ -851,6 +945,19 @@ function buildImagePayloadForAdapter(ctx, adapter) {
  */
 function withTierModel(payload, ctx, adapter) {
     if (!payload || typeof payload !== 'object') return payload;
+    /*
+     * THE HOUSE STANDARD OUTRANKS EVERYTHING BELOW IT — a stated model, a pin,
+     * a tier. Every image is Nano Banana Pro; on a vendor that sells it the
+     * model is named here, over whatever the caller or the tier wanted.
+     */
+    const house = require('./image-standard').standardModelFor(adapter && adapter.id);
+    if (house) {
+        payload.model = house;
+        Object.defineProperty(payload, '__model_for', {
+            value: adapter.id, enumerable: false, configurable: true, writable: true,
+        });
+        return payload;
+    }
     if (payload.model) return payload;                       // already stated
     const base = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
     // A per-generation choice outranks the project's standing tier: the

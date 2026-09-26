@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sound inspector</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#15151a}
+a{color:#c9c9d3;text-decoration:none}
+a:hover{color:#ffffff}
+</style>
+</helmet>
+<div style="width: 560px; height: 1240px; box-sizing: border-box; background: #15151a; color: #ededf2; font-family: 'Geist', system-ui, sans-serif; border-left: 1px solid #2a2a32; display: flex; flex-direction: column;">
+
+  <div style="height: 64px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #25252c; flex-shrink: 0;">
+    <span style="width: 10px; height: 10px; border-radius: 2px; background: #52d489;"></span>
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><h2 style="margin: 0; font-size: 18px; font-weight: 600;">Pitch cue</h2><span style="font-size: 12px; color: #9b9ba8;">Music · wired to The pitch</span></div>
+      <div style="font-size: 11px; color: #9b9ba8; margin-top: 2px;">Wire it to a shot instead and it scores just that shot</div>
+    </div>
+    <a href="Main.dc.html" aria-label="Close inspector" style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid #2f2f38; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2 L10 10 M10 2 L2 10" stroke="#c9c9d3" stroke-width="1.6"></path></svg></a>
+  </div>
+
+  <div style="padding: 20px 24px 0; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Kind</h3>
+      <div style="display: flex; border: 1px solid #2f2f38; border-radius: 8px; overflow: hidden;">
+        <button style="flex: 1; height: 36px; border: none; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Sound effect</button>
+        <button style="flex: 1; height: 36px; border: none; border-left: 1px solid #2f2f38; background: transparent; color: #c9c9d3; font: 500 12px 'Geist', sans-serif;">Room tone / ambient</button>
+        <button style="flex: 1; height: 36px; border: none; border-left: 1px solid #2f2f38; background: #1f3a2a; color: #bff0d2; font: 600 12px 'Geist', sans-serif;">Music</button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">What it's written from</h3>
+      <label style="display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2f2f38; font-size: 12px; color: #c9c9d3;"><input type="checkbox" checked="checked"><span style="flex-grow: 1;"><b style="font-weight: 600; color: #ededf2;">Scene details</b> from the wired sequence<br><span style="color: #a0a0ad;">location, hour, action and cut points of EX-1 → EX-3</span></span></label>
+      <div style="padding: 10px 12px; border-radius: 6px; background: #1a1a22; border: 1px solid #2b2840; font-size: 12px; line-height: 1.5; color: #c4bcff;">THE OFFICE, DAY. A large creature in an ill-fitting suit pitches straight to lens; slow push in, hard cut at 9.0s to his head as an 80s monitor. 12.0s.</div>
+      <label for="mdir" style="font-size: 11px; color: #a0a0ad; margin-top: 4px;">Your direction — added on top</label>
+      <textarea id="mdir" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #34343d; border-radius: 6px; background: #121216; color: #ededf2; font: 400 13px/1.45 'Geist', sans-serif; padding: 8px; resize: vertical;">Deadpan lounge — upright bass and brushes, unhurried. Drops out completely on the cut to the monitor, then one synth stab.</textarea>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Mood
+          <input type="text" value="deadpan" style="height: 36px; box-sizing: border-box; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Genre
+          <input type="text" value="lounge jazz" style="height: 36px; box-sizing: border-box; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Length
+          <select style="height: 36px; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"><option>Match · 12.0s</option><option>Custom</option></select></label>
+      </div>
+      <label style="display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: #a0a0ad;">Avoid
+        <input type="text" value="vocals, big drums" style="height: 36px; box-sizing: border-box; border-radius: 6px; border: 1px solid #34343d; background: #121216; color: #ededf2; font: 400 13px 'Geist', sans-serif; padding: 0 8px;"></label>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">What will be sent</h3>
+      <pre style="margin: 0; padding: 12px; border-radius: 6px; background: #101014; border: 1px solid #25252c; font: 400 11px/1.55 'Geist Mono', monospace; color: #c9c9d3; white-space: pre-wrap;">Deadpan lounge jazz, upright bass and brushes, unhurried.
+Scene: a dim office, daytime; a large creature in an
+ill-fitting suit makes a sales pitch straight to camera.
+Music drops out completely at 9.0s, then one synth stab.
+12 seconds. No vocals, no big drums.</pre>
+      <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #a0a0ad;"><span>ElevenLabs · music</span><span>project default</span></div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a0a0ad;">Versions</h3>
+      <div style="padding: 14px; border-radius: 8px; border: 1px dashed #3a3a44; font-size: 12px; color: #a0a0ad;">None yet. Each generation adds an audio version node wired to this one; the selected one plays.</div>
+      <a href="Main.dc.html" style="font-size: 12px;">Open in Score workspace →</a>
+    </section>
+  </div>
+
+  <div style="height: 76px; box-sizing: border-box; padding: 0 24px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #25252c; background: #131317; flex-shrink: 0;">
+    <button style="height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: transparent; color: #ededf2; font: 500 13px 'Geist', sans-serif;">Preview · free</button>
+    <button style="height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #3a3a44; background: transparent; color: #ededf2; font: 500 13px 'Geist', sans-serif;">Upload audio</button>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 40px; padding: 0 18px; border-radius: 6px; border: none; background: #ededf2; color: #111114; font: 600 13px 'Geist', sans-serif;">Generate · est. $[x.xx]</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

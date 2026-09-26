@@ -383,14 +383,15 @@ test('WE-2.10d a boolean setting round-trips its own type', () => {
         'a boolean is still stringified on write — false becomes "false", which is truthy');
 });
 
-test('WE-2.10b the classic previs controls are untouched', () => {
-    // Every toolbar control the registry declares still resolves in the page,
-    // so turning the flag on has not quietly replaced the working screen.
-    const { PREVIS_CONTROLS } = require('../lib/previs-toolbar');
-    const missing = Object.keys(PREVIS_CONTROLS).filter(id => {
-        const c = PREVIS_CONTROLS[id];
-        const call = (c && c.onclick) || '';
-        return call && !UI.includes(call);
-    });
-    assert.deepStrictEqual(missing, [], `classic previs controls lost: ${missing.join(', ')}`);
+test('WE-2.10b the classic previs stage is removed, and the console loads its own shots', () => {
+    // The old stage was removed (it was the second section under the console).
+    // With it gone the console must stand alone: its shot rail loads itself,
+    // and picking a shot loads that shot's world.
+    const page = UI.slice(UI.indexOf('<div class="page" id="page-previs">'), UI.indexOf('<div class="page" id="page-pipeline">'));
+    assert.ok(!/previs-workspace|previsShotSelect/.test(page), 'the classic stage is still on the page');
+    const loader = UI.slice(UI.indexOf('async function loadPrevisPage()'), UI.indexOf('async function loadPrevisPage()') + 2000);
+    assert.match(loader, /worldLoadShots\(/, 'the console never loads its own shots, so its rail is empty');
+    assert.match(loader, /worldRailSelect\(/, 'no shot is opened');
+    const select = UI.slice(UI.indexOf('async function worldRailSelect('), UI.indexOf('async function worldRailSelect(') + 1200);
+    assert.match(select, /worldLoadForShot\(/, 'picking a shot does not load its world');
 });

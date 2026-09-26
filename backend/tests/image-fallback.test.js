@@ -49,12 +49,15 @@ test('the registry really does have more than one image provider', () => {
         `only ${IMAGE_PROVIDERS.length} image provider(s); a chain cannot help`);
 });
 
-test('the chain contains every credentialed image provider, and nothing else', () => {
+test('the chain contains every credentialed vendor of the house model, and nothing else', () => {
     const chain = imageProviderChain({});
     const ids = chain.map(a => a.id);
 
+    // The house standard (lib/image-standard.js): a refusal may only be walked
+    // to another vendor of Nano Banana Pro, never onto a different model.
+    const { isStandardProvider } = require('../lib/image-standard');
     const expected = IMAGE_PROVIDERS
-        .filter(a => providers.isProviderConfigured(a.id))
+        .filter(a => providers.isProviderConfigured(a.id) && isStandardProvider(a.id))
         .map(a => a.id);
 
     assert.deepStrictEqual([...ids].sort(), [...expected].sort(),
@@ -65,12 +68,14 @@ test('the chain contains every credentialed image provider, and nothing else', (
     }
 });
 
-test('the project’s explicit choice leads the chain', () => {
+test('the project’s explicit choice of a house-model vendor leads the chain', () => {
     // A fallback that ignores the configured provider would silently override a
     // deliberate decision — the whole point is to survive refusal, not to
-    // re-decide which provider the production uses.
+    // re-decide which provider the production uses. A pin to a vendor that does
+    // not sell Nano Banana Pro is overruled by the house standard instead.
+    const { isStandardProvider } = require('../lib/image-standard');
     for (const a of IMAGE_PROVIDERS) {
-        if (!providers.isProviderConfigured(a.id)) continue;
+        if (!providers.isProviderConfigured(a.id) || !isStandardProvider(a.id)) continue;
         const chain = imageProviderChain({ image: a.id });
         assert.strictEqual(chain[0].id, a.id, `configuring '${a.id}' did not put it first`);
     }

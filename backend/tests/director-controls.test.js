@@ -28,7 +28,6 @@ process.env.FILM_DATA_DIR = path.join(os.tmpdir(), 'film-engine-controls-' + cry
 
 const delivery = require('../lib/dialogue-delivery');
 const { buildVoicePayload } = require('../lib/dialogue-builder');
-const previsUi = require('../lib/previs-toolbar');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
 const route = f => fs.readFileSync(path.join(__dirname, '..', 'routes', f), 'utf8');
@@ -147,81 +146,16 @@ test('B3 · it edits the scene\'s existing cue rather than making a second one',
         'nothing classifies a scene\'s existing score cue, so the lookup is always empty');
 });
 
-/* ── C. The previs toolbar ──────────────────────────────────────────────── */
+/* ── C. The previs toolbar — removed ──────────────────────────────────────
+ *
+ * The toolbar these tests explained (twelve buttons, "which one keeps a move")
+ * went with the old previs stage; the Previs page is the World Engine console.
+ * What is held now is that it is really gone, rather than half-removed.
+ */
 
-test('C1 · every control in the toolbar is accounted for', () => {
-    /*
-     * Twelve buttons on one row, three of them saying "save" about three
-     * different things — the blocking, the card, and a PNG. The registry is
-     * the answer to "what are all these buttons", and it is derived from the
-     * page rather than typed beside it.
-     */
-    const bar = SRC.slice(SRC.indexOf('<h2>Previs</h2>'), SRC.indexOf('<div class="previs-workspace">'));
-    // onchange as well as onclick: Import GLB is a file input, and a collector
-    // that only reads clicks reports a real control as absent.
-    const onPage = [...new Set([...bar.matchAll(
-        /on(?:click|change)="(previs[A-Za-z]+|importThreeDModel)\(/g)].map(m => m[1]))];
-    /*
-     * The shot picker is not a control on the shot — it is what chooses which
-     * shot the controls act on. Exempt by name with the reason, on the rule
-     * manual-edit.test.js already follows: an exemption matching on shape would
-     * quietly excuse the next button that has no explanation.
-     */
-    const CHROME = ['previsOpenShot'];
-    const declared = [...previsUi.PREVIS_CONTROLS.map(c => c.fn), ...CHROME];
-    const missing = onPage.filter(f => !declared.includes(f));
-    const stale = declared.filter(f => !onPage.includes(f));
-    for (const c of CHROME) {
-        assert.ok(onPage.includes(c), `${c} is exempted as chrome and is no longer on the toolbar`);
-    }
-    assert.deepEqual(missing, [], `the toolbar has controls the registry does not explain: ${missing}`);
-    assert.deepEqual(stale, [], `the registry names controls the toolbar does not have: ${stale}`);
-});
-
-test('C2 · every control says which job it belongs to, and why', () => {
-    const groups = new Set(previsUi.PREVIS_GROUPS.map(g => g.id));
-    for (const c of previsUi.PREVIS_CONTROLS) {
-        assert.ok(groups.has(c.group), `${c.fn} is in no group`);
-        assert.ok(c.what && c.what.length > 12, `${c.fn} does not say what it does`);
-    }
-    // Every group is used — a group with nothing in it is a heading that lies.
-    for (const g of previsUi.PREVIS_GROUPS) {
-        assert.ok(previsUi.PREVIS_CONTROLS.some(c => c.group === g.id),
-            `the group '${g.id}' holds nothing`);
-    }
-});
-
-test('C3 · the answer to "how is a move saved" is on the page', () => {
-    /*
-     * Three verbs on one row meant the same word covered a blocking, a scene
-     * card and a PNG. The page has to say which one keeps the camera move.
-     */
-    const saving = previsUi.PREVIS_CONTROLS.filter(c => c.saves);
-    assert.ok(saving.length >= 1, 'no control claims to save the move');
-
-    // Specifically THIS one. Four other controls saying they save something is
-    // not an answer to "where is my camera move kept" — it is the confusion.
-    const blocking = previsUi.PREVIS_CONTROLS.find(c => c.fn === 'previsSave');
-    assert.ok(blocking && blocking.saves, 'Save blocking does not say what it saves');
-    assert.ok(/camera|move|blocking/i.test(blocking.saves),
-        `Save blocking does not claim the camera move: ${blocking.saves}`);
-    assert.ok(/Save blocking/.test(previsUi.SAVE_HELP),
-        'the help sentence does not name the control that keeps a move');
-    for (const c of saving) {
-        assert.ok(c.saves.length > 20, `${c.fn} does not say WHAT it saves`);
-    }
-    assert.ok(/id="previsSaveHelp"/.test(SRC),
-        'the page never explains where a camera move is kept');
-});
-
-test('C4 · nothing that was reachable stopped being reachable', () => {
-    // Regrouping a toolbar is exactly how a control quietly disappears.
-    const ui = fs.readFileSync(path.join(__dirname, 'previs-explore-ui.test.js'), 'utf8');
-    const ops = [...ui.matchAll(/control: (\/[^/]+\/)/g)].map(m => m[1]);
-    assert.ok(ops.length >= 8, 'the explore registry shrank — this test no longer covers what it was written for');
-    for (const src of ops) {
-        // eslint-disable-next-line no-eval
-        const re = eval(src);
-        assert.ok(re.test(SRC), `a previs operation lost its control: ${src}`);
-    }
+test('C · the old previs toolbar is gone from the page, and its registry with it', () => {
+    const page = SRC.slice(SRC.indexOf('<div class="page" id="page-previs">'), SRC.indexOf('<div class="page" id="page-pipeline">'));
+    assert.ok(page.length > 0, 'the previs page is missing');
+    assert.ok(!/class="previs-bar"|id="previsShotSelect"|previs-workspace/.test(page), 'the old stage is still in the page');
+    assert.ok(!fs.existsSync(path.join(__dirname, '..', 'lib', 'previs-toolbar.js')), 'the toolbar registry outlived its toolbar');
 });

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production header</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1176px; height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 22px; background: #151517; border-bottom: 1px solid rgba(255,255,255,0.07); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em;">Production</h2>
+  <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; color: #8e8e97;">15 shots · 12 framed · 1 video · 3 need a frame</span>
+  <div style="display: flex; gap: 4px; margin-left: 8px;">
+    <button style="height: 28px; padding: 0 11px; border-radius: 20px; border: none; background: #2b2b30; color: #f4f4f5; font: 500 11.5px -apple-system, sans-serif;">All scenes</button>
+    <button style="height: 28px; padding: 0 11px; border-radius: 20px; border: none; background: transparent; color: #8e8e97; font: 500 11.5px -apple-system, sans-serif;">Sc 1 · The office</button>
+  </div>
+  <div style="flex-grow: 1;"></div>
+  <button title="Re-place the nodes you haven't moved" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 12px -apple-system, sans-serif;">Tidy layout</button>
+  <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 12px -apple-system, sans-serif;">Lock board</button>
+  <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 12px -apple-system, sans-serif;">Run pending (4) · est. $[x.xx]</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1176,"height":56}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

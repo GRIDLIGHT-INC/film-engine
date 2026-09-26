@@ -114,6 +114,9 @@ test('ON: every capability it declares is reachable again', () => {
     setEnabled(true);
     const unreachable = [];
     for (const cap of CAPS) {
+        // Images follow the house standard (lib/image-standard.js): Nano Banana
+        // Pro, which the gateway does not sell, so a pin to it is overruled.
+        if (cap === 'image') continue;
         const id = providers.resolveId(cap, { [cap]: 'gridlight' });
         if (id !== 'gridlight') unreachable.push(`${cap} -> ${id}`);
     }

@@ -102,7 +102,8 @@ function filenameForResult(baseFilename, result) {
  * and the scene routes use, so a cue previewed for free and a cue generated
  * cannot describe different music.
  */
-async function generateFromCue(req, res, cueId) {
+async function generateFromCue(req, res, cueId, opts) {
+    const preview = !!(opts && opts.preview);
     const cue = db.prepare('SELECT * FROM film_music_cues WHERE id = ?').get(cueId);
     if (!cue) return json(res, 404, { error: `No music cue ${cueId}` });
     if (!cue.scene_id) {
@@ -148,7 +149,7 @@ async function generateFromCue(req, res, cueId) {
         }
         const provider = resolveGenerator('sfx',
             spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'sfx')));
-        return runCueGeneration(res, {
+        return runCueGeneration(res, { preview,
             cue, scene, provider, payload: payloads[0], genType: 'sfx',
             assetType: 'audio_sfx', suffix: 'sfx',
             durationMs: (payloads[0].duration_s || 0) * 1000,
@@ -171,7 +172,7 @@ async function generateFromCue(req, res, cueId) {
             spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'ambient')));
         // Through ambientOptions like every other bed, with the cue named.
         const payload = buildAmbientPrompt(scene, location, ambientOptions(scene, req.body, cue));
-        return runCueGeneration(res, {
+        return runCueGeneration(res, { preview,
             cue, scene, provider, payload, genType: 'ambient',
             assetType: 'audio_ambient', suffix: 'ambient',
             durationMs: (payload.duration_s || 0) * 1000,
@@ -190,7 +191,7 @@ async function generateFromCue(req, res, cueId) {
 
     const provider = resolveGenerator('music',
         spendContext({ id: scene.project_id }, null, scene, cueOverride(req, 'music')));
-    return runCueGeneration(res, {
+    return runCueGeneration(res, { preview,
         cue, scene, provider, payload: built.payload, genType: 'score',
         assetType: 'audio_music', suffix: 'score',
         durationMs: (length.seconds || 0) * 1000,
@@ -205,7 +206,33 @@ async function generateFromCue(req, res, cueId) {
  * could hold a cue and an audio file with no connection between them and "has
  * this cue been generated" had no answer.
  */
+/**
+ * What a cue WOULD send, for nothing.
+ *
+ * Built by the same branch the generation takes, down to the payload — so the
+ * text shown in the confirmation is the text that is sent, not a description
+ * of it. "SFX/Music preview is free and shows the exact text sent."
+ */
+function previewCue(res, o) {
+    const { cue, scene, provider, payload, genType, durationMs } = o;
+    const heading = [scene.int_ext, scene.location, scene.time_of_day].filter(Boolean).join(' ').trim();
+    const { prompt, negative_prompt, composition_plan } = payload || {};
+    return json(res, 200, {
+        cue_id: cue.id, cue_type: cue.cue_type, gen_type: genType,
+        provider: provider && provider.id, model: (payload && payload.model) || null,
+        prompt: prompt || '', negative_prompt: negative_prompt || '',
+        ...(composition_plan ? { composition_plan } : {}),
+        duration_s: durationMs ? Math.round(durationMs / 100) / 10 : null,
+        scene_details: [heading, scene.description].filter(Boolean).join('. '),
+        direction: cue.description || '',
+        spends: false,
+    });
+}
+
 async function runCueGeneration(res, o) {
+    // The free preview takes the same branch to here, so it cannot describe a
+    // different request from the one this sends.
+    if (o.preview) return previewCue(res, o);
     const { cue, scene, provider, payload, genType, assetType, suffix, durationMs } = o;
 
     const jobId = generateId();
@@ -222,7 +249,16 @@ async function runCueGeneration(res, o) {
             return json(res, result.status || 500, { error: result.error, cue_id: cue.id });
         }
 
-        const filename = filenameForResult(`${scene.scene_number || scene.id}_${suffix}_${cue.id.slice(0, 8)}.wav`, result);
+        /*
+         * A NEW FILE PER GENERATION. The name was the cue's alone, so every
+         * regeneration wrote over the last: the asset rows said "three
+         * versions" and the disk held one. The version number is the count of
+         * what this cue has already made, which is what a person calls it.
+         */
+        const made = db.prepare(`SELECT COUNT(*) AS n FROM film_assets WHERE project_id = ?
+            AND (json_extract(metadata, '$.cue_id') = ? OR id = ?)`).get(scene.project_id, cue.id, cue.generated_asset_id || '').n;
+        const version = made + 1;
+        const filename = filenameForResult(`${scene.scene_number || scene.id}_${suffix}_${cue.id.slice(0, 8)}_v${version}.wav`, result);
         ensureDir(scene.project_id, 'music');
 
         let filePath;
@@ -239,12 +275,15 @@ async function runCueGeneration(res, o) {
             `INSERT INTO film_assets (
                 id, project_id, scene_id, asset_type, file_path, file_name,
                 format, mime_type, duration_ms, version,
-                provider, provider_model, provider_job_id, license_source, license_status
+                provider, provider_model, provider_job_id, license_source, license_status, metadata
              )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'generated', 'generated', ?)`
         ).run(assetId, scene.project_id, scene.id, assetType, filePath, filename,
-              formatForResult(result), mimeForResult(result), durationMs || null,
-              provider.id, resultModel(result, payload), resultJobId(result));
+              formatForResult(result), mimeForResult(result), durationMs || null, version,
+              provider.id, resultModel(result, payload), resultJobId(result),
+              // Which cue made it, so every version of a cue is findable — the
+              // link alone names only the one currently selected.
+              JSON.stringify({ cue_id: cue.id, prompt: payload.prompt || null }));
 
         linkCueAsset(cue.id, assetId);
         db.prepare('UPDATE film_music_jobs SET status = ?, output_path = ? WHERE id = ?')
@@ -275,6 +314,8 @@ function handleMusicGen(req, res, urlParts, query) {
 
     // /film/music-cues/:id/generate — the cue somebody wrote, generated.
     if (urlParts[1] === 'music-cues' && urlParts[2] && urlParts[3] === 'generate') {
+        // GET is the free preview the shared confirmation reads; POST spends.
+        if (req.method === 'GET') return generateFromCue(req, res, urlParts[2], { preview: true });
         if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
         return generateFromCue(req, res, urlParts[2]);
     }

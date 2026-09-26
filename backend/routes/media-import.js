@@ -229,6 +229,14 @@ function handleMediaImport(req, res, urlParts, query) {
             onImported: (imported) => {
                 db.prepare('UPDATE film_music_cues SET generated_asset_id = ? WHERE id = ?')
                     .run(imported.asset_id, cue.id);
+                // Marked as this cue's, so an upload stays one of its versions
+                // after the next generation takes the link.
+                try {
+                    const row = db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(imported.asset_id);
+                    let m = {}; try { m = JSON.parse((row && row.metadata) || '{}') || {}; } catch (_) { m = {}; }
+                    db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+                        .run(JSON.stringify({ ...m, cue_id: cue.id }), imported.asset_id);
+                } catch (_) { /* the upload is linked either way */ }
                 return { cue_id: cue.id, cue_type: cue.cue_type, capability };
             },
         });

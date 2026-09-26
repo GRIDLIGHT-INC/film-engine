@@ -120,6 +120,9 @@ describe('runway adapter registration', () => {
     it('resolves for each declared capability when a project selects it', () => {
         const a = providers.get('runway');
         for (const cap of a.capabilities) {
+            // Runway does not sell Nano Banana Pro, so the house image standard
+            // overrules a pin to it for images (lib/image-standard.js).
+            if (cap === 'image') continue;
             assert.equal(providers.resolve(cap, { [cap]: 'runway' }).id, 'runway', `resolve('${cap}')`);
             assert.equal(providers.resolveGenerator(cap, { [cap]: 'runway' }).id, 'runway', `resolveGenerator('${cap}')`);
         }

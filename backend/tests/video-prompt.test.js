@@ -62,11 +62,26 @@ describe('video-prompt', () => {
         it('returns correct default parameters', () => {
             const params = calculateVideoParams(minCard);
             assert.equal(params.num_frames, DEFAULT_NUM_FRAMES);
-            assert.equal(params.fps, DEFAULT_GEN_FPS);
+            // The FILM's rate, not a dead generator's: no adapter reads
+            // payload.fps, so the number a preview shows a director must be the
+            // one their production actually runs at.
+            assert.equal(params.fps, DEFAULT_FPS);
             assert.equal(params.target_fps, DEFAULT_FPS);
             assert.equal(params.width, DEFAULT_WIDTH);
             assert.equal(params.height, DEFAULT_HEIGHT);
             assert.equal(params.duration_s, 4.0);
+        });
+
+        it('uses duration_seconds from scene card, which is what a card carries', () => {
+            // The schema, the validator and every card written use
+            // `duration_seconds`; this read `duration_ms` only, so the 4s
+            // fallback fired on every clip in every project.
+            assert.equal(calculateVideoParams({ duration_seconds: 5 }).duration_s, 5.0);
+            assert.equal(calculateVideoParams({ duration_seconds: 2.5 }).duration_s, 2.5);
+        });
+
+        it('honours an explicit target_fps over the default', () => {
+            assert.equal(calculateVideoParams({}, { target_fps: 25 }).fps, 25);
         });
 
         it('uses duration_ms from scene card', () => {

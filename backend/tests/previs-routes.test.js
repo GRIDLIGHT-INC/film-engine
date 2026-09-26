@@ -260,31 +260,7 @@ test('index.html is still a single deployable file with no build step', () => {
     assert.ok(!/\bimport\s+.*\bfrom\s+['"]/.test(html), 'ES module imports require a bundler');
 });
 
-test('the previs page and both viewports exist in the SPA', () => {
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    for (const marker of [
-        'id="page-previs"', 'data-page="previs"',
-        'id="previsStage"',      // the 3D stage view
-        'id="previsCamera"',     // what the camera sees
-        'previsSave(', 'previsPlay(', 'previsSolve(',
-    ]) {
-        assert.ok(html.includes(marker), `the viewer is missing ${marker}`);
-    }
-});
 
-test('the viewer reads its vocabulary from the server, not from a copy', () => {
-    // A hardcoded movement list in the SPA is a second registry, and two
-    // registries drift. The flows canvas made the same call for its palette.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    assert.ok(html.includes('/previs/taxonomy'), 'the viewer never fetches the taxonomy');
-
-    // No inline copy of the movement enum: finding many of them in one literal
-    // means somebody pasted the list rather than fetching it.
-    const previsSection = html.slice(html.indexOf('Previs canvas'));
-    const inlineMoves = VALID_CAMERA_MOVES.filter(m => previsSection.includes(`'${m}'`));
-    assert.ok(inlineMoves.length < 5,
-        `the viewer hardcodes ${inlineMoves.length} movement names: ${inlineMoves.join(', ')}`);
-});
 
 test('the plan records phase 2 as built', () => {
     const t = JSON.parse(fs.readFileSync(TAXONOMY, 'utf8'));
@@ -295,35 +271,7 @@ test('the plan records phase 2 as built', () => {
 
 // ── Handlers the markup promises actually exist ─────────────────────────────
 
-test('every previs control calls a function that is declared', () => {
-    // previsRemoveObject was referenced by the delete button on every staged
-    // object and never defined: the button did nothing, and a patch aimed at
-    // the missing function silently matched nothing. Server-side tests cannot
-    // see an inline handler, so the wiring is checked structurally instead.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const declared = new Set([...html.matchAll(/function\s+(previs[A-Za-z0-9_]*)\s*\(/g)].map(m => m[1]));
 
-    const called = new Set([...html.matchAll(/\b(previs[A-Za-z0-9_]*)\s*\(/g)]
-        .map(m => m[1])
-        .filter(name => !declared.has(name)));
-
-    // PREVIS is the state object, not a call.
-    called.delete('PREVIS');
-    assert.deepStrictEqual([...called], [],
-        `previs functions called but never declared: ${[...called].join(', ')}`);
-});
-
-test('every inline on* handler in the previs page resolves to a declaration', () => {
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const page = html.slice(html.indexOf('id="page-previs"'), html.indexOf('id="page-pipeline"'));
-    const declared = new Set([...html.matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g)].map(m => m[1]));
-
-    const handlers = [...page.matchAll(/on[a-z]+="([A-Za-z0-9_]+)\(/g)].map(m => m[1]);
-    assert.ok(handlers.length >= 8, `only found ${handlers.length} handlers — the parse is wrong`);
-
-    const dangling = [...new Set(handlers)].filter(name => !declared.has(name));
-    assert.deepStrictEqual(dangling, [], `dead buttons: ${dangling.join(', ')}`);
-});
 
 test('the framing subject can stand somewhere other than the origin', async () => {
     // The pink box is the subject the camera is solved against, and it was
@@ -358,78 +306,10 @@ test('a move sampled around a relocated subject orbits that subject', async () =
     }
 });
 
-test('no control in the stage list sits under a handler that rebuilds the list', () => {
-    // The bug this pins: every row called previsRenderObjects() on mousedown,
-    // which replaced the markup while the browser was opening the <select>
-    // underneath the cursor. The dropdown died mid-click, so the kind picker
-    // and the image picker were unusable — visible, focusable, and inert.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const list = html.slice(html.indexOf('function previsRenderObjects'), html.indexOf('function previsAddObject'));
 
-    assert.ok(!/onmousedown="[^"]*previsRenderObjects\(\)/.test(list),
-        'a row handler re-renders the list on mousedown, which destroys the control being clicked');
-    assert.ok(/previsSelectRow\(event,/.test(list),
-        'rows do not route selection through the guard that leaves controls alone');
 
-    // And the guard must actually check what was clicked.
-    const guard = html.slice(html.indexOf('function previsSelectRow'), html.indexOf('function previsRenderObjects'));
-    assert.ok(/SELECT|INPUT/.test(guard), 'previsSelectRow does not exempt form controls');
-});
 
-test('every image asset type the picker offers is served from the right directory', () => {
-    // Sending character sheets to /storyboards/ left the card blank with no
-    // clue why: a 404 on an <img> is silent.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const block = html.slice(html.indexOf('const SERVED_FROM'), html.indexOf('PREVIS.images = (data.assets'));
-    const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-    const dirs = [...new Set([...block.matchAll(/:\s*'([a-z]+)'/g)].map(m => m[1]))];
-    assert.ok(dirs.length >= 2, `only found ${dirs.length} serving directories`);
-    for (const dir of dirs) {
-        assert.ok(server.includes(`parts[1] === '${dir}'`), `nothing serves /film/${dir}/`);
-    }
-});
-
-test('the stage renderer, picker and unprojector all aim at the same point', () => {
-    // Reframe moves what the orbit looks at. When each of the three decided
-    // that for itself, pressing it left the picker aiming at the subject and
-    // the renderer at the scene centre, so every click landed off-target.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const block = html.slice(html.indexOf('function previsStageFocus'), html.indexOf('function previsRefresh'));
-
-    const rogue = [...block.matchAll(/const focus = (?!previsStageFocus)([^;]+);/g)].map(m => m[1].trim());
-    assert.deepStrictEqual(rogue, [],
-        `something decides the stage focus for itself instead of asking: ${rogue.join(', ')}`);
-    assert.ok(/function previsStageFocus/.test(html), 'no single definition of what the stage looks at');
-});
-
-test('the viewer interpolates playback rather than snapping to a keyframe', () => {
-    // The reported jank. Math.round() picked the NEAREST key, so a 24-key path
-    // repainted at 60fps moved 24 times and held still in between — every
-    // movement stepped, not just the short ones.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const pose = html.slice(html.indexOf('function previsPose'), html.indexOf('function previsAim'));
-
-    assert.ok(!/Math\.round\(PREVIS\.playhead/.test(pose),
-        'playback still snaps to the nearest keyframe');
-    assert.ok(/Math\.floor\(span\)/.test(pose) && /mix\(/.test(pose),
-        'playback does not interpolate between bracketing keys');
-});
-
-test('the viewer and the library agree on the easing curves', () => {
-    // Two definitions of ease-in-out would make the preview and the stored path
-    // describe different moves.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const { EASINGS } = require('../lib/previs-blocking');
-    const block = html.slice(html.indexOf('const PREVIS_EASINGS'), html.indexOf('function previsSampleLeg'));
-
-    for (const name of Object.keys(EASINGS)) {
-        assert.ok(block.includes(`'${name}'`), `the viewer has no '${name}' curve`);
-    }
-    const inViewer = [...block.matchAll(/'([a-z-]+)':\s*t\s*=>/g)].map(m => m[1]).sort();
-    assert.deepStrictEqual(inViewer, Object.keys(EASINGS).sort(),
-        'the viewer offers a different set of curves from the library');
-});
 
 test('the SPA script parses', () => {
     // A `const curve` defined in one sampler and used in another shipped a
@@ -451,23 +331,6 @@ test('the SPA script parses', () => {
     assert.deepStrictEqual(broken, [], broken.join('; '));
 });
 
-test('a drag is interpreted through the view it started in', () => {
-    // The orbit focuses on the framing subject, and the subject is one of the
-    // staged objects — so dragging the target moved the camera, which changed
-    // the unprojection, which moved the object further. Equal mouse steps gave
-    // 0.45m, 0.88m, 1.30m, 1.70m, 2.08m. A gesture must be read through a
-    // frozen projection or it feeds back on itself.
-    const html = fs.readFileSync(INDEX_HTML, 'utf8');
-    const bind = html.slice(html.indexOf('function previsBindStage'), html.length);
-    const handler = bind.slice(0, bind.indexOf('\n    }\n'));
-
-    assert.ok(/PREVIS\.dragView = stageProjector\(\)/.test(handler),
-        'mousedown does not freeze the projection');
-    assert.ok(/PREVIS\.dragView \|\| stageProjector\(\)/.test(handler),
-        'mousemove recomputes the projection instead of reusing the frozen one');
-    assert.ok(/PREVIS\.dragView = null/.test(handler),
-        'the frozen projection is never released');
-});
 
 // ── Exporting the previs ────────────────────────────────────────────────────
 
@@ -567,3 +430,9 @@ test('previs media is served, and cannot escape its project directory', async ()
     assert.ok(escape.status === 400 || escape.status === 404,
         `path traversal returned ${escape.status}`);
 });
+
+/*
+ * The old previs stage (inspector, grey-box canvas, toolbar) was removed from the
+ * page; the Previs page is the World Engine console. Its UI tests went with it —
+ * what remains here is the server half, which generation and the console use.
+ */
