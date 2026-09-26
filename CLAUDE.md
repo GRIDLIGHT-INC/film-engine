@@ -30,7 +30,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (112 migrations)
+│   │   └── migrations/     # SQL migration files (113 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -310,6 +310,8 @@ film-engine/
 │       ├── previs-storyboard.test.js   # Blocking shapes the keyframe, and round-trips
 │       ├── previs-loop.test.js         # Every edge of the storyboard↔previs iteration loop
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
+│       ├── previs-decisions.test.js    # Each decision tried, applied, locked or stale — and the one-screen console
+│       ├── previs-views.test.js        # Look / 360° / Depth / Plan, the splats endpoint, and From Previs in Production
 │       ├── previs-boundary.test.js     # Paid routes share one payload path and honor the Apply boundary
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
@@ -675,7 +677,7 @@ film-engine/
 │   ├── music-workstation.md # The score workflow, configuration, provider capabilities, rights, health, backup/restore, migrations
 │   ├── api-film.md         # Full API reference
 │   ├── plans/              # Design research (previs camera, style book)
-│   └── adr/                # Architecture decision records (7 ADRs)
+│   └── adr/                # Architecture decision records (8 ADRs)
 ├── src/
 │   ├── index.html          # Frontend SPA
 │   └── app.json            # App config
@@ -3741,6 +3743,10 @@ Each decision is held to five links — operable on both surfaces, persists to i
 
 Migration 081 fingerprints the applied stage and applied card separately. A mismatch can therefore say which side moved: stage-ahead invites Apply, while board-ahead disables Apply and asks the director to re-seed Previs. Treating both as merely “staged” invited the exact destructive action when the board contained the newer rewrite.
 
+**Decisions you can lock, and the console as one screen.** Apply and approve were whole-shot fingerprints; `decisionParts` in `lib/decision-contract.js` cuts the same material along seven chips (camera, direction, lighting, location_view, characters, props, movement), `markApplied` stores them in `applied_parts_json` (migration 116), and `GET /film/shots/:id/previs` now reports each as none / trying / applied / card_ahead / conflict / locked / stale. `POST …/previs/lock` and `…/unlock` (MCP `previs_lock` / `previs_unlock`) take `decisions: [...]` or `all: true`; only an applied decision can be locked, and `all` also approves, so every guard downstream of approval is unchanged. The `previs_console` setting lays the SAME console regions out as one screen — the frame fitted to the view in script, the move under it, four tabs, and a Decisions strip — and is off by default; `tests/previs-decisions.test.js` holds both.
+
+**The world itself in Previs ([ADR-008](docs/adr/008-spark-lazy-splat-viewer.md), superseding ADR-006).** With `previs_console` on, the frame has five views: **Look** (the world's Gaussian splats, from exactly the painter's pose), **360°** (look around from the camera — inside the splat, or on the panorama when a version has no splat), **Geometry** (the plate generation receives), **Depth**, and **Plan** (the collider from above with every camera's cone). Splats come from `src/vendor/splat-viewer.js` — three 0.180.0 + Spark 2.2.0 bundled by `scripts/build-splat-viewer.sh`, imported only when a splat view opens, served by `GET /film/vendor/splat-viewer.js` for pages not under `src/`; the page's own three r149 is untouched and no dependency was added. `GET /film/world-versions/:vid/splats` lists the tiers (smallest first, local copy before CDN) and says "off" rather than 404 while `world_splats` is false. Explore tiles render their accepted cameras from the same splat. The shot list moves into the app's side panel. Production's shot drawer gains **From Previs**: each decision's scene-card value and state, read-only, with Open in Previs; graph shot nodes show the lock count. `tests/previs-views.test.js` and `tests/adr-spark.test.js` hold it.
+
 `tests/decision-parity.test.js` derives its denominator from three code sources — `EDITABLE` in `routes/shots.js`, the `film_previs_blocking` columns, and the `film_projects` switches the board actually reads — so a field added later is accounted for or fails. Its probes are behavioural where it matters: the round trip is **run**, and payload reachability is **differential** (change the value, assert what a provider would receive changes), because a stored choice and an applied choice look identical from the outside. Three of its early findings were the fixture's fault rather than the product's — a phantom plate path, byte-identical plate images, and a string accepted as `props` and then iterated character by character — and each was cheap to mistake for a real defect. Where the schema is loose, *what validates* and *what a field means* are different questions, so every sample the probe builds is now derived from something that constrains behaviour rather than from what the validator will tolerate.
 
 
@@ -5887,7 +5893,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (112 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (113 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6083,6 +6089,7 @@ node --test backend/tests/explore-shot-panel.test.js
 node --test backend/tests/console-regions.test.js
 node --test backend/tests/console-layout.test.js
 node --test backend/tests/adr-spark.test.js
+node --test backend/tests/previs-views.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js

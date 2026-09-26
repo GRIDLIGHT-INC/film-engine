@@ -1,7 +1,8 @@
 # ADR-006: Spark and the Splat Viewport (Deferred)
 
 ## Status
-Accepted
+Superseded by ADR-008 — a director reported they cannot judge a camera without the splats,
+which is one of the triggers listed below. Kept as the record of why it waited.
 
 ## Context
 The World Engine previz console has a **Spatial World** panel. The design handoff

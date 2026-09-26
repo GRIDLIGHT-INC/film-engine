@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Previs camera view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 816px; height: 560px; position: relative; overflow: hidden; background: #08080a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+
+  <sc-if value="{{isPlan}}" hint-placeholder-val="{{false}}">
+    <dc-import name="PlanView" sel="{{sel}}" w="816" h="560" hint-size="816px,560px"></dc-import>
+  </sc-if>
+  <sc-if value="{{isCam}}" hint-placeholder-val="{{true}}">
+    <dc-import name="DinerScene" mode="{{sceneMode}}" vb="{{vb}}" w="816" h="560" hint-size="816px,560px"></dc-import>
+    <!-- mattes outside the 16:9 frame -->
+    <div style="position: absolute; left: 0; top: 0; width: 816px; height: 50px; background: rgba(8,8,10,0.62);"></div>
+    <div style="position: absolute; left: 0; bottom: 0; width: 816px; height: 51px; background: rgba(8,8,10,0.62);"></div>
+    <div style="position: absolute; left: 0; top: 50px; width: 814px; height: 457px; border: 1px solid rgba(255,255,255,0.35);"></div>
+    <div style="position: absolute; left: 272px; top: 50px; width: 1px; height: 459px; background: rgba(255,255,255,0.18);"></div>
+    <div style="position: absolute; left: 544px; top: 50px; width: 1px; height: 459px; background: rgba(255,255,255,0.18);"></div>
+    <div style="position: absolute; left: 0; top: 203px; width: 816px; height: 1px; background: rgba(255,255,255,0.18);"></div>
+    <div style="position: absolute; left: 0; top: 356px; width: 816px; height: 1px; background: rgba(255,255,255,0.18);"></div>
+    <sc-if value="{{isGeo}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; right: 12px; bottom: 58px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.1em; color: rgba(20,20,24,0.7);">GEOMETRIC PLATE — WHAT GENERATION RECEIVES</div>
+    </sc-if>
+    <sc-if value="{{isBlend}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; left: 330px; top: 150px; width: 400px; height: 225px; border: 2px dashed #e2c15a; border-radius: 2px; box-shadow: 0 0 0 9999px rgba(8,8,10,0.28);"></div>
+      <div style="position: absolute; left: 330px; top: 126px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; background: #e2c15a; color: #1a1406;">Proposed · 50mm, 0.25 m lower, dolly in 0.6 m</div>
+    </sc-if>
+  </sc-if>
+
+  <!-- toolbar -->
+  <div style="position: absolute; left: 12px; top: 10px; display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: rgba(21,21,23,0.88); border: 1px solid rgba(255,255,255,0.08);">
+    <sc-for list="{{modes}}" as="m" hint-placeholder-count="5">
+      <button style="height: 26px; padding: 0 10px; border-radius: 7px; border: none; background: {{m.bg}}; color: {{m.fg}}; font: {{m.fw}} 11.5px -apple-system, sans-serif;">{{m.name}}</button>
+    </sc-for>
+  </div>
+  <div style="position: absolute; right: 12px; top: 10px; display: flex; gap: 6px;">
+    <button style="height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(21,21,23,0.88); color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Overlays · 2</button>
+    <button style="height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(224,163,62,0.45); background: rgba(21,21,23,0.88); color: #e8b85c; font: 500 11.5px -apple-system, sans-serif;">Match reference</button>
+    <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11.5px -apple-system, sans-serif;">Render plate</button>
+  </div>
+
+  <!-- readout -->
+  <div style="position: absolute; left: 12px; bottom: 14px; display: flex; gap: 6px; align-items: center;">
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11px; padding: 4px 8px; border-radius: 6px; background: rgba(21,21,23,0.88); color: #f4f4f5;">{{readout}}</span>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; padding: 4px 8px; border-radius: 6px; background: rgba(21,21,23,0.88); color: #8e8e97;">{{src}}</span>
+  </div>
+
+  <!-- picture-in-picture -->
+  <div style="position: absolute; right: 12px; bottom: 12px; width: 208px; height: 140px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
+    <sc-if value="{{isCam}}" hint-placeholder-val="{{true}}">
+      <dc-import name="PlanView" sel="{{sel}}" w="208" h="140" hint-size="208px,140px"></dc-import>
+    </sc-if>
+    <sc-if value="{{isPlan}}" hint-placeholder-val="{{false}}">
+      <dc-import name="DinerScene" mode="look" vb="{{vb}}" w="208" h="140" hint-size="208px,140px"></dc-import>
+    </sc-if>
+    <div style="position: absolute; left: 6px; top: 5px; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9px; letter-spacing: 0.08em; padding: 2px 5px; border-radius: 4px; background: rgba(8,8,10,0.75); color: #b7b7be;">{{pipLabel}}</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["look","geo","depth","plan","blend"],"default":"look"},"vb":{"editor":"text","default":"560 250 760 428"},"sel":{"editor":"enum","options":["A","B","C","D","E","F"],"default":"C"},"$preview":{"width":816,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'look';
+    const vb = this.props.vb ?? '560 250 760 428';
+    const sel = this.props.sel ?? 'C';
+    const active = mode === 'blend' ? 'look' : mode;
+    const modes = [['look', 'Look'], ['geo', 'Geometry'], ['depth', 'Depth'], ['plan', 'Plan'], ['pano', '360°']].map(([id, name]) => ({
+      name,
+      bg: id === active ? '#2b2b30' : 'transparent',
+      fg: id === active ? '#f4f4f5' : '#8e8e97',
+      fw: id === active ? '600' : '500'
+    }));
+    const src = { look: 'splat 500k · 100k while moving', blend: 'splat 500k · proposal overlay', geo: 'collider mesh', depth: 'collider depth', plan: 'top-down · collider + blocking' }[mode];
+    return {
+      vb, sel,
+      isPlan: mode === 'plan', isCam: mode !== 'plan', isGeo: mode === 'geo', isBlend: mode === 'blend',
+      sceneMode: mode === 'depth' ? 'depth' : mode === 'geo' ? 'geo' : 'look',
+      modes, src,
+      readout: '35mm · h 1.20 m · tilt −3° · f/2.8 · 16:9',
+      pipLabel: mode === 'plan' ? 'CAMERA ' + sel : 'PLAN'
+    };
+  }
+}
+</script>
+</body>
+</html>

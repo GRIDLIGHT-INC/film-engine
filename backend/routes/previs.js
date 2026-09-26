@@ -25,7 +25,7 @@ const {
 const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
 const crypto = require('crypto');
 const { validateSceneCards } = require('../lib/scene-card-schema');
-const { directorIntentFromCard, applyDirectorIntent, applicationFingerprints } = require('../lib/decision-contract');
+const { directorIntentFromCard, applyDirectorIntent, applicationFingerprints, decisionParts, DECISION_CHIPS } = require('../lib/decision-contract');
 const {
     SENSORS, LENS_KIT, APERTURES,
     sensorFor, fieldOfView, depthOfField, frameCoverage,
@@ -91,7 +91,141 @@ function markApplied(shotId) {
     });
     db.prepare("UPDATE film_previs_blocking SET applied_fingerprint = ?, applied_card_fingerprint = ?, applied_at = datetime('now') WHERE shot_id = ?")
         .run(fingerprints.stage, fingerprints.card, shotId);
+    // The same apply, cut per decision, so each chip can say what it is doing.
+    const parts = decisionParts(row, parse(shot.scene_card_yaml || '{}', {}), subjectNamesByKind(shotId));
+    if (parts) {
+        db.prepare('UPDATE film_previs_blocking SET applied_parts_json = ? WHERE shot_id = ?')
+            .run(JSON.stringify(parts), shotId);
+    }
     return fingerprints;
+}
+
+/** The project's known names, split by what they are — cast or prop. */
+function subjectNamesByKind(shotId) {
+    const owner = db.prepare(`
+        SELECT sc.project_id FROM film_shots sh
+        JOIN film_scenes sc ON sc.id = sh.scene_id WHERE sh.id = ?`).get(shotId);
+    if (!owner) return { characterNames: [], propNames: [] };
+    return {
+        characterNames: db.prepare('SELECT name FROM film_characters WHERE project_id = ?').all(owner.project_id).map(r => r.name),
+        propNames: db.prepare('SELECT name FROM film_props WHERE project_id = ?').all(owner.project_id).map(r => r.name),
+    };
+}
+
+/*
+ * WHAT EACH DECISION IS DOING, ONE CHIP AT A TIME.
+ *
+ *   none        nothing staged for it
+ *   trying      the stage differs from what was applied (or was never applied)
+ *   applied     on the scene card — what generation will send
+ *   card_ahead  the Shot Board changed it after the apply
+ *   conflict    both sides moved
+ *   locked      applied AND locked by the director
+ *   stale       locked, then changed on either side
+ *
+ * A shot applied before per-decision fingerprints existed has only the whole
+ * pair; it reads each decision from the whole-shot state rather than calling
+ * everything "trying", because nothing about it changed.
+ */
+/*
+ * What each decision reads as on the scene card, in words. Production shows
+ * these read-only beside the lock, so it must be the CARD's value — the one
+ * generation sends — never the staging still being tried in Previs.
+ */
+function decisionValues(card) {
+    const c = card || {};
+    const cam = c.camera || {};
+    const words = v => {
+        if (v == null || v === '') return '';
+        if (Array.isArray(v)) return v.map(words).filter(Boolean).join(', ');
+        if (typeof v === 'object') return Object.entries(v).filter(([, x]) => x != null && x !== '' && typeof x !== 'object')
+            .map(([k, x]) => `${k.replace(/_/g, ' ')} ${x}`).join(' · ');
+        return String(v);
+    };
+    const lens = cam.lens != null ? String(cam.lens).replace(/mm$/i, '') + 'mm' : '';
+    const height = cam.height_m != null ? `${Number(cam.height_m).toFixed(2)} m high` : '';
+    const clip = t => (t.length > 140 ? t.slice(0, 137) + '…' : t);
+    return {
+        camera: [lens, height, cam.aperture != null ? `f/${String(cam.aperture).replace(/^f\//i, '')}` : ''].filter(Boolean).join(' · '),
+        direction: clip(words(c.direction)),
+        lighting: clip(words(c.lighting)),
+        location_view: clip(words(c.location_view)),
+        characters: words(c.characters),
+        props: words(c.props),
+        movement: clip(words(cam.movement)),
+    };
+}
+
+function decisionStates(shotId) {
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    const chips = DECISION_CHIPS.map(c => ({ id: c.id, label: c.label }));
+    const shot = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
+    const card = parse((shot && shot.scene_card_yaml) || '{}', {});
+    const values = decisionValues(card);
+    if (!row) return chips.map(c => ({ ...c, state: 'none', value: values[c.id] || '' }));
+    const now = decisionParts(row, card, subjectNamesByKind(shotId));
+    const applied = parse(row.applied_parts_json, null);
+    const locked = new Set(parse(row.locked_parts_json, []) || []);
+    const whole = applied ? null : applicationState(shotId);
+    return chips.map(c => {
+        const part = now[c.id];
+        let state;
+        if (applied && applied[c.id]) {
+            const stageMoved = part.stage !== applied[c.id].stage;
+            const cardMoved = part.card !== applied[c.id].card;
+            state = stageMoved && cardMoved ? 'conflict' : stageMoved ? 'trying' : cardMoved ? 'card_ahead' : 'applied';
+            if (state === 'applied' && !part.has && part.card === part.stage) state = 'none';
+        } else if (whole && whole.applied) {
+            state = part.has ? 'applied' : 'none';
+        } else {
+            state = part.has ? 'trying' : 'none';
+        }
+        if (locked.has(c.id)) state = state === 'applied' ? 'locked' : 'stale';
+        return { ...c, state, value: values[c.id] || '' };
+    });
+}
+
+/*
+ * Lock or unlock decisions. A lock is a promise that what generation sends for
+ * that decision will not change underneath the director, so only an APPLIED
+ * decision can be locked — locking something still being tried would lock a
+ * value the card does not hold. `all` locks every applied decision and signs
+ * the blocking off, which is what "Lock shot" means.
+ */
+function lockDecisions(req, res, shotId, lock) {
+    const row = db.prepare('SELECT * FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
+    if (!row) return json(res, 409, { error: 'Shot has no blocking to lock' });
+    const body = req.body || {};
+    const known = new Set(DECISION_CHIPS.map(c => c.id));
+    const states = decisionStates(shotId);
+    let ids = body.all ? states.filter(d => lock ? d.state === 'applied' : true).map(d => d.id)
+        : (Array.isArray(body.decisions) ? body.decisions : []).map(String);
+    const unknown = ids.filter(id => !known.has(id));
+    if (unknown.length) return json(res, 400, { error: `Unknown decision: ${unknown.join(', ')}`, known: [...known] });
+    if (!ids.length && !body.all) return json(res, 400, { error: 'Name the decisions to change, or pass all: true' });
+    if (lock) {
+        const notApplied = ids.filter(id => { const d = states.find(x => x.id === id); return !d || !['applied', 'locked'].includes(d.state); });
+        if (notApplied.length) {
+            return json(res, 409, { error: 'Apply before locking — only a decision on the scene card can be locked',
+                code: 'NOT_APPLIED', decisions: notApplied });
+        }
+    }
+    const current = new Set(parse(row.locked_parts_json, []) || []);
+    ids.forEach(id => (lock ? current.add(id) : current.delete(id)));
+    db.prepare('UPDATE film_previs_blocking SET locked_parts_json = ? WHERE shot_id = ?')
+        .run(current.size ? JSON.stringify([...current]) : null, shotId);
+    if (body.all) {
+        if (lock) {
+            const fingerprint = blockingFingerprint(shotId);
+            db.prepare("UPDATE film_previs_blocking SET approved_fingerprint = ?, approved_at = datetime('now') WHERE shot_id = ?")
+                .run(fingerprint, shotId);
+            db.prepare("UPDATE film_shots SET status = 'approved' WHERE id = ?").run(shotId);
+        } else {
+            db.prepare('UPDATE film_previs_blocking SET approved_fingerprint = NULL, approved_at = NULL WHERE shot_id = ?').run(shotId);
+            db.prepare("UPDATE film_shots SET status = 'pending' WHERE id = ? AND status = 'approved'").run(shotId);
+        }
+    }
+    return json(res, 200, { shot_id: shotId, locked: [...current], decisions: decisionStates(shotId), approval: approvalState(shotId) });
 }
 
 function recognizedSubjectNames(shotId) {
@@ -262,6 +396,7 @@ function getBlocking(req, res, shotId) {
         keyframe: shotKeyframe(shotId),
         approval: approvalState(shotId),
         application: applicationState(shotId),
+        decisions: decisionStates(shotId),
     });
 }
 
@@ -1219,6 +1354,10 @@ function handlePrevis(req, res, urlParts) {
             if (req.method === 'DELETE') return unapproveBlocking(req, res, shotId);
             return json(res, 405, { error: 'Method not allowed' });
         }
+        if (urlParts[4] === 'lock' || urlParts[4] === 'unlock') {
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            return lockDecisions(req, res, shotId, urlParts[4] === 'lock');
+        }
         if (urlParts[4] === 'apply') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
             return applyBlockingToCard(req, res, shotId);
@@ -1242,4 +1381,4 @@ function handlePrevis(req, res, urlParts) {
     return json(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handlePrevis, loadBlocking, validateBlocking, approvalState };
+module.exports = { handlePrevis, loadBlocking, validateBlocking, approvalState, decisionStates };

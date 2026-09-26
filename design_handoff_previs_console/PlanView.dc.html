@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plan view — the diner from above</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: {{w}}px; height: {{h}}px; overflow: hidden; background: #0f0f12; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;">
+  <svg width="{{w}}" height="{{h}}" viewBox="-80 -90 2020 1410" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style="display: block;">
+    <path d="{{grid}}" stroke="rgba(255,255,255,0.05)" stroke-width="2" fill="none"></path>
+    <rect x="0" y="0" width="1860" height="1230" fill="rgba(255,255,255,0.02)" stroke="#5f5f67" stroke-width="6"></rect>
+    <rect x="1848" y="80" width="24" height="1070" fill="#6690ff" opacity="0.35"></rect>
+    <rect x="-12" y="480" width="24" height="220" fill="#0f0f12"></rect>
+    <rect x="150" y="0" width="1500" height="190" fill="#2a2a30" stroke="#45454d" stroke-width="3"></rect>
+    <path d="{{stools}}" fill="#6a2a2a"></path>
+    <path d="{{booths}}" fill="#4a2426" stroke="#6b3337" stroke-width="3"></path>
+    <path d="{{tables}}" fill="#2e2e34" stroke="#55555d" stroke-width="3"></path>
+
+    <path d="{{cones}}" fill="rgba(255,255,255,0.035)" stroke="rgba(255,255,255,0.22)" stroke-width="3"></path>
+    <path d="{{selCone}}" fill="rgba(102,144,255,0.16)" stroke="#6690ff" stroke-width="4"></path>
+    <path d="{{move}}" stroke="#e2c15a" stroke-width="5" stroke-dasharray="14 10" fill="none"></path>
+    <path d="{{camDots}}" fill="#b7b7be"></path>
+    <circle cx="{{sel.x}}" cy="{{sel.y}}" r="22" fill="#6690ff" stroke="#ffffff" stroke-width="4"></circle>
+
+    <circle cx="690" cy="1090" r="34" fill="#c9a36b" stroke="#0f0f12" stroke-width="5"></circle>
+    <circle cx="905" cy="1090" r="30" fill="#d98a5f" stroke="#0f0f12" stroke-width="5"></circle>
+    <text x="690" y="1010" text-anchor="middle" font-size="40" font-weight="600" fill="#e8d7b8">RAY</text>
+    <text x="905" y="1010" text-anchor="middle" font-size="40" font-weight="600" fill="#f0c3a8">JUNE</text>
+
+    <text x="{{lab.A.x}}" y="{{lab.A.y}}" font-size="46" font-weight="700" fill="{{lab.A.c}}">A</text>
+    <text x="{{lab.B.x}}" y="{{lab.B.y}}" font-size="46" font-weight="700" fill="{{lab.B.c}}">B</text>
+    <text x="{{lab.C.x}}" y="{{lab.C.y}}" font-size="46" font-weight="700" fill="{{lab.C.c}}">C</text>
+    <text x="{{lab.D.x}}" y="{{lab.D.y}}" font-size="46" font-weight="700" fill="{{lab.D.c}}">D</text>
+    <text x="{{lab.E.x}}" y="{{lab.E.y}}" font-size="46" font-weight="700" fill="{{lab.E.c}}">E</text>
+    <text x="{{lab.F.x}}" y="{{lab.F.y}}" font-size="46" font-weight="700" fill="{{lab.F.c}}">F</text>
+
+    <text x="900" y="120" text-anchor="middle" font-size="38" letter-spacing="8" fill="#8e8e97">COUNTER</text>
+    <text x="1300" y="1215" text-anchor="middle" font-size="34" letter-spacing="8" fill="#b88a8c">BOOTHS</text>
+    <text x="1905" y="615" text-anchor="middle" font-size="34" letter-spacing="6" fill="#9fb6ff" transform="rotate(90 1905 615)">WINDOWS · HARBOUR</text>
+    <text x="-40" y="590" text-anchor="middle" font-size="30" letter-spacing="6" fill="#8e8e97" transform="rotate(-90 -40 590)">ENTRANCE</text>
+    <path d="M40 1300 L140 1300" stroke="#b7b7be" stroke-width="5"></path>
+    <text x="160" y="1312" font-size="32" fill="#b7b7be">1 m</text>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"sel":{"editor":"enum","options":["A","B","C","D","E","F"],"default":"C"},"w":{"editor":"int","default":800},"h":{"editor":"int","default":560},"$preview":{"width":800,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sel = this.props.sel ?? 'C';
+    const w = this.props.w ?? 800, h = this.props.h ?? 560;
+    let grid = '';
+    for (let x = 100; x < 1860; x += 100) grid += `M${x} 0 L${x} 1230 `;
+    for (let y = 100; y < 1230; y += 100) grid += `M0 ${y} L1860 ${y} `;
+    let stools = '';
+    for (let x = 220; x <= 1600; x += 130) stools += `M${x - 28} 250 a28 28 0 1 0 56 0 a28 28 0 1 0 -56 0 `;
+    let booths = '', tables = '';
+    [260, 560, 800, 1100, 1340, 1620].forEach(x => { booths += `M${x} 1040 L${x + 50} 1040 L${x + 50} 1230 L${x} 1230 Z `; });
+    [[310, 560], [850, 1100], [1390, 1620]].forEach(([a, b]) => { tables += `M${a + 45} 1100 L${b - 45} 1100 L${b - 45} 1200 L${a + 45} 1200 Z `; });
+    const cams = {
+      A: { x: 170, y: 640, a: 25, f: 38, L: 780 },
+      B: { x: 560, y: 900, a: 20, f: 26, L: 520 },
+      C: { x: 1560, y: 760, a: 150, f: 9, L: 820 },
+      D: { x: 760, y: 970, a: 60, f: 32, L: 300 },
+      E: { x: 600, y: 1150, a: 0, f: 12, L: 520 },
+      F: { x: 1180, y: 760, a: 130, f: 22, L: 420 }
+    };
+    const cone = c => {
+      const r = Math.PI / 180, a1 = (c.a - c.f) * r, a2 = (c.a + c.f) * r;
+      return `M${c.x} ${c.y} L${Math.round(c.x + c.L * Math.cos(a1))} ${Math.round(c.y + c.L * Math.sin(a1))} L${Math.round(c.x + c.L * Math.cos(a2))} ${Math.round(c.y + c.L * Math.sin(a2))} Z `;
+    };
+    let cones = '', camDots = '';
+    const lab = {};
+    Object.keys(cams).forEach(k => {
+      const c = cams[k];
+      if (k !== sel) { cones += cone(c); camDots += `M${c.x - 12} ${c.y} a12 12 0 1 0 24 0 a12 12 0 1 0 -24 0 `; }
+      lab[k] = { x: c.x - 16, y: c.y - 34, c: k === sel ? '#9fb6ff' : '#b7b7be' };
+    });
+    const s = cams[sel];
+    const r = Math.PI / 180;
+    const move = `M${s.x} ${s.y} L${Math.round(s.x + 90 * Math.cos(s.a * r))} ${Math.round(s.y + 90 * Math.sin(s.a * r))}`;
+    return { w, h, grid, stools, booths, tables, cones, camDots, selCone: cone(s), sel: { x: s.x, y: s.y }, lab, move };
+  }
+}
+</script>
+</body>
+</html>

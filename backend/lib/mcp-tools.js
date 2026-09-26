@@ -2429,6 +2429,32 @@ const PRODUCTION_TOOLS = [
         schema: { shot_id: { type: 'string' } }, required: ['shot_id'],
     },
     {
+        name: 'previs_lock',
+        handler: handlePrevis, method: 'POST',
+        description: 'Lock directing decisions on a shot so generation cannot drift from them: camera, direction, lighting, location_view, characters, props, movement. Only an APPLIED decision can be locked (previs_apply first) \u2014 a lock promises the scene card value, not a stage still being tried. `all: true` locks every applied decision and signs the blocking off, which is "Lock shot". GET /film/shots/:id/previs reports each decision as none / trying / applied / card_ahead / conflict / locked / stale.',
+        path: a => `/film/shots/${a.shot_id}/previs/lock`,
+        body: a => (a.all ? { all: true } : { decisions: a.decisions || [] }),
+        schema: {
+            shot_id: { type: 'string' },
+            decisions: { type: 'array', items: { type: 'string' }, description: 'Decision ids to lock.' },
+            all: { type: 'boolean', description: 'Lock every applied decision and approve the blocking.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_unlock',
+        handler: handlePrevis, method: 'POST',
+        description: 'Unlock directing decisions so they can be changed again. `all: true` also withdraws the approval. A decision changed while locked reads as stale until it is applied and locked again.',
+        path: a => `/film/shots/${a.shot_id}/previs/unlock`,
+        body: a => (a.all ? { all: true } : { decisions: a.decisions || [] }),
+        schema: {
+            shot_id: { type: 'string' },
+            decisions: { type: 'array', items: { type: 'string' } },
+            all: { type: 'boolean' },
+        },
+        required: ['shot_id'],
+    },
+    {
         name: 'artefact_accept',
         handler: handleProductionReports, method: 'POST',
         description: 'Mark a generated artefact as still correct for its current inputs, WITHOUT regenerating it. Use this when staleness_report flags something whose output is still good \u2014 a description can be rewritten in ways a plate still satisfies, and regenerating spends money to replace an image someone chose, with no guarantee of reproducing it.',

@@ -1,51 +1,405 @@
 {
-  "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-09-26T14:30:00Z"},
-  "title": "Film Engine — Production Graph",
-  "launch": {"view": "canvas"},
-  "pages": [
-    {"id": "spec", "name": "Spec & flow"},
-    {"id": "hifi", "name": "Pixel-perfect"}
-  ],
-  "boards": {
-    "Main.dc.html": {"x": 0, "y": 0, "w": 1720, "h": 1040, "title": "Production — the graph", "is_interactive": true, "page": "spec"},
-    "MigrationMap.dc.html": {"x": 1800, "y": 0, "w": 880, "h": 1040, "title": "Where today's 8 pages go", "page": "spec"},
-    "ShotInspector.dc.html": {"x": 0, "y": 1460, "w": 560, "h": 1640, "title": "Shot node — inspector", "is_interactive": true, "page": "spec"},
-    "SequenceInspector.dc.html": {"x": 640, "y": 1460, "w": 560, "h": 1640, "title": "Sequence node — inspector", "is_interactive": true, "page": "spec"},
-    "SoundInspector.dc.html": {"x": 1280, "y": 1460, "w": 560, "h": 1240, "title": "Sound / Music node — inspector", "is_interactive": true, "page": "spec"},
-    "TakeViewer.dc.html": {"x": 1920, "y": 1460, "w": 560, "h": 1080, "title": "Generated version — viewer", "is_interactive": true, "page": "spec"},
-
-    "FE-Production.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 900, "title": "1 · Production — default", "page": "hifi"},
-    "FE-Shot.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 900, "title": "2 · Shot selected", "page": "hifi"},
-    "FE-Handoff.dc.html": {"x": 3080, "y": 0, "w": 1200, "h": 2320, "title": "Build brief — for Claude Code", "page": "hifi"},
-    "FE-Sequence.dc.html": {"x": 0, "y": 1020, "w": 1440, "h": 900, "title": "3 · Sequence selected", "page": "hifi"},
-    "FE-Sound.dc.html": {"x": 1520, "y": 1020, "w": 1440, "h": 900, "title": "4 · Music selected", "page": "hifi"},
-    "FE-Version.dc.html": {"x": 0, "y": 2040, "w": 1440, "h": 900, "title": "5 · Video version selected", "page": "hifi"},
-    "FE-Spec.dc.html": {"x": 1520, "y": 2040, "w": 1200, "h": 1360, "title": "Tokens, states, layout", "page": "hifi"},
-
-    "DrawerShot.dc.html": {"x": 0, "y": 3760, "w": 420, "h": 1500, "title": "Drawer · Shot (full length)", "page": "hifi"},
-    "DrawerSequence.dc.html": {"x": 500, "y": 3760, "w": 420, "h": 1480, "title": "Drawer · Sequence (full length)", "page": "hifi"},
-    "DrawerSound.dc.html": {"x": 1000, "y": 3760, "w": 420, "h": 1080, "title": "Drawer · Music (full length)", "page": "hifi"},
-    "DrawerVersion.dc.html": {"x": 1500, "y": 3760, "w": 420, "h": 960, "title": "Drawer · Version (full length)", "page": "hifi"},
-
-    "TopBar.dc.html": {"x": 0, "y": 5600, "w": 1420, "h": 62, "title": "Component · TopBar", "page": "hifi"},
-    "MainHeader.dc.html": {"x": 0, "y": 5782, "w": 1176, "h": 56, "title": "Component · MainHeader", "page": "hifi"},
-    "Graph.dc.html": {"x": 0, "y": 5958, "w": 1176, "h": 582, "title": "Component · Graph (prop sel)", "page": "hifi"},
-    "Playback.dc.html": {"x": 0, "y": 6660, "w": 1176, "h": 168, "title": "Component · Playback (prop w)", "page": "hifi"},
-    "SidePanel.dc.html": {"x": 1300, "y": 5782, "w": 232, "h": 808, "title": "Component · SidePanel (prop sel)", "page": "hifi"}
+ "v": 3,
+ "attachments": {},
+ "boards": {
+  "DrawerSequence.dc.html": {
+   "h": 1480,
+   "page": "hifi",
+   "title": "Drawer · Sequence (full length)",
+   "w": 420,
+   "x": 500,
+   "y": 3760
   },
-  "order": [
-    "Main.dc.html", "MigrationMap.dc.html", "ShotInspector.dc.html", "SequenceInspector.dc.html", "SoundInspector.dc.html", "TakeViewer.dc.html",
-    "FE-Production.dc.html", "FE-Shot.dc.html", "FE-Handoff.dc.html", "FE-Sequence.dc.html", "FE-Sound.dc.html", "FE-Version.dc.html", "FE-Spec.dc.html",
-    "DrawerShot.dc.html", "DrawerSequence.dc.html", "DrawerSound.dc.html", "DrawerVersion.dc.html",
-    "TopBar.dc.html", "MainHeader.dc.html", "Graph.dc.html", "Playback.dc.html", "SidePanel.dc.html"
-  ],
-  "notes": {
-    "t1": {"x": 0, "y": -300, "text": "Production — one node graph replaces eight pages", "kind": "title1", "maxW": 2680, "page": "spec"},
-    "t2": {"x": 0, "y": 1160, "text": "Click any node → its inspector opens as a 560px drawer on the right", "kind": "title1", "maxW": 2480, "page": "spec"},
-    "h1": {"x": 0, "y": -300, "text": "Production — pixel-perfect, in Film Engine's own styles", "kind": "title1", "maxW": 4280, "page": "hifi"},
-    "h2": {"x": 0, "y": 3460, "text": "Drawers at full length", "kind": "title1", "maxW": 1920, "page": "hifi"},
-    "h3": {"x": 0, "y": 5300, "text": "Shared components (dc-import)", "kind": "title1", "maxW": 1540, "page": "hifi"}
+  "DrawerShot.dc.html": {
+   "h": 1740,
+   "page": "hifi",
+   "title": "Drawer · Shot (full length)",
+   "w": 420,
+   "x": 0,
+   "y": 3760
   },
-  "designSystems": []
+  "DrawerSound.dc.html": {
+   "h": 1080,
+   "page": "hifi",
+   "title": "Drawer · Music (full length)",
+   "w": 420,
+   "x": 1000,
+   "y": 3760
+  },
+  "DrawerVersion.dc.html": {
+   "h": 960,
+   "page": "hifi",
+   "title": "Drawer · Version (full length)",
+   "w": 420,
+   "x": 1500,
+   "y": 3760
+  },
+  "FE-Handoff.dc.html": {
+   "h": 2320,
+   "page": "hifi",
+   "title": "Build brief — for Claude Code",
+   "w": 1200,
+   "x": 3080,
+   "y": 0
+  },
+  "FE-Production.dc.html": {
+   "h": 900,
+   "page": "hifi",
+   "title": "1 · Production — default",
+   "w": 1440,
+   "x": 0,
+   "y": 0
+  },
+  "FE-Sequence.dc.html": {
+   "h": 900,
+   "page": "hifi",
+   "title": "3 · Sequence selected",
+   "w": 1440,
+   "x": 0,
+   "y": 1020
+  },
+  "FE-Shot.dc.html": {
+   "h": 900,
+   "page": "hifi",
+   "title": "2 · Shot selected",
+   "w": 1440,
+   "x": 1520,
+   "y": 0
+  },
+  "FE-Sound.dc.html": {
+   "h": 900,
+   "page": "hifi",
+   "title": "4 · Music selected",
+   "w": 1440,
+   "x": 1520,
+   "y": 1020
+  },
+  "FE-Spec.dc.html": {
+   "h": 1360,
+   "page": "hifi",
+   "title": "Tokens, states, layout",
+   "w": 1200,
+   "x": 1520,
+   "y": 2040
+  },
+  "FE-Version.dc.html": {
+   "h": 900,
+   "page": "hifi",
+   "title": "5 · Video version selected",
+   "w": 1440,
+   "x": 0,
+   "y": 2040
+  },
+  "Graph.dc.html": {
+   "h": 582,
+   "page": "hifi",
+   "title": "Component · Graph (prop sel)",
+   "w": 1176,
+   "x": 0,
+   "y": 5958
+  },
+  "Main.dc.html": {
+   "h": 1040,
+   "is_interactive": true,
+   "page": "spec",
+   "title": "Production — the graph",
+   "w": 1720,
+   "x": 0,
+   "y": 0
+  },
+  "MainHeader.dc.html": {
+   "h": 56,
+   "page": "hifi",
+   "title": "Component · MainHeader",
+   "w": 1176,
+   "x": 0,
+   "y": 5782
+  },
+  "MigrationMap.dc.html": {
+   "h": 1040,
+   "page": "spec",
+   "title": "Where today's 8 pages go",
+   "w": 880,
+   "x": 1800,
+   "y": 0
+  },
+  "Playback.dc.html": {
+   "h": 168,
+   "page": "hifi",
+   "title": "Component · Playback (prop w)",
+   "w": 1176,
+   "x": 0,
+   "y": 6660
+  },
+  "SequenceInspector.dc.html": {
+   "h": 1640,
+   "is_interactive": true,
+   "page": "spec",
+   "title": "Sequence node — inspector",
+   "w": 560,
+   "x": 640,
+   "y": 1460
+  },
+  "ShotInspector.dc.html": {
+   "h": 1640,
+   "is_interactive": true,
+   "page": "spec",
+   "title": "Shot node — inspector",
+   "w": 560,
+   "x": 0,
+   "y": 1460
+  },
+  "SidePanel.dc.html": {
+   "h": 808,
+   "page": "hifi",
+   "title": "Component · SidePanel (prop sel)",
+   "w": 232,
+   "x": 1300,
+   "y": 5782
+  },
+  "SoundInspector.dc.html": {
+   "h": 1240,
+   "is_interactive": true,
+   "page": "spec",
+   "title": "Sound / Music node — inspector",
+   "w": 560,
+   "x": 1280,
+   "y": 1460
+  },
+  "TakeViewer.dc.html": {
+   "h": 1080,
+   "is_interactive": true,
+   "page": "spec",
+   "title": "Generated version — viewer",
+   "w": 560,
+   "x": 1920,
+   "y": 1460
+  },
+  "TopBar.dc.html": {
+   "h": 62,
+   "page": "hifi",
+   "title": "Component · TopBar",
+   "w": 1420,
+   "x": 0,
+   "y": 5600
+  },
+  "PV-Look.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "1 · Look view — Camera tab",
+   "page": "previs"
+  },
+  "PV-Direct.dc.html": {
+   "x": 1520,
+   "y": 0,
+   "w": 1440,
+   "h": 900,
+   "title": "2 · Direct — proposal on the view",
+   "page": "previs"
+  },
+  "PV-Brief.dc.html": {
+   "x": 3080,
+   "y": 0,
+   "w": 1200,
+   "h": 2380,
+   "title": "Build brief — for Claude Code",
+   "page": "previs"
+  },
+  "PV-Explore.dc.html": {
+   "x": 0,
+   "y": 1020,
+   "w": 1440,
+   "h": 900,
+   "title": "3 · Explore — six rendered cameras",
+   "page": "previs"
+  },
+  "PV-Plan.dc.html": {
+   "x": 1520,
+   "y": 1020,
+   "w": 1440,
+   "h": 900,
+   "title": "4 · Plan view — Scene tab",
+   "page": "previs"
+  },
+  "PvHeader.dc.html": {
+   "x": 0,
+   "y": 2360,
+   "w": 1176,
+   "h": 96,
+   "title": "Component · PvHeader + Decisions",
+   "page": "previs"
+  },
+  "PvView.dc.html": {
+   "x": 0,
+   "y": 2576,
+   "w": 816,
+   "h": 560,
+   "title": "Component · PvView (prop mode)",
+   "page": "previs"
+  },
+  "PvTimeline.dc.html": {
+   "x": 0,
+   "y": 3256,
+   "w": 816,
+   "h": 150,
+   "title": "Component · PvTimeline",
+   "page": "previs"
+  },
+  "PvPanel.dc.html": {
+   "x": 900,
+   "y": 2576,
+   "w": 360,
+   "h": 710,
+   "title": "Component · PvPanel (prop tab)",
+   "page": "previs"
+  },
+  "PvSidePanel.dc.html": {
+   "x": 1340,
+   "y": 2576,
+   "w": 232,
+   "h": 808,
+   "title": "Component · PvSidePanel",
+   "page": "previs"
+  },
+  "DinerScene.dc.html": {
+   "x": 0,
+   "y": 3526,
+   "w": 800,
+   "h": 450,
+   "title": "Stand-in render · DinerScene (look/geo/depth)",
+   "page": "previs"
+  },
+  "PlanView.dc.html": {
+   "x": 880,
+   "y": 3526,
+   "w": 800,
+   "h": 560,
+   "title": "Stand-in render · PlanView",
+   "page": "previs"
+  }
+ },
+ "createdOnFiles": {
+  "at": "2026-09-26T14:30:00Z",
+  "v": 1
+ },
+ "designSystems": [],
+ "launch": {
+  "view": "canvas"
+ },
+ "notes": {
+  "h1": {
+   "kind": "title1",
+   "maxW": 4280,
+   "page": "hifi",
+   "text": "Production — pixel-perfect, in Film Engine's own styles",
+   "w": 240,
+   "x": 0,
+   "y": -300
+  },
+  "h2": {
+   "kind": "title1",
+   "maxW": 1920,
+   "page": "hifi",
+   "text": "Drawers at full length",
+   "w": 240,
+   "x": 0,
+   "y": 3460
+  },
+  "h3": {
+   "kind": "title1",
+   "maxW": 1540,
+   "page": "hifi",
+   "text": "Shared components (dc-import)",
+   "w": 240,
+   "x": 0,
+   "y": 5300
+  },
+  "t1": {
+   "kind": "title1",
+   "maxW": 2680,
+   "page": "spec",
+   "text": "Production — one node graph replaces eight pages",
+   "w": 240,
+   "x": 0,
+   "y": -300
+  },
+  "t2": {
+   "kind": "title1",
+   "maxW": 2480,
+   "page": "spec",
+   "text": "Click any node → its inspector opens as a 560px drawer on the right",
+   "w": 240,
+   "x": 0,
+   "y": 1160
+  },
+  "p1": {
+   "x": 0,
+   "y": -300,
+   "text": "Previs — the real set, a bigger view, decisions you can lock",
+   "kind": "title1",
+   "maxW": 4280,
+   "page": "previs"
+  },
+  "p2": {
+   "x": 0,
+   "y": 2060,
+   "text": "Shared previs components",
+   "kind": "title1",
+   "maxW": 1680,
+   "page": "previs"
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "MigrationMap.dc.html",
+  "ShotInspector.dc.html",
+  "SequenceInspector.dc.html",
+  "SoundInspector.dc.html",
+  "TakeViewer.dc.html",
+  "FE-Production.dc.html",
+  "FE-Shot.dc.html",
+  "FE-Handoff.dc.html",
+  "FE-Sequence.dc.html",
+  "FE-Sound.dc.html",
+  "FE-Version.dc.html",
+  "FE-Spec.dc.html",
+  "DrawerShot.dc.html",
+  "DrawerSequence.dc.html",
+  "DrawerSound.dc.html",
+  "DrawerVersion.dc.html",
+  "TopBar.dc.html",
+  "MainHeader.dc.html",
+  "Graph.dc.html",
+  "Playback.dc.html",
+  "SidePanel.dc.html",
+  "PV-Look.dc.html",
+  "PV-Direct.dc.html",
+  "PV-Brief.dc.html",
+  "PV-Explore.dc.html",
+  "PV-Plan.dc.html",
+  "PvHeader.dc.html",
+  "PvView.dc.html",
+  "PvTimeline.dc.html",
+  "PvPanel.dc.html",
+  "PvSidePanel.dc.html",
+  "DinerScene.dc.html",
+  "PlanView.dc.html"
+ ],
+ "pages": [
+  {
+   "id": "spec",
+   "name": "Spec & flow"
+  },
+  {
+   "id": "hifi",
+   "name": "Pixel-perfect"
+  },
+  {
+   "id": "previs",
+   "name": "Previs console"
+  }
+ ],
+ "title": "Film Engine — Production Graph"
 }

@@ -91,6 +91,8 @@ test('no lib module referenced by CLAUDE.md has been deleted', () => {
         // the next root-level entry point (mcp-server.js) failed the check for
         // existing rather than for being undocumented.
         ...jsFiles(BACKEND),
+        // Built front-end modules the page imports (ADR-008's splat viewer).
+        ...jsFiles(path.join(BACKEND, '..', 'src', 'vendor')),
         'index.html', 'app.json',
         // Libraries whose NAME ends in .js. The pattern above cannot tell
         // "Three.js" the project from "three.js" the file, and prose that

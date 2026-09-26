@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Previs right panel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 360px; height: 710px; box-sizing: border-box; display: flex; flex-direction: column; background: #1a1a1d; border-left: 1px solid rgba(255,255,255,0.08); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="height: 44px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px; display: flex; align-items: center; gap: 2px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+      <button style="flex: 1; height: 30px; border-radius: 8px; border: none; background: {{t.bg}}; color: {{t.fg}}; font: {{t.fw}} 12px -apple-system, sans-serif;">{{t.name}}</button>
+    </sc-for>
+  </div>
+
+  <div style="flex: 1; overflow: hidden; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px;">
+
+    <!-- ========== CAMERA ========== -->
+    <sc-if value="{{is.camera}}" hint-placeholder-val="{{true}}">
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">LENS <span style="color: #9fb6ff;">35mm</span></h3><span style="font-size: 10.5px; color: #e8b85c;">○ trying</span></div>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px;">
+          <sc-for list="{{lenses}}" as="l" hint-placeholder-count="12">
+            <button style="height: 30px; border-radius: 7px; border: 1px solid {{l.bd}}; background: {{l.bg}}; color: {{l.fg}}; font: 500 11.5px 'SF Mono', ui-monospace, monospace;">{{l.mm}}</button>
+          </sc-for>
+        </div>
+        <div style="display: flex; background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 3px;">
+          <button style="flex: 1; height: 26px; border-radius: 7px; border: none; background: #2b2b30; color: #f4f4f5; font: 600 11px -apple-system, sans-serif;">Keep position</button>
+          <button style="flex: 1; height: 26px; border-radius: 7px; border: none; background: transparent; color: #8e8e97; font: 500 11px -apple-system, sans-serif;">Maintain size</button>
+        </div>
+        <div style="font-size: 10.5px; color: #8e8e97;">Camera holds; June's size follows the lens.</div>
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">OPERATE</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">
+          <sc-for list="{{ops}}" as="o" hint-placeholder-count="6">
+            <div style="display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 8px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.06);">
+              <button aria-label="Less {{o.name}}" style="width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font-size: 13px;">−</button>
+              <div style="flex: 1; text-align: center;"><div style="font-size: 9.5px; color: #8e8e97;">{{o.name}}</div><div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11.5px;">{{o.val}}</div></div>
+              <button aria-label="More {{o.name}}" style="width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font-size: 13px;">+</button>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 10.5px; color: #8e8e97;">Or drag in the view: left-drag orbits, right-drag pans, scroll dollies. WASD walks the set.</div>
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">MEASURED</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden;">
+          <div style="padding: 7px 10px; background: #1d1d20;"><div style="font-size: 9.5px; color: #8e8e97;">Camera height</div><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px;">1.20 m</div></div>
+          <div style="padding: 7px 10px; background: #1d1d20;"><div style="font-size: 9.5px; color: #8e8e97;">To June</div><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px;">2.4 m</div></div>
+          <div style="padding: 7px 10px; background: #1d1d20;"><div style="font-size: 9.5px; color: #8e8e97;">June in frame</div><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px;">38%</div></div>
+          <div style="padding: 7px 10px; background: #1d1d20;"><div style="font-size: 9.5px; color: #8e8e97;">Horizon</div><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px;">52% of frame</div></div>
+        </div>
+      </section>
+    </sc-if>
+
+    <!-- ========== DIRECT ========== -->
+    <sc-if value="{{is.direct}}" hint-placeholder-val="{{false}}">
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">DIRECT THE SHOT <span style="color: #4fd39c; letter-spacing: 0.04em;">changes the camera, not the picture</span></h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+          <sc-for list="{{intents}}" as="i" hint-placeholder-count="7">
+            <button style="height: 28px; padding: 0 10px; border-radius: 20px; border: 1px solid {{i.bd}}; background: {{i.bg}}; color: {{i.fg}}; font: 500 11.5px -apple-system, sans-serif;">{{i.name}}</button>
+          </sc-for>
+        </div>
+        <label for="cdir" style="font-size: 10.5px; color: #8e8e97;">Or say it your way</label>
+        <input id="cdir" type="text" value="Closer on June as she realises; keep Ray's shoulder in frame" style="height: 32px; box-sizing: border-box; background: #131315; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; color: #e7e7ea; font: 400 12px -apple-system, sans-serif; padding: 0 9px;">
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; background: rgba(226,193,90,0.06); border: 1px solid rgba(226,193,90,0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 12px; font-weight: 600; color: #f0d98f;">Proposal · More intimate</span><span style="font-size: 10.5px; color: #8e8e97;">from your model</span></div>
+        <div style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 14px; font-size: 11.5px;">
+          <span style="color: #8e8e97;">Lens</span><span style="font-family: 'SF Mono', ui-monospace, monospace;">35 → <b style="color: #f0d98f;">50mm</b></span>
+          <span style="color: #8e8e97;">Height</span><span style="font-family: 'SF Mono', ui-monospace, monospace;">1.20 → <b style="color: #f0d98f;">0.95 m</b></span>
+          <span style="color: #8e8e97;">Dolly</span><span style="font-family: 'SF Mono', ui-monospace, monospace;"><b style="color: #f0d98f;">+0.6 m</b> toward the booth</span>
+          <span style="color: #8e8e97;">Tilt</span><span style="font-family: 'SF Mono', ui-monospace, monospace;">−3° → <b style="color: #f0d98f;">+2°</b></span>
+          <span style="color: #8e8e97;">June in frame</span><span style="font-family: 'SF Mono', ui-monospace, monospace;">38% → <b style="color: #f0d98f;">61%</b></span>
+        </div>
+        <div style="font-size: 11px; color: #b7b7be; line-height: 1.45;">Lower and longer puts us at her eye line across the table; Ray's shoulder stays soft in the left third.</div>
+        <div style="display: flex; gap: 6px;">
+          <button style="height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Check · free</button>
+          <button style="height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Variants</button>
+          <div style="flex-grow: 1;"></div>
+          <button style="height: 30px; padding: 0 12px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11.5px -apple-system, sans-serif;">Use this camera</button>
+        </div>
+      </section>
+      <div style="font-size: 10.5px; color: #8e8e97; line-height: 1.45;">"Use this camera" moves the camera here — it is still <b style="color: #e8b85c; font-weight: 500;">trying</b> until you apply it to the shot.</div>
+    </sc-if>
+
+    <!-- ========== EXPLORE ========== -->
+    <sc-if value="{{is.explore}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <h3 style="margin: 0; flex: 1; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">SIX CAMERAS · ONE WORLD</h3>
+        <button style="height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">Compare</button>
+        <button style="height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(224,163,62,0.45); background: transparent; color: #e8b85c; font: 500 11px -apple-system, sans-serif;">Explore again</button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <sc-for list="{{cams}}" as="c" hint-placeholder-count="6">
+          <div style="border-radius: 8px; overflow: hidden; background: #1d1d20; border: {{c.bw}} solid {{c.bd}};">
+            <div style="position: relative; height: 90px;">
+              <dc-import name="DinerScene" mode="look" vb="{{c.vb}}" w="160" h="90" hint-size="160px,90px"></dc-import>
+              <span style="position: absolute; left: 5px; top: 4px; font: 700 11px 'SF Mono', ui-monospace, monospace; padding: 1px 5px; border-radius: 4px; background: rgba(8,8,10,0.75); color: {{c.lc}};">{{c.k}}</span>
+            </div>
+            <div style="padding: 6px 8px 7px;">
+              <div style="font-size: 11.5px; font-weight: 600;">{{c.name}}</div>
+              <div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 9.5px; color: #8e8e97;">{{c.spec}}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button style="height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Check the six · free</button>
+        <div style="flex-grow: 1;"></div>
+        <button style="height: 30px; padding: 0 12px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11.5px -apple-system, sans-serif;">Use C</button>
+      </div>
+    </sc-if>
+
+    <!-- ========== SCENE ========== -->
+    <sc-if value="{{is.scene}}" hint-placeholder-val="{{false}}">
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; justify-content: space-between;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">BLOCKING · CAST</h3><span style="font-size: 10.5px; color: #4fd39c;">● locked</span></div>
+        <div style="display: flex; gap: 8px; align-items: center; padding: 8px; border-radius: 8px; background: #1d1d20;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #d98a5f;"></span><span style="font-size: 12px; font-weight: 600;">June</span><span style="font-size: 11px; color: #8e8e97; flex: 1;">far side of the booth · seated · to lens</span></div>
+        <div style="display: flex; gap: 8px; align-items: center; padding: 8px; border-radius: 8px; background: #1d1d20;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #c9a36b;"></span><span style="font-size: 12px; font-weight: 600;">Ray Mercer</span><span style="font-size: 11px; color: #8e8e97; flex: 1;">near side · back three-quarter</span></div>
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; justify-content: space-between;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">LIGHTING</h3><span style="font-size: 10.5px; color: #4fd39c;">● locked</span></div>
+        <div style="display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; font-size: 11.5px; padding: 8px 10px; border-radius: 8px; background: #1d1d20;">
+          <span style="color: #8e8e97;">Key</span><span>low sun through the front windows</span>
+          <span style="color: #8e8e97;">Practicals</span><span>neon in the glass, pendants off</span>
+          <span style="color: #8e8e97;">Hour</span><span>late afternoon</span>
+        </div>
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; justify-content: space-between;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; color: #8e8e97;">SET VIEW</h3><span style="font-size: 10.5px; color: #4fd39c;">● locked</span></div>
+        <div style="font-size: 11.5px; padding: 8px 10px; border-radius: 8px; background: #1d1d20;">Harbour windows behind June; counter out of frame</div>
+      </section>
+      <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <div style="padding: 8px 10px; border-radius: 8px; background: #1d1d20;"><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 9px; letter-spacing: 0.1em; color: #8e8e97;">BODY &amp; RIG</div><div style="font-size: 11.5px; margin-top: 3px;">Super 35 · dolly</div></div>
+        <div style="padding: 8px 10px; border-radius: 8px; background: #1d1d20;"><div style="font-family: 'SF Mono', ui-monospace, monospace; font-size: 9px; letter-spacing: 0.1em; color: #8e8e97;">PLATE &amp; OUTPUT</div><div style="font-size: 11.5px; margin-top: 3px;">2048×1080 · 16:9 · 24</div></div>
+      </section>
+      <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+        <sc-for list="{{adv}}" as="a" hint-placeholder-count="5">
+          <button style="height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #b7b7be; font: 500 11px -apple-system, sans-serif;">▸ {{a}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tab":{"editor":"enum","options":["camera","direct","explore","scene"],"default":"camera"},"$preview":{"width":360,"height":710}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tab = this.props.tab ?? 'camera';
+    const tabs = [['camera', 'Camera'], ['direct', 'Direct'], ['explore', 'Explore'], ['scene', 'Scene']].map(([id, name]) => ({
+      name, bg: id === tab ? '#2b2b30' : 'transparent', fg: id === tab ? '#f4f4f5' : '#8e8e97', fw: id === tab ? '600' : '500'
+    }));
+    const lenses = [12, 14, 18, 21, 24, 28, 35, 40, 50, 65, 85, 135].map(mm => ({
+      mm, bg: mm === 35 ? 'rgba(102,144,255,0.18)' : '#1d1d20', bd: mm === 35 ? 'rgba(102,144,255,0.6)' : 'rgba(255,255,255,0.06)', fg: mm === 35 ? '#ffffff' : '#c9c9d0'
+    }));
+    const ops = [['Dolly', '0.00 m'], ['Truck', '0.00 m'], ['Pedestal', '1.20 m'], ['Pan', '0°'], ['Tilt', '−3°'], ['Roll', '0°']].map(([name, val]) => ({ name, val }));
+    const intents = ['More heroic', 'More vulnerable', 'More oppressive', 'More intimate', 'More chaotic', 'More isolated', 'More depth'].map(n => ({
+      name: n, bg: n === 'More intimate' ? 'rgba(226,193,90,0.16)' : 'transparent', bd: n === 'More intimate' ? 'rgba(226,193,90,0.6)' : 'rgba(255,255,255,0.1)', fg: n === 'More intimate' ? '#f0d98f' : '#c9c9d0'
+    }));
+    const camsRaw = [
+      ['A', 'Neutral wide', '18mm · 1.5 m', '0 0 1600 900'],
+      ['B', 'Heroic low', '24mm · 0.5 m', '300 330 1200 675'],
+      ['C', 'Long lens', '85mm · 1.3 m', '960 330 380 214'],
+      ['D', 'Extreme foreground', '21mm · 0.9 m', '700 380 800 450'],
+      ['E', 'Over the shoulder', '50mm · 1.2 m', '1030 350 330 186'],
+      ['F', 'Unstable', '28mm · 1.4 m', '520 160 1000 563']
+    ];
+    const cams = camsRaw.map(([k, name, spec, vb]) => ({
+      k, name, spec, vb,
+      bd: k === 'C' ? '#6690ff' : 'rgba(255,255,255,0.08)', bw: k === 'C' ? '2px' : '1px', lc: k === 'C' ? '#9fb6ff' : '#e7e7ea'
+    }));
+    const adv = ['Exact X / Y / Z', 'Movement curves', 'Focus & DOF', 'Lens family', 'AI parameters'];
+    return { tabs, is: { camera: tab === 'camera', direct: tab === 'direct', explore: tab === 'explore', scene: tab === 'scene' }, lenses, ops, intents, cams, adv };
+  }
+}
+</script>
+</body>
+</html>

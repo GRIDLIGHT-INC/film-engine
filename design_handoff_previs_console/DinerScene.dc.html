@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Diner scene (stand-in render)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: {{w}}px; height: {{h}}px; overflow: hidden; background: #000000; position: relative;">
+  <svg width="{{w}}" height="{{h}}" viewBox="{{vb}}" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display: block;">
+    <polygon points="{{g.back}}" fill="{{c.back}}"></polygon>
+    <polygon points="{{g.win}}" fill="{{c.sky1}}"></polygon>
+    <polygon points="{{g.winLow}}" fill="{{c.sky2}}"></polygon>
+    <polygon points="{{g.sea}}" fill="{{c.sea}}"></polygon>
+    <circle cx="690" cy="392" r="26" fill="{{c.sun}}" opacity="{{c.sunOp}}"></circle>
+    <rect x="936" y="352" width="9" height="46" fill="{{c.light}}"></rect>
+    <rect x="934" y="346" width="13" height="8" fill="{{c.lightTop}}"></rect>
+    <path d="{{g.mullions}}" stroke="{{c.chrome}}" stroke-width="5" fill="none"></path>
+    <polygon points="{{g.ceil}}" fill="{{c.ceil}}"></polygon>
+    <polygon points="{{g.wallL}}" fill="{{c.wallL}}"></polygon>
+    <polygon points="{{g.wallR}}" fill="{{c.wallR}}"></polygon>
+    <polygon points="{{g.floor}}" fill="{{c.floor}}"></polygon>
+    <path d="{{g.checker}}" fill="{{c.checker}}"></path>
+    <path d="{{g.shafts}}" fill="{{c.shaft}}" opacity="{{c.shaftOp}}"></path>
+    <path d="{{g.fans}}" fill="{{c.fan}}"></path>
+    <path d="{{g.boothFar}}" fill="{{c.booth}}" stroke="{{c.boothEdge}}" stroke-width="2"></path>
+    <path d="{{g.june}}" fill="{{c.juneCoat}}"></path>
+    <circle cx="{{g.juneHead.x}}" cy="{{g.juneHead.y}}" r="{{g.juneHead.r}}" fill="{{c.juneFace}}"></circle>
+    <path d="{{g.juneHair}}" fill="{{c.juneHair}}"></path>
+    <path d="{{g.tables}}" fill="{{c.table}}" stroke="{{c.chrome}}" stroke-width="3"></path>
+    <path d="{{g.ray}}" fill="{{c.rayCoat}}"></path>
+    <circle cx="{{g.rayHead.x}}" cy="{{g.rayHead.y}}" r="{{g.rayHead.r}}" fill="{{c.rayHair}}"></circle>
+    <path d="{{g.boothNear}}" fill="{{c.booth}}" stroke="{{c.boothEdge}}" stroke-width="2"></path>
+    <polygon points="{{g.counterFront}}" fill="{{c.counterFront}}"></polygon>
+    <path d="{{g.counterBand}}" fill="{{c.chrome}}"></path>
+    <polygon points="{{g.counterTop}}" fill="{{c.counterTop}}"></polygon>
+    <path d="{{g.stems}}" stroke="{{c.chrome}}" stroke-width="6" fill="none"></path>
+    <path d="{{g.stools}}" fill="{{c.stool}}"></path>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["look","geo","depth"],"default":"look"},"vb":{"editor":"text","default":"0 0 1600 900"},"w":{"editor":"int","default":800},"h":{"editor":"int","default":450},"$preview":{"width":800,"height":450}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'look';
+    const vb = this.props.vb ?? '0 0 1600 900';
+    const w = this.props.w ?? 800, h = this.props.h ?? 450;
+    const T = d => d / (d + 0.35 * (1 - d));
+    const P = (u, v, d) => {
+      const t = T(d);
+      const xl = 560 * t, xr = 1600 - 560 * t, yf = 900 - 340 * t, yc = 250 * t;
+      return [Math.round(xl + u * (xr - xl)), Math.round(yf + v * (yc - yf))];
+    };
+    const pts = arr => arr.map(p => p.join(',')).join(' ');
+    const quad = arr => 'M' + arr.map(p => p.join(' ')).join(' L') + ' Z ';
+    const S = d => 1 - 0.68 * T(d);
+    const g = {};
+    g.back = pts([P(0,0,1), P(1,0,1), P(1,1,1), P(0,1,1)]);
+    g.win = pts([P(0.06,0.52,1), P(0.94,0.52,1), P(0.94,0.86,1), P(0.06,0.86,1)]);
+    g.winLow = pts([P(0.06,0.46,1), P(0.94,0.46,1), P(0.94,0.56,1), P(0.06,0.56,1)]);
+    g.sea = pts([P(0.06,0.3,1), P(0.94,0.3,1), P(0.94,0.48,1), P(0.06,0.48,1)]);
+    g.mullions = [0.06, 0.28, 0.5, 0.72, 0.94].map(u => { const a = P(u,0.3,1), b = P(u,0.86,1); return `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`; }).join(' ')
+      + (() => { const a = P(0.06,0.3,1), b = P(0.94,0.3,1), c = P(0.06,0.86,1), e = P(0.94,0.86,1); return ` M${a[0]} ${a[1]} L${b[0]} ${b[1]} M${c[0]} ${c[1]} L${e[0]} ${e[1]}`; })();
+    g.ceil = pts([P(0,1,0), P(1,1,0), P(1,1,1), P(0,1,1)]);
+    g.wallL = pts([P(0,0,0), P(0,1,0), P(0,1,1), P(0,0,1)]);
+    g.wallR = pts([P(1,0,0), P(1,1,0), P(1,1,1), P(1,0,1)]);
+    g.floor = pts([P(0,0,0), P(1,0,0), P(1,0,1), P(0,0,1)]);
+    let ck = '';
+    const R = 16, C = 12;
+    for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) {
+      if ((i + j) % 2) continue;
+      const d0 = i / R, d1 = (i + 1) / R, u0 = j / C, u1 = (j + 1) / C;
+      ck += quad([P(u0,0,d0), P(u1,0,d0), P(u1,0,d1), P(u0,0,d1)]);
+    }
+    g.checker = ck;
+    g.shafts = quad([P(0.1,0.3,1), P(0.34,0.3,1), P(0.48,0,0.25), P(0.18,0,0.4)])
+             + quad([P(0.5,0.3,1), P(0.7,0.3,1), P(0.8,0,0.3), P(0.55,0,0.45)]);
+    g.fans = [0.3, 0.62].map(d => { const c = P(0.5,0.96,d), r = 70 * S(d); return `M${c[0]-r} ${c[1]} a${r} ${r*0.22} 0 1 0 ${2*r} 0 a${r} ${r*0.22} 0 1 0 ${-2*r} 0 `; }).join('');
+    const booth = d => quad([P(0.8,0,d), P(1,0,d), P(1,0.42,d), P(0.8,0.42,d)]) + quad([P(0.8,0.42,d), P(1,0.42,d), P(1,0.42,d+0.035), P(0.8,0.42,d+0.035)]);
+    g.boothFar = [0.9, 0.72, 0.52].map(booth).join('');
+    g.boothNear = [0.32, 0.14].map(booth).join('');
+    g.tables = [0.81, 0.62, 0.42, 0.23].map(d => quad([P(0.8,0.25,d-0.05), P(0.97,0.25,d-0.05), P(0.97,0.25,d+0.05), P(0.8,0.25,d+0.05)])).join('');
+    const figure = (d, u) => quad([P(u-0.05,0.16,d), P(u+0.05,0.16,d), P(u+0.045,0.38,d), P(u-0.045,0.38,d)]);
+    g.june = figure(0.49, 0.885);
+    const jh = P(0.885,0.45,0.49); g.juneHead = { x: jh[0], y: jh[1], r: Math.round(34 * S(0.49)) };
+    g.juneHair = (() => { const r = g.juneHead.r; return `M${jh[0]-r} ${jh[1]} a${r} ${r} 0 0 1 ${2*r} 0 L${jh[0]+r} ${jh[1]-r*0.2} L${jh[0]-r} ${jh[1]-r*0.2} Z`; })();
+    g.ray = figure(0.36, 0.885);
+    const rh = P(0.885,0.45,0.36); g.rayHead = { x: rh[0], y: rh[1], r: Math.round(36 * S(0.36)) };
+    g.counterTop = pts([P(0,0.36,0.06), P(0.16,0.36,0.06), P(0.16,0.36,0.92), P(0,0.36,0.92)]);
+    g.counterFront = pts([P(0.16,0,0.06), P(0.16,0.36,0.06), P(0.16,0.36,0.92), P(0.16,0,0.92)]);
+    g.counterBand = quad([P(0.16,0.3,0.06), P(0.16,0.33,0.06), P(0.16,0.33,0.92), P(0.16,0.3,0.92)]);
+    let stools = '', stems = '';
+    [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].forEach(d => {
+      const c = P(0.22,0.25,d), f = P(0.22,0,d), r = 44 * S(d);
+      stools += `M${c[0]-r} ${c[1]} a${r} ${r*0.34} 0 1 0 ${2*r} 0 a${r} ${r*0.34} 0 1 0 ${-2*r} 0 `;
+      stems += `M${c[0]} ${c[1]} L${f[0]} ${f[1]} `;
+    });
+    g.stools = stools; g.stems = stems;
+
+    const pal = {
+      look:  { back:'#d8c49c', sky1:'#f0bd72', sky2:'#f7dcaa', sea:'#5b7b86', sun:'#fff3d6', sunOp:0.95, light:'#f2efe8', lightTop:'#b23a2e', chrome:'#cfcfcf', ceil:'#2b231e', wallL:'#c9b48f', wallR:'#bda783', floor:'#dcd5c7', checker:'#262628', shaft:'#ffd79c', shaftOp:0.2, fan:'#3a302a', booth:'#8a2424', boothEdge:'#b3413a', juneCoat:'#4f5155', juneFace:'#e7bea3', juneHair:'#a9512f', table:'#ece6d9', rayCoat:'#a8844f', rayHair:'#7d6040', counterFront:'#8c2a28', counterTop:'#ece7dc', stool:'#b3302e' },
+      geo:   { back:'#b5bac0', sky1:'#c6cbd0', sky2:'#bfc4ca', sea:'#adb3b9', sun:'#ffffff', sunOp:0, light:'#9aa0a6', lightTop:'#9aa0a6', chrome:'#8e949a', ceil:'#6b6f75', wallL:'#a4a9b0', wallR:'#9aa0a7', floor:'#8d9298', checker:'#868b91', shaft:'#ffffff', shaftOp:0, fan:'#7b8086', booth:'#9aa0a6', boothEdge:'#b0b5bb', juneCoat:'#8a8f95', juneFace:'#9da2a8', juneHair:'#8a8f95', table:'#c8ccd1', rayCoat:'#858a90', rayHair:'#858a90', counterFront:'#a0a5ab', counterTop:'#c4c8cd', stool:'#b0b4ba' },
+      depth: { back:'#161616', sky1:'#101010', sky2:'#121212', sea:'#141414', sun:'#ffffff', sunOp:0, light:'#1a1a1a', lightTop:'#1a1a1a', chrome:'#5c5c5c', ceil:'#3c3c3c', wallL:'#6c6c6c', wallR:'#626262', floor:'#5a5a5a', checker:'#525252', shaft:'#ffffff', shaftOp:0, fan:'#444444', booth:'#8c8c8c', boothEdge:'#a0a0a0', juneCoat:'#7a7a7a', juneFace:'#808080', juneHair:'#7a7a7a', table:'#9a9a9a', rayCoat:'#a6a6a6', rayHair:'#a6a6a6', counterFront:'#b4b4b4', counterTop:'#c8c8c8', stool:'#dcdcdc' }
+    };
+    return { w, h, vb, g, c: pal[mode] || pal.look };
+  }
+}
+</script>
+</body>
+</html>

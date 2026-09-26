@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**365 tools, 76 families.** Everything the app can do, you can ask for in a
+**367 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -318,11 +318,15 @@ frame that has the scene right, and the next shots are generated **from** it.
 ### 6. Previs
 
 `previs_get` · `previs_set` · `previs_solve` · `previs_from_card` ·
-`previs_apply` · `previs_approve` · `previs_to_storyboard` · `shot_motion`
+`previs_apply` · `previs_approve` · `previs_lock` · `previs_unlock` ·
+`previs_to_storyboard` · `shot_motion`
 
 Block a shot in 3D — lens, height, distance, movement, named staging, direction,
 background view and lighting — then `previs_apply` commits those staged choices
-to the card. `previs_to_storyboard` returns the exact staged image payload and
+to the card. `previs_lock` then locks decisions one at a time (camera, direction,
+lighting, set view, cast, props, move) — only an applied decision can be locked,
+and a locked one that changes reads as stale; `all: true` locks the whole shot and
+approves it. `previs_to_storyboard` returns the exact staged image payload and
 states that it is unapplied; it generates nothing and spends nothing.
 
 `shot_motion` is the move as it will actually PLAY over the shot's storyboard

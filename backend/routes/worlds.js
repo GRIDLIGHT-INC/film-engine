@@ -10,6 +10,7 @@
  * GET        /film/world-versions/:vid            read
  * POST       /film/world-versions/:vid/calibrate  set the scale
  * GET        /film/world-versions/:vid/geometry   collider, decimated, scaled on read
+ * GET        /film/world-versions/:vid/splats     FREE — splat tiers + panorama, as loadable URLs
  * GET        /film/world-versions/:vid/plan       FREE — what generating would cost
  * POST       /film/world-versions/:vid/generate   SPENDS
  * POST|DELETE /film/shots/:id/world               pin / unpin
@@ -362,6 +363,39 @@ async function handleWorlds(req, res, urlParts, query) {
                 });
                 return json(res, 200, { version: versionPayload(out) });
             } catch (err) { return fail(res, err); }
+        }
+
+        /*
+         * WHAT THE LOOK VIEW CAN DRAW (ADR-008). Every splat tier this version
+         * recorded, smallest first, plus the panorama — each as a URL the page
+         * can load: our own copy when one was made, the provider's CDN
+         * otherwise (served with CORS, measured). FREE: nothing is fetched here.
+         *
+         * Gated by world_splats, and the answer says so rather than 404ing, so
+         * the console can tell "switched off" from "this world has none".
+         */
+        if (tail === 'splats' && req.method === 'GET') {
+            const { readSettings } = require('./app-settings');
+            const enabled = !!readSettings().world_splats;
+            const world = db.prepare('SELECT project_id FROM film_worlds WHERE id = ?').get(v.world_id) || {};
+            const rows = db.prepare(
+                `SELECT wa.kind, wa.remote_url, wa.bytes, wa.asset_id
+                   FROM film_world_assets wa WHERE wa.world_version_id = ?`).all(versionId);
+            const order = ['splat_100k', 'splat_500k', 'splat_full'];
+            const url = r => (r.asset_id && world.project_id)
+                ? worldAssets.servedUrlFor(world.project_id, versionId, r.kind) : r.remote_url;
+            const splats = rows.filter(r => order.includes(r.kind))
+                .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))
+                .map(r => ({ kind: r.kind, url: url(r), local: !!r.asset_id, bytes: r.bytes || null }));
+            const pano = rows.find(r => r.kind === 'panorama');
+            return json(res, 200, {
+                world_version_id: versionId, enabled,
+                scale_factor: Number(v.scale_factor) > 0 ? Number(v.scale_factor) : 1,
+                splats: enabled ? splats : [],
+                available: splats.map(s => s.kind),
+                panorama: pano ? { url: url(pano), local: !!pano.asset_id } : null,
+                note: enabled ? null : 'world_splats is off — switch it on in Setup to render the Look view.',
+            });
         }
 
         if (tail === 'geometry' && req.method === 'GET') {

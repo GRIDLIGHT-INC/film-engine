@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Camera movement timeline</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 816px; height: 150px; box-sizing: border-box; padding: 10px 14px 12px; background: #151517; border-top: 1px solid rgba(255,255,255,0.07); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5; display: flex; flex-direction: column; gap: 8px;">
+  <div style="display: flex; align-items: center; gap: 6px;">
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: #8e8e97;">CAMERA MOVE</span>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: #9fb6ff; margin-right: 6px;">4.0s</span>
+    <button aria-label="Play move" style="width: 28px; height: 26px; border-radius: 7px; border: none; background: #3559cc; display: flex; align-items: center; justify-content: center;"><svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1 L11 6 L3 11 Z" fill="#ffffff"></path></svg></button>
+    <button style="height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">+ Key</button>
+    <button style="height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11px -apple-system, sans-serif;">+ Leg</button>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; background: #131315; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 2px;">
+      <button style="height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: #8e8e97; font: 500 10.5px -apple-system, sans-serif;">Linear</button>
+      <button style="height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: #8e8e97; font: 500 10.5px -apple-system, sans-serif;">Ease in</button>
+      <button style="height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: #2b2b30; color: #f4f4f5; font: 600 10.5px -apple-system, sans-serif;">Ease out</button>
+      <button style="height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: #8e8e97; font: 500 10.5px -apple-system, sans-serif;">Ease both</button>
+      <button style="height: 22px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: #8e8e97; font: 500 10.5px -apple-system, sans-serif;">Hold</button>
+    </div>
+  </div>
+  <div style="position: relative; flex: 1; display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; padding-left: 72px; justify-content: space-between; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9px; color: #6f6f77;"><span>0.0</span><span>1.0</span><span>2.0</span><span>3.0</span><span>4.0s</span></div>
+    <div style="display: flex; align-items: center; gap: 8px; height: 30px;">
+      <span style="width: 64px; font-size: 10.5px; color: #8e8e97;">Position</span>
+      <div style="position: relative; flex: 1; height: 26px; border-radius: 6px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="position: absolute; left: 0; width: 62%; top: 3px; bottom: 3px; border-radius: 5px; background: rgba(226,193,90,0.2); border: 1px solid rgba(226,193,90,0.6); font-size: 10.5px; color: #f0d98f; padding-left: 8px; line-height: 18px; box-sizing: border-box;">Dolly in 0.6 m</div>
+        <div style="position: absolute; left: -5px; top: 8px; width: 10px; height: 10px; transform: rotate(45deg); background: #e2c15a;"></div>
+        <div style="position: absolute; left: calc(62% - 5px); top: 8px; width: 10px; height: 10px; transform: rotate(45deg); background: #e2c15a;"></div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; height: 30px;">
+      <span style="width: 64px; font-size: 10.5px; color: #8e8e97;">Rotation</span>
+      <div style="position: relative; flex: 1; height: 26px; border-radius: 6px; background: #1d1d20; border: 1px solid rgba(255,255,255,0.06);">
+        <div style="position: absolute; left: 40%; width: 45%; top: 3px; bottom: 3px; border-radius: 5px; background: rgba(102,144,255,0.18); border: 1px solid rgba(102,144,255,0.55); font-size: 10.5px; color: #b9c9ff; padding-left: 8px; line-height: 18px; box-sizing: border-box;">Pan +4° onto June</div>
+      </div>
+    </div>
+    <div style="position: absolute; left: calc(72px + 28%); top: 12px; bottom: 0; width: 2px; background: #f4f4f5; border-radius: 1px;"></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":816,"height":150}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

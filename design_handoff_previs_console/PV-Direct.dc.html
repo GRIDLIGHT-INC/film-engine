@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Previs — Direct the shot, proposal on the view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0;background:#0b0b0c}</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #0b0b0c; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="position: absolute; left: 10px; top: 10px;"><dc-import name="TopBar" proj="The Glass Harbour" sub="Drama · 16:9 · 24 fps" phase="plan" hint-size="1420px,62px"></dc-import></div>
+  <div style="position: absolute; left: 10px; top: 82px;"><dc-import name="PvSidePanel" sel="1B" hint-size="232px,808px"></dc-import></div>
+  <div style="position: absolute; left: 252px; top: 82px; width: 1178px; height: 808px; box-sizing: border-box; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden;">
+    <div style="height: 96px;"><dc-import name="PvHeader" hint-size="1176px,96px"></dc-import></div>
+    <div style="display: flex; height: 710px;">
+      <div style="width: 816px; display: flex; flex-direction: column;">
+        <div style="height: 560px;"><dc-import name="PvView" mode="blend" vb="600 230 1000 562" sel="A" hint-size="816px,560px"></dc-import></div>
+        <div style="height: 150px;"><dc-import name="PvTimeline" hint-size="816px,150px"></dc-import></div>
+      </div>
+      <div style="width: 360px;"><dc-import name="PvPanel" tab="direct" hint-size="360px,710px"></dc-import></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

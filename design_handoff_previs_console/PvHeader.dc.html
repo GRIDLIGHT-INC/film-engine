@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Previs header and decisions strip</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: 1176px; height: 96px; box-sizing: border-box; background: #151517; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+  <div style="height: 52px; box-sizing: border-box; padding: 0 16px 0 22px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em;">The Glass Harbour diner</h2>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; padding: 3px 8px; border-radius: 20px; background: #232327; color: #b7b7be;">v1 · marble-1.0-draft</span>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; padding: 3px 8px; border-radius: 20px; background: rgba(58,190,128,0.15); color: #4fd39c;">scale calibrated · ×1.75</span>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10.5px; padding: 3px 8px; border-radius: 20px; background: #232327; color: #b7b7be;">12.3 × 18.6 m</span>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Generation risk · score free</button>
+    <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Handover</button>
+    <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Lock world</button>
+  </div>
+  <div style="height: 44px; box-sizing: border-box; padding: 0 12px 0 22px; display: flex; align-items: center; gap: 6px; background: #131315; border-bottom: 1px solid rgba(255,255,255,0.07);">
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 600;">1B</span>
+    <span style="font-size: 12px; color: #b7b7be; margin-right: 8px;">Two-shot, the booth</span>
+    <span style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: #8e8e97; margin-right: 2px;">DECISIONS</span>
+    <sc-for list="{{chips}}" as="d" hint-placeholder-count="7">
+      <button title="{{d.tip}}" style="height: 26px; padding: 0 9px; border-radius: 20px; border: 1px solid {{d.bd}}; background: {{d.bg}}; color: {{d.fg}}; font: 500 11px -apple-system, sans-serif; display: flex; align-items: center; gap: 5px;"><span style="font-size: 9px;">{{d.icon}}</span>{{d.name}}</button>
+    </sc-for>
+    <div style="flex-grow: 1;"></div>
+    <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Apply 2 to the shot</button>
+    <button style="height: 30px; padding: 0 12px; border-radius: 8px; border: none; background: #3559cc; color: #ffffff; font: 500 11.5px -apple-system, sans-serif;">Lock shot</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1176,"height":96}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const S = {
+      locked:  { icon: '●', bg: 'rgba(58,190,128,0.15)', bd: 'rgba(58,190,128,0.4)', fg: '#4fd39c', tip: 'Locked — on the scene card and approved. Unlock to change.' },
+      applied: { icon: '✓', bg: 'rgba(102,144,255,0.14)', bd: 'rgba(102,144,255,0.45)', fg: '#9fb6ff', tip: 'Applied — on the scene card; production will send this.' },
+      trying:  { icon: '○', bg: 'rgba(224,163,62,0.12)', bd: 'rgba(224,163,62,0.45)', fg: '#e8b85c', tip: 'Trying — changed here, not yet on the shot.' },
+      none:    { icon: '–', bg: 'transparent', bd: 'rgba(255,255,255,0.10)', fg: '#8e8e97', tip: 'Nothing decided yet.' }
+    };
+    const chips = [
+      ['Camera', 'trying'], ['Direction', 'applied'], ['Lighting', 'locked'],
+      ['Set view', 'locked'], ['Cast', 'locked'], ['Props', 'none'], ['Move', 'trying']
+    ].map(([name, st]) => ({ name, ...S[st] }));
+    return { chips };
+  }
+}
+</script>
+</body>
+</html>

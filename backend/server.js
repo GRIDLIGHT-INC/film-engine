@@ -369,6 +369,25 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    /*
+     * The splat viewer (Spark + three, ADR-008) for a page not served from
+     * src/ — the iOS shell or a copied index.html. One fixed file, read-only,
+     * cached: no path from the URL ever reaches the filesystem.
+     */
+    if (req.method === 'GET' && pathname === '/film/vendor/splat-viewer.js') {
+        const file = require('path').join(__dirname, '..', 'src', 'vendor', 'splat-viewer.js');
+        require('fs').readFile(file, (err, buf) => {
+            if (err) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Splat viewer not built — run scripts/build-splat-viewer.sh' }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=86400' });
+            res.end(buf);
+        });
+        return;
+    }
+
     // Parse body for POST/PUT (larger limit for bundle import)
     if (req.method === 'POST' || req.method === 'PUT') {
 

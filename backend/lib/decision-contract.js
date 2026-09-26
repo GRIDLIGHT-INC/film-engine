@@ -184,4 +184,78 @@ function applicationFingerprints(row, card, options) {
     return { stage: hash(staged), card: hash(projectedCard) };
 }
 
-module.exports = { DECISIONS, EXCEPTIONS, directorIntentFromCard, applyDirectorIntent, applicationFingerprints, normalizeNames };
+/*
+ * THE DECISIONS A DIRECTOR CAN SEE AND LOCK, ONE CHIP EACH.
+ *
+ * The six registry decisions plus the move. Movement is an EXCEPTION in the
+ * registry above — Previs-native, video-only — which is exactly why it gets
+ * its own chip: it is the one decision a keyframe cannot show, so a director
+ * has to be able to lock it separately from the camera it belongs to.
+ *
+ * The ids are the registry's without the `shot.` prefix, so a chip, a lock and
+ * a payload name the same thing.
+ */
+const DECISION_CHIPS = Object.freeze([
+    { id: 'camera',        label: 'Camera',    decision: 'shot.camera' },
+    { id: 'direction',     label: 'Direction', decision: 'shot.direction' },
+    { id: 'lighting',      label: 'Lighting',  decision: 'shot.lighting' },
+    { id: 'location_view', label: 'Set view',  decision: 'shot.location_view' },
+    { id: 'characters',    label: 'Cast',      decision: 'shot.characters' },
+    { id: 'props',         label: 'Props',     decision: 'shot.props' },
+    { id: 'movement',      label: 'Move',      decision: 'previs.spatial-workspace' },
+]);
+
+/**
+ * One fingerprint pair PER DECISION: what the stage holds, and what the card
+ * holds, for that decision alone.
+ *
+ * The same material applicationFingerprints hashes as a whole, cut along the
+ * chip lines — so "applied" per decision and "applied" for the shot can never
+ * disagree about what was compared. `has` is whether the STAGE says anything
+ * about it; a decision nobody has touched is "none", not "trying".
+ *
+ * options.characterNames / options.propNames split the staged subjects by
+ * what the project knows them to be. A staged name the project does not know
+ * is scaffolding (see staging.unnamed) and is counted as neither.
+ */
+function decisionParts(row, card, options) {
+    if (!row) return null;
+    const j = (v, d) => { if (typeof v !== 'string') return v == null ? d : v; try { return JSON.parse(v || ''); } catch (_) { return d; } };
+    const camera = j(row.camera_json, {}) || {};
+    const director = j(row.director_json, {}) || {};
+    const subjects = j(row.subjects_json, []) || [];
+    const moves = j(row.moves_json, []) || [];
+    const scene = card || {};
+    const cardCamera = scene.camera || {};
+    const opts = options || {};
+    const chars = new Set(normalizeNames(opts.characterNames || []));
+    const props = new Set(normalizeNames(opts.propNames || []));
+    const staged = normalizeNames(subjects.map(o => o && o.name));
+    const hash = value => crypto.createHash('sha256').update(JSON.stringify(value === undefined ? null : value)).digest('hex').slice(0, 32);
+    const present = v => v != null && v !== '' && !(Array.isArray(v) && !v.length)
+        && !(typeof v === 'object' && !Array.isArray(v) && !Object.values(v).some(x => x != null && x !== ''));
+    const pairs = {
+        camera: [
+            { position: camera.position, rotation: camera.rotation, focalMm: camera.focalMm,
+              sensorId: camera.sensorId, fStop: camera.fStop, focusDistanceM: camera.focusDistanceM },
+            { position: cardCamera.position, rotation: cardCamera.rotation, lens: cardCamera.lens,
+              sensor: cardCamera.sensor, aperture: cardCamera.aperture, height_m: cardCamera.height_m,
+              focus_distance_m: cardCamera.focus_distance_m },
+        ],
+        direction: [director.direction || '', scene.direction || ''],
+        lighting: [director.lighting || null, scene.lighting || null],
+        location_view: [director.location_view || '', scene.location_view || ''],
+        characters: [staged.filter(n => chars.has(n)), normalizeNames(scene.characters || [])],
+        props: [staged.filter(n => props.has(n)), normalizeNames(scene.props || [])],
+        movement: [{ movement: row.movement || null, moves }, cardCamera.movement || null],
+    };
+    const out = {};
+    for (const chip of DECISION_CHIPS) {
+        const [stage, onCard] = pairs[chip.id];
+        const stageHas = chip.id === 'movement' ? !!(row.movement || moves.length) : present(stage);
+        out[chip.id] = { stage: hash(stage), card: hash(onCard), has: stageHas };
+    }
+    return out;
+}
+
+module.exports = { DECISIONS, EXCEPTIONS, DECISION_CHIPS, directorIntentFromCard, applyDirectorIntent, applicationFingerprints, decisionParts, normalizeNames };

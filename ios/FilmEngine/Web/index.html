@@ -5004,6 +5004,118 @@ table, .render-table { border-radius:12px; overflow:hidden; }
              background:#5fd3c4; color:#062a26; border:1px solid #5fd3c4; }
 .we-render:hover { background:#7fdfd2; }
 
+/* ── Previs console as one screen (previs_console) ──────────────────────────
+   The console fills the page instead of scrolling it: header, decisions strip,
+   then a three-column body — shots, the stage (view over move), the tabs.
+   Height is the main panel's own height minus its padding. */
+.pv-console { height:calc(100vh - 186px); min-height:560px; display:flex; flex-direction:column;
+  gap:8px; color:#f4f4f5; }
+.pv-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pv-title { font-size:18px; font-weight:600; letter-spacing:-0.02em; margin-right:6px; }
+.pv-chip { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:10.5px; padding:3px 8px;
+  border-radius:20px; background:#232327; color:#b7b7be; }
+.pv-chip-ok { background:rgba(58,190,128,0.15); color:#4fd39c; }
+.pv-spacer { flex:1; }
+.pv-dim { font-size:12px; color:#8e8e97; }
+.pv-btn { height:30px; padding:0 11px; border-radius:8px; border:1px solid rgba(255,255,255,0.08);
+  background:#232327; color:#c9c9d0; font-size:11.5px; font-weight:500; cursor:pointer; white-space:nowrap; }
+.pv-btn:hover { background:#2b2b30; }
+.pv-btn:disabled { opacity:0.45; cursor:default; }
+.pv-primary { background:#3559cc; border-color:#3559cc; color:#fff; }
+.pv-primary:hover { background:#4468e0; }
+.pv-amber { border-color:rgba(224,163,62,0.45); color:#e8b85c; }
+.pv-decisions { display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:12px;
+  background:#131315; border:1px solid rgba(255,255,255,0.07); flex-wrap:wrap; }
+.pv-shot-code { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:12px; font-weight:600; }
+.pv-shot-name { font-size:12px; color:#b7b7be; margin-right:8px; max-width:220px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.pv-dec-label { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:9.5px; letter-spacing:0.12em; color:#8e8e97; }
+.pv-dec-row { display:flex; gap:5px; flex-wrap:wrap; }
+.pv-dec { height:26px; padding:0 9px; border-radius:20px; display:inline-flex; align-items:center; gap:5px;
+  font-size:11px; font-weight:500; cursor:pointer; border:1px solid rgba(255,255,255,0.10);
+  background:transparent; color:#8e8e97; }
+.pv-dec-mark { font-size:9px; }
+.pv-dec-state { font-size:10px; opacity:0.75; }
+.pv-dec-trying { border-color:rgba(224,163,62,0.45); background:rgba(224,163,62,0.12); color:#e8b85c; }
+.pv-dec-applied { border-color:rgba(102,144,255,0.45); background:rgba(102,144,255,0.14); color:#9fb6ff; }
+.pv-dec-locked { border-color:rgba(58,190,128,0.4); background:rgba(58,190,128,0.15); color:#4fd39c; }
+.pv-dec-card_ahead, .pv-dec-conflict, .pv-dec-stale { border-color:rgba(240,138,138,0.45);
+  background:rgba(240,110,110,0.12); color:#f08a8a; }
+.pv-dec-none { opacity:0.8; }
+.pv-grid { flex:1; min-height:0; display:grid; grid-template-columns:150px minmax(0,1fr) 360px; gap:10px; }
+.pv-rail { overflow-y:auto; display:flex; flex-direction:column; gap:3px; padding-right:2px; }
+.pv-shot { display:flex; flex-direction:column; align-items:flex-start; gap:1px; padding:6px 9px;
+  border-radius:9px; border:1px solid transparent; background:transparent; color:#e7e7ea;
+  text-align:left; cursor:pointer; width:100%; }
+.pv-shot:hover { background:#1d1d20; }
+.pv-shot.active { background:#141d3f; border-color:rgba(102,144,255,0.55); }
+.pv-shot-id { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:11.5px; font-weight:600; }
+.pv-shot-loc { font-size:10.5px; color:#8e8e97; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pv-stage { min-width:0; min-height:0; display:flex; flex-direction:column; gap:8px; }
+.pv-view { position:relative; flex:1; min-height:220px; border-radius:12px; background:#08080a;
+  border:1px solid rgba(255,255,255,0.07); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.pv-frame { margin:0 !important; flex:none; }
+.pv-float { position:absolute; top:10px; display:flex; align-items:center; gap:6px; z-index:5; }
+.pv-float-l { left:10px; }
+.pv-float-r { right:10px; }
+.pv-seg { display:flex; gap:2px; padding:3px; border-radius:10px; background:rgba(21,21,23,0.9);
+  border:1px solid rgba(255,255,255,0.08); }
+.pv-seg-btn { height:24px; padding:0 10px; border-radius:7px; border:none; background:transparent;
+  color:#8e8e97; font-size:11.5px; cursor:pointer; }
+.pv-seg-btn.active { background:#2b2b30; color:#f4f4f5; font-weight:600; }
+.pv-seg-btn:disabled { cursor:not-allowed; opacity:0.55; }
+.pv-ov-menu { position:absolute; top:38px; right:0; margin:0; }
+.pv-move { flex:none; }
+/* The move is a strip under the view, not a panel competing with it: lanes at
+   26px, the ease row inline, and the path drawing (a plan of the move) left to
+   the Scene tab's spatial view. */
+.pv-move .we-timeline { margin-top:0; padding:8px 12px 10px; }
+.pv-move .we-panel-head { padding-bottom:6px; }
+.pv-move .we-ruler { margin-top:6px; }
+.pv-move .we-lane { margin-top:4px; }
+.pv-move .we-track { min-height:26px; }
+.pv-move .we-clip { padding:4px 10px; }
+.pv-move .we-clip-s { display:none; }
+.pv-move .we-clip-empty { padding:5px 12px; }
+.pv-move .we-path { display:none; }
+.pv-side { min-height:0; display:flex; flex-direction:column; border-radius:12px; background:#1a1a1d;
+  border:1px solid rgba(255,255,255,0.07); overflow:hidden; }
+.pv-tabs { display:flex; gap:2px; padding:6px; border-bottom:1px solid rgba(255,255,255,0.07); }
+.pv-tab { flex:1; height:30px; border-radius:8px; border:none; background:transparent; color:#8e8e97;
+  font-size:12px; font-weight:500; cursor:pointer; }
+.pv-tab.active { background:#2b2b30; color:#f4f4f5; font-weight:600; }
+.pv-tabbody { flex:1; overflow-y:auto; padding:10px; }
+.pv-tabpane { display:flex; flex-direction:column; gap:10px; }
+.pv-hidden { display:none; }
+.pv-side .we-panel { background:#1d1d20; border-color:rgba(255,255,255,0.06); border-radius:10px; padding:12px; }
+.pv-side .we-secondary { flex-direction:column; margin-top:0; }
+.pv-side .we-advanced { margin-top:0; }
+.pv-side .we-tiles { grid-template-columns:repeat(2,1fr); }
+.pv-side .we-direct { flex-direction:column; }
+.pv-side .we-direct-r { border-left:none; padding-left:0; }
+.pv-side .we-lens { min-width:0; flex:1 0 calc(16.66% - 5px); padding:9px 0; }
+.pv-side .we-advgrid { grid-template-columns:repeat(2,1fr); }
+@media (max-width: 1200px) {
+  .pv-console { height:auto; }
+  .pv-grid { grid-template-columns:1fr; }
+  .pv-rail { flex-direction:row; overflow-x:auto; }
+  .pv-view { min-height:360px; }
+}
+/* The frame names its mode so the note and the pointer can follow it. Look and
+   360° draw on the GL canvas under a transparent overlay; the rest paint the 2D one. */
+.pv-mode-geo, .pv-mode-depth, .pv-mode-plan { background-color:#0c0c0c; }
+.pv-mode-look, .pv-mode-pano { background:#08080a; }
+.pv-gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
+.pv-frame #weFrameCanvas { z-index:1; }
+.pv-frame.pv-mode-pano #weFrameCanvas { pointer-events:none; }
+.pv-frame.pv-mode-pano .pv-gl { cursor:grab; }
+.pv-frame .we-readout, .pv-frame .we-plate-note { z-index:2; text-shadow:0 1px 2px rgba(0,0,0,0.8); }
+.pv-frame.pv-mode-look .we-plate-note, .pv-frame.pv-mode-pano .we-plate-note { color:#e8e8ec; }
+.we-tile-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.fe-panel-shots { flex:1.4; min-height:0; overflow-y:auto; padding:8px; border-top:1px solid rgba(255,255,255,0.07); }
+.fe-panel-shotlist { display:flex; flex-direction:column; gap:3px; }
+body.pv-shots-in-panel .pv-rail { display:none; }
+body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 /* ── camera movement ─────────────────────────────────────────────────────── */
 .we-timeline { margin-top:12px; }
 .we-ruler { display:flex; justify-content:space-between; padding-left:92px; margin-top:12px;
@@ -5079,6 +5191,18 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .pg-node.link .pg-title { color:#e3c4f0; }
 .pg-sub { font-size:10px; color:#8a8a96; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pg-vtag { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:9.5px; padding:1px 5px; border-radius:4px; background:#2c2c34; color:#b7b7be; }
+.pg-pvtag { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:9px; letter-spacing:.04em; color:#8fd1a6; }
+.pg-pvlist { display:flex; flex-direction:column; gap:4px; }
+.pg-pvrow { display:grid; grid-template-columns:70px 1fr auto; gap:8px; align-items:baseline; padding:6px 8px; border-radius:6px; background:#202024; border:1px solid rgba(255,255,255,0.05); font-size:12px; }
+.pg-pvrow .pg-pvk { color:#8b8b94; font-size:11px; }
+.pg-pvrow .pg-pvv { color:#e4e4e7; overflow-wrap:anywhere; }
+.pg-pvrow .pg-pvv em { color:#6b6b73; font-style:normal; }
+.pg-pvrow .pg-pvs { font-family:'SF Mono',ui-monospace,Menlo,monospace; font-size:9.5px; letter-spacing:.04em; text-transform:uppercase; color:#8b8b94; white-space:nowrap; }
+.pg-pvrow.locked { border-color:rgba(143,209,166,0.35); }
+.pg-pvrow.locked .pg-pvs { color:#8fd1a6; }
+.pg-pvrow.stale, .pg-pvrow.conflict { border-color:rgba(224,163,62,0.45); }
+.pg-pvrow.stale .pg-pvs, .pg-pvrow.conflict .pg-pvs, .pg-pvrow.card_ahead .pg-pvs { color:#e0a33e; }
+.pg-pvrow.trying .pg-pvs { color:#9db4ff; }
 .pg-pill { font-size:9px; padding:1px 6px; border-radius:20px; white-space:nowrap; }
 .pg-pill.play { background:rgba(102,144,255,.18); color:#9fb6ff; }
 .pg-pill.fail { background:rgba(240,110,110,.12); color:#f08a8a; }
@@ -15356,7 +15480,8 @@ THREE.GLTFLoader = GLTFLoader;
             return `
                   <button class="we-tile${cls}${bad ? ' bad' : ''}"
                           onclick="worldExploreTap('${c.key}')">
-                    <span class="we-tile-thumb"><span class="we-tile-key">${esc(c.key)}</span></span>
+                    <span class="we-tile-thumb">${EXPLORE.thumbs && EXPLORE.thumbs[c.key]
+                        ? `<img class="we-tile-img" src="${EXPLORE.thumbs[c.key]}" alt="">` : ''}<span class="we-tile-key">${esc(c.key)}</span></span>
                     <span class="we-tile-body">
                       <span class="we-tile-name">${esc(c.name)}</span>
                       <span class="we-tile-intent">${esc(c.intent)}</span>
@@ -15514,6 +15639,9 @@ THREE.GLTFLoader = GLTFLoader;
     function worldExploreShow() {
         const tiles = document.getElementById('weExploreTiles');
         if (tiles) tiles.innerHTML = worldExploreTilesHtml();
+        // Rendered thumbnails, when the world's splat can be drawn. Never awaited.
+        if (typeof worldFlagOn === 'function' && typeof worldExploreThumbs === 'function'
+            && worldFlagOn('previs_console')) worldExploreThumbs().catch(() => {});
         const out = document.getElementById('weExploreOut');
         if (!out) return;
         const r = EXPLORE.result || {};
@@ -15809,6 +15937,7 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     function worldConsoleHtml(project, world, version) {
+        if (worldFlagOn('previs_console')) return worldConsoleV2Html(project, world, version);
         const ratio = worldFrameRatio(project);
         const m = worldMeasurements(version, []);
         const lenses = worldLenses().map(mm =>
@@ -15894,6 +16023,653 @@ THREE.GLTFLoader = GLTFLoader;
           ${worldAdvancedHtml()}
         </div>`;
     }
+
+    /* ── THE CONSOLE AS ONE SCREEN (previs_console) ──────────────────────
+     *
+     * The same regions the handoff draws, rearranged so nothing scrolls: the
+     * camera view takes whatever height the window has, the move sits under
+     * it the way a timeline sits under a viewer, and the right column's
+     * panels go behind four tabs. Every region is the SAME function the
+     * two-column layout calls, so a region cannot behave differently here.
+     *
+     * Inactive tabs are hidden, not omitted: the score, measurement and
+     * handover writers find their elements by id, and a tab that is not open
+     * must still be where their answer lands.
+     */
+    const PV_TABS = Object.freeze([
+        { id: 'camera',  label: 'Camera' },
+        { id: 'direct',  label: 'Direct' },
+        { id: 'explore', label: 'Explore' },
+        { id: 'scene',   label: 'Scene' },
+    ]);
+
+    /* What each state is called on a chip, and the one-line reason behind it. */
+    const PV_DECISION_STATES = Object.freeze({
+        none:       { mark: '–', text: 'not set',       tip: 'Nothing staged for this yet.' },
+        trying:     { mark: '○', text: 'trying',        tip: 'Changed here, not on the shot yet — Apply sends it to the scene card.' },
+        applied:    { mark: '✓', text: 'applied',       tip: 'On the scene card: generation sends this. Click to lock it.' },
+        locked:     { mark: '●', text: 'locked',        tip: 'Locked: generation will send exactly this. Click to unlock.' },
+        card_ahead: { mark: '!', text: 'board changed', tip: 'Changed on the Shot Board after it was applied here.' },
+        conflict:   { mark: '!', text: 'conflict',      tip: 'Changed here AND on the Shot Board since it was applied.' },
+        stale:      { mark: '!', text: 'changed',       tip: 'Locked, then changed. Apply and lock again, or unlock it.' },
+    });
+
+    function worldDecisionsHtml() {
+        const shot = (WORLD.shots || []).find(s => s.id === WORLD.shotId);
+        const decisions = (WORLD.blocking && WORLD.blocking.decisions) || [];
+        if (!shot) {
+            return `<div class="pv-decisions"><span class="pv-dec-label">DECISIONS</span>
+                <span class="pv-dim">Pick a shot to see what is decided for it.</span></div>`;
+        }
+        const trying = decisions.filter(d => d.state === 'trying').length;
+        const lockable = decisions.filter(d => d.state === 'applied').length;
+        const allLocked = decisions.some(d => d.state === 'locked') && !lockable && !trying;
+        const chips = decisions.map(d => {
+            const st = PV_DECISION_STATES[d.state] || PV_DECISION_STATES.none;
+            return `<button class="pv-dec pv-dec-${esc(d.state)}" title="${esc(d.label + ' — ' + st.tip)}"
+                        onclick="worldDecisionClick('${esc(d.id)}')">
+                      <span class="pv-dec-mark">${st.mark}</span>${esc(d.label)}
+                      <span class="pv-dec-state">${esc(st.text)}</span></button>`;
+        }).join('');
+        return `
+          <div class="pv-decisions">
+            <span class="pv-shot-code">${esc(shot.shot_code || '')}</span>
+            <span class="pv-shot-name">${esc(shot.location || shot.description || '')}</span>
+            <span class="pv-dec-label">DECISIONS</span>
+            <div class="pv-dec-row">${chips || '<span class="pv-dim">Nothing blocked yet — move the camera to start.</span>'}</div>
+            <div class="pv-spacer"></div>
+            ${trying ? `<button class="pv-btn" onclick="worldApplyDecisions()">Apply ${trying} to the shot</button>` : ''}
+            ${allLocked
+                ? '<button class="pv-btn" onclick="worldLockShot(false)">Unlock shot</button>'
+                : `<button class="pv-btn pv-primary" onclick="worldLockShot(true)"${decisions.length ? '' : ' disabled'}>Lock shot</button>`}
+          </div>`;
+    }
+
+    async function worldRefreshBlocking() {
+        if (!WORLD.shotId) return;
+        try { WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`); } catch (_) { /* keep what we had */ }
+        worldConsoleRender();
+    }
+
+    async function worldApplyDecisions() {
+        if (!WORLD.shotId) return;
+        try {
+            await api(`/shots/${WORLD.shotId}/previs/apply`, { method: 'POST', body: '{}' });
+            setStatus('Applied to the shot — generation now sends it');
+        } catch (err) { setStatus('Could not apply: ' + err.message, true); }
+        await worldRefreshBlocking();
+    }
+
+    /* Clicking a chip does the next sensible thing for it — never something that spends. */
+    async function worldDecisionClick(id) {
+        const d = ((WORLD.blocking && WORLD.blocking.decisions) || []).find(x => x.id === id);
+        if (!d || !WORLD.shotId) return;
+        if (d.state === 'trying') return worldApplyDecisions();
+        const route = d.state === 'applied' ? 'lock' : (d.state === 'locked' || d.state === 'stale') ? 'unlock' : null;
+        if (!route) {
+            return setStatus(d.state === 'none' ? `${d.label}: nothing staged to lock yet`
+                : `${d.label}: re-seed from the Shot Board before locking`, d.state !== 'none');
+        }
+        try {
+            await api(`/shots/${WORLD.shotId}/previs/${route}`,
+                { method: 'POST', body: JSON.stringify({ decisions: [id] }) });
+            setStatus(`${d.label} ${route === 'lock' ? 'locked' : 'unlocked'}`);
+        } catch (err) { setStatus(err.message, true); }
+        await worldRefreshBlocking();
+    }
+
+    /* Lock shot = apply what is still being tried, then lock everything applied and sign it off. */
+    async function worldLockShot(lock) {
+        if (!WORLD.shotId) return;
+        const decisions = (WORLD.blocking && WORLD.blocking.decisions) || [];
+        try {
+            if (lock && decisions.some(d => d.state === 'trying')) {
+                await api(`/shots/${WORLD.shotId}/previs/apply`, { method: 'POST', body: '{}' });
+            }
+            await api(`/shots/${WORLD.shotId}/previs/${lock ? 'lock' : 'unlock'}`,
+                { method: 'POST', body: JSON.stringify({ all: true }) });
+            setStatus(lock ? 'Shot locked — production will send exactly these decisions' : 'Shot unlocked');
+        } catch (err) { setStatus(err.message, true); }
+        await worldRefreshBlocking();
+    }
+
+    function worldSetTab(id) { WORLD.tab = id; worldConsoleRender(); }
+
+    function worldConsoleV2Html(project, world, version) {
+        const m = worldMeasurements(version, []);
+        const tab = WORLD.tab || 'camera';
+        const lenses = worldLenses().map(mm =>
+            `<button class="we-lens${mm === WORLD.lens ? ' active' : ''}"
+                     onclick="worldSetLens(${mm})">${mm}</button>`).join('');
+        const shots = WORLD.shots || [];
+        const rail = shots.length
+            ? shots.map(sh => `
+                <button class="pv-shot${sh.id === WORLD.shotId ? ' active' : ''}" onclick="worldRailSelect('${sh.id}')">
+                  <span class="pv-shot-id">${esc(sh.shot_code || '')}</span>
+                  <span class="pv-shot-loc">${esc(sh.location || sh.description || '')}</span>
+                </button>`).join('')
+            : '<p class="pv-dim">No shots in this project yet — break the screenplay down first.</p>';
+        const pane = (id, html) => `<div class="pv-tabpane${tab === id ? '' : ' pv-hidden'}" data-tab="${id}">${html}</div>`;
+        const tabs = PV_TABS.filter(t => t.id !== 'direct' || worldRegionOn('direct-the-shot'))
+            .filter(t => t.id !== 'explore' || worldRegionOn('explore-shot'))
+            .map(t => `<button class="pv-tab${tab === t.id ? ' active' : ''}" onclick="worldSetTab('${t.id}')">${t.label}</button>`).join('');
+        return `
+        <div class="pv-console">
+          <div class="pv-head">
+            <span class="pv-title">${esc((world && world.name) || 'No world yet')}</span>
+            <span class="pv-chip">${esc(version ? 'v' + version.version + (version.model ? ' · ' + version.model : '') : 'no version')}</span>
+            <span class="pv-chip${m.state === 'SCALE CALIBRATED' ? ' pv-chip-ok' : ''}">${esc(String(m.state || '').toLowerCase())}</span>
+            ${world && world.locked ? '<span class="pv-chip pv-chip-ok">world locked</span>' : ''}
+            <div class="pv-spacer"></div>
+            <button class="pv-btn" onclick="worldScoreComplexity()">Risk <span id="weRiskGrade">—</span></button>
+            <button class="pv-btn" onclick="worldCheckExport()">Handover <span id="weExportState">—</span></button>
+            ${worldRegionOn('create-spatial-world') ? '<button class="pv-btn" onclick="worldOpenCreate()">New world</button>' : ''}
+          </div>
+          ${worldDecisionsHtml()}
+          <div class="pv-grid">
+            <div class="pv-rail">${rail}</div>
+            <div class="pv-stage">
+              <div class="pv-view" id="pvView">
+                <div class="we-frame pv-frame pv-mode-${esc(worldViewMode())}" id="weFrame">
+                  <canvas id="weFrameCanvas"></canvas>
+                  <div class="we-readout" id="weReadout"></div>
+                  <div class="we-plate-note" id="pvModeNote">${esc(PV_MODE_NOTES[worldViewMode()] || PV_MODE_NOTES.geo)}</div>
+                </div>
+                <div class="pv-float pv-float-l">
+                  <div class="pv-seg">${worldModeButtonsHtml()}</div>
+                  <span class="we-live" id="weCamSpec"></span>
+                </div>
+                <div class="pv-float pv-float-r">
+                  <button class="pv-btn" onclick="worldToggleOverlayMenu()">Overlays · <span id="weOvCount">0</span></button>
+                  ${worldRegionOn('match-reference-composition')
+                    ? '<button class="pv-btn pv-amber" onclick="worldOpenMatchReference()">Match reference</button>' : ''}
+                  <button class="pv-btn pv-primary" onclick="worldRenderPlate()">Render plate</button>
+                  <div class="we-ov-menu pv-ov-menu" id="weOverlayMenu" style="display:none;">${worldOverlayMenuHtml()}</div>
+                </div>
+              </div>
+              <div class="pv-move">${worldTimelineHtml()}</div>
+            </div>
+            <div class="pv-side">
+              <div class="pv-tabs">${tabs}</div>
+              <div class="pv-tabbody">
+                ${pane('camera', `
+                  <div class="we-panel">
+                    <div class="we-label">LENS <span class="we-live" id="weLensNow">${WORLD.lens}mm</span></div>
+                    <div class="we-lenses">${lenses}</div>
+                    <div class="we-modes">
+                      <button class="we-mode${WORLD.mode === 'maintain' ? '' : ' active'}" data-mode="keep"
+                              onclick="worldSetMode('keep')">KEEP POSITION</button>
+                      <button class="we-mode${WORLD.mode === 'maintain' ? ' active' : ''}" data-mode="maintain"
+                              onclick="worldSetMode('maintain')">MAINTAIN SIZE</button>
+                    </div>
+                    <p class="we-hint" id="weModeHint"></p>
+                  </div>
+                  ${worldOperateHtml()}
+                  <div class="we-panel">
+                    <div class="we-label">MEASUREMENTS <span class="we-live">${esc(m.state)}</span></div>
+                    <div id="weMeasure" class="we-rows"></div>
+                  </div>
+                  <div class="we-panel">
+                    <div class="we-label">GENERATION RISK</div>
+                    <div id="weRisk" class="we-rows">
+                      <button class="we-btn" onclick="worldScoreComplexity()">Score this shot — free</button>
+                    </div>
+                  </div>`)}
+                ${worldRegionOn('direct-the-shot') ? pane('direct', worldDirectPanelHtml()) : ''}
+                ${worldRegionOn('explore-shot') ? pane('explore', worldExplorePanelHtml()) : ''}
+                ${pane('scene', `
+                  ${worldBlockingHtml()}
+                  ${worldRegionOn('spatial-world') ? worldSpatialHtml(world, version) : ''}
+                  ${worldSecondaryHtml(project)}
+                  <div class="we-panel">
+                    <div class="we-label">HANDOVER</div>
+                    <div id="weExport" class="we-rows">
+                      <button class="we-btn" onclick="worldCheckExport()">What can be exported — free</button>
+                    </div>
+                  </div>
+                  ${worldAdvancedHtml()}`)}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    /*
+     * The frame is the shape of the film and as large as the view allows —
+     * fitted in script because CSS cannot hold an aspect ratio against BOTH a
+     * width and a height limit (the note on the frame's rule says why a
+     * height cap alone breaks the shape).
+     */
+    function worldFitFrame() {
+        const host = document.getElementById('pvView');
+        const frame = document.getElementById('weFrame');
+        if (!host || !frame) return;
+        const ratio = worldFrameRatio(state.currentProject || {}) || (16 / 9);
+        const box = host.getBoundingClientRect();
+        const w = Math.max(160, box.width - 24), h = Math.max(90, box.height - 24);
+        const fw = w / h > ratio ? h * ratio : w;
+        frame.style.width = Math.round(fw) + 'px';
+        frame.style.height = Math.round(fw / ratio) + 'px';
+    }
+
+    window.addEventListener('resize', () => {
+        if (state.currentPage === 'previs' && document.getElementById('pvView')) {
+            worldFitFrame(); worldPaintFrame(); worldDrawPath();
+        }
+    });
+
+    /* ── VIEW MODES: Look, 360°, Geometry, Depth, Plan (ADR-008) ──────────
+     *
+     * ONE camera, five ways to see through it. Geometry and Depth are the
+     * existing painter (the plate generation receives, and its z). Plan is the
+     * collider from above with the cast and every camera drawn on it. Look and
+     * 360° are the world's own Gaussian splat and panorama, rendered by Spark
+     * in a module the page loads only when one of them is first opened — the
+     * page itself carries none of it, which is the cost ADR-006 declined.
+     *
+     * Look is a PREVIEW. The plate is still rendered from the collider; the
+     * note on the frame says so in every mode, because a director who judged a
+     * frame on the splat must not believe the splat is what was sent.
+     */
+    const PV_MODES = Object.freeze([
+        { id: 'look',  label: 'Look',     splat: true },
+        { id: 'pano',  label: '360°',     splat: true },
+        { id: 'geo',   label: 'Geometry' },
+        { id: 'depth', label: 'Depth' },
+        { id: 'plan',  label: 'Plan' },
+    ]);
+    const PV_MODE_NOTES = Object.freeze({
+        look:  'SPLAT PREVIEW — GENERATION STILL RECEIVES THE GEOMETRIC PLATE',
+        pano:  '360° — DRAG TO LOOK AROUND FROM THE CAMERA · NOT THE SHOT',
+        geo:   'GEOMETRIC PLATE — WHAT GENERATION RECEIVES',
+        depth: 'DEPTH — NEAR IS LIGHT',
+        plan:  'PLAN — THE COLLIDER FROM ABOVE',
+    });
+
+    const SPLAT = { mod: null, loading: null, info: null, infoFor: null, canvas: null, renderer: null,
+        scene: null, camera: null, mesh: null, meshUrl: null, pano: null, panoUrl: null, running: false,
+        error: null, look: { yaw: 0, pitch: 0 } };
+
+    function worldViewMode() {
+        if (!worldFlagOn('previs_console')) return 'geo';
+        return WORLD.viewMode || 'geo';
+    }
+
+    function worldModeButtonsHtml() {
+        const vm = worldViewMode();
+        const info = SPLAT.info;
+        return PV_MODES.map(m => {
+            let off = '';
+            if (m.splat && info && !info.enabled) off = ' disabled title="Switch world_splats on in Setup to render the world itself"';
+            else if (m.id === 'look' && info && info.enabled && !info.splats.length) off = ' disabled title="This world version recorded no splat"';
+            else if (m.id === 'pano' && info && info.enabled && !info.panorama && !info.splats.length) off = ' disabled title="This world version has neither a splat nor a panorama"';
+            return `<button class="pv-seg-btn${vm === m.id ? ' active' : ''}"${off}
+                        onclick="worldSetViewMode('${m.id}')">${m.label}</button>`;
+        }).join('');
+    }
+
+    async function worldSetViewMode(id) {
+        WORLD.viewMode = id;
+        SPLAT.look = { yaw: 0, pitch: 0 };
+        worldConsoleRender();
+    }
+
+    /** What this version can draw — asked once per version, free. */
+    async function worldSplatInfo() {
+        const vid = WORLD.version && WORLD.version.id;
+        if (!vid) return null;
+        if (SPLAT.infoFor === vid && SPLAT.info) return SPLAT.info;
+        SPLAT.infoFor = vid;
+        try { SPLAT.info = await api(`/world-versions/${vid}/splats`); }
+        catch (_) { SPLAT.info = { enabled: false, splats: [], panorama: null, scale_factor: 1 }; }
+        return SPLAT.info;
+    }
+
+    /*
+     * The renderer module, loaded once. Same origin first — the dev server and
+     * a built page both serve src/ — then the API's own copy, so a page opened
+     * from anywhere still finds it.
+     */
+    async function worldSplatModule() {
+        if (SPLAT.mod) return SPLAT.mod;
+        if (!SPLAT.loading) {
+            SPLAT.loading = import('./vendor/splat-viewer.js')
+                .catch(() => import(API_BASE + '/film/vendor/splat-viewer.js'))
+                .then(m => (SPLAT.mod = m));
+        }
+        return SPLAT.loading;
+    }
+
+    /*
+     * The pose the painter uses, in the mesh's space: the staged camera scaled
+     * by the version's factor, or the painter's own default. Look MUST share it
+     * — two poses would be two shots.
+     */
+    function worldCameraPose(camOverride) {
+        const f = Number(WORLD.version && WORLD.version.scale_factor);
+        const k = Number.isFinite(f) && f > 0 ? f : 1;
+        const staged = camOverride
+            || (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null;
+        const cam = (staged && Array.isArray(staged.position))
+            ? Object.assign({}, staged, { position: staged.position.map(n => n * k) })
+            : worldDefaultCamera(WORLD.geometry);
+        if (!cam || !Array.isArray(cam.position)) return null;
+        const target = Array.isArray(cam.target)
+            ? cam.target : previsAim({ position: cam.position, rotation: cam.rotation || [0, 0, 0] });
+        const focal = camOverride ? (camOverride.focalMm || WORLD.lens) : (WORLD.lens || cam.focalMm || 35);
+        return { eye: cam.position, target, roll: (cam.rotation && cam.rotation[2]) || 0,
+                 vDeg: worldFovFor(focal).vDeg, hDeg: worldFovFor(focal).hDeg, scale: k };
+    }
+
+    /* Keep ONE GL canvas alive across re-renders: moving a node keeps its context. */
+    function worldSplatCanvas() {
+        if (!SPLAT.canvas) {
+            SPLAT.canvas = document.createElement('canvas');
+            SPLAT.canvas.id = 'pvGL';
+            SPLAT.canvas.className = 'pv-gl';
+            let drag = null;
+            SPLAT.canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; SPLAT.canvas.setPointerCapture(e.pointerId); });
+            SPLAT.canvas.addEventListener('pointermove', e => {
+                if (!drag || worldViewMode() !== 'pano') return;
+                SPLAT.look.yaw -= (e.clientX - drag.x) * 0.25;
+                SPLAT.look.pitch = Math.max(-80, Math.min(80, SPLAT.look.pitch + (e.clientY - drag.y) * 0.2));
+                drag = { x: e.clientX, y: e.clientY };
+                worldSplatRenderOnce();
+            });
+            SPLAT.canvas.addEventListener('pointerup', () => { drag = null; });
+        }
+        return SPLAT.canvas;
+    }
+
+    function worldSplatStop() {
+        if (SPLAT.renderer && SPLAT.running) SPLAT.renderer.setAnimationLoop(null);
+        SPLAT.running = false;
+        if (SPLAT.canvas) SPLAT.canvas.style.display = 'none';
+    }
+
+    function worldAimCamera(camera, pose, THREE) {
+        camera.position.set(pose.eye[0], pose.eye[1], pose.eye[2]);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+        if (pose.roll) camera.rotateZ(pose.roll * Math.PI / 180);
+        camera.fov = pose.vDeg;
+        camera.updateProjectionMatrix();
+    }
+
+    /** Show the Look or 360° view in the frame, or put it away. */
+    async function worldSplatSync() {
+        const vm = worldViewMode();
+        const frame = document.getElementById('weFrame');
+        if (!frame || (vm !== 'look' && vm !== 'pano')) return worldSplatStop();
+        const info = await worldSplatInfo();
+        const note = document.getElementById('pvModeNote');
+        if (!info || !info.enabled || (vm === 'look' && !info.splats.length)
+            || (vm === 'pano' && !info.panorama && !info.splats.length)) {
+            worldSplatStop();
+            if (note) note.textContent = (info && info.note) || 'Nothing to render for this world version.';
+            return;
+        }
+        const canvas = worldSplatCanvas();
+        if (canvas.parentElement !== frame) frame.insertBefore(canvas, frame.firstChild);
+        canvas.style.display = '';
+        let mod;
+        try {
+            if (note && !SPLAT.mod) note.textContent = 'Loading the splat renderer…';
+            mod = await worldSplatModule();
+        } catch (err) {
+            SPLAT.error = err.message;
+            if (note) note.textContent = 'The splat renderer did not load: ' + err.message;
+            return;
+        }
+        const { THREE, SparkRenderer, SplatMesh } = mod;
+        if (!SPLAT.renderer) {
+            SPLAT.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+            SPLAT.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            SPLAT.scene = new THREE.Scene();
+            SPLAT.scene.add(new SparkRenderer({ renderer: SPLAT.renderer }));
+            SPLAT.camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.02, 1000);
+        }
+        const box = frame.getBoundingClientRect();
+        SPLAT.renderer.setSize(Math.max(2, Math.round(box.width)), Math.max(2, Math.round(box.height)), false);
+        SPLAT.camera.aspect = Math.max(0.1, box.width / Math.max(1, box.height));
+
+        // 360° looks around from the camera INSIDE the splat when there is one;
+        // the provider's panorama (taken from the world's own centre) is the
+        // fallback for a version that recorded no splat.
+        const panoFromSplat = vm === 'pano' && info.splats.length > 0;
+        const want = (vm === 'look' || panoFromSplat) ? (info.splats[info.splats.length > 1 ? 1 : 0] || info.splats[0]) : null;
+        if (want && SPLAT.meshUrl !== want.url) {
+            if (SPLAT.mesh) { SPLAT.scene.remove(SPLAT.mesh); if (SPLAT.mesh.dispose) SPLAT.mesh.dispose(); }
+            if (note) note.textContent = `Loading the ${want.kind.replace('splat_', '')} splat…`;
+            SPLAT.mesh = new SplatMesh({ url: mediaUrl(want.url) });
+            // Marble writes splats y-down (OpenCV); the collider is y-up glTF.
+            SPLAT.mesh.quaternion.set(1, 0, 0, 0);
+            SPLAT.meshUrl = want.url;
+            SPLAT.scene.add(SPLAT.mesh);
+            SPLAT.mesh.initialized.then(() => {
+                const n = document.getElementById('pvModeNote');
+                if (n && (worldViewMode() === 'look' || worldViewMode() === 'pano')) n.textContent = PV_MODE_NOTES[worldViewMode()];
+                // Spark sorts on a worker; a few renders let the order settle.
+                [0, 120, 400, 900].forEach(ms => setTimeout(worldSplatRenderOnce, ms));
+                if (worldViewMode() === 'explore' || (EXPLORE.accepted || []).length) worldExploreThumbs();
+            }).catch(err => { const n = document.getElementById('pvModeNote'); if (n) n.textContent = 'The splat did not load: ' + err.message; });
+        }
+        if (SPLAT.mesh) { SPLAT.mesh.scale.setScalar(info.scale_factor || 1); SPLAT.mesh.visible = vm === 'look' || panoFromSplat; }
+
+        if (vm === 'pano' && !panoFromSplat && SPLAT.panoUrl !== info.panorama.url) {
+            if (SPLAT.pano) SPLAT.scene.remove(SPLAT.pano);
+            const geo = new THREE.SphereGeometry(400, 64, 32);
+            geo.scale(-1, 1, 1);
+            const tex = new THREE.TextureLoader().setCrossOrigin('anonymous').load(mediaUrl(info.panorama.url));
+            tex.colorSpace = THREE.SRGBColorSpace;
+            SPLAT.pano = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
+            SPLAT.panoUrl = info.panorama.url;
+            SPLAT.scene.add(SPLAT.pano);
+        }
+        if (SPLAT.pano) SPLAT.pano.visible = vm === 'pano' && !panoFromSplat;
+        SPLAT.panoFromSplat = panoFromSplat;
+
+        if (!SPLAT.running) {
+            SPLAT.running = true;
+            SPLAT.renderer.setAnimationLoop(() => worldSplatRenderOnce());
+        }
+        // Once now as well: an animation loop does not tick in a hidden tab,
+        // and the frame should be right the moment the tab is looked at.
+        worldSplatRenderOnce();
+        if (note && !(want && SPLAT.mesh && !SPLAT.mesh.isInitialized)) note.textContent = PV_MODE_NOTES[vm];
+    }
+
+    function worldSplatRenderOnce() {
+        if (!SPLAT.renderer || !SPLAT.mod) return;
+        const THREE = SPLAT.mod.THREE;
+        const p = worldCameraPose();
+        const mode = worldViewMode();
+        if (!p || !document.getElementById('pvGL')) return worldSplatStop();
+        if (mode === 'pano') {
+            // The panorama is a place, not a shot: stand at its centre,
+            // start facing where the shot faces, and let the drag turn you.
+            const d = [p.target[0] - p.eye[0], p.target[1] - p.eye[1], p.target[2] - p.eye[2]];
+            const baseYaw = Math.atan2(d[0], d[2]) * 180 / Math.PI;
+            const yaw = (baseYaw + SPLAT.look.yaw) * Math.PI / 180;
+            const pitch = SPLAT.look.pitch * Math.PI / 180;
+            const o = SPLAT.panoFromSplat ? p.eye : [0, 0, 0];
+            SPLAT.camera.position.set(o[0], o[1], o[2]);
+            SPLAT.camera.up.set(0, 1, 0);
+            SPLAT.camera.lookAt(o[0] + Math.sin(yaw) * Math.cos(pitch), o[1] + Math.sin(pitch), o[2] + Math.cos(yaw) * Math.cos(pitch));
+            SPLAT.camera.fov = Math.max(p.vDeg, 60);
+            SPLAT.camera.updateProjectionMatrix();
+        } else {
+            worldAimCamera(SPLAT.camera, p, THREE);
+        }
+        SPLAT.renderer.render(SPLAT.scene, SPLAT.camera);
+    }
+
+    /*
+     * EXPLORE, RENDERED. Each accepted camera is drawn through its own lens
+     * from the same splat the Look view shows, so six tiles are six pictures
+     * of the set rather than six hatched boxes. Free — nothing leaves the page.
+     */
+    async function worldExploreThumbs() {
+        const cams = (EXPLORE.accepted || []).filter(a => a.camera && Array.isArray(a.camera.position));
+        if (!cams.length) return;
+        const info = await worldSplatInfo();
+        if (!info || !info.enabled || !info.splats.length) return;
+        let mod;
+        try { mod = await worldSplatModule(); } catch (_) { return; }
+        const { THREE, SparkRenderer, SplatMesh } = mod;
+        EXPLORE.thumbs = EXPLORE.thumbs || {};
+        const url = info.splats[0].url;               // the smallest tier is plenty at 320 px
+        if (!SPLAT.thumb) {
+            const c = document.createElement('canvas');
+            const r = new THREE.WebGLRenderer({ canvas: c, antialias: false, preserveDrawingBuffer: true });
+            r.setSize(320, 180, false);
+            const s = new THREE.Scene();
+            s.add(new SparkRenderer({ renderer: r }));
+            SPLAT.thumb = { canvas: c, renderer: r, scene: s, camera: new THREE.PerspectiveCamera(40, 16 / 9, 0.02, 1000), url: null, mesh: null };
+        }
+        const T = SPLAT.thumb;
+        if (T.url !== url) {
+            if (T.mesh) T.scene.remove(T.mesh);
+            T.mesh = new SplatMesh({ url: mediaUrl(url) });
+            T.mesh.quaternion.set(1, 0, 0, 0);
+            T.mesh.scale.setScalar(info.scale_factor || 1);
+            T.scene.add(T.mesh);
+            T.url = url;
+            try { await T.mesh.initialized; } catch (_) { return; }
+        }
+        // A timer, not requestAnimationFrame: rAF never fires in a hidden tab.
+        const frame = () => new Promise(r => setTimeout(r, 60));
+        for (const a of cams) {
+            const pose = worldCameraPose(a.camera);
+            if (!pose) continue;
+            worldAimCamera(T.camera, pose, THREE);
+            // Spark sorts on a worker; give it a few frames to settle.
+            for (let i = 0; i < 6; i++) { T.renderer.render(T.scene, T.camera); await frame(); }
+            T.renderer.render(T.scene, T.camera);
+            EXPLORE.thumbs[a.key] = T.canvas.toDataURL('image/jpeg', 0.82);
+        }
+        const tiles = document.getElementById('weExploreTiles');
+        if (tiles) tiles.innerHTML = worldExploreTilesHtml();
+    }
+
+    /*
+     * PLAN — the collider from above. A height map, not a wireframe: every
+     * vertex lifts its cell to the tallest thing standing there, so the floor
+     * reads dark, the counter and booths mid, the walls bright. Then the cast
+     * where they are staged, and every camera as the wedge it actually sees.
+     */
+    function worldPaintPlan(ctx, c) {
+        const geo = WORLD.geometry;
+        ctx.fillStyle = '#0f0f12';
+        ctx.fillRect(0, 0, c.width, c.height);
+        if (!geo || !Array.isArray(geo.vertices) || !geo.vertices.length) {
+            ctx.fillStyle = '#8e8e97'; ctx.font = '13px -apple-system, sans-serif';
+            ctx.fillText('No collider for this world yet — the plan is drawn from it.', 20, 30);
+            return;
+        }
+        const b = geo.bounds || {};
+        const min = b.min || [Infinity, Infinity, Infinity], max = b.max || [-Infinity, -Infinity, -Infinity];
+        if (!b.min) for (const v of geo.vertices) for (let i = 0; i < 3; i++) { min[i] = Math.min(min[i], v[i]); max[i] = Math.max(max[i], v[i]); }
+        const pad = 28;
+        const sx = (c.width - pad * 2) / Math.max(1e-6, max[0] - min[0]);
+        const sz = (c.height - pad * 2) / Math.max(1e-6, max[2] - min[2]);
+        const s = Math.min(sx, sz);
+        const ox = (c.width - (max[0] - min[0]) * s) / 2, oz = (c.height - (max[2] - min[2]) * s) / 2;
+        const X = x => ox + (x - min[0]) * s, Z = z => oz + (z - min[2]) * s;
+
+        const cell = Math.max(2, Math.round(Math.min(c.width, c.height) / 160));
+        const cols = Math.ceil(c.width / cell), rows = Math.ceil(c.height / cell);
+        const hmap = new Float32Array(cols * rows).fill(-Infinity);
+        /*
+         * A CUT, like an architect's plan. Taking the tallest point per cell
+         * paints the ceiling over the whole room; cutting at 60% of the room's
+         * height shows what stands on the floor, and a wall still reads as the
+         * brightest thing because it reaches the cut everywhere it stands.
+         */
+        const cut = min[1] + (max[1] - min[1]) * 0.6;
+        for (const v of geo.vertices) {
+            if (v[1] > cut) continue;
+            const i = Math.floor(X(v[0]) / cell), j = Math.floor(Z(v[2]) / cell);
+            if (i < 0 || j < 0 || i >= cols || j >= rows) continue;
+            const k = j * cols + i;
+            if (v[1] > hmap[k]) hmap[k] = v[1];
+        }
+        const floor = min[1], span = Math.max(1e-6, cut - min[1]);
+        for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+            const h = hmap[j * cols + i];
+            if (h === -Infinity) continue;
+            const t = Math.min(1, Math.max(0, (h - floor) / span));
+            const g = Math.round(38 + t * 150);
+            ctx.fillStyle = `rgb(${g},${g + 3},${g + 8})`;
+            ctx.fillRect(i * cell, j * cell, cell, cell);
+        }
+        // one metre, when there are metres
+        if (String(geo.scale_state || '') === 'SCALE CALIBRATED') {
+            ctx.strokeStyle = '#b7b7be'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(pad, c.height - 14); ctx.lineTo(pad + s, c.height - 14); ctx.stroke();
+            ctx.fillStyle = '#b7b7be'; ctx.font = '11px -apple-system, sans-serif'; ctx.fillText('1 m', pad + s + 6, c.height - 10);
+        }
+        const wedge = (pose, stroke, fill, label) => {
+            const ex = X(pose.eye[0]), ez = Z(pose.eye[2]);
+            const dx = pose.target[0] - pose.eye[0], dz = pose.target[2] - pose.eye[2];
+            const a = Math.atan2(dz, dx), half = (pose.hDeg / 2) * Math.PI / 180, L = Math.min(c.width, c.height) * 0.35;
+            ctx.beginPath(); ctx.moveTo(ex, ez);
+            ctx.lineTo(ex + Math.cos(a - half) * L, ez + Math.sin(a - half) * L);
+            ctx.lineTo(ex + Math.cos(a + half) * L, ez + Math.sin(a + half) * L);
+            ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.beginPath(); ctx.arc(ex, ez, 5, 0, Math.PI * 2); ctx.fillStyle = stroke; ctx.fill();
+            if (label) { ctx.fillStyle = stroke; ctx.font = '600 12px -apple-system, sans-serif'; ctx.fillText(label, ex + 8, ez - 8); }
+        };
+        for (const a of (EXPLORE.accepted || [])) {
+            const p = a.camera && worldCameraPose(a.camera);
+            if (p) wedge(p, 'rgba(183,183,190,0.75)', 'rgba(255,255,255,0.04)', a.key);
+        }
+        const live = worldCameraPose();
+        if (live) wedge(live, '#6690ff', 'rgba(102,144,255,0.16)', 'CAMERA');
+        const f = live ? live.scale : 1;
+        const subjects = (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.subjects) || [];
+        for (const su of subjects) {
+            if (!Array.isArray(su.position)) continue;
+            const x = X(su.position[0] * f), z = Z(su.position[2] * f);
+            ctx.beginPath(); ctx.arc(x, z, 7, 0, Math.PI * 2); ctx.fillStyle = '#d98a5f'; ctx.fill();
+            ctx.strokeStyle = '#0f0f12'; ctx.lineWidth = 2; ctx.stroke();
+            if (su.name) { ctx.fillStyle = '#f0c3a8'; ctx.font = '600 12px -apple-system, sans-serif'; ctx.fillText(String(su.name).toUpperCase(), x + 10, z + 4); }
+        }
+    }
+
+    /* ── SHOTS IN THE PHASE PANEL ──────────────────────────────────────────
+     *
+     * The shot list belongs with the rest of the navigation, in the app's own
+     * left panel, rather than as a third column eating the view. Added under
+     * the Plan pages while the one-screen console is open, removed the moment
+     * it is not — the panel is shared by every page.
+     */
+    function worldSyncPanelShots(page) {
+        const panel = document.querySelector('.fe-panel');
+        let box = document.getElementById('fePanelShots');
+        const want = page === 'previs' && worldEngineOn() && worldFlagOn('previs_console') && !!panel;
+        document.body.classList.toggle('pv-shots-in-panel', want);
+        if (!want) { if (box) box.remove(); return; }
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'fePanelShots';
+            box.className = 'fe-panel-shots';
+            panel.appendChild(box);
+        }
+        const shots = WORLD.shots || [];
+        const sig = shots.map(s => s.id).join(',') + '|' + WORLD.shotId;
+        if (box.dataset.sig === sig) return;
+        box.dataset.sig = sig;
+        box.innerHTML = `
+            <div class="nav-group-label"><span>Shots</span><span class="nav-group-count">${shots.length}</span></div>
+            <div class="fe-panel-shotlist">${shots.length ? shots.map(sh => `
+              <button class="pv-shot${sh.id === WORLD.shotId ? ' active' : ''}" onclick="worldRailSelect('${sh.id}')">
+                <span class="pv-shot-id">${esc(sh.shot_code || '')}</span>
+                <span class="pv-shot-loc">${esc(sh.location || sh.description || '')}</span>
+              </button>`).join('') : '<p class="pv-dim" style="padding:6px 10px;">No shots yet — break the screenplay down first.</p>'}
+            </div>`;
+    }
+    window.worldSyncPanelShots = worldSyncPanelShots;
 
     /* ── Camera movement (phase 4) ────────────────────────────────────────
      *
@@ -16365,7 +17141,10 @@ THREE.GLTFLoader = GLTFLoader;
         c.height = Math.max(1, Math.round(box.height));
         const ctx = c.getContext('2d');
         ctx.clearRect(0, 0, c.width, c.height);
-        worldPaintGeometry(ctx, c);
+        const viewMode = worldViewMode();
+        if (viewMode === 'plan') { worldPaintPlan(ctx, c); worldSplatSync(); return; }
+        if (viewMode === 'geo' || viewMode === 'depth') worldPaintGeometry(ctx, c, viewMode === 'depth' ? 'depth' : undefined);
+        worldSplatSync();
         const st = WORLD.overlays || {};
         const on = (id) => (st[id] === undefined
             ? (worldOverlays().find(o => o.id === id) || {}).on : st[id]);
@@ -16845,6 +17624,14 @@ THREE.GLTFLoader = GLTFLoader;
             hint.textContent = WORLD.mode === 'maintain'
                 ? `Camera dollies automatically to hold the subject at ${Math.round((WORLD.pinned || 0) * 100)}% of frame.`
                 : 'Camera holds. Subject size follows the lens.';
+        }
+        if (document.getElementById('pvView')) worldFitFrame();
+        worldSyncPanelShots(state.currentPage);
+        if (worldFlagOn('previs_console') && WORLD.version && SPLAT.infoFor !== WORLD.version.id) {
+            worldSplatInfo().then(() => {
+                const seg = document.querySelector('.pv-seg');
+                if (seg) seg.innerHTML = worldModeButtonsHtml();
+            });
         }
         worldPaintFrame();
         worldDrawPath();
@@ -42310,7 +43097,7 @@ function pgNodeHtml(n) {
         return `<div class="pg-node pg-shot${sel}${f ? '' : ' failed'}" data-key="${n.key}" style="${pos}width:200px;height:180px;">
             <div class="pg-nh"><div class="pg-nt"><span class="pg-title">${esc(n.shot_code)}</span>
               ${f ? `<span class="pg-vtag">v${f.version}/${n.frames.length}</span>` : '<span class="pg-pill fail">no frame</span>'}</div>
-              <div class="pg-sub">shot${n.framing ? ' · ' + esc(n.framing) : ''} · ${pgSecs(n.duration_ms)}</div>
+              <div class="pg-sub">shot${n.framing ? ' · ' + esc(n.framing) : ''} · ${pgSecs(n.duration_ms)}${pgPrevisTag(n)}</div>
               <span class="pg-hport">${pgPort('out', 'scene', 'scene')}</span></div>
             ${frame}
             <div class="pg-row" style="margin-top:4px;">${pgPort('in', 'plates', 'plates')}<span>plates</span><span>image</span>
@@ -43056,6 +43843,55 @@ function pgRenderDrawer() {
     pgRenderPlayback();
 }
 
+/** The node's previs mark: how many directing decisions are locked. */
+function pgPrevisTag(n) {
+    const p = n.previs;
+    if (!p || (!p.locked && !p.approved)) return '';
+    return ` · <span class="pg-pvtag" title="${p.approved ? 'Shot locked in Previs' : p.locked + ' decision' + (p.locked === 1 ? '' : 's') + ' locked in Previs'}">`
+        + `${p.approved ? 'LOCKED' : p.locked + ' LOCKED'}</span>`;
+}
+
+const PG_PREVIS_STATE = Object.freeze({
+    locked: 'Locked', applied: 'On card', trying: 'Being tried', card_ahead: 'Card changed',
+    conflict: 'Conflict', stale: 'Stale lock', none: '—',
+});
+
+/*
+ * FROM PREVIS — the directing decisions this shot carries, read-only. What is
+ * shown is the scene card's value (what generation sends); the state says
+ * whether Previs locked it. Changing one happens in Previs, never here.
+ */
+async function pgLoadPrevis(n) {
+    const key = n.key;
+    const el = document.getElementById('pgPrevis');
+    let d;
+    try { d = await api(`/shots/${n.id}/previs`); }
+    catch (err) { if (el) el.innerHTML = `<div class="pg-warn">${esc(err.message)}</div>`; return; }
+    if (PG.sel !== key) return;
+    const box = document.getElementById('pgPrevis');
+    const count = document.getElementById('pgPrevisCount');
+    if (!box) return;
+    const list = d.decisions || [];
+    const locked = list.filter(x => x.state === 'locked').length;
+    const stale = list.filter(x => x.state === 'stale').length;
+    const approved = !!(d.approval && (d.approval.approved || d.approval.state === 'approved'));
+    if (count) count.textContent = !d.blocking ? 'not blocked' : approved ? 'shot locked' : `${locked} of ${list.length} locked`;
+    if (!d.blocking) {
+        box.innerHTML = '<div class="pg-note">Not blocked in Previs yet — generation uses the scene card alone.</div>';
+        return;
+    }
+    if (!list.length) {
+        box.innerHTML = '<div class="pg-note">Blocked in Previs, but this server does not report decisions yet — restart the backend.</div>';
+        if (count) count.textContent = '';
+        return;
+    }
+    box.innerHTML = list.map(x => `<div class="pg-pvrow ${esc(x.state)}">
+          <span class="pg-pvk">${esc(x.label)}</span>
+          <span class="pg-pvv">${x.value ? esc(x.value) : '<em>not set</em>'}</span>
+          <span class="pg-pvs">${esc(PG_PREVIS_STATE[x.state] || x.state)}</span></div>`).join('')
+        + (stale ? `<div class="pg-warn" style="margin-top:6px;">${stale} locked decision${stale === 1 ? ' has' : 's have'} changed since it was locked — re-lock or unlock it in Previs so the card and the lock agree.</div>` : '');
+}
+
 function pgDrawerShot(n, body, foot, close) {
     const f = n.selected_frame;
     const seq = n.sequence_id ? pgNode('seq:' + n.sequence_id) : null;
@@ -43076,6 +43912,9 @@ function pgDrawerShot(n, body, foot, close) {
           ${f ? `<button class="btn btn-secondary btn-sm" onclick="setAnchor('${n.id}')">Anchor</button>
                  <button class="btn btn-secondary btn-sm" onclick="openFrameViewer('${n.id}')">Mark up</button>` : ''}
         </div></div>
+      <div class="pg-dsec"><div class="pg-kicker"><span>From Previs</span><em id="pgPrevisCount"></em></div>
+        <div class="pg-pvlist" id="pgPrevis"><div class="pg-note">Reading the directing decisions…</div></div>
+        <div class="pg-btnrow"><button class="btn btn-secondary btn-sm" onclick="markCurrentShot('${n.id}');navigateTo('previs')">Open in Previs</button></div></div>
       <div class="pg-dsec"><div class="pg-kicker"><span>Plates &amp; details</span><em id="pgPlateCount"></em></div>
         <div class="pg-list" id="pgPlates"><div class="pg-note">Reading what this shot sends…</div></div>
         <div class="pg-btnrow">
@@ -43109,6 +43948,7 @@ function pgDrawerShot(n, body, foot, close) {
         <div class="pg-btnrow">${mediaUploadControl('video', 'video', 'shot', n.id, { after: 'loadProductionGraph', label: 'Upload clip' })}</div></div>`;
     foot.innerHTML = `<button class="pg-hbtn" onclick="pgPreviewVideo('${n.id}')">Preview request · free</button><div class="grow"></div>
         <button class="pg-hbtn primary" id="pgGenVideoBtn" onclick="pgGenerateVideo('${n.id}')" ${f ? '' : 'disabled title="A clip starts from the frame — generate or upload one first"'}>Generate video</button>`;
+    pgLoadPrevis(n);
     pgLoadShotDetails(n);
 }
 
@@ -44012,6 +44852,7 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(applyProductionFl
   function refresh() {
     var page = currentPage(), ph = phaseOf[page];
     if (ph && ph !== current) showPhase(ph, false);
+    if (window.worldSyncPanelShots) window.worldSyncPanelShots(page);
     Array.prototype.forEach.call(els.track.children, function (b) {
       b.classList.toggle('on', b.dataset.phase === current);
       var pr = progress(b.dataset.phase);

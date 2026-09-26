@@ -50,6 +50,7 @@ const MASTER = 'world_engine';
  */
 const NOT_WORLD = {
     production_graph: 'gates the Production phase (one graph vs eight pages) — held by tests/production-graph.test.js',
+    previs_console: 'lays the SAME console regions out as one screen — a layout, not a region — held by tests/previs-decisions.test.js',
 };
 const subFlags = () => booleanFlags().filter(f => f !== MASTER && !NOT_WORLD[f]);
 
@@ -86,7 +87,10 @@ function pageFlagRegions() {
 
 const renderWith = (flags) => renderConsole(flags);
 
-const allOn = () => Object.fromEntries(booleanFlags().map(f => [f, true]));
+// Every WORLD flag on. The NOT_WORLD flags stay at their defaults: a layout
+// flag changes where regions sit, not whether they exist, and the one-screen
+// layout is held by its own test (previs-decisions) with these same checks.
+const allOn = () => Object.fromEntries(booleanFlags().filter(f => !NOT_WORLD[f]).map(f => [f, true]));
 
 /**
  * Regions whose flag is wired and whose REGION is not built yet, each naming

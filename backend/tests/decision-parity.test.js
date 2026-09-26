@@ -139,9 +139,11 @@ function deriveCardDecisions() {
 // Bookkeeping is excluded by an explicit, stated rule rather than by taste:
 // identity, foreign keys, timestamps and approval bookkeeping are not things a
 // director decides about a shot. Anything else the stage stores IS a decision
-// and has to be accounted for.
+// and has to be accounted for. `locked_parts_json` is approval bookkeeping cut
+// per decision — WHICH decisions are signed off, not a decision itself — so it
+// sits with approved_* rather than asking to cross both surfaces.
 
-const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_(fingerprint|at)|applied_.*)$/;
+const STAGE_BOOKKEEPING = /^(id|shot_id|created_at|updated_at|approved_(fingerprint|at)|applied_.*|locked_parts_json)$/;
 
 function deriveStageDecisions() {
     const sql = fs.readFileSync(path.join(ROOT, 'db/migrations/058_previs_blocking.sql'), 'utf8');

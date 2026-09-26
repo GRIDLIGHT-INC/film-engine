@@ -165,6 +165,16 @@ const SETTINGS = {
         description: 'Show Production as one node graph (shots, sequences, sound and versions) instead of its eight separate pages.',
         default: false,
     },
+    /*
+     * THE PREVIS CONSOLE AS ONE SCREEN. The same console and the same regions,
+     * laid out so nothing scrolls: the camera view as large as the window
+     * allows, the move under it, and the side panels behind four tabs. Off,
+     * the console is the handoff's layout exactly as before.
+     */
+    previs_console: {
+        description: 'Lay the Previs console out as one screen: the camera view as large as the window allows, the move under it, tabs for the rest, and a Decisions strip.',
+        default: false,
+    },
     world_splats: {
         description: 'Download and render Gaussian splats. Off records the splat URLs and fetches nothing — full_res is 25 MB per world.',
         default: false,

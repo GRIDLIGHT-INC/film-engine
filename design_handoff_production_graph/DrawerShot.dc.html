@@ -10,7 +10,7 @@
 <helmet>
 <style>body{margin:0}</style>
 </helmet>
-<div style="width: 420px; height: 1500px; box-sizing: border-box; background: #1a1a1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
+<div style="width: 420px; height: 1740px; box-sizing: border-box; background: #1a1a1d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #f4f4f5;">
   <div style="height: 56px; box-sizing: border-box; padding: 0 14px 0 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.07);">
     <span style="width: 10px; height: 10px; border-radius: 50%; background: #c07ce0;"></span>
     <div style="flex-grow: 1; min-width: 0;">
@@ -40,6 +40,23 @@
         <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Anchor</button>
         <button style="height: 30px; padding: 0 11px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 11.5px -apple-system, sans-serif;">Mark up</button>
       </div>
+    </section>
+
+    <!-- FROM PREVIS -->
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;"><h3 style="margin: 0; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">From Previs</h3><button style="height: 24px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08); background: #232327; color: #c9c9d0; font: 500 10.5px -apple-system, sans-serif;">Open in Previs →</button></div>
+      <div style="border: 1px solid rgba(58,190,128,0.35); border-radius: 8px; overflow: hidden;">
+        <div style="padding: 7px 10px; background: rgba(58,190,128,0.10); font-size: 11.5px; color: #4fd39c;">● Shot locked · world v1 pinned · approved, unchanged since</div>
+        <div style="display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 1px; background: rgba(255,255,255,0.05);">
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Camera</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">50mm · h 0.95 m · push in 0.6 m</span>
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Direction</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">at June's eye line across the table</span>
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Lighting</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">low sun through the front windows</span>
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Set view</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">harbour windows behind June</span>
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Cast</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">June far side, Ray near side</span>
+          <span style="padding: 6px 10px; background: #1d1d20; font-size: 11px; color: #8e8e97;">● Move</span><span style="padding: 6px 10px; background: #1d1d20; font-size: 11.5px;">dolly in 0.6 m, ease out, 4.0 s <span style="color: #8e8e97;">(video only)</span></span>
+        </div>
+      </div>
+      <div style="font-size: 10.5px; color: #8e8e97; line-height: 1.45;">These fill the matching prompt parts below and can't be edited here. Unlock in Previs to change them — the shot is flagged stale until it's locked again.</div>
     </section>
 
     <!-- PLATES -->
@@ -125,7 +142,7 @@
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":1500}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":1740}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }

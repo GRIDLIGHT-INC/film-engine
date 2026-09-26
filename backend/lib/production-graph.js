@@ -350,6 +350,16 @@ function buildGraph(db, projectId) {
         seqData.set(q.id, vids);
     }
 
+    // Previs decisions the director locked — shown on the node, read-only.
+    const previs = new Map();
+    try {
+        for (const r of db.prepare(`SELECT b.shot_id, b.locked_parts_json, b.approved_fingerprint FROM film_previs_blocking b
+                JOIN film_shots sh ON sh.id = b.shot_id JOIN film_scenes s ON s.id = sh.scene_id WHERE s.project_id = ?`).all(projectId)) {
+            const locked = parseJson(r.locked_parts_json, []) || [];
+            previs.set(r.shot_id, { locked: locked.length, approved: !!r.approved_fingerprint });
+        }
+    } catch (_) { /* a database before migration 116 has no locks to show */ }
+
     const shotNode = new Map();
     for (const sh of shots) {
         const card = parseJson(sh.scene_card_yaml, {}) || {};
@@ -369,6 +379,7 @@ function buildGraph(db, projectId) {
             frames, selected_frame: sel,
             videos, selected_video_asset_id: sh.selected_video_asset_id || null,
             state: frames.length ? 'ok' : 'no_frame',
+            previs: previs.get(sh.id) || { locked: 0, approved: false },
         };
         nodes.push(n); shotNode.set(sh.id, n);
         for (const v of videos) {

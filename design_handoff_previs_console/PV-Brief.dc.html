@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Previs console — build brief</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0b0b0c}
+code{font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11.5px;color:#e8d08a;background:#1d1d20;padding:1px 5px;border-radius:4px}
+</style>
+</helmet>
+<div style="width: 1200px; height: 2380px; box-sizing: border-box; padding: 48px 56px; background: #0b0b0c; color: #e7e7ea; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 26px;">
+  <div>
+    <div style="font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8e8e97;">Build brief · for Claude Code</div>
+    <h1 style="margin: 8px 0 6px; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: #f4f4f5;">Previs console — see the real set, lock the decisions</h1>
+    <p style="margin: 0; color: #b7b7be; max-width: 920px;">Rebuild <code>#page-previs</code> as a no-scroll console: the camera view as large as the window allows, a movement timeline under it, and a tabbed panel on the right. Add splat rendering so the view shows the real world, a plan view, rendered Explore thumbnails, and a Decisions strip that makes Apply / Lock visible — and carries it into Production. Confirm every route path before calling it.</p>
+  </div>
+
+  <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">1 · Layout (no page scroll)</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Main panel padding 0. Header 52 + Decisions strip 44 · body = view column + 360px right panel.</li>
+        <li>View column: camera view (flex) + timeline 150. At 1440 the view is 816×560; at 1920 ≈1290×730 (today 665×375).</li>
+        <li>The in-page Shots column goes: shots move to the phase side panel (<code>PvSidePanel</code>) with thumbnails and decision state; Plan pages become compact pills above them.</li>
+        <li>Remove the inner bordered frame; the header row's lone New World joins the side panel.</li>
+        <li>Lighting / Body &amp; Rig / Plate &amp; Output / Advanced move into the Scene tab.</li>
+      </ul>
+    </div>
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">2 · View modes — one camera, five ways to see it</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li><b>Look</b> — Gaussian splats (Spark on three.js, as the previz handoff intends). 100k tier while moving, 500k when still, full for plate stills.</li>
+        <li><b>Geometry</b> — today's collider render; label it "what generation receives". Plates keep rendering from the collider.</li>
+        <li><b>Depth</b> — collider depth, near light / far dark.</li>
+        <li><b>Plan</b> — top-down from the collider: walls, counter, booths, cast marks, every camera as a cone; drag a cone to move the camera.</li>
+        <li><b>360°</b> — the stored panorama on a sphere, look-around only.</li>
+        <li>Picture-in-picture bottom-right: the plan in camera modes, the camera in Plan mode.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">3 · Splats — what has to change in the backend</h2>
+    <ul style="margin: 0; padding-left: 18px;">
+      <li><code>lib/world-assets.js</code> copies collider, panorama, thumbnail and only <i>records</i> <code>splat_100k / splat_500k / splat_full</code> by URL, "because nothing can display them until <code>WORLD_SPLATS</code> is switched on". Switch it on and copy <code>splat_100k</code> + <code>splat_500k</code> on first open (≈6.7 MB per world); fetch <code>splat_full</code> only when a still is rendered.</li>
+      <li>Serve them like the collider (<code>GET /film/world-versions/:vid/…</code>), with the same <code>scale_factor</code> applied so splats and collider line up and every measurement stays true.</li>
+      <li>Vendor the renderer inline like three.js r149 already is (<code>build.target: single-html</code>).</li>
+      <li>Walk mode: WASD at eye height, collider as the collision volume. <code>S</code> saves the current camera as a setup.</li>
+    </ul>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #f4f4f5;">4 · Decisions — Trying → Applied → Locked, and on to Production</h2>
+    <div style="display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px;">
+      <div style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(224,163,62,0.45); background: rgba(224,163,62,0.08);"><div style="font-weight: 600; color: #e8b85c;">○ Trying</div><div style="font-size: 12px; color: #b7b7be;">The previs workspace differs from the scene card. Nothing downstream sees it.</div></div>
+      <div style="align-self: center; color: #8e8e97;">Apply →</div>
+      <div style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(102,144,255,0.45); background: rgba(102,144,255,0.08);"><div style="font-weight: 600; color: #9fb6ff;">✓ Applied</div><div style="font-size: 12px; color: #b7b7be;">Written to the scene card — the one record image and video payloads read.</div></div>
+      <div style="align-self: center; color: #8e8e97;">Lock →</div>
+      <div style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(58,190,128,0.45); background: rgba(58,190,128,0.08);"><div style="font-weight: 600; color: #4fd39c;">● Locked</div><div style="font-size: 12px; color: #b7b7be;">Approved fingerprint stored; world version pinned. Production can't overwrite it.</div></div>
+      <div style="align-self: center; color: #8e8e97;">→</div>
+      <div style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: #1d1d20;"><div style="font-weight: 600; color: #f4f4f5;">Production</div><div style="font-size: 12px; color: #b7b7be;">Shot drawer "From Previs" lists each locked decision; the prompt parts it fills are read-only.</div></div>
+    </div>
+    <ul style="margin: 0; padding-left: 18px;">
+      <li>Decisions and their payloads already exist in <code>lib/decision-contract.js</code>: <code>shot.camera</code>, <code>shot.direction</code>, <code>shot.lighting</code>, <code>shot.location_view</code> (Set view), <code>shot.characters</code> (Cast), <code>shot.props</code>. Movement is video-only by design (see its EXCEPTIONS).</li>
+      <li>State per chip = compare <code>applicationFingerprints(row, card)</code>: staged ≠ card → Trying; equal → Applied; equal <i>and</i> matches <code>approved_fingerprint</code> → Locked.</li>
+      <li>Apply: <code>POST /film/shots/:id/previs/apply</code>. Lock shot: <code>POST /film/shots/:id/previs/approve</code> + pin the world version (<code>world_pin_shot</code>).</li>
+      <li><b>New:</b> per-decision lock. Today approval fingerprints the whole blocking; store one fingerprint per decision id so the lens can be locked while lighting is still being tried.</li>
+      <li>Changing a locked decision requires Unlock; the shot then shows as stale (existing "approved, then changed" rule) in Previs, the side panel, the Production node and before any paid run.</li>
+    </ul>
+  </section>
+
+  <section style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">5 · Explore</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>Each of the six proposals renders a real thumbnail from the splats through its own lens (100k tier is enough at 160×90).</li>
+        <li>Selected camera drives the main view; all six appear as cones in Plan and in the PiP.</li>
+        <li>Compare shows two side by side in the view (split), with the existing numeric comparison below.</li>
+        <li>"Use C" moves the camera to C — still Trying until applied.</li>
+      </ul>
+    </div>
+    <div style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">6 · Direct</h2>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li>The proposal shows on the view as a dashed amber frame before you accept it (Blend mode).</li>
+        <li>Deltas as before → then. Check (free) validates against geometry. "Use this camera" moves it; Apply writes it.</li>
+        <li>The raw JSON box moves under Advanced · AI parameters.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">7 · Found while reviewing</h2>
+    <ul style="margin: 0; padding-left: 18px;">
+      <li>Northline: The Last One has 30 shots, yet Previs showed "No shots in this project yet" (reached by changing the project id in the URL). Either the list only shows shots pinned to a world, or state went stale on a hash change. Check both; the empty state should say which.</li>
+      <li>The Glass Harbour has a calibrated world but no shots — the shots on these boards (1A–1F) are demo content.</li>
+    </ul>
+  </section>
+
+  <section style="padding: 18px 20px; border-radius: 14px; background: #151517; border: 1px solid rgba(255,255,255,0.07);">
+    <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600; color: #f4f4f5;">8 · Boards &amp; done when</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 24px; font-size: 12px; margin-bottom: 10px;">
+      <span><code>PV-Look</code> Look view · Camera tab</span>
+      <span><code>PV-Direct</code> proposal on the view · Direct tab</span>
+      <span><code>PV-Explore</code> camera C · rendered six</span>
+      <span><code>PV-Plan</code> Plan view · Scene tab</span>
+      <span><code>PvHeader</code> world chips + Decisions strip</span>
+      <span><code>PvView</code> modes (prop <code>mode</code>)</span>
+      <span><code>PvPanel</code> tabs (prop <code>tab</code>)</span>
+      <span><code>PvTimeline</code> · <code>PvSidePanel</code></span>
+      <span><code>DinerScene</code> / <code>PlanView</code> stand-in renders</span>
+    </div>
+    <ul style="margin: 0; padding-left: 18px; columns: 2; column-gap: 32px;">
+      <li>No scroll at 1440×900 and up.</li>
+      <li>Look mode shows splats aligned to the collider; measurements unchanged.</li>
+      <li>Plan cones move the camera and vice versa.</li>
+      <li>Explore tiles show real renders.</li>
+      <li>Every Decisions chip reflects the real fingerprint state.</li>
+      <li>A locked decision appears read-only in Production's shot drawer and in the prompt it builds.</li>
+      <li>Unlock → stale everywhere until locked again.</li>
+      <li>Tests: decision-parity, previs-loop, previs-boundary still pass; new tests for per-decision locks and splat alignment.</li>
+    </ul>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":2380}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
