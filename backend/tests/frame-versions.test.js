@@ -575,3 +575,47 @@ test('the refine payload is built in ONE place', () => {
         `the refine instruction text appears ${strays} time(s) outside buildRefinePayload; the `
         + 'preview and the generation can disagree about what is sent');
 });
+
+/*
+ * Going BACK to a version must not cost that version's picture.
+ *
+ * The archiver filed the live frame under the HIGHEST version. Once selecting
+ * became a pointer, the live file held whatever was selected, so choosing v2
+ * and then v4 copied v2's picture over v4's own kept file — and the version
+ * "we had before" came back as a different picture. Measured on a real shot
+ * before this was fixed. Every switch here is checked by content, not by row.
+ */
+test('switching versions back and forth never overwrites a version\'s own picture', async () => {
+    const { handleStoryboard } = require('../routes/storyboard');
+    const { projectId, shotId } = archivedShot();
+    const bytesOf = v => fs.readFileSync(db.prepare(
+        "SELECT file_path FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard' AND version = ?")
+        .get(shotId, v).file_path).toString('base64');
+    const live = path.join(process.env.FILM_DATA_DIR, 'storyboards', projectId, '2B.png');
+    const before = {};
+    for (let v = 1; v <= 3; v++) before[v] = bytesOf(v);
+    before[4] = fs.readFileSync(live).toString('base64');
+
+    for (const v of [2, 4, 1, 4, 3, 2, 4]) {
+        const r = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/${v}/restore`);
+        assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+        assert.strictEqual(fs.readFileSync(live).toString('base64'), before[v], `the board does not show v${v} after selecting it`);
+        for (let k = 1; k <= 4; k++) assert.strictEqual(bytesOf(k), before[k], `selecting v${v} changed v${k}'s own picture`);
+    }
+
+    // Pressing the version already on the board is a no-op, not a refusal —
+    // even for a fresh generation whose row names the live file.
+    const again = await callRoute(handleStoryboard, 'POST', `/film/shots/${shotId}/frames/4/restore`);
+    assert.strictEqual(again.status, 200, JSON.stringify(again.body));
+    assert.strictEqual(again.body.changed, false);
+});
+
+test('an archived version has a URL the graph can paint', () => {
+    const { projectId, shotId } = archivedShot();
+    const fsx = require('../lib/file-storage');
+    const row = db.prepare(
+        "SELECT file_path FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard' AND version = 1").get(shotId);
+    const url = fsx.urlForPath(row.file_path);
+    assert.ok(url, 'a version kept in versions/ has no URL, so the graph paints a broken image');
+    assert.match(url, new RegExp(`^/film/storyboards/${projectId}/2B_v1\\.png`));
+});

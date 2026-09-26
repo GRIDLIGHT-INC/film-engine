@@ -425,7 +425,15 @@ function locate(filePath) {
 /** The URL a stored file is served from, whichever layout it is in; null if none. */
 function urlForPath(filePath, version) {
     const where = locate(filePath);
-    if (!where || where.rest.includes('/')) return null;
+    if (!where) return null;
+    // A superseded storyboard frame is kept in `versions/`, and the storyboard
+    // route looks there too — so its URL is the same shape as the live frame's.
+    // Refusing it left every earlier version, and any frame selected back onto
+    // the board, painted as a broken image on the Production graph.
+    if (where.subdir === 'storyboards' && /^versions\/[^/]+$/.test(where.rest)) {
+        return getFileUrl('storyboards', where.projectId, where.rest.slice('versions/'.length), version);
+    }
+    if (where.rest.includes('/')) return null;
     return getFileUrl(where.subdir, where.projectId, where.rest, version);
 }
 

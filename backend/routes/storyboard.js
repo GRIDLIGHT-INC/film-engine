@@ -177,10 +177,22 @@ function archiveExistingFrame(projectId, shotId, shotCode) {
     try {
         const current = storyboardImagePath(projectId, shotCode);
         if (!fs.existsSync(current)) return null;
-        const row = db.prepare(
-            `SELECT id, version FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'
-              ORDER BY version DESC LIMIT 1`).get(shotId);
+        /*
+         * The live file holds the version the POINTER names, not the highest.
+         * Archiving under the highest was right until selection became a
+         * pointer; after it, selecting v3 and then going back to v5 copied v3's
+         * picture over v5's own kept file, and v5 was gone. The version on the
+         * board is archived, and only when its row still names the live file
+         * (or its own file is missing): a version that already has its own
+         * picture is never written over, because the live file is a copy of it.
+         */
+        const onBoard = currentFrameVersion(shotId);
+        const row = onBoard == null ? null : db.prepare(
+            `SELECT id, version, file_path FROM film_assets WHERE shot_id = ? AND asset_type = 'storyboard'
+              AND version = ? ORDER BY created_at DESC LIMIT 1`).get(shotId, onBoard);
         if (!row) return null;
+        const namesLive = row.file_path && path.resolve(row.file_path) === path.resolve(current);
+        if (!namesLive && row.file_path && fs.existsSync(row.file_path)) return row.file_path;
         const dest = storyboardVersionPath(projectId, shotCode, row.version);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(current, dest);
@@ -1770,6 +1782,15 @@ function restoreShotFrame(req, res, shotId, version) {
         && path.resolve(row.file_path) === path.resolve(live);
     const src = (!namesLiveFile && row.file_path && fs.existsSync(row.file_path))
         ? row.file_path : null;
+    // Pressing the version already on the board is a no-op, not an error —
+    // including a fresh generation, whose row always names the live file.
+    // A version whose own file is gone is still refused below, on the board or not.
+    if (currentFrameVersion(shotId) === wanted && (src || (namesLiveFile && fs.existsSync(live)))) {
+        return json(res, 200, {
+            shot_id: shotId, version: wanted, changed: false,
+            note: 'That version is already the frame on the board.',
+        });
+    }
     if (!src) {
         return json(res, 409, {
             error: namesLiveFile
@@ -1777,14 +1798,6 @@ function restoreShotFrame(req, res, shotId, version) {
                   + 'which now holds a later attempt.'
                 : `The file for version ${wanted} is no longer on disk.`,
             hint: 'The row survives, so the attempt is recorded — but the picture cannot be shown.',
-        });
-    }
-
-    const current = currentFrameVersion(shotId);
-    if (current === wanted) {
-        return json(res, 200, {
-            shot_id: shotId, version: wanted, changed: false,
-            note: 'That version is already the frame on the board.',
         });
     }
 
