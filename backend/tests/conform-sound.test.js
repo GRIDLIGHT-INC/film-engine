@@ -100,10 +100,14 @@ test('every kind a scene cue sheet plays is laid into the plan, and dialogue too
         if (kinds.includes(kind)) { cue(f, cueType, 4); kinds.splice(kinds.indexOf(kind), 1); }
     }
     dialogue(f, 1, 1);
+    // A shot's own effect, as POST /shots/:id/sfx/generate stores it.
+    const fx = tone(`${f.projectId.slice(0, 6)}_1A_sfx.wav`, 700, 1);
+    db.prepare("INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, duration_ms) VALUES (?, ?, ?, 'audio_sfx', ?, ?, 'wav', 1000)")
+        .run(generateId(), f.projectId, f.ids[0], fx, path.basename(fx));
     const plan = conform.planConform(f.projectId);
     assert.ok(plan.ok, plan.error);
     const laid = new Set(plan.sound.placements.map(p => p.kind));
-    for (const kind of [...new Set(Object.values(BED_KIND_FOR)), 'dialogue']) {
+    for (const kind of [...new Set(Object.values(BED_KIND_FOR)), 'dialogue', 'shot_sfx']) {
         assert.ok(laid.has(kind), `${kind} is generated for this film and never reaches the master`);
     }
     const line = plan.sound.placements.find(p => p.kind === 'dialogue');

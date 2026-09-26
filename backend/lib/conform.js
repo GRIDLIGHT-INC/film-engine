@@ -264,17 +264,45 @@ function engineSound(projectId, clips) {
     };
 
     const { inspectMedia } = require('./ffmpeg');
+    /*
+     * A SHOT's own sound effects (audio_sfx on the shot — POST /shots/:id/sfx/
+     * generate, or an upload). The timeline carries one audio asset per shot,
+     * so these were not among its placements: each effect is laid from its
+     * shot's start at the delivered mix's SFX level (-4 dB, lib/audio-mixer),
+     * cut at the shot's end, under the same rule as dialogue.
+     */
+    const db = database();
+    const shotSfx = db.prepare(`SELECT shot_id, file_path, file_name, duration_ms, created_at FROM film_assets
+        WHERE project_id = ? AND asset_type = 'audio_sfx' AND shot_id IS NOT NULL
+        ORDER BY created_at DESC`).all(projectId);
+    const sfxByShot = new Map();
+    for (const r of shotSfx) {
+        const list = sfxByShot.get(r.shot_id) || [];
+        // Newest row per file: a regenerated effect overwrote the same file.
+        if (!list.some(x => x.file_name === r.file_name)) list.push(r);
+        sfxByShot.set(r.shot_id, list);
+    }
+    const laySfx = (at, shotId, end) => {
+        for (const r of sfxByShot.get(shotId) || []) {
+            if (!r.file_path) continue;
+            const span = end - at.start;
+            const play = Number(r.duration_ms) > 0 ? Math.min(Number(r.duration_ms), span) : span;
+            out.placements.push({ kind: 'shot_sfx', shot_id: shotId, file_path: r.file_path, offset_ms: at.start, play_ms: play, gain_db: -4 });
+        }
+    };
     for (const e of entries) {
         const at = cut.get(e.shot_id);
         const lines = (e.audio_lines || []).filter(l => l && l.path);
-        if (!at || !lines.length) continue;
+        const hasSfx = (sfxByShot.get(e.shot_id) || []).length > 0;
+        if (!at || (!lines.length && !hasSfx)) continue;
         let carries = false;
         try { const seen = inspectMedia(at.clip.file_path); carries = !!(seen.ok && seen.hasAudio); } catch (_) { carries = false; }
         if (carries) {
-            out.reports.push(`${at.clip.shot_code}: the clip carries its own sound, so its generated dialogue is not laid over it`);
+            out.reports.push(`${at.clip.shot_code}: the clip carries its own sound, so its generated dialogue and effects are not laid over it`);
             continue;
         }
         const end = at.start + (Number(at.clip.duration_ms) || 0);
+        laySfx(at, e.shot_id, end);
         let t = at.start;
         for (const [i, line] of lines.entries()) {
             const dur = Number(line.duration_ms) || 0;
