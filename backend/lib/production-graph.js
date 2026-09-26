@@ -465,6 +465,8 @@ function buildGraph(db, projectId) {
         .map(c => ({ key: `sound:${c.id}`, versions: cueVersions(db, c).map(v => `ver:${v.asset_id}`) }));
     const placedSound = new Set();
 
+    // Where a shot plays in the film; a missing shot (an empty sequence) plays nowhere.
+    const filmIndex = id => { const i = shots.findIndex(sh => sh.id === id); return i < 0 ? Infinity : i; };
     const orderedSeqs = sequences.slice().sort((a, b) => {
         const fa = shots.findIndex(s => seqNode.get(a.id).shot_ids[0] === s.id);
         const fb = shots.findIndex(s => seqNode.get(b.id).shot_ids[0] === s.id);
@@ -483,6 +485,7 @@ function buildGraph(db, projectId) {
         sounds.forEach(s => placedSound.add(s.key));
         const first = shotNode.get(sn.shot_ids[0]);
         groups.push({
+            order: filmIndex(sn.shot_ids[0]),
             id: `seq:${q.id}`,
             label: `${first ? `SC ${first.scene_number} · ` : ''}${(sn.name || 'SEQUENCE').toUpperCase()}`,
             shots: shotKeys, sequence: sn.key,
@@ -505,12 +508,26 @@ function buildGraph(db, projectId) {
             .map(c => ({ key: `sound:${c.id}`, versions: cueVersions(db, c).map(v => `ver:${v.asset_id}`) })));
         sounds.forEach(x => placedSound.add(x.key));
         groups.push({
+            order: filmIndex(s.shots[0] && s.shots[0].slice('shot:'.length)),
             id: `scene:${sceneId}`, label: `SC ${s.scene_number} · ${(s.location || '').toUpperCase()}`,
             shots: s.shots, sequence: null, links_start: [], links_end: [],
             versions: s.shots.flatMap(k => ((nodes.find(n => n.key === k) || {}).videos || []).map(v => `ver:${v.asset_id}`)),
             sounds,
         });
     }
+    /*
+     * THE BOXES READ IN FILM ORDER.
+     *
+     * Groups were laid out as every sequence first and then every scene of
+     * loose shots, so a new sequence landed in front of scene 1's loose shots
+     * even though nothing in it comes before them. Sequence boxes and scene
+     * boxes are one list ordered by where their first shot plays; a sequence
+     * with no shots yet has no place in the film, so it goes at the END —
+     * after everything, in the order it was made — until shots are added.
+     * Sorted after they are built, because which box claims a scene-wide
+     * sound is decided above and must not change with the order.
+     */
+    groups.sort((a, b) => (a.order === b.order ? 0 : a.order - b.order));
     const loose = nodes.filter(n => n.type === 'sound' && !placedSound.has(n.key));
     if (loose.length) {
         groups.push({ id: 'sounds', label: 'SOUNDS', shots: [], sequence: null, links_start: [], links_end: [], versions: [],

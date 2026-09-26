@@ -212,6 +212,29 @@ test('a shot belongs to one sequence: a second claim is refused, and move moves 
     assert.deepStrictEqual(aNow.shot_ids, [f.shots['1A']], 'the move left the shot in both');
 });
 
+test('the boxes read in film order: loose shots, sequences and a new empty sequence last', async () => {
+    // A sequence box used to be laid out before EVERY scene of loose shots, so
+    // a new sequence jumped in front of shots that play before anything in it.
+    const f = fixture();
+    const scene2 = generateId();
+    db.prepare('INSERT INTO film_scenes (id, project_id, scene_number, location) VALUES (?, ?, 2, ?)').run(scene2, f.projectId, 'STREET');
+    const s2 = ['2A', '2B'].map((code, i) => {
+        const id = generateId();
+        db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, sort_order, duration_ms, scene_card_yaml)
+                    VALUES (?, ?, ?, ?, 3000, ?)`).run(id, scene2, code, i, JSON.stringify({ shot_code: code }));
+        return id;
+    });
+    const seq = (await api(`/film/projects/${f.projectId}/sequences`, { method: 'POST', body: { name: 'Street', shot_ids: s2 } })).data.sequence;
+    const empty1 = (await api(`/film/projects/${f.projectId}/sequences`, { method: 'POST', body: { name: 'Later', shot_ids: [], empty: true } })).data.sequence;
+    const empty2 = (await api(`/film/projects/${f.projectId}/sequences`, { method: 'POST', body: { name: 'Later still', shot_ids: [], empty: true } })).data.sequence;
+    const g = await graphOf(f.projectId);
+    assert.deepStrictEqual(g.groups.map(x => x.key),
+        [`scene:${f.sceneId}`, `seq:${seq.id}`, `seq:${empty1.id}`, `seq:${empty2.id}`],
+        'the boxes are not in the order the film plays, with empty sequences last in the order they were made');
+    const xs = g.groups.map(x => x.x);
+    assert.deepStrictEqual(xs, [...xs].sort((a, b) => a - b), 'the boxes do not run left to right in that order');
+});
+
 // ── Linked frames ──────────────────────────────────────────────────────────
 
 test('a linked frame resolves to the source\'s SELECTED version, and a change marks the receiver stale', async () => {
