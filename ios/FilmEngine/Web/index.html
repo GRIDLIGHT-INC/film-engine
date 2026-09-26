@@ -7247,14 +7247,15 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <label>Resolution</label>
                         <select id="settingsResolution">
                             <option value="1280x720">720p (1280x720)</option>
-                            <option value="1920x1080" selected>1080p (1920x1080)</option>
-                            <option value="2048x1080">2K DCI (2048x1080)</option>
+                            <option value="1920x1080">1080p (1920x1080)</option>
+                            <option value="2048x1080" selected>2K DCI (2048x1080)</option>
                             <option value="3840x2160">4K UHD (3840x2160)</option>
                             <option value="4096x2160">4K DCI (4096x2160)</option>
                             <option value="5632x4096">IMAX 5.6K (5632x4096)</option>
                             <option value="7680x4320">8K (7680x4320)</option>
                             <option value="12288x8640">IMAX 12K (12288x8640)</option>
                         </select>
+                        <div class="hint" style="font-size:11px;opacity:.7;margin-top:4px;">Every image is generated at this size — boards, plates, turnarounds and angle explorations — in its own shape. Nano Banana Pro tops out at 4K, so larger settings are generated at 4K.</div>
                     </div>
                     <div class="form-group">
                         <label>Frame Rate</label>
@@ -37155,6 +37156,7 @@ ${fountainText.slice(0, 50000)}`;
                                 ${anchorButton(f)}
                                 <button class="btn btn-secondary btn-sm" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>
                                 <button class="btn btn-secondary btn-sm" onclick="regenerateStoryboard('${f.shot_id}')" title="${f.image_url ? 'Generate this frame again from the card — shows you the prompt first' : 'This shot has no frame yet — generate its first one. You will see the prompt before anything is spent.'}">${f.image_url ? 'Regen' : 'Generate'}</button>
+                                <button class="btn btn-secondary btn-sm" onclick="exploreAngles('${f.shot_id}')" title="Explore four angles: four separate images, one camera each, at the project resolution. Pick one and it becomes the frame.">4 angles</button>
                                 <button class="btn btn-secondary btn-sm" onclick="refineFrame('${f.shot_id}')" title="Keep this picture and change one thing about it">Refine</button>
                                 ${storyboardImportButton(f)}
                                 <button class="btn btn-secondary btn-sm" onclick="openFrameVersions('${f.shot_id}')" title="${frameVersionTitle(f)}">${frameVersionLabel(f)}</button>
@@ -38376,6 +38378,7 @@ ${fountainText.slice(0, 50000)}`;
 
             + `<button class="btn btn-sm btn-secondary" onclick="refineFrame('${f.shot_id}')">Refine</button>`
             + `<button class="btn btn-sm btn-secondary" onclick="regenerateStoryboard('${f.shot_id}')">Regen</button>`
+            + `<button class="btn btn-sm btn-secondary" onclick="exploreAngles('${f.shot_id}')" title="Four separate images, one camera each. Pick one and it becomes the frame.">4 angles</button>`
             + `<button class="btn btn-sm btn-secondary" onclick="directShot('${f.shot_id}')" title="Who and what is in this shot, and where the camera is">Direct</button>`;
         document.getElementById('frameViewerCaption').innerHTML =
             `${f.description ? '<p style="line-height:1.5;">' + esc(f.description) + '</p>' : ''}
@@ -40590,6 +40593,99 @@ ${fountainText.slice(0, 50000)}`;
         // have changed the project.
         if (note) note.textContent = `This frame only. The project's own setting is unchanged.`;
     }
+
+    /*
+     * FOUR ANGLES, THEN "USE B".
+     *
+     * Four separate generations, one camera each, at the project's resolution
+     * — the director chose separate images over one grid so the picked one is
+     * ready for the board as it is. The free preview shows the four prompts and
+     * the price of four; nothing replaces the frame until a pick.
+     */
+    async function exploreAngles(shotId) {
+        markCurrentShot(shotId);
+        return confirmPaidImage({
+            title: 'Explore four angles',
+            note: 'Four separate images, one camera each. The board frame is not touched until you pick one.',
+            previewUrl: '/shots/' + shotId + '/storyboard/angles-preview',
+            describe: d => {
+                const sp = d.spend || {};
+                const cost = sp.usd_total != null
+                    ? `<strong>$${Number(sp.usd_total).toFixed(2)}</strong> for ${sp.images} images (${esc(sp.provider || '')}, $${Number(sp.usd_each).toFixed(3)} each${sp.estimated ? ', estimated' : ''})`
+                    : esc(sp.note || `${sp.images || 4} images`);
+                return `<div class="text-sm text-muted" style="margin:6px 0;">${esc(d.model || '')} &middot; ${esc(d.resolution || '')} &middot; ${cost}</div>
+                  ${(d.angles || []).map(a => `<details style="margin:6px 0;"><summary><strong>${esc(a.slot)}</strong> &middot; ${esc(a.label)} <span class="text-muted">${a.width}x${a.height}</span></summary>
+                    <pre style="white-space:pre-wrap;font-size:11px;opacity:.8;max-height:160px;overflow:auto;">${esc(a.prompt || '')}</pre></details>`).join('')}`;
+            },
+            send: async () => {
+                setStatus('Exploring four angles...', true);
+                try {
+                    const r = await api('/shots/' + shotId + '/storyboard/angles', { method: 'POST', body: JSON.stringify({}) });
+                    setStatus('Angle A is ready; the other three are generating.');
+                    openAngleSheet(shotId, r.token);
+                } catch (err) { setStatus('Could not explore angles: ' + err.message); }
+            },
+        });
+    }
+
+    let ANGLE_POLL = null;
+    async function openAngleSheet(shotId, token) {
+        const html = `<div class="modal-header"><h3>Four angles</h3>
+              <button class="btn btn-sm btn-secondary" onclick="closeAngleSheet()">Close</button></div>
+            <div id="angleSheetBody" class="modal-body"><span class="text-muted text-sm">Loading&hellip;</span></div>`;
+        const modal = showModalHtml('angleSheetModal', html);
+        const box = modal && modal.querySelector('.modal');
+        if (box) { box.style.maxWidth = '1100px'; box.style.width = '94vw'; }
+        const paint = async () => {
+            let d;
+            try { d = await api('/shots/' + shotId + '/storyboard/angles/' + token); }
+            catch (err) {
+                const el = document.getElementById('angleSheetBody');
+                if (el) el.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">${esc(err.message)}</p>`;
+                return true;
+            }
+            const el = document.getElementById('angleSheetBody');
+            if (!el) return true;
+            const bySlot = Object.fromEntries((d.candidates || []).map(c => [c.slot, c]));
+            const slots = ['A', 'B', 'C', 'D'];
+            el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                ${slots.map(sl => {
+                    const c = bySlot[sl];
+                    const state = (d.slots && d.slots[sl]) || (c ? 'ready' : 'waiting');
+                    return `<div style="border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;min-width:0;">
+                      <div class="text-sm" style="margin-bottom:6px;"><strong>${sl}</strong> &middot; ${esc(c ? c.label : state)}${c && c.picked ? ' &middot; <em>on the board</em>' : ''}</div>
+                      ${c ? `<img src="${API_BASE}${c.image_url}" style="width:100%;border-radius:6px;display:block;cursor:zoom-in;" onclick="openPlateViewer(this.src, 'Angle ${sl}')">
+                        <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="pickAngle('${shotId}','${token}','${sl}')">Use ${sl}</button>`
+                        : `<div class="text-sm text-muted" style="padding:40px 0;text-align:center;">${esc(state)}&hellip;</div>`}
+                    </div>`;
+                }).join('')}
+              </div>
+              ${(d.failed || []).length ? `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">${(d.failed).map(f => `${esc(f.slot)}: ${esc(f.error)}`).join('<br>')}${(d.not_attempted || []).length ? `<br>Not attempted: ${esc(d.not_attempted.join(', '))}` : ''}</p>` : ''}
+              ${d.sheet_url ? `<p class="text-sm"><a href="${API_BASE}${d.sheet_url}" target="_blank" rel="noopener">Open the contact sheet</a></p>` : ''}`;
+            return d.status && d.status !== 'running';
+        };
+        clearInterval(ANGLE_POLL);
+        if (!(await paint())) ANGLE_POLL = setInterval(async () => { if (await paint()) clearInterval(ANGLE_POLL); }, 3000);
+    }
+
+    function closeAngleSheet() {
+        clearInterval(ANGLE_POLL);
+        const m = document.getElementById('angleSheetModal');
+        if (m) closeModal('angleSheetModal');
+    }
+
+    async function pickAngle(shotId, token, slot) {
+        try {
+            const r = await api('/shots/' + shotId + '/storyboard/angles/' + token + '/pick', {
+                method: 'POST', body: JSON.stringify({ slot }) });
+            setStatus(`Angle ${slot} is on the board as v${r.version}.`);
+            openAngleSheet(shotId, token);
+        } catch (err) { setStatus('Could not use that angle: ' + err.message); }
+    }
+    window.exploreAngles = exploreAngles;
+    window.openAngleSheet = openAngleSheet;
+    window.closeAngleSheet = closeAngleSheet;
+    window.pickAngle = pickAngle;
 
     async function regenerateStoryboard(shotId, directionMode, keepPlates) {
         markCurrentShot(shotId);
@@ -43811,6 +43907,7 @@ function pgDrawerShot(n, body, foot, close) {
         <div class="pg-btnrow">
           <button class="btn btn-primary btn-sm"${lockAttr} onclick="pgRunNode('${n.key}')">${f ? `Regenerate · makes v${(n.frames[n.frames.length - 1] || { version: 0 }).version + 1}` : 'Generate'}</button>
           ${f ? `<button class="btn btn-secondary btn-sm"${lockAttr} onclick="refineFrame('${n.id}', ${f.version})">Refine</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="exploreAngles('${n.id}')" title="Four separate images, one camera each, at the project resolution. Pick one and it becomes the frame.">4 angles</button>
           ${uploadControl('storyboard-image', `/shots/${n.id}/storyboard/import`, { after: 'loadProductionGraph', label: '+ Upload' })}
           ${f ? `<button class="btn btn-secondary btn-sm" onclick="setAnchor('${n.id}')">Anchor</button>
                  <button class="btn btn-secondary btn-sm" onclick="openFrameViewer('${n.id}')">Mark up</button>` : ''}

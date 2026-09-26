@@ -3838,6 +3838,73 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id'],
     },
     {
+        name: 'storyboard_angles_preview',
+        handler: handleStoryboard, method: 'POST',
+        description: 'FREE. The four prompts an angle exploration would send for this shot \u2014 one camera '
+            + 'each \u2014 their size (the project\u2019s resolution) and what the four cost. Read it before '
+            + 'storyboard_angles. Pass angles to compose your own four cameras for this shot.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/angles-preview`,
+        body: a => ({ angles: a.angles }),
+        schema: {
+            shot_id: { type: 'string' },
+            angles: {
+                type: 'array', items: { type: 'string' },
+                description: 'Up to four camera instructions, A to D, e.g. "over her shoulder toward the door, '
+                    + '85mm". Missing ones are filled from the defaults: as written, reverse, low and wider, '
+                    + 'high and tighter.',
+            },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'storyboard_angles',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Explore FOUR ANGLES on one shot: four separate Nano Banana Pro generations, one camera '
+            + 'each, at the project\u2019s resolution, joined into a contact sheet. Nothing replaces the board '
+            + 'frame \u2014 the four come back as candidates A\u2013D, and storyboard_angles_pick makes one the '
+            + 'shot. Answers at once with a token and runs in the background; poll storyboard_angles_list. '
+            + 'Costs FOUR images.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/angles`,
+        body: a => ({ angles: a.angles, use_anchor: a.use_anchor, direction_mode: a.direction_mode }),
+        schema: {
+            shot_id: { type: 'string' },
+            angles: { type: 'array', items: { type: 'string' },
+                description: 'Up to four camera instructions, A to D. Defaults fill the rest.' },
+            use_anchor: { type: 'boolean', description: 'false skips the project anchor for these four.' },
+            direction_mode: { type: 'string', description: 'action (default) or camera.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'storyboard_angles_list',
+        handler: handleStoryboard, method: 'GET',
+        description: 'FREE. A shot\u2019s angle explorations: each run\u2019s candidates A\u2013D with their '
+            + 'pictures, the contact sheet, whether it is still running, and which angle was picked. Pass '
+            + 'token for one run.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/angles${a.token ? `/${a.token}` : ''}`,
+        schema: {
+            shot_id: { type: 'string' },
+            token: { type: 'string', description: 'One exploration, from storyboard_angles.' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'storyboard_angles_pick',
+        handler: handleStoryboard, method: 'POST',
+        description: 'Make one explored angle THE SHOT: it becomes a new frame version on the board, what the '
+            + 'shot showed is kept as an earlier version, and the other candidates stay so you can change '
+            + 'your mind with another pick. Free \u2014 a file copy. A locked board refuses it.',
+        path: a => `/film/shots/${a.shot_id}/storyboard/angles/${a.token}/pick`,
+        body: a => ({ slot: a.slot, ignore_lock: a.ignore_lock }),
+        schema: {
+            shot_id: { type: 'string' },
+            token: { type: 'string' },
+            slot: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
+            ignore_lock: { type: 'boolean' },
+        },
+        required: ['shot_id', 'token', 'slot'],
+    },
+    {
         name: 'storyboard_refine',
         handler: handleStoryboard, method: 'POST',
         description: 'Keep an existing frame and change ONE thing about it. Sends the picture itself plus a single instruction — no scene card, no subject descriptions, no style preset, because the picture already carries all of that and repeating it in words pulls the result back toward a fresh generation. Use this instead of storyboard_regenerate whenever the composition is right and one element is wrong: "remove the sprinkler", "move the car to the kerb". Pass version to refine an earlier attempt rather than the current frame. Costs credits.',

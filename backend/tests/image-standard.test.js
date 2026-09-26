@@ -73,7 +73,18 @@ test('a refusal can only be walked to another vendor of the same model', () => {
     }
 });
 
-test('a board frame is 4K in the shot’s own shape', () => {
+/*
+ * The size is the PROJECT's. "If I select 4K then the picture is 4K… it
+ * shouldn't be hardwired." Every assertion below changes the technical setting
+ * and requires the picture to follow — a constant would pass any one of them.
+ */
+const RESOLUTION_CASES = [
+    { res: '1280x720', board16x9: [1280, 720], plate16x9: [1280, 720], tier: '2k' },
+    { res: '2048x1080', board16x9: [2048, 1152], plate16x9: [2048, 1152], tier: '2k' },
+    { res: '3840x2160', board16x9: [3840, 2160], plate16x9: [3840, 2160], tier: '4k' },
+];
+
+test('a board frame follows the project resolution, in the shot’s own shape', () => {
     const { buildCapabilityPayload } = require('../lib/capability-payloads');
     const ctx = (aspect, res, card = {}) => ({
         shot: { id: 's1', shot_code: '1A', duration_ms: 5000 },
@@ -82,35 +93,39 @@ test('a board frame is 4K in the shot’s own shape', () => {
         project: { aspect_ratio: aspect, target_resolution: res, target_fps: 24 },
         keyframePath: null,
     });
-    const hd = buildCapabilityPayload('image', ctx('16:9', '1280x720')).payload;
-    assert.deepStrictEqual([hd.width, hd.height], [3840, 2160]);
-    // A shot's own ratio outranks the project's, and still gets 4K.
-    const vertical = buildCapabilityPayload('image', ctx('16:9', '1920x1080', { aspect_ratio: '9:16' })).payload;
+    for (const c of RESOLUTION_CASES) {
+        const p = buildCapabilityPayload('image', ctx('16:9', c.res)).payload;
+        assert.deepStrictEqual([p.width, p.height], c.board16x9, c.res);
+    }
+    // A shot's own ratio outranks the project's and turns the long edge.
+    const vertical = buildCapabilityPayload('image', ctx('16:9', '3840x2160', { aspect_ratio: '9:16' })).payload;
     assert.deepStrictEqual([vertical.width, vertical.height], [2160, 3840]);
+    // No readable resolution is the 2K default, never a 4K constant.
+    const none = buildCapabilityPayload('image', ctx('16:9', null)).payload;
+    assert.deepStrictEqual([none.width, none.height], [2048, 1152]);
 });
 
-test('a plate is 2K for every kind, and the character turnaround is too', () => {
+test('a plate follows the project resolution for every kind, and the turnaround does too', () => {
     const { plateImageSize } = require('../lib/reference-plates');
-    for (const kind of std.PLATE_KINDS) {
-        const s = plateImageSize({ aspect_ratio: '16:9', target_resolution: '1280x720' }, 3840 * 2160, kind,
-            providers.get('muapi'));
-        assert.deepStrictEqual([s.width, s.height], [2048, 1152], `${kind}`);
+    for (const c of RESOLUTION_CASES) {
+        for (const kind of std.PLATE_KINDS) {
+            const s = plateImageSize({ aspect_ratio: '16:9', target_resolution: c.res }, 3840 * 2160, kind,
+                providers.get('muapi'));
+            assert.deepStrictEqual([s.width, s.height], c.plate16x9, `${kind} at ${c.res}`);
+        }
     }
-    // The turnaround builds its own payload; it must read the standard, not a literal.
     const src = require('fs').readFileSync(path.join(__dirname, '..', 'routes', 'characters.js'), 'utf8');
     assert.ok(!/width:\s*1024,\s*\n\s*height:\s*1024/.test(src), 'a character turnaround is still a 1024 square');
-    assert.ok(/image-standard'\)\.plateSize\('1:1'\)/.test(src), 'the turnaround does not size from the standard');
+    assert.ok(/plateSize\('1:1',\s*\n?\s*require\('\.\.\/lib\/image-standard'\)\.projectResolution\(/.test(src),
+        'the turnaround does not size from the project resolution');
 });
 
-test('the body MuAPI receives asks for the 4K tier on a board and the 2K tier on a plate', () => {
-    const muapi = providers.get('muapi');
-    const describe = p => muapi.describeImageRequest
-        ? muapi.describeImageRequest(p)
-        : require('../lib/providers/muapi-image').describeImageRequest(p);
-    const board = describe({ prompt: 'x', model: 'nano-banana-pro', ...std.storyboardSize('16:9') });
-    const plate = describe({ prompt: 'x', model: 'nano-banana-pro', ...std.plateSize('16:9') });
+test('the body MuAPI receives asks for the tier the project resolution needs', () => {
+    const describe = p => require('../lib/providers/muapi-image').describeImageRequest(p);
     const body = r => (r && (r.body || (r.request && r.request.body))) || r;
-    assert.strictEqual(body(board).resolution, '4k', `a board left as ${JSON.stringify(body(board))}`);
-    assert.strictEqual(body(plate).resolution, '2k', `a plate left as ${JSON.stringify(body(plate))}`);
-    assert.match(String((board.url || '')), /nano-banana-pro/, 'the board did not go to the Nano Banana Pro endpoint');
+    for (const c of RESOLUTION_CASES) {
+        const board = describe({ prompt: 'x', model: 'nano-banana-pro', ...std.storyboardSize('16:9', c.res) });
+        assert.strictEqual(body(board).resolution, c.tier, `${c.res}: ${JSON.stringify(body(board))}`);
+        assert.match(String(board.url || ''), /nano-banana-pro/, 'not the Nano Banana Pro endpoint');
+    }
 });

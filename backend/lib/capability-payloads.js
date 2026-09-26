@@ -291,8 +291,8 @@ function imageBudget(aspect, resolution, maxPixels) {
  * strict fallback in imageBudget exists for an UNKNOWN provider, and the frame
  * size here is the standard's, not a guess about who is generating.
  */
-function standardBoardBudget(aspect, maxPixels) {
-    const want = require('./image-standard').storyboardSize(aspect);
+function standardBoardBudget(aspect, maxPixels, targetResolution) {
+    const want = require('./image-standard').storyboardSize(aspect, targetResolution);
     const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
     if (!cap || want.width * want.height <= cap) return { ...want, clamped: false };
     const d = imageBudget(aspect, `${want.width}x${want.height}`, cap);
@@ -306,7 +306,7 @@ function imageRequestPayload(fields) {
     // (lib/image-standard.js). The provider's ceiling still clamps, and says so.
     const dims = (f.width && f.height)
         ? { width: f.width, height: f.height }
-        : standardBoardBudget(f.aspect_ratio, f.max_image_pixels);
+        : standardBoardBudget(f.aspect_ratio, f.max_image_pixels, f.target_resolution);
     if (dims.clamped && f.__onClamp) f.__onClamp(dims);
 
     const payload = {
@@ -552,7 +552,7 @@ const CAPABILITY_BUILDERS = {
             // The delivery size the director set, and the ceiling of whoever is
             // generating. A board sized from a constant made a 4K project and a
             // 720p project board identically.
-            target_resolution: ctx.project.target_resolution,
+            target_resolution: require('./image-standard').projectResolution(ctx.project),
             max_image_pixels: ctx.maxImagePixels || null,
             __onClamp: d => {
                 ctx.__clamp = {

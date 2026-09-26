@@ -28,13 +28,25 @@
  * Image would produce a frame on a model nobody chose, which is exactly what
  * "never waiver" rules out.
  *
- * ── The sizes are the class, fitted to the shot's own shape ──────────────
+ * ── The size is the PROJECT's, set once in its technical settings ───────
  *
- * 4K is 3840x2160 and 2K is a 2048 long edge. A 2.39:1 board is fitted INSIDE
- * the 4K box (3824x1600), never area-matched to it: an area match puts the long
- * edge past 4096, beyond the largest tier MuAPI serves, and the frame would come
- * back smaller than asked and be scaled up. The project's delivery resolution
- * no longer sizes an image; it still sizes the footage and the exports.
+ * "For each image, let's follow the standard of the project (Resolution in the
+ *  technical settings). So if I select 4K then the picture is 4K… it shouldn't
+ *  be hardwired." The first version of this file WAS hardwired — boards at a
+ * 3840x2160 box and plates at a 2048 long edge whatever the project said — so
+ * a 1080p project paid 4K rates for every frame and a director who chose 8K
+ * could not get it.
+ *
+ * Every picture now takes the long edge of `film_projects.target_resolution`,
+ * in its own shape: a 16:9 board on a 4K UHD project is 3840x2160, on a 2K
+ * project 2048x1152; a 9:16 shot turns it (2160x3840). Long edge rather than
+ * fitted-inside-the-raster, because "2K" means a 2048 edge to the person who
+ * picked it — fitting 16:9 inside 2048x1080 would hand back 1920x1080 and call
+ * it 2K. A project with no readable resolution is 2K (DEFAULT_RESOLUTION), the
+ * default a new project is created with.
+ *
+ * The provider's own ceiling still clamps and says so; MuAPI serves Nano Banana
+ * Pro in 1k/2k/4k tiers, so anything above 4K is asked at 4K and reported.
  */
 
 const HOUSE = Object.freeze({
@@ -54,11 +66,27 @@ const STANDARD_MODELS = Object.freeze({
 });
 const STANDARD_PROVIDERS = Object.freeze(Object.keys(STANDARD_MODELS));
 
-/** The box each kind of picture is fitted inside. */
+/** The resolution a project without a readable one generates at: 2K. */
+const DEFAULT_RESOLUTION = '2048x1080';
+
+/**
+ * What a size ANSWERS to. Kept as the default's long edge so a caller that asks
+ * "what is the plate floor" without a project gets the 2K it always got.
+ */
 const SIZES = Object.freeze({
-    storyboard: Object.freeze({ label: '4K', width: 3840, height: 2160 }),
-    plate: Object.freeze({ label: '2K', longEdge: 2048 }),
+    storyboard: Object.freeze({ label: 'project resolution', longEdge: 2048 }),
+    plate: Object.freeze({ label: 'project resolution', longEdge: 2048 }),
 });
+
+/**
+ * The long edge a project's pictures are made at, read from its technical
+ * settings. "3840x2160" → 3840; a vertical raster answers with its height.
+ */
+function longEdgeFor(targetResolution) {
+    const m = String(targetResolution || '').match(/^\s*(\d{3,5})\s*x\s*(\d{3,5})\s*$/i);
+    const d = m ? [Number(m[1]), Number(m[2])] : DEFAULT_RESOLUTION.split('x').map(Number);
+    return Math.max(d[0], d[1]);
+}
 
 const PLATE_KINDS = Object.freeze(['character', 'location', 'prop']);
 
@@ -78,29 +106,27 @@ function parseAspect(aspect) {
 }
 
 /**
- * A board frame: the shot's shape, fitted inside 3840x2160 on the ratio's own
- * pixel grid, so the raster a provider answers on is the raster conformed to.
- * A vertical shot fills the box turned on its side. An unreadable aspect is
- * the full 16:9 frame.
+ * A board frame: the shot's shape at the project's long edge, on the ratio's
+ * own pixel grid, so the raster a provider answers on is the raster conformed
+ * to. An unreadable aspect is 16:9.
  */
-function storyboardSize(aspect) {
+function storyboardSize(aspect, targetResolution) {
     const { gridUnitFor } = require('./capability-payloads');
-    const box = SIZES.storyboard;
+    const long = longEdgeFor(targetResolution);
     const ab = parseAspect(aspect) || [16, 9];
     const unit = gridUnitFor(ab[0], ab[1]);
-    // A vertical shot turns the box, not the class: 9:16 in 4K is 2160x3840.
-    const [bw, bh] = ab[0] >= ab[1] ? [box.width, box.height] : [box.height, box.width];
-    const k = Math.max(1, Math.floor(Math.min(bw / unit.w, bh / unit.h)));
+    // A vertical shot turns the class, not the edge: 9:16 in 4K is 2160x3840.
+    const k = Math.max(1, Math.floor(long / Math.max(unit.w, unit.h)));
     return { width: unit.w * k, height: unit.h * k };
 }
 
 /**
- * A plate: the long edge exactly 2048, the short edge derived from the ratio
- * and kept even. Exact rather than scaled-and-rounded, which overshoots by a
+ * A plate: the long edge exactly the project's, the short edge derived from
+ * the ratio and kept even. Exact rather than scaled-and-rounded, which overshoots by a
  * few pixels and then trips a provider's ceiling.
  */
-function plateSize(aspect) {
-    const long = SIZES.plate.longEdge;
+function plateSize(aspect, targetResolution) {
+    const long = longEdgeFor(targetResolution);
     const ab = parseAspect(aspect) || [16, 9];
     const ratio = ab[0] / ab[1];
     const even = n => Math.max(256, Math.round(n / 2) * 2);
@@ -109,7 +135,30 @@ function plateSize(aspect) {
         : { width: even(long * ratio), height: long };
 }
 
+/**
+ * The resolution a project's pictures are made at, from the project row if the
+ * caller has it, else read by id. The database is consulted only if something
+ * in this process already opened it, so a unit test asking for a size cannot
+ * open the real database — the rule file-storage.dirFor follows.
+ */
+function projectResolution(projectOrId) {
+    if (projectOrId && typeof projectOrId === 'object' && projectOrId.target_resolution) {
+        return projectOrId.target_resolution;
+    }
+    const id = projectOrId && typeof projectOrId === 'object' ? projectOrId.id : projectOrId;
+    if (!id) return null;
+    let dbPath;
+    try { dbPath = require.resolve('../db/database'); } catch (_) { return null; }
+    const loaded = require.cache[dbPath];
+    if (!loaded || !loaded.exports || !loaded.exports.db) return null;
+    try {
+        const row = loaded.exports.db.prepare('SELECT target_resolution FROM film_projects WHERE id = ?').get(id);
+        return (row && row.target_resolution) || null;
+    } catch (_) { return null; }
+}
+
 /** One line a report or a confirmation can print. */
 
 module.exports = {    HOUSE, STANDARD_MODELS, STANDARD_PROVIDERS, SIZES, PLATE_KINDS,
-    standardModelFor, isStandardProvider, storyboardSize, plateSize,};
+    standardModelFor, isStandardProvider, storyboardSize, plateSize,
+    DEFAULT_RESOLUTION, longEdgeFor, projectResolution,};

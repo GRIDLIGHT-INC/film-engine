@@ -113,7 +113,7 @@ const EXCEPTIONS = [
     },
     {
         id: 'project.generation-policy',
-        covers: ['aspect_ratio', 'provider_config', 'annotation_feedback', 'anchor_shot_id'],
+        covers: ['aspect_ratio', 'target_resolution', 'provider_config', 'annotation_feedback', 'anchor_shot_id'],
         why: 'These are project-wide generation policies, not per-shot staged choices. Previs must disclose their effect, while project and Storyboard controls remain authoritative.',
     },
     {

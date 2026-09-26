@@ -189,7 +189,8 @@ function createProject(req, res) {
     // into every frame. The column is TEXT; the cap was never a storage limit.
     const style_preset = (body.style_preset || '').trim().slice(0, 2000);
     const status = VALID_STATUSES.includes(body.status) ? body.status : 'concept';
-    const target_resolution = settingsFields.target_resolution || '1920x1080';
+    const target_resolution = settingsFields.target_resolution
+        || require('../lib/image-standard').DEFAULT_RESOLUTION;
     const target_fps = settingsFields.target_fps !== undefined ? Number(settingsFields.target_fps) : 24;
     const aspect_ratio = settingsFields.aspect_ratio || '16:9';
     const aspect_ratio_custom = settingsFields.aspect_ratio_custom || '';

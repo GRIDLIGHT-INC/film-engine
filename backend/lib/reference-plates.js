@@ -654,7 +654,11 @@ function plateImageSize(project, maxPixels, kind, adapter) {
      * literal 1024 square. `kind` is still taken so a caller reads the same
      * signature; it no longer changes the answer.
      */
-    const wanted = require('./image-standard').plateSize(p.aspect_ratio);
+    const std = require('./image-standard');
+    const wanted = std.plateSize(p.aspect_ratio, std.projectResolution(p));
+    // The floor is the project's own long edge: a plate is made at the
+    // resolution in its technical settings, and "below the floor" means below it.
+    const floorEdge = Math.max(wanted.width, wanted.height);
 
     const cap = Number(maxPixels) > 0 ? Number(maxPixels) : null;
     const asked = wanted.width * wanted.height;
@@ -692,7 +696,7 @@ function plateImageSize(project, maxPixels, kind, adapter) {
         asked_width: wanted.width,
         asked_height: wanted.height,
         honoured,
-        below_floor: !honoured || Math.max(got.width, got.height) < LOCATION_MIN_EDGE,
+        below_floor: !honoured || Math.max(got.width, got.height) < floorEdge,
         /*
          * WHICH reason. A provider that cannot be told a size at all is not
          * merely capped — the number reaches nothing, and reporting only the
@@ -706,7 +710,7 @@ function plateImageSize(project, maxPixels, kind, adapter) {
              * credential — while still reading as authoritative advice.
              */
             : `This provider caps an image at ${cap.toLocaleString()} pixels, so a location `
-              + `plate comes back ${got.width}x${got.height} rather than the ${LOCATION_MIN_EDGE}px `
+              + `plate comes back ${got.width}x${got.height} rather than the ${floorEdge}px `
               + `long edge a location wants. ${capableProviders(asked).length
                   ? `Providers that can serve this plate: ${capableProviders(asked).join(', ')}.`
                   : 'No registered provider can serve this plate at that size.'}`,

@@ -183,7 +183,8 @@ film-engine/
 │   │   ├── scheduling-engine.js  # Smart scheduling & GPU model residency
 │   │   ├── project-bundle.js    # Project export/import (.tar.gz bundles)
 │   │   ├── quality-tiers.js      # Draft/Standard/Precision → a provider and a model
-│   │   ├── image-standard.js     # The house rule: Nano Banana Pro, boards 4K, plates 2K — outranks every tier and pin
+│   │   ├── image-standard.js     # The house rule: Nano Banana Pro at the project's own resolution — outranks every tier and pin
+│   │   ├── angle-explore.js      # Four angles on one shot, one camera each; pick one and it is the frame
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
@@ -297,7 +298,8 @@ film-engine/
 │       ├── image-fallback.test.js      # Image generation survives a provider refusal
 │       ├── reference-capability.test.js # Tags only reach providers that can read them
 │       ├── provider-tiers.test.js      # Every adapter declares its contract; every tier resolves
-│       ├── image-standard.test.js      # Nano Banana Pro at every decision point; boards 4K, plates 2K, in the body MuAPI receives
+│       ├── image-standard.test.js      # Nano Banana Pro at every decision point, sized from the project's resolution, in the body MuAPI receives
+│       ├── angle-explore.test.js       # Four cameras, four generations, nothing on the board until one is picked
 │       ├── gridlight-optin.test.js     # The local gateway is off until switched on, for all 10 capabilities
 │       ├── dry-run.test.js             # The report shows the real request, no keys, no printed pictures
 │       ├── paid-image-controls.test.js # Every image AND video button: pick the generator, read the prompt, edit it
@@ -735,6 +737,7 @@ All routes prefixed with `/film`:
 | Storyboard | `POST /projects/:id/storyboard/generate[/stream]`, `GET /projects/:id/storyboard` |
 | Storyboard | `POST /shots/:id/storyboard/regenerate`, `GET /storyboards/:pid/:file` |
 | Frames | `GET /shots/:id/frames`, `POST /shots/:id/frames/:version/restore` |
+| Angles | `GET\|POST /shots/:id/storyboard/angles-preview` (free), `POST /shots/:id/storyboard/angles`, `GET /shots/:id/storyboard/angles[/:token]`, `POST …/angles/:token/pick` |
 | Voice | `POST /shots/:id/voice/generate[/stream]`, `POST /projects/:id/voice/batch[/stream]` |
 | Voice | `GET /shots/:id/voice`, `GET /projects/:id/voice`, `GET /audio/:pid/:file` |
 | Video | `POST /shots/:id/video/generate[/stream]`, `POST /projects/:id/video/batch[/stream]` |
@@ -841,19 +844,28 @@ Nowhere, before this. Film Engine exported to Premiere and read nothing back, an
 
 Served on the **Edit** page (Post), at the routes above, and as `edit_list` / `edit_get` / `edit_import` / `edit_cut_import` / `edit_cut_rematch` / `edit_update` / `edit_delete`.
 
-### The House Image Standard: Nano Banana Pro, Boards 4K, Plates 2K
-*"First default that we'll never waiver from. When we create image storyboard shots, let's create them in 4K. Plates (location, characters, props) in 2K. All images use nano banana pro."*
+### The House Image Standard: Nano Banana Pro, at the Project's Resolution
+*"For each image, let's follow the standard of the project (Resolution in the technical settings). So if I select 4K then the picture is 4K… it shouldn't be hardwired."*
 
-Before this, three things decided what a picture was: the quality tier (each tier a different model), the project's delivery resolution (a 1080p project boarded at 1080p), and a per-kind plate rule (locations had a 2K floor, characters and props followed the project, a turnaround was a literal 1024 square). Eight real projects held five combinations of those. `lib/image-standard.js` states the answer once and it is read at the **four** places a picture is decided, because a rule held at three of them is one a refusal or a pin routes around:
+The first version of the standard hardwired the size — boards fitted inside 3840x2160, every plate a 2048 long edge — whatever the project said, so a 1080p project paid 4K rates for every frame and a director who chose 8K could not get it. **The model stays fixed; the size is now the project's.** `lib/image-standard.js` is read at the four places a picture is decided:
 
 | | |
 |---|---|
 | **vendor** | `resolveIdWithReason('image')` answers `house_standard` before any pin, env, tier or account default: MuAPI, then Google, then Meshy — the same model sold three ways. A pin to Google or Meshy is honoured; a pin to anyone else is overruled |
 | **model** | `withTierModel` names Nano Banana Pro for whichever vendor of it runs (`nano-banana-pro` / `gemini-3-pro-image`), over a pinned model or a tier. The fallback chain renames it per vendor too |
-| **walk** | `imageProviderChain` walks a refusal only to another vendor of the same model. Walking onto FLUX or GPT Image would hand back a frame on a model nobody chose |
-| **raster** | a board is fitted inside **3840x2160** in the shot's own shape (9:16 turns the box: 2160x3840; 2.39:1 is 3824x1600, fitted not area-matched, because an area match puts the long edge past MuAPI's largest tier). Every plate — character, location, prop, turnaround, refine — is a **2048 long edge** |
+| **walk** | `imageProviderChain` walks a refusal only to another vendor of the same model |
+| **raster** | every picture — board, plate, turnaround, refine, angle exploration — takes the **long edge of `film_projects.target_resolution`** in its own shape: 16:9 on a 4K UHD project is 3840x2160, on a 2K project 2048x1152; a 9:16 shot turns it (2160x3840). Long edge rather than fitted-inside, because "2K" means a 2048 edge to the person who picked it |
 
-The project's delivery resolution still sizes the **footage** and the exports; it no longer sizes a picture. A provider that cannot make 4K is still clamped and says so. The tier table is left in place and is **inert for images** while the standard stands — every tier on a vendor of Nano Banana Pro now asks for the same model, and `provider-tiers.test.js` asserts exactly that rather than the differential it used to demand. `tests/image-standard.test.js` reads the body MuAPI would receive: `resolution: '4k'` on a board and `'2k'` on a plate, because a 4K request that leaves as a 2K tier is the standard failing silently.
+`projectResolution()` reads the project row or, by id, the database — only if something in the process already opened it, so a unit test cannot open the real one. `callImageGen` fills it on any request that did not carry it, so a route that built its payload by hand still gets the project's size. A project with no readable resolution is **2K** (`DEFAULT_RESOLUTION`), and a new project is created at 2K. MuAPI serves 1k/2k/4k tiers, so a setting above 4K is asked at 4K and the clamp is reported. Marketing posters keep their own format's size — a poster is a deliverable with its own dimensions, not a picture of the film. `tests/image-standard.test.js` changes the setting and requires every picture to follow; a constant would pass any single case.
+
+### Four Angles on One Shot
+*"Generate boards of 4 different angles to explore options… then be able to say I love option B and this becomes the shot."*
+
+**Four separate generations, not one 2x2 grid** — the director's choice, because a panel cut from a grid is a quarter of a picture and would need a second paid pass before a video model could use it. Nano Banana Pro has no "give me four" on any vendor, and the vendors that return several return variations of ONE prompt — four near-copies of one framing — so the variety is asked for one camera per request. `lib/angle-explore.js` holds the four defaults (A as written, B reverse, C low and wider, D high and tighter), each a change to a **copy** of the card's camera — never to the action, cast or place — and a named set of four replaces them.
+
+Each angle goes through `regenerateShot` itself with a server-only `capture` option, so it carries the same references, anchor and resolution a regenerate would. **Nothing reaches `{code}.png` until a pick**: candidates are `film_assets` rows (`other`, `kind: angle_candidate`) under `storyboards/<project>/angles/`, and ffmpeg joins them into a free contact sheet (A B over C D). The run answers at once with a token and continues in the background, because four generations outlast the sixty seconds an MCP host waits; the first angle runs before answering so a refusal a regenerate would give arrives as that refusal. The rest run one at a time, and a provider that starts refusing stops the run with the untried angles named. A candidate never records a generation handle, so an abandoned one can never be collected onto the board frame.
+
+**A pick is a file copy**: the frame on the board is archived, the candidate becomes a new version recording `angle_from`, and the other three stay, so changing your mind is another pick rather than another purchase. It is deliberately unfingerprinted (it was generated with a different camera from the card as it stands). A locked board refuses the pick, not the exploration. Served on the board card, the frame viewer and the Production drawer as **4 angles**, and as `storyboard_angles_preview` (free), `storyboard_angles`, `storyboard_angles_list` and `storyboard_angles_pick`.
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
@@ -6033,6 +6045,7 @@ node --test backend/tests/image-fallback.test.js
 node --test backend/tests/reference-capability.test.js
 node --test backend/tests/provider-tiers.test.js
 node --test backend/tests/image-standard.test.js
+node --test backend/tests/angle-explore.test.js
 node --test backend/tests/gridlight-optin.test.js
 node --test backend/tests/dry-run.test.js
 node --test backend/tests/paid-image-controls.test.js

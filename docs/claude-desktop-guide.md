@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**368 tools, 76 families.** Everything the app can do, you can ask for in a
+**372 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -275,6 +275,7 @@ Then `video_preview` shows exactly what a clip would cost before you buy one, an
 `video_generate` buys it — one clip for one shot, from its selected frame.
 
 `storyboard_generate` · `storyboard_regenerate` · `storyboard_refine` ·
+- `storyboard_angles_preview` · `storyboard_angles` · `storyboard_angles_list` · `storyboard_angles_pick` — explore FOUR ANGLES on one shot: four separate Nano Banana Pro images, one camera each, at the project's resolution, joined into a contact sheet. Nothing replaces the frame until you pick one ("use B"), which makes it a new version on the board. The preview is free and shows the four prompts; the exploration costs four images.
 - `storyboard_recompose` — keep the PERFORMANCE from one frame and replace its BACKGROUND with a photographed view of the shot's location. Use it when the acting, framing and camera are right and the place behind them is wrong; `storyboard_refine` cannot, because its contract refuses composition changes and on a close-up the background is most of the composition. The background must be a view of that shot's own location — photograph the view you need first. Costs credits.
 `anchor_get` · `anchor_set` · `anchor_clear` · `annotation_list` ·
 `annotation_delete`

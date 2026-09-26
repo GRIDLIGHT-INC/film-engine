@@ -27,7 +27,9 @@ function imageAdapters() {
         .map(a => ({ id: a.id, maxPixels: a.maxImagePixels }));
 }
 
-const PROJECT = { aspect_ratio: '16:9', target_resolution: '1920x1080' };
+// A 2K project: the floor is the project's own long edge, and 2K is the
+// default a project is created with (lib/image-standard.js DEFAULT_RESOLUTION).
+const PROJECT = { aspect_ratio: '16:9', target_resolution: '2048x1080' };
 
 test('2K is stated as a number, not spelled into the code', () => {
     assert.strictEqual(typeof LOCATION_MIN_EDGE, 'number');
@@ -88,12 +90,11 @@ test('the shape survives being raised to the floor', () => {
     }
 });
 
-test('every plate kind is 2K, by the house standard', () => {
+test('every plate kind is made at the project resolution', () => {
     /*
-     * This used to hold the floor to LOCATIONS only, on the argument that a
-     * character or prop fills its own frame. The house standard overrules it:
-     * every plate — character, location, prop — is a 2048 long edge
-     * (lib/image-standard.js), because a plate is what every frame is built from.
+     * Every plate — character, location, prop — takes the long edge of the
+     * project's technical settings, because a plate is what every frame is
+     * built from. On a 2K project that is 2048.
      */
     const roomy = 4194304;
     for (const kind of ['character', 'location', 'prop']) {
@@ -116,7 +117,7 @@ test('a project with no resolution still gets a 2K location plate', () => {
     assert.ok(Math.max(size.width, size.height) >= LOCATION_MIN_EDGE,
         `${size.width}x${size.height} is below the floor`);
 
-    // And so does every other kind: 2K is the house standard, not a project setting.
+    // And so does every other kind: with no setting, the 2K default applies.
     const character = plateImageSize({ aspect_ratio: '16:9' }, 4194304, 'character');
     assert.ok(character && Math.max(character.width, character.height) === LOCATION_MIN_EDGE,
         'a character plate for a project with no resolution is not 2K');

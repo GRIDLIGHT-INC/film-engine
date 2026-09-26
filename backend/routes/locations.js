@@ -673,9 +673,10 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
         prompt,
         negative_prompt: REFINE_NEGATIVE,
         aspect_ratio: (project && project.aspect_ratio) || undefined,
-        // 2K, by the house standard. With no size a tiered provider answers at
+        // The project's resolution. With no size a tiered provider answers at
         // its smallest tier, and a refined plate came back at 1K.
-        ...require('../lib/image-standard').plateSize(project && project.aspect_ratio),
+        ...require('../lib/image-standard').plateSize(project && project.aspect_ratio,
+            require('../lib/image-standard').projectResolution(project)),
         // ONE reference: the plate being changed. A second picture is another
         // opinion about what this is, and a refine has only one subject.
         reference_images: [{ name: subject.name, kind: 'refine', tag: 'plate', uri }],
@@ -1823,8 +1824,9 @@ async function generateLocationImage(req, res, locId) {
         // Absent rather than null: a null falls through to the provider's own
         // default, which is the most expensive model it sells.
         ...(model ? { model } : {}),
-        // 2K by the house standard: every picture of a subject is a plate.
-        ...require('../lib/image-standard').plateSize('1:1'),
+        // At the project's resolution: every picture of a subject is a plate.
+        ...require('../lib/image-standard').plateSize('1:1',
+            require('../lib/image-standard').projectResolution(loc.project_id)),
         steps: 30,
         guidance_scale: 7.5,
         seed,
@@ -1950,8 +1952,9 @@ async function generatePropImage(req, res, propId) {
         // Absent rather than null: a null falls through to the provider's own
         // default, which is the most expensive model it sells.
         ...(model ? { model } : {}),
-        // 2K by the house standard: every picture of a subject is a plate.
-        ...require('../lib/image-standard').plateSize('1:1'),
+        // At the project's resolution: every picture of a subject is a plate.
+        ...require('../lib/image-standard').plateSize('1:1',
+            require('../lib/image-standard').projectResolution(prop.project_id)),
         steps: 30,
         guidance_scale: 7.5,
         seed,

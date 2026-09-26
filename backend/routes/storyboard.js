@@ -148,7 +148,11 @@ function fileCollectedFrame({ shotId, sourcePath, provider, providerModel, jobId
     // the shot's own shape.
     let want = (Number(width) > 0 && Number(height) > 0) ? { width: Number(width), height: Number(height) } : null;
     if (!want) {
-        try { want = require('../lib/image-standard').storyboardSize(shot.shot_aspect || shot.project_aspect || '16:9'); }
+        try {
+            const std = require('../lib/image-standard');
+            want = std.storyboardSize(shot.shot_aspect || shot.project_aspect || '16:9',
+                std.projectResolution(shot.project_id));
+        }
         catch (_) { want = null; }
     }
     let bytes = fs.readFileSync(sourcePath);
@@ -250,6 +254,24 @@ async function imageResultToBuffer(data) {
 }
 
 /**
+ * The project's resolution on a request that did not carry one.
+ *
+ * Every board is made at the resolution in the project's technical settings,
+ * and a route that built its payload by hand — refine, recompose, a regenerate
+ * whose project row was read without that column — would otherwise fall to the
+ * default. Filled here, in the one funnel, rather than at each of them.
+ */
+function withProjectResolution(options, projectConfig) {
+    const o = { ...(options || {}) };
+    if (!o.target_resolution) {
+        const id = projectConfig && projectConfig.__project_id;
+        const r = require('../lib/image-standard').projectResolution(id);
+        if (r) o.target_resolution = r;
+    }
+    return o;
+}
+
+/**
  * Generate a storyboard image. Returns a Buffer of PNG data.
  *
  * This used to POST straight to `${GRIDLIGHT_URL}/image`, which meant a project
@@ -263,7 +285,7 @@ async function imageResultToBuffer(data) {
  */
 async function callImageGen(prompt, negativePrompt, seed, options, projectConfig, payloadFactory, callOpts) {
     const requestBody = imageRequestPayload({
-        ...(options || {}),
+        ...withProjectResolution(options, projectConfig),
         prompt,
         negative_prompt: negativePrompt,
         seed: seed || null,
@@ -335,7 +357,7 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
 async function callImageGenStream(prompt, negativePrompt, seed, options, onProgress, projectConfig,
     payloadFactory) {
     const payload = imageRequestPayload({
-        ...(options || {}),
+        ...withProjectResolution(options, projectConfig),
         prompt,
         negative_prompt: negativePrompt,
         seed: seed || null,
@@ -625,6 +647,8 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
     if (opts.sent_from_version !== undefined) metadata.sent_from_version = opts.sent_from_version;
     if (opts.direction_mode) metadata.direction_mode = opts.direction_mode;
     if (opts.anchor_shot_code) metadata.anchor_shot_code = opts.anchor_shot_code;
+    // Which angle of which exploration this version was picked from.
+    if (opts.angle_from) metadata.angle_from = opts.angle_from;
     if (opts.provider) metadata.provider = opts.provider;
     if (opts.provider_model) metadata.provider_model = opts.provider_model;
 
@@ -742,6 +766,23 @@ function handleStoryboard(req, res, urlParts, query) {
             return regenerateShot(req, res, shotId);
         }
 
+        // Four angles on one shot, then one of them becomes the frame.
+        //   GET|POST …/storyboard/angles-preview — free: the four prompts and the cost
+        //   POST     …/storyboard/angles         — generate the four candidates
+        //   GET      …/storyboard/angles[/:token] — what exists, and a run's progress
+        //   POST     …/storyboard/angles/:token/pick { slot } — B becomes the frame
+        if (urlParts[4] === 'angles-preview' && (req.method === 'GET' || req.method === 'POST')) {
+            return anglesPreview(req, res, shotId, query);
+        }
+        if (urlParts[4] === 'angles') {
+            if (urlParts[5] && urlParts[6] === 'pick' && req.method === 'POST') {
+                return pickAngle(req, res, shotId, urlParts[5]);
+            }
+            if (!urlParts[5] && req.method === 'POST') return exploreAngles(req, res, shotId);
+            if (req.method === 'GET') return listAngles(req, res, shotId, urlParts[5] || null);
+            return json(res, 405, { error: 'Method not allowed' });
+        }
+
         if (urlParts[4] === 'import' && req.method === 'POST') {
             try {
                 const project = db.prepare(`SELECT p.board_locked_at, p.provider_config FROM film_projects p
@@ -812,6 +853,8 @@ function serveStoryboardImage(res, projectId, filename, width) {
     const candidates = [
         path.join(projectDir, filename),
         path.join(projectDir, 'versions', filename),
+        // Angle-exploration candidates and their contact sheet.
+        path.join(projectDir, 'angles', filename),
     ];
 
     // Containment is checked on the RESOLVED path of whichever candidate is
@@ -3090,7 +3133,14 @@ async function refineShot(req, res, shotId) {
     }
 }
 
-async function regenerateShot(req, res, shotId) {
+/*
+ * `opts` is the server's own, never the request's: an angle exploration calls
+ * this with `capture` (hand the picture back instead of writing the board
+ * frame) and `cardFor` (the camera change for one angle, applied to a copy of
+ * the card). Internal state never rides in on a request body.
+ */
+async function regenerateShot(req, res, shotId, opts) {
+    const cap = opts || {};
     const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) {
         return json(res, 404, { error: 'Shot not found' });
@@ -3102,7 +3152,9 @@ async function regenerateShot(req, res, shotId) {
     }
 
     const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(scene.project_id);
-    const _lock = boardLocked(project, req.body || {});
+    // An exploration writes no frame, so a locked board does not refuse it — the
+    // pick that would replace one is refused instead.
+    const _lock = cap.capture ? null : boardLocked(project, req.body || {});
     if (_lock) return json(res, 423, _lock);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
@@ -3222,6 +3274,7 @@ async function regenerateShot(req, res, shotId) {
         try {
             sceneCard = JSON.parse(shot.scene_card_yaml || '{}');
         } catch (_) { /* skip */ }
+        if (typeof cap.cardFor === 'function') sceneCard = cap.cardFor(sceneCard);
 
         const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
         const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(scene.project_id);
@@ -3260,10 +3313,12 @@ async function regenerateShot(req, res, shotId) {
         negative_prompt = result.negative_prompt;
     }
 
-    const seed = body.seed || consistencyContext.locked_seed || crypto.randomInt(0, 2 ** 31);
+    // Four angles must not share a locked seed, or they come back as one picture.
+    const seed = cap.capture ? crypto.randomInt(0, 2 ** 31)
+        : (body.seed || consistencyContext.locked_seed || crypto.randomInt(0, 2 ** 31));
 
-    // Update status
-    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
+    // Update status — not for an exploration, which leaves the shot as it was.
+    if (!cap.capture) db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
 
     try {
         ensureStoryboardDir(project.id);
@@ -3311,7 +3366,15 @@ async function regenerateShot(req, res, shotId) {
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
                 imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory,
-                frameJobMeta(shotId, imagePayload, { direction_mode: directionMode }));
+                // An exploration candidate is NOT a board frame: a handle the host
+                // abandoned must not be collected onto {code}.png later.
+                cap.capture ? {} : frameJobMeta(shotId, imagePayload, { direction_mode: directionMode }));
+
+        if (cap.capture) {
+            return { ok: true, buffer: imageBuffer, provider: usedProvider, model: usedModel,
+                prompt: imagePayload.prompt, negative_prompt: imagePayload.negative_prompt,
+                seed: imagePayload.seed, project, shot };
+        }
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         // Keep what is about to be replaced. Every attempt cost money.
@@ -3367,6 +3430,7 @@ async function regenerateShot(req, res, shotId) {
         });
 
     } catch (err) {
+        if (cap.capture) throw err;
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('failed', shotId);
         json(res, 502, {
             error: 'Image generation failed',
@@ -3375,6 +3439,271 @@ async function regenerateShot(req, res, shotId) {
             shot_code: shot.shot_code,
         });
     }
+}
+
+// ── Four Angles ────────────────────────────────────────────────────
+
+/*
+ * What is running right now, by token. The candidates themselves are rows in
+ * film_assets and survive a restart; this only answers "is it still going",
+ * which after a restart is honestly "no".
+ */
+const ANGLE_RUNS = new Map();
+
+function anglesDir(projectId) {
+    const dir = path.join(storageDirFor(projectId, 'storyboards'), 'angles');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+function readAnglesInput(req, query) {
+    let angles = req.body && req.body.angles;
+    if (!angles && query && query.angles) {
+        try { angles = JSON.parse(query.angles); } catch (_) { angles = String(query.angles).split('|'); }
+    }
+    return Array.isArray(angles) ? angles : null;
+}
+
+/** The spend line: four images from the lead vendor, from the rate book. */
+function angleSpend(project, shot, count) {
+    try {
+        const { rateFor } = require('../lib/provider-pricing');
+        const lead = imageProviderChain(spendContext(project, shot))[0];
+        if (!lead) return { provider: null, images: count, note: 'No image provider is configured.' };
+        const rate = rateFor(lead.id, 'image');
+        const each = rate && Number.isFinite(rate.usd_per_unit) ? rate.usd_per_unit : null;
+        return {
+            provider: lead.id, images: count, first_attempt_only: true,
+            usd_each: each, usd_total: each == null ? null : Math.round(each * count * 1000) / 1000,
+            estimated: !!(rate && rate.inferred), source: rate ? rate.source : null,
+        };
+    } catch (_) { return { provider: null, images: count, note: 'Cost could not be read.' }; }
+}
+
+/**
+ * GET|POST /film/shots/:id/storyboard/angles-preview — free.
+ *
+ * Built from the same builder the purchase uses, with each angle's camera on a
+ * copy of the card, so the four prompts shown are the four that will be sent.
+ */
+function anglesPreview(req, res, shotId, query) {
+    const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
+    const AE = require('../lib/angle-explore');
+    let ctx;
+    try { ctx = loadShotContext(shotId); } catch (err) {
+        return json(res, err.code === 'PRECONDITION' ? 409 : 404, { error: err.message });
+    }
+    if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
+    const angles = AE.resolveAngles(readAnglesInput(req, query));
+    const out = [];
+    for (const a of angles) {
+        let built;
+        try { built = buildCapabilityPayload('image', { ...ctx, sceneCard: AE.cardForAngle(ctx.sceneCard, a) }); }
+        catch (err) { return json(res, 409, { error: err.message, code: err.code }); }
+        const p = Array.isArray(built.payload) ? built.payload[0] : built.payload;
+        out.push({ slot: a.slot, label: a.label, direction: a.direction, named: a.named,
+            prompt: p.prompt, negative_prompt: p.negative_prompt, width: p.width, height: p.height });
+    }
+    const std = require('../lib/image-standard');
+    return json(res, 200, {
+        shot_id: shotId, shot_code: ctx.shot.shot_code,
+        model: std.HOUSE.label,
+        resolution: std.projectResolution(ctx.project) || std.DEFAULT_RESOLUTION,
+        angles: out,
+        spend: angleSpend(ctx.project, ctx.shot, out.length),
+        how: 'Four separate generations, one camera each, at the project resolution. Nothing replaces the '
+            + 'board frame until you pick one; the four are joined into a contact sheet for free.',
+    });
+}
+
+/** A response object that keeps what a route said instead of sending it. */
+function captureRes() {
+    const r = { statusCode: 200, body: null, headersSent: false };
+    r.writeHead = code => { r.statusCode = code; r.headersSent = true; return r; };
+    r.setHeader = () => {};
+    r.end = data => {
+        try { r.body = JSON.parse(String(data || '')); } catch (_) { r.body = data; }
+    };
+    r.write = () => true;
+    return r;
+}
+
+/**
+ * POST /film/shots/:id/storyboard/angles — spends: four images.
+ *
+ * Answers at once with the run's token and works in the background, because
+ * four generations take minutes and a caller that waited would be abandoned
+ * long before the fourth — the MCP host gives up at sixty seconds. The page
+ * polls the token; the candidates land as rows as each one finishes.
+ */
+async function exploreAngles(req, res, shotId) {
+    const AE = require('../lib/angle-explore');
+    const body = { ...(req.body || {}) };
+    // An exploration is built from the card; a whole-prompt override would make
+    // four identical requests.
+    delete body.prompt_override;
+    const shot = db.prepare(`SELECT sh.id, sh.shot_code, s.project_id FROM film_shots sh
+        JOIN film_scenes s ON s.id = sh.scene_id WHERE sh.id = ?`).get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const angles = AE.resolveAngles(body.angles);
+    const token = AE.newToken();
+
+    // The first angle runs before answering, so a refusal the route would give
+    // any regenerate (unapplied previs, camera mode with no anchor) comes back
+    // as that refusal rather than as four silent failures.
+    const run = { token, shot_id: shotId, status: 'running', started_at: new Date().toISOString(),
+        slots: Object.fromEntries(angles.map(a => [a.slot, 'waiting'])), failed: [], not_attempted: [] };
+    ANGLE_RUNS.set(token, run);
+
+    const one = async a => {
+        run.slots[a.slot] = 'generating';
+        const fake = captureRes();
+        const got = await regenerateShot({ body, headers: req.headers || {} }, fake, shotId,
+            { capture: true, cardFor: c => AE.cardForAngle(c, a) });
+        if (!got || !got.ok) {
+            const err = new Error((fake.body && fake.body.error) || 'the generation did not run');
+            err.status = fake.statusCode; err.body = fake.body;
+            throw err;
+        }
+        const file = path.join(anglesDir(shot.project_id), AE.candidateFileName(shot.shot_code, token, a.slot));
+        fs.writeFileSync(file, got.buffer);
+        const dims = require('../lib/image-raster').dimensionsOfBuffer(got.buffer) || {};
+        const id = generateId();
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, width, height, provider, provider_model, metadata)
+            VALUES (?, ?, ?, 'other', ?, ?, 'png', 'image/png', ?, ?, ?, ?, ?)`)
+            .run(id, shot.project_id, shotId, file, path.basename(file), dims.width || null, dims.height || null,
+                got.provider || null, got.model || null, JSON.stringify({
+                    kind: 'angle_candidate', token, slot: a.slot, label: a.label, direction: a.direction,
+                    prompt: got.prompt, seed: got.seed,
+                }));
+        run.slots[a.slot] = 'ready';
+        return { file, dims };
+    };
+
+    let first;
+    try { first = await one(angles[0]); } catch (err) {
+        ANGLE_RUNS.delete(token);
+        const status = err.status && err.status >= 400 && err.status < 500 ? err.status : 502;
+        return json(res, status, { ...(err.body || {}), error: err.message, stage: 'angle A' });
+    }
+
+    json(res, 202, {
+        token, shot_id: shotId, shot_code: shot.shot_code, status: 'running',
+        angles: angles.map(a => ({ slot: a.slot, label: a.label, direction: a.direction })),
+        poll: `GET /film/shots/${shotId}/storyboard/angles/${token}`,
+        pick: `POST /film/shots/${shotId}/storyboard/angles/${token}/pick { "slot": "B" }`,
+    });
+
+    // The rest, one at a time: four concurrent calls against one provider is how
+    // a queue earns a 429. A provider that has started refusing is not asked
+    // again — the slots not attempted are named.
+    const made = [first];
+    for (const a of angles.slice(1)) {
+        try { made.push(await one(a)); } catch (err) {
+            run.slots[a.slot] = 'failed';
+            run.failed.push({ slot: a.slot, error: err.message });
+            const idx = angles.indexOf(a);
+            for (const rest of angles.slice(idx + 1)) { run.slots[rest.slot] = 'not attempted'; run.not_attempted.push(rest.slot); }
+            break;
+        }
+    }
+    const sheetPath = path.join(anglesDir(shot.project_id), AE.sheetFileName(shot.shot_code, token));
+    const tile = made[0].dims && made[0].dims.width ? made[0].dims : { width: 1024, height: 576 };
+    const sheet = AE.buildSheet(made.map(m => m.file), sheetPath, tile);
+    if (sheet.ok) {
+        db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name,
+                format, mime_type, provider, metadata)
+            VALUES (?, ?, ?, 'other', ?, ?, 'png', 'image/png', 'local', ?)`)
+            .run(generateId(), shot.project_id, shotId, sheetPath, path.basename(sheetPath),
+                JSON.stringify({ kind: 'angle_sheet', token }));
+    } else {
+        run.sheet_error = sheet.reason;
+    }
+    run.status = run.failed.length ? 'completed_with_errors' : 'complete';
+    run.finished_at = new Date().toISOString();
+}
+
+function angleRows(shotId, token) {
+    const rows = db.prepare(`SELECT id, project_id, file_path, file_name, width, height, provider, provider_model,
+            metadata, created_at FROM film_assets
+        WHERE shot_id = ? AND asset_type = 'other' AND json_valid(metadata)
+          AND json_extract(metadata, '$.kind') IN ('angle_candidate', 'angle_sheet')
+          ${token ? "AND json_extract(metadata, '$.token') = ?" : ''}
+        ORDER BY created_at`).all(...(token ? [shotId, token] : [shotId]));
+    return rows.map(r => ({ ...r, meta: JSON.parse(r.metadata) }));
+}
+
+/** GET …/storyboard/angles[/:token] — free. */
+function listAngles(req, res, shotId, token) {
+    const rows = angleRows(shotId, token);
+    const groups = new Map();
+    for (const r of rows) {
+        const t = r.meta.token;
+        if (!groups.has(t)) groups.set(t, { token: t, candidates: [], sheet_url: null, created_at: r.created_at });
+        const g = groups.get(t);
+        const url = `/film/storyboards/${r.project_id}/${r.file_name}`;
+        if (r.meta.kind === 'angle_sheet') { g.sheet_url = url; continue; }
+        g.candidates.push({ slot: r.meta.slot, label: r.meta.label, direction: r.meta.direction,
+            asset_id: r.id, image_url: url, width: r.width, height: r.height,
+            provider: r.provider, picked: !!r.meta.picked_version, picked_version: r.meta.picked_version || null });
+    }
+    const out = [...groups.values()].reverse().map(g => {
+        const run = ANGLE_RUNS.get(g.token);
+        return { ...g, status: run ? run.status : 'complete', slots: run ? run.slots : undefined,
+            failed: run ? run.failed : [], not_attempted: run ? run.not_attempted : [] };
+    });
+    if (token) {
+        const run = ANGLE_RUNS.get(token);
+        if (!out.length && !run) return json(res, 404, { error: 'No such exploration on this shot.' });
+        return json(res, 200, out[0] || { token, candidates: [], status: run.status, slots: run.slots,
+            failed: run.failed, not_attempted: run.not_attempted });
+    }
+    return json(res, 200, { shot_id: shotId, explorations: out });
+}
+
+/**
+ * POST …/storyboard/angles/:token/pick { slot } — free: a file copy.
+ *
+ * The chosen candidate becomes a new frame version, exactly as a regenerate
+ * would: what the shot showed is archived first, the live frame is written,
+ * and the version records which exploration and which angle it came from. The
+ * candidates stay, so changing your mind is another pick, not another purchase.
+ */
+function pickAngle(req, res, shotId, token) {
+    const body = req.body || {};
+    const slot = String(body.slot || '').toUpperCase();
+    const row = angleRows(shotId, token).find(r => r.meta.kind === 'angle_candidate' && r.meta.slot === slot);
+    if (!row) return json(res, 404, { error: `Exploration ${token} has no angle ${slot || '(none named)'}.` });
+    const shot = db.prepare(`SELECT sh.id, sh.shot_code, s.project_id FROM film_shots sh
+        JOIN film_scenes s ON s.id = sh.scene_id WHERE sh.id = ?`).get(shotId);
+    const project = db.prepare('SELECT id, board_locked_at FROM film_projects WHERE id = ?').get(shot.project_id);
+    const locked = boardLocked(project, body);
+    if (locked) return json(res, 423, locked);
+    if (!row.file_path || !fs.existsSync(row.file_path)) {
+        return json(res, 410, { error: `Angle ${slot}'s picture is no longer on disk.` });
+    }
+    ensureStoryboardDir(shot.project_id);
+    const imgPath = storyboardImagePath(shot.project_id, shot.shot_code);
+    archiveExistingFrame(shot.project_id, shotId, shot.shot_code);
+    fs.copyFileSync(row.file_path, imgPath);
+    const asset = registerStoryboardAsset(shot.project_id, shotId, imgPath, `${shot.shot_code}.png`, {
+        provider: row.provider, provider_model: row.provider_model,
+        angle_from: { token, slot, label: row.meta.label, direction: row.meta.direction },
+        direction_mode: 'action',
+        // Generated from the card with this angle's camera, not from the card as
+        // it stands — the keyframe fingerprint would call it current when it is not.
+        skip_fingerprint: true,
+    });
+    db.prepare(`UPDATE film_assets SET metadata = json_set(metadata, '$.picked_version', ?) WHERE id = ?`)
+        .run(asset.version, row.id);
+    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shotId);
+    return json(res, 200, {
+        shot_id: shotId, shot_code: shot.shot_code, picked: slot, label: row.meta.label,
+        version: asset.version, image_url: storyboardImageUrl(shot.project_id, shot.shot_code),
+        note: 'The angle is on the board as a new version. The card is unchanged; write the angle into the '
+            + 'shot’s direction if later regenerations should keep it.',
+    });
 }
 
 // ── Character / Location Matching ──────────────────────────────────
