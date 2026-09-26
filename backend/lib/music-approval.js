@@ -276,7 +276,5 @@ function mixScoreIntoFilm(filmPath, placements, opts) {
     return { ok: true };
 }
 
-module.exports = {
-    SCORE_CONSUMERS, REPORT_STATES, approveMix, revokeApproval, approvedScores, placeScores, coveredScenes,
-    entriesFromClips, applyToTimeline, scoreMixArgs, mixScoreIntoFilm, sessionShots, shadowedByProjectMix,
-};
+module.exports = {    SCORE_CONSUMERS, REPORT_STATES, approveMix, revokeApproval, approvedScores, placeScores, coveredScenes,
+    entriesFromClips, applyToTimeline, mixScoreIntoFilm, shadowedByProjectMix,};

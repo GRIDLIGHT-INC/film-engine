@@ -242,12 +242,8 @@ function extractDocxText(buffer) {
     };
 }
 
-module.exports = {
-    extractDocxText,
+module.exports = {    extractDocxText,
     // Exported for tests.
     xmlToText,
     decodeEntities,
-    findEntryOffset,
-    listEntryOffsets,
-    DOCUMENT_PATH,
-};
+    findEntryOffset,};

@@ -826,17 +826,13 @@ async function listVoices(opts) {
     }
 }
 
-module.exports = {
-    wrapPcmAsWav, normalizeOutputFormat,
+module.exports = {    wrapPcmAsWav, normalizeOutputFormat,
     adapter,
     listVoices,
-    refusedVoices,
     recordVoiceRefusal,
     buildVoiceRequest,
     buildSfxRequest,
     buildMusicRequest,
     buildAmbientRequest,
     buildStemSeparationRequest,
-    callElevenLabsMultipart,
-    STEM_VARIATION_IDS,
-};
+    callElevenLabsMultipart,};

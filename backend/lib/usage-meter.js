@@ -355,6 +355,4 @@ function round2(n) {
     return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-module.exports = {
-    meterAdapter, recordUsage, projectSpend, rateOverrides, invalidateRateCache, COST_TYPE,
-};
+module.exports = {    meterAdapter, recordUsage, projectSpend, rateOverrides, invalidateRateCache,};

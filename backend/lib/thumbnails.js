@@ -89,12 +89,12 @@ async function thumbnailFor(sourcePath, requestedWidth) {
         const ok = await new Promise(resolve => {
             execFile(bin.bin, args, { timeout: 20000 }, err => resolve(!err));
         });
-        if (!ok) { try { fs.unlinkSync(tmp); } catch (_) {} return null; }
+        if (!ok) { try { fs.unlinkSync(tmp); } catch (e) { console.error('[thumbnails] could not remove a temporary file:', e.message); } return null; }
         try {
             // Rename is atomic on one filesystem, so a reader never sees a
             // half-written thumbnail.
             fs.renameSync(tmp, out);
-        } catch (_) { try { fs.unlinkSync(tmp); } catch (_) {} return null; }
+        } catch (_) { try { fs.unlinkSync(tmp); } catch (e) { console.error('[thumbnails] could not remove a temporary file:', e.message); } return null; }
         return out;
     })().finally(() => inFlight.delete(out));
 
@@ -139,7 +139,7 @@ function videoKeyframeFor(sourcePath, longEdge) {
         fs.renameSync(tmp, out);
         return out;
     } catch (_) {
-        try { fs.unlinkSync(tmp); } catch (_) {}
+        try { fs.unlinkSync(tmp); } catch (e) { console.error('[thumbnails] could not remove a temporary file:', e.message); }
         return null;
     }
 }

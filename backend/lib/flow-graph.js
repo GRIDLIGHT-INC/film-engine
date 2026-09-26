@@ -260,7 +260,4 @@ function graphFingerprint(graph) {
     return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
-module.exports = {
-    validateGraph, detectCycles, topoSort, nextNodes, graphFingerprint,
-    dependencyMap,
-};
+module.exports = {    validateGraph, detectCycles, topoSort, nextNodes, graphFingerprint,};

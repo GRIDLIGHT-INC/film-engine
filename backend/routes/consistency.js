@@ -213,7 +213,7 @@ function setStatus(res, id, status) {
     // a voice id; visual profiles need a canonical reference asset.
     if (status === 'locked') {
         if (profile.profile_type === 'voice') {
-            let s = {}; try { s = JSON.parse(profile.settings || '{}'); } catch (_) {}
+            let s = {}; try { s = JSON.parse(profile.settings || '{}'); } catch (e) { console.error('[consistency] stored s is not valid JSON; using the default:', e.message); }
             if (!s.voice_profile_id && !s.voice_id) {
                 return json(res, 400, { error: 'Cannot lock voice: no voice profile or voice_id set.' });
             }

@@ -234,7 +234,5 @@ function readAllowance() {
     }
 }
 
-module.exports = {
-    HOSTS, HOST_LABEL, HOST_PATTERNS, PLAN_MULTIPLIERS, WINDOWS, CHARS_PER_TOKEN,
-    recordHostUsage, subscriptionUsage, tokensFor, readAllowance, resolveHost,
-};
+module.exports = {    HOSTS,
+    recordHostUsage, subscriptionUsage, tokensFor, resolveHost,};

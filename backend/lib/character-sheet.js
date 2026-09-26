@@ -203,9 +203,7 @@ function normalisePalette(list) {
     return (Array.isArray(list) ? list : []).map(normaliseSwatch).filter(Boolean).slice(0, 8);
 }
 
-module.exports = {
-    OFFICIAL_VIEWS, OFFICIAL_VIEW_IDS, LEGACY_VIEWS, canonicalView, viewPlan,
-    REFERENCE_CATEGORIES, CATEGORY_IDS, categoryMetadata, categoryOf,
+module.exports = {    OFFICIAL_VIEWS, canonicalView, viewPlan,
+    REFERENCE_CATEGORIES, categoryMetadata, categoryOf,
     SHEET_REGIONS, RELOCATED_ACTIONS,
-    AUTHORING, GENDERS, normaliseSwatch, normalisePalette,
-};
+    AUTHORING, GENDERS, normaliseSwatch, normalisePalette,};

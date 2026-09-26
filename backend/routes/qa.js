@@ -85,7 +85,7 @@ function getLatestQA(req, res, projectId) {
     if (!run) return json(res, 404, { error: 'No QA runs found. Run QA first.' });
 
     let results = {};
-    try { results = JSON.parse(run.results || '{}'); } catch (_) {}
+    try { results = JSON.parse(run.results || '{}'); } catch (e) { console.error('[qa] stored results is not valid JSON; using the default:', e.message); }
 
     json(res, 200, { ...run, results });
 }

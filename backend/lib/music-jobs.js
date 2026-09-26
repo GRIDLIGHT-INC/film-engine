@@ -33,7 +33,6 @@ const { VALIDATORS, toRow, fromRow } = require('./music-session');
 /** The columns that make an operation a child, as the migration adds them. */
 const CHILD_COLUMNS = Object.freeze(['group_id', 'seq', 'attempt', 'take_number', 'output_clip_id', 'source_fingerprint', 'context_fingerprint']);
 const OPEN = new Set(['planned', 'running']);
-const BAD = new Set(['failed', 'cancelled']);
 const JOB_KINDS = Object.freeze(['generate', 'separate']);
 
 /** Runs this process owns right now. A job not in here cannot still be running. */
@@ -256,7 +255,5 @@ async function retryJob(db, sessionId, opId, opts) {
     return gen.generate(db, sessionId, params.workflow, params.input, o);
 }
 
-module.exports = {
-    CHILD_COLUMNS, JOB_KINDS, deriveStatus, openJob, addChild, settleChild, rollup, failJob, release, isLive,
-    readJob, listJobs, pollJob, retryJob, childrenOf,
-};
+module.exports = {    CHILD_COLUMNS, deriveStatus, openJob, addChild, settleChild, rollup, failJob, release, isLive,
+    readJob, listJobs, pollJob, retryJob, childrenOf,};

@@ -269,7 +269,5 @@ function countShotAppearances(db, projectId) {
     return out;
 }
 
-module.exports = {
-    ANCHORS, sizeOf, dimensionsOf, fractionPhrase, anchorPhrase,
-    measurePhrase, scalePhrase, scaleNegative, missingSizes, statedSizes,
-};
+module.exports = {    ANCHORS, sizeOf, fractionPhrase, anchorPhrase,
+    scalePhrase, scaleNegative, missingSizes, statedSizes,};

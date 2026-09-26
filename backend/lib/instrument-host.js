@@ -249,7 +249,5 @@ async function renderPart({ plugin, state, midi, lengthMs, outPath, frameMs, sam
     return { ...finished, renderer: 'plugin', plugin, render_seconds: answer.meta && answer.meta.render_seconds };
 }
 
-module.exports = {
-    HOST_OPERATIONS, UNSUPPORTED, DEFAULT_URL,
-    hostConfig, callSidecar, health, availability, instruments, capture, renderPart,
-};
+module.exports = {    UNSUPPORTED,
+    hostConfig, callSidecar, health, availability, instruments, capture, renderPart,};

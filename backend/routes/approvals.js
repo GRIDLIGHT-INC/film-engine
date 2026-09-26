@@ -19,8 +19,6 @@
  * useful in the CLI and on the page, it does not belong in the envelope.
  */
 
-const fs = require('fs');
-const path = require('path');
 const { db } = require('../db/database');
 const envelope = require('../lib/approval-envelope');
 const reviewProxy = require('../lib/review-proxy');

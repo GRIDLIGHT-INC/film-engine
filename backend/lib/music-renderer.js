@@ -73,7 +73,6 @@ const GUIDE_ROLES = Object.freeze({ reference: 'reference track: a guide for the
 const RENDERED_AUTOMATION = Object.freeze(['gain', 'mute']);
 
 const dbToLinear = db => Math.pow(10, (Number(db) || 0) / 20);
-const num = (v, d) => (v === undefined || v === null || Number.isNaN(Number(v))) ? d : Number(v);
 const slug = s => String(s || 'stem').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'stem';
 
 // ── The plan ───────────────────────────────────────────────────────────────

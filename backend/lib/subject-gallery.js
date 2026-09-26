@@ -303,9 +303,7 @@ function byRole(gallery) {
     return out;
 }
 
-module.exports = {
-    ROLES, ROLE_IDS, DEFAULT_ROLE, SUBJECT_KINDS, SUBJECT_SPEC, PLATE_TYPES,
+module.exports = {    ROLES, ROLE_IDS, SUBJECT_KINDS, SUBJECT_SPEC, PLATE_TYPES,
     roleOf, isSendable, sendableSql, sendableOnly, viewOf, planPromotion,
     explorationFileName, explorationMetadata, inspirationMetadata,
-    loadGallery, galleryForStrip, byRole, SERVE_DIR,
-};
+    loadGallery, galleryForStrip, byRole, SERVE_DIR,};

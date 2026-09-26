@@ -243,7 +243,5 @@ function expandShots(shots, motionFor, opts) {
     };
 }
 
-module.exports = {
-    DEFAULT_CADENCE_S, MAX_STATIONS_PER_SHOT,
-    movementReads, stationCount, deltaInstruction, planStations, expandShots,
-};
+module.exports = {    DEFAULT_CADENCE_S, MAX_STATIONS_PER_SHOT,
+    stationCount, deltaInstruction, planStations, expandShots,};

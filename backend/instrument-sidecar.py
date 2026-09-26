@@ -227,7 +227,7 @@ def op_capture(args):
     # No ceiling: a person is deciding. The caller has its own patience.
     got = run_worker('capture', {'plugin': args['plugin'], 'state_b64': args.get('state_b64')}, timeout=None)
     state = got['state_b64']
-    answer = {'state_b64': state, 'bytes': len(base64.b64decode(state)), 'plugin': plugin, 'at': time.time(),
+    answer = {'state_b64': state, 'bytes': len(base64.b64decode(state)), 'plugin': args['plugin'], 'at': time.time(),
               'note': 'this state recalls exactly what was loaded when the window was closed'}
     # KEPT, because a person stood at that window: if the answer goes back to a
     # dropped connection the patch is still here, at GET /last-capture. A capture

@@ -13,10 +13,8 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
 const { resolveGenerator } = require('../lib/providers');
 const { auditShotReadiness, auditProjectReadiness } = require('../lib/consistency-context');
-const { ensureDir, saveFile, getFileUrl } = require('../lib/file-storage');
 const { PIPELINE_STEPS, buildStepPlan, autoSkipSteps, retryDelay, MAX_RETRIES } = require('../lib/pipeline-engine');
 const { buildCapabilityPayload, loadShotContext, providerConfigOf, persistCapabilityResult } = require('../lib/capability-payloads');
 const { buildSchedule, suggestResidency, MODEL_PROFILES } = require('../lib/scheduling-engine');
@@ -85,17 +83,6 @@ function handlePipeline(req, res, urlParts, query) {
 
 // -- Step Execution Dispatch ---------------------------------------------
 
-const STEP_ENDPOINTS = {
-    keyframe: '/image',
-    video: '/video',
-    voice: '/voice',
-    lipsync: '/lipsync',
-    music: '/music',
-    sfx: '/music',
-    ambient: '/music',
-    post: '/postprocess',
-    assembly: null, // handled locally
-};
 
 // Pipeline step → generation capability. Each step resolves the project's
 // configured provider for that capability (Gridlight by default), so the whole
@@ -641,11 +628,11 @@ async function runShotPipeline(req, res, shotId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error(`[pipeline] shot ${shot.id}: scene card is not valid JSON — running with an empty card: ${e.message}`); }
 
     // Consistency readiness gate: warn always; block only when strict is requested.
     let readiness = { ready: true, missing: [], warnings: [] };
-    try { readiness = auditShotReadiness(shot, scene, project); } catch (_) {}
+    try { readiness = auditShotReadiness(shot, scene, project); } catch (e) { console.error(`[pipeline] shot ${shot.id}: readiness audit failed, run not gated: ${e.message}`); }
     const strict = !!(req.body && req.body.strict);
     if (strict && !readiness.ready) {
         return json(res, 409, { error: 'Consistency check blocked the run (strict mode).', readiness });
@@ -754,11 +741,11 @@ async function runShotPipelineStream(req, res, shotId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error(`[pipeline] shot ${shot.id}: scene card is not valid JSON — running with an empty card: ${e.message}`); }
 
     // Consistency readiness gate (strict blocks before the stream even opens).
     let readiness = { ready: true, missing: [], warnings: [] };
-    try { readiness = auditShotReadiness(shot, scene, project); } catch (_) {}
+    try { readiness = auditShotReadiness(shot, scene, project); } catch (e) { console.error(`[pipeline] shot ${shot.id}: readiness audit failed, run not gated: ${e.message}`); }
     if (!!(req.body && req.body.strict) && !readiness.ready) {
         return json(res, 409, { error: 'Consistency check blocked the run (strict mode).', readiness });
     }
@@ -839,7 +826,7 @@ async function runShotPipelineStream(req, res, shotId) {
         if (!clientGone) sendEvent({ type: stopped, run_id: runId });
         db.prepare('UPDATE film_pipeline_runs SET status = ? WHERE id = ?').run(stopped, runId);
         activePipelines.delete(runId);
-        if (!res.writableEnded) { try { res.end(); } catch (_) {} }
+        if (!res.writableEnded) { try { res.end(); } catch (e) { console.error('[pipeline] could not close the stream (client already gone):', e.message); } }
         return;
     }
 
@@ -912,7 +899,7 @@ async function executeShots({ runId, shots, project, body, runType }) {
         if (!scene) continue;
 
         let sceneCard = {};
-        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error(`[pipeline] shot ${shot.id}: scene card is not valid JSON — running with an empty card: ${e.message}`); }
         const plan = splitPlan(buildStepPlan({ skip_steps: autoSkipSteps(sceneCard, body), ...(body || {}) })).perShot;
         totalPlanned += plan.length;
 
@@ -1055,7 +1042,7 @@ async function runProjectPipeline(req, res, projectId) {
 
     // Consistency readiness across the whole project (strict blocks the run).
     let readiness = { ready: true, shots: [], missing: [] };
-    try { readiness = auditProjectReadiness(projectId); } catch (_) {}
+    try { readiness = auditProjectReadiness(projectId); } catch (e) { console.error(`[pipeline] project ${projectId}: readiness audit failed, run not gated: ${e.message}`); }
     if (!!(req.body && req.body.strict) && !readiness.ready) {
         return json(res, 409, { error: 'Consistency check blocked the project run (strict mode).', readiness });
     }
@@ -1165,7 +1152,7 @@ function buildProjectSchedule(req, res, projectId) {
     // Determine steps per shot
     const shotPlans = shots.map(shot => {
         let sceneCard = {};
-        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error(`[pipeline] shot ${shot.id}: scene card is not valid JSON — running with an empty card: ${e.message}`); }
         const skipSteps = autoSkipSteps(sceneCard, req.body);
         const plan = buildStepPlan({ skip_steps: skipSteps, ...(req.body || {}) });
         return {
@@ -1206,8 +1193,8 @@ function getLatestSchedule(req, res, projectId) {
     if (!run) return json(res, 404, { error: 'No schedule found. Create one first.' });
 
     let schedule = {}, residency = {};
-    try { schedule = JSON.parse(run.schedule_data || '{}'); } catch (_) {}
-    try { residency = JSON.parse(run.residency_data || '{}'); } catch (_) {}
+    try { schedule = JSON.parse(run.schedule_data || '{}'); } catch (e) { console.error(`[pipeline] run ${run.id}: schedule_data is not valid JSON: ${e.message}`); }
+    try { residency = JSON.parse(run.residency_data || '{}'); } catch (e) { console.error(`[pipeline] run ${run.id}: residency_data is not valid JSON: ${e.message}`); }
 
     json(res, 200, { ...run, schedule, residency });
 }

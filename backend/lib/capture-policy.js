@@ -766,8 +766,6 @@ function formatChoices(extra = [], device = null) {
     });
 }
 
-module.exports = {
-    CEILINGS, DESTINATIONS, MODES, CODECS, CAPABILITIES, TRANSPORTS, DRIVE_CHECKS,
-    applicableCeilings, bindingCeilingFor, bindingBytesFor, routeFor,
-    maxSecondsFor, recommended, checkCapture, formatChoices,
-};
+module.exports = {    CEILINGS, DESTINATIONS, MODES, CODECS, CAPABILITIES, TRANSPORTS, DRIVE_CHECKS,
+    bindingCeilingFor, bindingBytesFor, routeFor,
+    maxSecondsFor, recommended, checkCapture, formatChoices,};

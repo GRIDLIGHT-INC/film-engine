@@ -18,6 +18,7 @@
  * READ ONLY. This module can hand a file out and do nothing else.
  */
 
+const { pipeFile } = require('../lib/file-storage');
 const fs = require('fs');
 const { resolveHandle } = require('../lib/frame-handles');
 
@@ -66,7 +67,7 @@ function handleFrameHandles(req, res, urlParts) {
         'X-Content-Type-Options': 'nosniff',
     });
     if (req.method === 'HEAD') return res.end();
-    return fs.createReadStream(found.path).pipe(res);
+    return pipeFile(found.path, res);
 }
 
 module.exports = { handleFrameHandles };

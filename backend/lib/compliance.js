@@ -254,7 +254,5 @@ function blocks(findings) {
     return Array.isArray(findings) && findings.some(f => f && f.severity === 'error');
 }
 
-module.exports = {
-    CHECKS, CLAIM_PATTERNS, TESTIMONIAL_PATTERNS, CTA_PATTERNS,
-    checkCopy, checkRights, findingsFor, blocks, parseList,
-};
+module.exports = {    CHECKS, CLAIM_PATTERNS,
+    checkCopy, checkRights, findingsFor, blocks, parseList,};

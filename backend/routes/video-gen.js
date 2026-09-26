@@ -10,15 +10,14 @@
  * GET  /film/video/:projectId/:filename         - Serve video files
  */
 
-const fs = require('fs');
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
+const { getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 const { needsStitching, planClips, buildStitchPayload, calculateTransitions } = require('../lib/video-stitcher');
 const { resolve } = require('../lib/providers');
-const { providerConfigFor, spendContext } = require('../lib/provider-config');
+const { spendContext } = require('../lib/provider-config');
 /*
  * The same per-generation override the image paths read. Video was stuck on
  * whatever the project happened to say, so "select the generator on every
@@ -37,9 +36,6 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
-// One implementation, in lib/provider-config.js — it also tags the config
-// with the project id so spend can be attributed. See that file for why.
-const parseProjectConfig = providerConfigFor;
 
 function resultModel(result, payload) {
     return (result && result.provider_model) || (payload && payload.model) || '';
@@ -373,7 +369,7 @@ async function generateVideo(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
-    const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
+    const { shot, scene, sceneCard, project } = ctx;
     const videoProvider = resolve('video',
         spendContext({ id: scene.project_id }, shot, scene, videoOverrideOf(req)));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
@@ -509,7 +505,7 @@ async function generateVideoStream(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
-    const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
+    const { shot, scene, project } = ctx;
     const videoProvider = resolve('video',
         spendContext({ id: scene.project_id }, shot, scene, videoOverrideOf(req)));
     const consistencyContext = buildShotReferencePayload(shot, scene, project);
@@ -538,7 +534,7 @@ async function generateVideoStream(req, res, shotId) {
         // file_path and the clip reaches Premiere with no media reference.
         let streamedAsset = null;
 
-        const { ok, finalData, error } = await videoProvider.generateStream('video', payload, res, {
+        const { ok, error } = await videoProvider.generateStream('video', payload, res, {
             onComplete: (data) => {
                 const { version: clipVersion, filename } = nextClip(shotId, shot.shot_code);
                 ensureDir(scene.project_id, 'video');
@@ -851,7 +847,7 @@ async function stitchVideo(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
 
-    const { shot, scene, sceneCard, characters, location, project, initImage } = ctx;
+    const { shot, scene, sceneCard } = ctx;
     const durationMs = sceneCard.duration_ms || shot.duration_ms || 4000;
 
     if (!needsStitching(durationMs)) {
@@ -873,7 +869,6 @@ async function stitchVideo(req, res, shotId) {
         JSON.stringify({ clips, transitions }));
 
     // Generate each clip
-    const stylePreset = project ? project.style_preset : null;
     ensureDir(scene.project_id, 'video');
     const clipResults = [];
 

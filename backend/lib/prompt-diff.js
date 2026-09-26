@@ -165,11 +165,8 @@ function buildSummary(prompt, params) {
     return parts.join(', ');
 }
 
-module.exports = {
-    diffPrompts,
+module.exports = {    diffPrompts,
     diffParams,
     comparePrompts,
     tokenize,
-    COMPARED_PARAMS,
-    LCS_TOKEN_CAP,
-};
+    LCS_TOKEN_CAP,};

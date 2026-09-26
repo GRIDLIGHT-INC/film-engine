@@ -176,6 +176,11 @@ function deleteInstrument(id) {
  */
 function instrumentForPreset({ preset_path, plugin, name, library, vendor, tags }) {
     const file = path.resolve(String(preset_path || ''));
+    // Only an NKS preset: a path taken as given would read any file the
+    // server can reach, for a caller on any origin.
+    if (path.extname(file).toLowerCase() !== '.nksf') {
+        throw Object.assign(new Error('preset_path must be an .nksf preset'), { status: 400 });
+    }
     const existing = db.prepare('SELECT * FROM film_instruments WHERE preset_path = ?').get(file);
     if (existing) return rowToInstrument(existing);
     if (!fs.existsSync(file)) throw Object.assign(new Error(`there is no preset at ${file}`), { status: 400 });
@@ -192,8 +197,6 @@ function instrumentForPreset({ preset_path, plugin, name, library, vendor, tags 
     return getInstrument(id);
 }
 
-module.exports = {
-    FORMATS, SOURCES, MAX_STATE_BYTES, instrumentForPreset,
+module.exports = {    FORMATS, SOURCES, instrumentForPreset,
     listInstruments, getInstrument, stateOf, createCaptured, updateInstrument, deleteInstrument,
-    formatOf, statePath, root,
-};
+    formatOf, statePath, root,};

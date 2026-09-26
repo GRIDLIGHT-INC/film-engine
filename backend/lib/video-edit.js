@@ -27,7 +27,7 @@ const crypto = require('crypto');
 const { inspectMedia } = require('./ffmpeg');
 const { mintHandle, revokeScope } = require('./frame-handles');
 const { budgetStatus } = require('./flow-cost');
-const { getFilePath, ensureDir } = require('./file-storage');
+const { ensureDir } = require('./file-storage');
 const { RUNWAY_VIDEO_MODELS, quoteVideo, checkBudget } = require('./providers/runway');
 
 /** The only model here that can edit footage. Read, never retyped. */

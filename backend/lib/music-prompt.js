@@ -611,14 +611,10 @@ function buildAmbientPrompt(scene, location, opts) {
     };
 }
 
-module.exports = {
-    buildMusicPrompt,
+module.exports = {    buildMusicPrompt,
     buildSFXPrompts,
     buildAmbientPrompt,
     MOOD_TO_MUSIC,
     LOCATION_TO_AMBIENT,
     TIME_AMBIENT_MODIFIER,
-    isAuthored,
-    promptLimitFor,
-    WRITTEN_PROMPT_LIMIT,
-};
+    promptLimitFor,};

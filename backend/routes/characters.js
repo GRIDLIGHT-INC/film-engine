@@ -12,13 +12,19 @@ const { orderByViewSql } = require('../lib/plate-views');
 const { db, generateId } = require('../db/database');
 const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 // Where a character plate goes, known in ONE place so the collect road files
 // one exactly as the live road does. See lib/plate-delivery.js.
 const plateDelivery = require('../lib/plate-delivery');
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');
+const path = require('path');
+
+function json(res, status, data) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IMAGE_ENDPOINT = '/image';
@@ -405,7 +411,7 @@ function updateCharacter(req, res, charId) {
     fields.push("updated_at = datetime('now')");
     values.push(charId);
 
-    const result = db.prepare(`UPDATE film_characters SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    db.prepare(`UPDATE film_characters SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
     const row = db.prepare('SELECT * FROM film_characters WHERE id = ?').get(charId);
 
@@ -1037,7 +1043,6 @@ function refsheetConsistency(res, charId) {
 
 function listRefsheetViews(res, charId) {
     const fs = require('fs');
-    const path = require('path');
     const { viewRank } = require('../lib/plate-views');
 
     const ch = db.prepare('SELECT id, project_id, name FROM film_characters WHERE id = ?').get(charId);
@@ -1243,7 +1248,6 @@ async function generateOrbit(req, res, charId) {
     if (!result.ok) return json(res, result.status || 500, { error: result.error });
 
     const fsx = require('fs');
-    const pathx = require('path');
     ensureDir(ch.project_id, 'video');
     const clipName = `${String(ch.name).replace(/[^\w.-]/g, '_')}_orbit.mp4`;
     let clipPath;

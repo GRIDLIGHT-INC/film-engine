@@ -306,7 +306,6 @@ function shotReferencesFor(db, opts) {
     }
     const references = gatherShotReferences(
         o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null,
-        // eslint-disable-next-line no-multi-spaces
         // The ceiling of the provider this config resolves to, so the shared
         // path agrees with the per-route ones about how many plates fit.
         { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [],
@@ -367,13 +366,10 @@ function platedSubjects(db, projectId) {
     };
 }
 
-module.exports = {
-    platedSubjects,
+module.exports = {    platedSubjects,
     gatherShotReferences,
     plateReferenceFor,
     matchProps,
     matchCharacters,
     matchLocation,
-    providerReferenceSupport,
-    shotReferencesFor,
-};
+    shotReferencesFor,};

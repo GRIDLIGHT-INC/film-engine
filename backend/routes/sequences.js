@@ -1250,7 +1250,6 @@ async function generateSequence(req, res, id) {
             .map(k => ({ uri: toDataUri(k.uri), position: k.position }))
             .filter(k => k.uri);
         const refs = stationRefs(segment);
-        // eslint-disable-next-line no-await-in-loop
         const result = await provider.generate('video', {
             prompt: segment.prompt,
             keyframes,
@@ -1295,7 +1294,6 @@ async function generateSequence(req, res, id) {
          * and no buffer -- which is every MuAPI one -- handed `undefined` here
          * and threw on a clip that had already been paid for.
          */
-        // eslint-disable-next-line no-await-in-loop
         const saved = await persistProviderMedia(row.project_id, 'video', fileName, result,
             { serveDir: 'videos' });
         const assetId = fileSequenceClip({

@@ -282,8 +282,6 @@ function renderMidi({ midiPath, outPath, lengthMs, soundfont, frameMs = 1000 / 2
     return { ...finished, renderer: 'fluidsynth', renderer_source: fl.source };
 }
 
-module.exports = {
-    LIBRARY_LICENSES, LIBRARIES, RENDERERS,
+module.exports = {    LIBRARIES, RENDERERS,
     resolveFluidsynth, resolveFluidsynthUncached, resolveSoundfont, availability,
-    measureLevels, renderMidi, finishRender,
-};
+    measureLevels, renderMidi, finishRender,};

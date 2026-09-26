@@ -10,9 +10,9 @@
 
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-storage');
+const { getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
-const { buildVisemeTrack, mergeVisemesWithAudio, buildVisemePayload } = require('../lib/viseme-builder');
+const { buildVisemeTrack, mergeVisemesWithAudio } = require('../lib/viseme-builder');
 const { resolve, get } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
 const { buildCapabilityPayload } = require('../lib/capability-payloads');
@@ -309,7 +309,7 @@ async function generateVisemeTrack(req, res, shotId) {
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[lipsync] stored sceneCard is not valid JSON; using the default:', e.message); }
 
     const dialogue = sceneCard.dialogue || [];
     if (dialogue.length === 0) {
@@ -373,7 +373,7 @@ async function visemeGuidedSync(req, res, shotId) {
     // Build enhanced lipsync payload with viseme guidance
     const latestViseme = visemeTracks[0];
     let visemeData = [];
-    try { visemeData = JSON.parse(latestViseme.viseme_data || '[]'); } catch (_) {}
+    try { visemeData = JSON.parse(latestViseme.viseme_data || '[]'); } catch (e) { console.error('[lipsync] stored visemeData is not valid JSON; using the default:', e.message); }
 
     // If audio timings are provided in the request, merge them
     const audioTimings = (req.body && req.body.audio_timings) || null;

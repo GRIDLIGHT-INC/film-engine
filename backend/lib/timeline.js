@@ -494,9 +494,7 @@ function timecodeToMs(tc, fps = DEFAULT_FPS) {
     );
 }
 
-module.exports = {
-    sceneBeds,
-    sceneSounds,
+module.exports = {    sceneBeds,
     BED_KIND_FOR,
     ASSET_TYPE_FOR,
     DEFAULT_BED_GAIN_DB,
@@ -508,9 +506,5 @@ module.exports = {
     toShotRelative,
     msToTimecode,
     timecodeToMs,
-    MEDIA_PREFERENCE,
-    STILL_PREFERENCE,
-    AUDIO_PREFERENCE,
     DEFAULT_FPS,
-    DEFAULT_SHOT_MS,
-};
+    DEFAULT_SHOT_MS,};

@@ -29,7 +29,6 @@ const NODE_SIZE = Object.freeze({
 
 const VIDEO_TYPES = ['video_final', 'video_synced', 'video_raw'];
 const SOUND_KIND = Object.freeze({ sfx: 'sfx', ambient: 'ambient', score: 'music', source: 'music', transition: 'music' });
-const AUDIO_TYPE_FOR = Object.freeze({ sfx: 'audio_sfx', ambient: 'audio_ambient', music: 'audio_music' });
 const LINK_MODES = Object.freeze(['shot_image', 'video_last_frame']);
 
 function parseJson(text, fallback) {
@@ -570,9 +569,7 @@ function pendingWork(graph) {
     return out;
 }
 
-module.exports = {
-    NODE_SIZE, LINK_MODES, SOUND_KIND, AUDIO_TYPE_FOR,
+module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
     buildGraph, autoLayout, readLayout, pendingWork,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
-    resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,
-};
+    resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

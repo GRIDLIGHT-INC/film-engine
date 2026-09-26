@@ -311,9 +311,7 @@ function scaffold(root, title) {
     return root;
 }
 
-module.exports = {
-    DATA_DIR, PROJECT_LAYOUT, LAYOUT_RENAMES, OTHER_FOLDER, README_NAME, namesOf,
+module.exports = {    DATA_DIR, PROJECT_LAYOUT, LAYOUT_RENAMES, OTHER_FOLDER, README_NAME, namesOf,
     legacyDir, layoutDir, layoutList, kindInRoot, parseLegacy, parseStored,
-    folderNameFor, expandHome, defaultProjectsRoot, suggestAssetsDir,
-    validateAssetsDir, overlaps, isEmptyDir, readmeText, scaffold,
-};
+    expandHome, defaultProjectsRoot, suggestAssetsDir,
+    validateAssetsDir, overlaps, isEmptyDir, readmeText, scaffold,};

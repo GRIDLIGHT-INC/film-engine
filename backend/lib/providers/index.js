@@ -722,7 +722,7 @@ function withJobRecording_(adapter, capability, projectConfig) {
                 meta: Object.assign({}, o.jobMeta || {}, meta || {},
                     meterPlan ? { meter: meterPlan } : {}),
             });
-            if (typeof theirs === 'function') { try { theirs(requestId, meta); } catch (_) {} }
+            if (typeof theirs === 'function') { try { theirs(requestId, meta); } catch (e) { console.error('[providers] an onHandle callback threw:', e.message); } }
             return jobId;
         };
         o.onTimeout = (requestId, waitedMs) =>

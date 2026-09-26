@@ -17,8 +17,6 @@ const { CAPABILITIES } = require('../lib/providers/base');
 const oauth = require('../lib/providers/oauth');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Keys internal to the OAuth handshake or otherwise secret — never reported to the SPA.
-const SECRET_META = new Set(['access_token', 'refresh_token', 'client_secret', '_pkce_verifier', '_oauth_state', 'client_id']);
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -191,7 +189,7 @@ function getProjectProviders(res, projectId) {
     const project = db.prepare('SELECT provider_config FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
     let config = {};
-    try { config = JSON.parse(project.provider_config || '{}'); } catch (_) {}
+    try { config = JSON.parse(project.provider_config || '{}'); } catch (e) { console.error('[providers] stored config is not valid JSON; using the default:', e.message); }
 
     // Fill in the effective (resolved) provider per capability for the UI.
     const effective = {};

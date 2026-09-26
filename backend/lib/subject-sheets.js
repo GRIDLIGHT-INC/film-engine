@@ -381,12 +381,6 @@ const RELOCATED = Object.freeze([
 ]);
 
 /** A prop's continuity states, stored as JSON and read back safely. */
-function parseStates(json) {
-    try {
-        const v = JSON.parse(json || '[]');
-        return Array.isArray(v) ? v.filter(s => s && typeof s === 'object' && s.name) : [];
-    } catch (_) { return []; }
-}
 
 /**
  * The six sections, as the one paragraph the generator reads.
@@ -440,8 +434,6 @@ function parseList(json, legacyText) {
     return String(legacyText || '').split(/\n|;/).map(x => x.trim()).filter(Boolean);
 }
 
-module.exports = {
-    LOCATION_REGIONS, PROP_REGIONS, FIELDS, AUTHORING, RELOCATED, parseStates,
+module.exports = {    LOCATION_REGIONS, PROP_REGIONS, FIELDS, AUTHORING, RELOCATED,
     DESCRIPTION_SECTIONS, PROP_VIEWS, TIME_VARIANTS, PLAN_EDGES, DESIGN_FEATURES,
-    parseJson, parseMaterials, parseList, composeDescription,
-};
+    parseJson, parseMaterials, parseList, composeDescription,};

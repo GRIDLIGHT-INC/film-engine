@@ -36,7 +36,6 @@ const { CACHE_DIRNAME: THUMB_CACHE_DIR } = require('./thumbnails');
 const { spawnSync } = require('child_process');
 const crypto = require('crypto');
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /*
  * Every kind of per-project file goes in a bundle — the project-folder layout's
@@ -86,32 +85,6 @@ const EXPORT_TABLES = [
     { table: 'film_music_daw_links', key: 'id', filter: 'session_id IN (SELECT id FROM film_music_sessions WHERE project_id = ?)' },
 ];
 
-// Foreign key columns that reference IDs needing remapping
-const FK_REMAP = {
-    film_scripts: { project_id: 'film_projects' },
-    film_scenes: { project_id: 'film_projects' },
-    film_shots: { scene_id: 'film_scenes' },
-    film_characters: { project_id: 'film_projects' },
-    film_locations: { project_id: 'film_projects' },
-    film_props: { project_id: 'film_projects' },
-    film_costumes: { character_id: 'film_characters' },
-    film_voice_profiles: { character_id: 'film_characters' },
-    film_shot_notes: { shot_id: 'film_shots' },
-    film_shot_versions: { shot_id: 'film_shots' },
-    film_milestones: { project_id: 'film_projects' },
-    film_assets: { project_id: 'film_projects', shot_id: 'film_shots' },
-    film_music_cues: { project_id: 'film_projects' },
-    film_color_presets: { project_id: 'film_projects' },
-    film_rights: { project_id: 'film_projects' },
-    film_provenance_manifests: { project_id: 'film_projects', asset_id: 'film_assets' },
-    film_color_pipelines: { project_id: 'film_projects', lut_asset_id: 'film_assets' },
-    film_dubbing_jobs: { project_id: 'film_projects', output_asset_id: 'film_assets' },
-    film_broadcast_qc_reports: { project_id: 'film_projects' },
-    film_script_elements: { script_id: 'film_scripts' },
-    render_ledger: { shot_id: 'film_shots' },
-    film_screenplay_comments: { script_id: 'film_scripts' },
-    film_edits: { project_id: 'film_projects', asset_id: 'film_assets', cut_asset_id: 'film_assets' },
-};
 
 /**
  * Copy a project's asset directory, subdirectories and all.

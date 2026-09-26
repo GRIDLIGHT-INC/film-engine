@@ -60,9 +60,8 @@ function runShotQA(shotId, db) {
     const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return { error: 'Shot not found', checks: [] };
 
-    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[qa-checker] stored sceneCard is not valid JSON; using the default:', e.message); }
 
     const assets = db.prepare('SELECT * FROM film_assets WHERE shot_id = ?').all(shotId);
     const assetTypes = new Set(assets.map(a => a.asset_type));
@@ -316,8 +315,8 @@ function checkContinuity(projectId, db) {
         const curr = shots[i];
 
         let prevCard = {}, currCard = {};
-        try { prevCard = JSON.parse(prev.scene_card_yaml || '{}'); } catch (_) {}
-        try { currCard = JSON.parse(curr.scene_card_yaml || '{}'); } catch (_) {}
+        try { prevCard = JSON.parse(prev.scene_card_yaml || '{}'); } catch (e) { console.error('[qa-checker] stored prevCard is not valid JSON; using the default:', e.message); }
+        try { currCard = JSON.parse(curr.scene_card_yaml || '{}'); } catch (e) { console.error('[qa-checker] stored currCard is not valid JSON; using the default:', e.message); }
 
         // Same scene: check lighting consistency
         if (prev.scene_id === curr.scene_id) {

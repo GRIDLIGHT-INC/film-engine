@@ -398,10 +398,8 @@ function estimateScreenplay(scenes, opts) {
     };
 }
 
-module.exports = {
-    SECONDS_PER_EIGHTH, CONFIDENCE, DELIVERY_RATES, ACTION_CLASSES,
+module.exports = {    CONFIDENCE, DELIVERY_RATES, ACTION_CLASSES,
     AMBIGUOUS_PHRASES, COMPLEXITY_FACTORS,
-    eighthsFromLines, formatEighths, blockLines,
+    eighthsFromLines, formatEighths,
     dialogueSeconds, classifyAction, ambiguousDurations,
-    estimateScene, scoreComplexity, estimateScreenplay,
-};
+    estimateScene, estimateScreenplay,};

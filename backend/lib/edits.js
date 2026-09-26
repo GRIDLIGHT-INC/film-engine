@@ -319,12 +319,6 @@ function deleteEdit(editId, opts) {
 }
 
 /** The newest edit version of a project, or null. */
-function latestEdit(projectId) {
-    const row = db().prepare('SELECT * FROM film_edits WHERE project_id = ? ORDER BY version DESC LIMIT 1').get(projectId);
-    return row || null;
-}
 
-module.exports = {
-    SUBDIR, sniffVideo, importEdit, attachCut, rematchCut, readCutText,
-    getEdit, listEdits, updateEdit, deleteEdit, latestEdit, matchContext, pictureUrl,
-};
+module.exports = {    SUBDIR, sniffVideo, importEdit, attachCut, rematchCut, readCutText,
+    getEdit, listEdits, updateEdit, deleteEdit, matchContext, pictureUrl,};

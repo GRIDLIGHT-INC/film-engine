@@ -206,8 +206,5 @@ function sectionFit(sections, cutMs) {
     };
 }
 
-module.exports = {
-    STYLE_MAX_CHARS,
-    SECTION_MIN_MS, SECTION_MAX_MS, CUE_MAX_MS, MAX_SECTIONS,
-    styleList, validateSections, splitToFit, compositionPlan, sectionFit,
-};
+module.exports = {    SECTION_MIN_MS, SECTION_MAX_MS, CUE_MAX_MS,
+    validateSections, splitToFit, compositionPlan, sectionFit,};

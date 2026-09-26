@@ -231,7 +231,6 @@ function budgetForecast(req, res, projectId) {
 
     if (stats.entry_count > 0 && stats.first_entry) {
         const firstDate = new Date(stats.first_entry);
-        const lastDate = new Date(stats.last_entry);
         const now = new Date();
         const daysSinceFirst = Math.max(1, (now - firstDate) / (1000 * 60 * 60 * 24));
 

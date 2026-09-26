@@ -185,6 +185,30 @@ function isPathContained(filePath, baseDir) {
 }
 
 /**
+ * Stream a file into a response, and survive the file going away.
+ *
+ * A read stream with no 'error' listener throws when the file cannot be read
+ * — deleted between the stat and the read, or an iCloud file the Mac has
+ * offloaded — and an unhandled 'error' event takes the whole server down.
+ * Before the headers are out that is a plain 404; after, the response can
+ * only be cut short, which the browser reads as a failed download.
+ */
+function pipeFile(filePath, res, opts) {
+    const stream = fs.createReadStream(filePath, opts);
+    stream.on('error', err => {
+        console.error(`[file-storage] could not stream ${path.basename(String(filePath))}: ${err.message}`);
+        if (!res.headersSent) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'File not found' }));
+        } else if (typeof res.destroy === 'function') {
+            res.destroy();
+        }
+    });
+    stream.pipe(res);
+    return stream;
+}
+
+/**
  * Serve a static file from data/{subdir}/{projectId}/{filename}.
  * Handles sanitization, 404s, and correct content types.
  * @param {http.ServerResponse} res
@@ -268,13 +292,16 @@ function serveFile(res, projectId, subdir, filename, opts) {
                 'Cache-Control': 'public, max-age=86400',
                 'X-Thumbnail': thumb ? 'hit' : 'source',
             });
-            fs.createReadStream(serving).pipe(res);
+            pipeFile(serving, res);
         }).catch(() => {
+            // Headers already out means the thumbnail itself was being sent;
+            // starting a second response would throw ERR_HTTP_HEADERS_SENT.
+            if (res.headersSent) { if (!res.writableEnded) res.end(); return; }
             res.writeHead(200, {
                 'Content-Type': mimeTypes[ext] || 'application/octet-stream',
                 'Cache-Control': 'public, max-age=3600',
             });
-            fs.createReadStream(filePath).pipe(res);
+            pipeFile(filePath, res);
         });
         return;
     }
@@ -349,7 +376,7 @@ function serveFile(res, projectId, subdir, filename, opts) {
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'public, max-age=3600',
         });
-        fs.createReadStream(filePath, { start, end }).pipe(res);
+        pipeFile(filePath, res, { start, end });
         return;
     }
 
@@ -359,7 +386,7 @@ function serveFile(res, projectId, subdir, filename, opts) {
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600',
     });
-    fs.createReadStream(filePath).pipe(res);
+    pipeFile(filePath, res);
 }
 
 /**
@@ -450,6 +477,7 @@ module.exports = {
     getFileUrl,
     fileExists,
     serveFile,
+    pipeFile,
     isPathContained,
     isOwnedPath,
     locate,

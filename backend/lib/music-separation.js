@@ -467,7 +467,5 @@ async function retrySeparation(db, sessionId, opId, opts) {
     return startSeparation(db, sessionId, { clip_id: params.clip_id, stems: params.stems_requested }, { attempt: (row.attempt || 1) + 1, ...(opts || {}), parent_id: row.id });
 }
 
-module.exports = {
-    VARIATIONS, STEM_ROLES, ZIP_LIMITS: ZIP_LIMITS_DEFAULT,
-    readZip, stemNameOf, planSeparation, startSeparation, getSeparation, listSeparations, retrySeparation, resolveSeparator,
-};
+module.exports = {    VARIATIONS, STEM_ROLES, ZIP_LIMITS: ZIP_LIMITS_DEFAULT,
+    readZip, planSeparation, startSeparation, getSeparation, listSeparations, retrySeparation, resolveSeparator,};

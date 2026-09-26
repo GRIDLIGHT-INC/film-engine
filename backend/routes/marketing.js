@@ -370,7 +370,6 @@ async function generateMarketingAsset(req, res, assetId) {
     const { spendContext } = require('../lib/provider-config');
     const { persistProviderMedia } = require('../lib/provider-media');
     const { withTierModel } = require('../lib/capability-payloads');
-    const providers = require('../lib/providers');
 
     // A per-generation quality, exactly as the board has.
     const override = {};

@@ -204,7 +204,7 @@ function generationOptions(capability) {
     } catch (_) { adapters = []; }
 
     let isConfigured = () => false;
-    try { isConfigured = require('./providers').isProviderConfigured; } catch (_) {}
+    try { isConfigured = require('./providers').isProviderConfigured; } catch (e) { console.error('[generation-override] optional module not available:', e.message); }
 
     const tiers = tiersOf(cap);
 

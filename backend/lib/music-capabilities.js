@@ -40,7 +40,6 @@
 
 const providers = require('./providers');
 const pricing = require('./provider-pricing');
-const contracts = require('./music-session');
 
 /** What a workflow produces, and which clip source_kind it lands as. */
 const OUTPUT_KINDS = Object.freeze({

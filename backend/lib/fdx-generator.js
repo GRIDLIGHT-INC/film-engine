@@ -93,7 +93,6 @@ function escXML(str) {
 function formatText(text) {
     if (!text) return '<Text></Text>';
 
-    const parts = [];
     let remaining = text;
 
     // Simple approach: process bold+italic, bold, italic, underline in order

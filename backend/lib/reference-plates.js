@@ -21,7 +21,7 @@
  */
 
 const { ISOLATED_KINDS, isolationNegativeFor, subjectPlateOpening, projectMedium } = require('./plate-isolation');
-const { db, generateId } = require('../db/database');
+const { generateId } = require('../db/database');
 const { persistProviderMedia } = require('./provider-media');
 const { getFileUrl, ensureDir } = require('./file-storage');
 
@@ -824,12 +824,6 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      * thing. The prompt says what it is for where the provider can hear it.
      */
     const styleRefs = styleReferencesFor(db, projectId);
-    const platePrompt = (style, refs) => {
-        const base = buildPlatePrompt(kind, subject, style, view, !!anchorPath);
-        return (refs && refs.length && refs[0].tag)
-            ? `${base}, in the light, palette and colour grade of @${refs[0].tag}`
-            : base;
-    };
 
     /*
      * The existing view of this subject, so a new one MATCHES rather than

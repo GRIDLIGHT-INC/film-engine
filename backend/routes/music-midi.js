@@ -27,7 +27,6 @@ const { saveFile, getFileUrl, getFilePath, ensureDir } = require('../lib/file-st
 const midi = require('../lib/midi');
 const host = require('../lib/instrument-host');
 const fs = require('fs');
-const path = require('path');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

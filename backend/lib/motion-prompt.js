@@ -281,7 +281,5 @@ function compileFor(providerId, ctx) {
     return buildMotionPrompt({ ...ctx, limit }, shapeId);
 }
 
-module.exports = {
-    TECHNIQUES, NEW_CARD_FIELDS, SHAPES,
-    buildMotionPrompt, compileFor, shotShape, paceWords, splitActions,
-};
+module.exports = {    TECHNIQUES, NEW_CARD_FIELDS, SHAPES,
+    buildMotionPrompt, compileFor, shotShape, paceWords,};

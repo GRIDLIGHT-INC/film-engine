@@ -26,7 +26,6 @@
  * failed step at the insert.
  */
 
-const path = require('path');
 const { saveFile, getFilePath } = require('./file-storage');
 
 const SUBDIR = 'worlds';
@@ -62,9 +61,6 @@ function fileNameFor(versionId, kind) {
     return `${versionId}_${kind}${EXT[kind] || ''}`;
 }
 
-function assetPath(projectId, versionId, kind) {
-    return getFilePath(projectId, SUBDIR, fileNameFor(versionId, kind));
-}
 
 function servedUrlFor(projectId, versionId, kind) {
     return `/film/worlds/media/${projectId}/${fileNameFor(versionId, kind)}`;
@@ -215,8 +211,6 @@ function localBytes(db, versionId, kind) {
     return require('fs').readFileSync(row.file_path);
 }
 
-module.exports = {
-    WORLD_ASSET_KINDS, COPIED_KINDS, SOURCE_OF, SUBDIR,
+module.exports = {    WORLD_ASSET_KINDS, COPIED_KINDS, SOURCE_OF, SUBDIR,
     assertFetchableUrl, MAX_ASSET_BYTES,
-    ingestAssets, localBytes, assetPath, servedUrlFor, fileNameFor,
-};
+    ingestAssets, localBytes, servedUrlFor, fileNameFor,};

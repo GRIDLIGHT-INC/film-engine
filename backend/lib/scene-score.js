@@ -238,8 +238,6 @@ function cueSeconds({ cue_ms, cut_ms, dialogue_ms, card_ms, explain } = {}) {
     return explain ? { seconds: null, source: 'nothing measured' } : null;
 }
 
-module.exports = {
-    SCORE_INPUTS, STYLE_MUSICAL, MUSIC_PROMPT_LIMIT, summarise,
-    dialogueWeight, coverageFeel, styleClauses,
-    scoreBrief, cueFromBrief, cueSeconds,
-};
+module.exports = {    SCORE_INPUTS, MUSIC_PROMPT_LIMIT, summarise,
+    dialogueWeight,
+    scoreBrief, cueFromBrief, cueSeconds,};

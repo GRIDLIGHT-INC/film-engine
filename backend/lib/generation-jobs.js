@@ -512,8 +512,5 @@ async function collect(jobId, opts) {
              stored: stored ? stored.path : null, url: out.url || null };
 }
 
-module.exports = {
-    collect,
-    hostWindowMs, budgetFor, record, complete, fail, pending, recoverable, get, timedOut,
-    COLLECT_MARGIN_MS,
-};
+module.exports = {    collect,
+    budgetFor, record, complete, fail, pending, recoverable, get, timedOut,};

@@ -29,7 +29,6 @@ function parseJson(value, fallback) {
 // below, so every existing import of this module keeps working unchanged.
 const {
     normalizeName,
-    shouldUseLockedSeed,
     applyConsistencyToImagePayload,
     applyConsistencyToVoicePayload,
 } = require('./consistency-apply');
@@ -634,16 +633,11 @@ function recordConsistencyCheck(shotInput, sceneInput, projectInput, options) {
     }
 }
 
-module.exports = {
-    REF_ROLES,
+module.exports = {    REF_ROLES,
     parseJson,
-    cardPropNames,
-    getLockedProfiles,
-    getLockedProfileForSubject,
     buildShotReferencePayload,
     auditShotReadiness,
     auditProjectReadiness,
     applyConsistencyToImagePayload,
     applyConsistencyToVoicePayload,
-    recordConsistencyCheck,
-};
+    recordConsistencyCheck,};

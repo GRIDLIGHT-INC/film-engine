@@ -383,14 +383,11 @@ function taggedNames(references) {
     return map;
 }
 
-module.exports = {
-    clearDataUriCache,
+module.exports = {    clearDataUriCache,
     dataUriCacheSize,
     MAX_REFERENCES,
     MAX_INLINE_BYTES,
-    INLINE_FALLBACK_WIDTHS,
     SENDABLE_DIRNAME,
-    shrinkToFit,
     toTag,
     assignTags,
     toDataUri,
@@ -398,5 +395,4 @@ module.exports = {
     selectReferences,
     taggedNames,
     KIND_RANK,
-    KIND_SOURCE,
-};
+    KIND_SOURCE,};

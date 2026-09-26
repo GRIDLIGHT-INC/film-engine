@@ -15,7 +15,7 @@ const { stampSubject } = require('../lib/story-bible');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
 const fs = require('fs');
 const path = require('path');
-const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { getFileUrl } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve } = require('../lib/providers');
 const { spendContext } = require('../lib/provider-config');
@@ -247,7 +247,6 @@ async function sweepCompassViews(req, res, locationId) {
 
     const generated = [];
     for (const side of plan.generate) {
-        // eslint-disable-next-line no-await-in-loop
         const result = await generatePlate({
             projectId: project.id, kind: 'location', subject: location,
             stylePreset: project.style_preset, aspectRatio: project.aspect_ratio,
@@ -344,8 +343,11 @@ function plateViewsFor(subjectId, kind) {
              */
             anchoring: require('../lib/reference-plates').anchoringOf(meta),
             // The provenance the design prints under the plates.
-            format: (path.extname(r.file_name || '') || '.png').replace('.', ''),
-            bytes: size,
+            // What the file actually is: the stored column when it was recorded,
+            // otherwise measured here. A second pair of these keys further down
+            // used to overwrite the measurement with an empty column.
+            format: r.format || (path.extname(r.file_name || '') || '.png').replace('.', ''),
+            bytes: r.size_bytes || size,
             seed: meta.seed || null,
             image_url: (available && subdir)
                 ? getFileUrl(subdir, subject.project_id, r.file_name, r.created_at) : null,
@@ -356,9 +358,7 @@ function plateViewsFor(subjectId, kind) {
              * PNG -- the same disagreement between a name and its bytes the
              * plate upload work already paid for once.
              */
-            format: r.format || null,
             mime_type: r.mime_type || null,
-            bytes: r.size_bytes || null,
         };
     });
     return out;
@@ -425,9 +425,11 @@ function listPlateViews(res, subjectId, kind) {
              * PNG -- the same disagreement between a name and its bytes the
              * plate upload work already paid for once.
              */
-            format: r.format || null,
+            // Plates made before these columns were written have them empty;
+            // read the answer off the file rather than reporting none.
+            format: r.format || (available ? (path.extname(r.file_name || '').replace('.', '') || null) : null),
             mime_type: r.mime_type || null,
-            bytes: r.size_bytes || null,
+            bytes: r.size_bytes || (available ? fs.statSync(r.file_path).size : null),
         };
     });
 
@@ -1351,7 +1353,7 @@ function updateLocation(req, res, locId) {
     fields.push("updated_at = datetime('now')");
     values.push(locId);
 
-    const result = db.prepare(`UPDATE film_locations SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    db.prepare(`UPDATE film_locations SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
     const row = db.prepare('SELECT * FROM film_locations WHERE id = ?').get(locId);
 

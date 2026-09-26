@@ -1022,14 +1022,12 @@ function effectiveCamera(cardCamera, previs, filmOptics, opts) {
     };
 }
 
-module.exports = {
-    RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
-    DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
+module.exports = {    RIGS, MOVEMENTS, SHOT_TYPES, SENSORS,
+    DEFAULT_SUBJECT_HEIGHT_M,
     defaultBlocking, cardOptics, solveShot, samplePath, sampleSequence, sampleCameraKeys, normalizeCameraKeys,
     yawVector,
     shortestAngleDeltaDegrees, analyzePath, moveAmount, resolveTarget,
-    rigCanPerform, toCameraControl, legTimings, movePace, groupLegs, DEFAULT_MOVE_MS,
+    rigCanPerform, toCameraControl, legTimings, movePace, DEFAULT_MOVE_MS,
     poseAt, EASINGS, HOLD, easeT,
     previsFacets,
-    effectiveCamera,
-};
+    effectiveCamera,};

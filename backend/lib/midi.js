@@ -449,7 +449,5 @@ function parseSmf(bytes) {
     };
 }
 
-module.exports = {
-    PPQ, DRUM_CHANNEL, MAX_PARTS, MAX_NOTES_PER_PART, GM_PROGRAMS, PART_SOURCES,
-    validateScore, writeSmf, parseSmf, isMidi, keySignature,
-};
+module.exports = {    PPQ, DRUM_CHANNEL, GM_PROGRAMS,
+    validateScore, writeSmf, parseSmf, isMidi,};

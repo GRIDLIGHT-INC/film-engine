@@ -416,6 +416,7 @@ film-engine/
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
 │       ├── conform-sound.test.js       # The master carries the film's own dialogue, score and ambience — measured, not grepped
+│       ├── bug-hunt-fixes.test.js      # The bug hunt's fix plan held to the code: every dispatch awaited, every stream guarded
 │       ├── project-delete.test.js      # A worked-on project deletes, and takes every child with it
 │       ├── prompt-budget.test.js       # Plates are photographs, not documents; prose drops only where tags bind
 │       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
@@ -6284,6 +6285,7 @@ node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
 node --test backend/tests/conform-sound.test.js
+node --test backend/tests/bug-hunt-fixes.test.js
 node --test backend/tests/project-delete.test.js
 node --test backend/tests/prompt-budget.test.js
 node --test backend/tests/provider-prompt-limit.test.js

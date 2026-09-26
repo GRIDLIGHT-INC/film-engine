@@ -32,7 +32,6 @@
 const path = require('path');
 
 /** The two kinds of decision, named so a consumer never guesses from shape. */
-const ENVELOPE_KINDS = Object.freeze(['pre_spend', 'take_selection']);
 
 /**
  * How media reaches whoever is deciding.
@@ -98,7 +97,6 @@ const WARNINGS = Object.freeze([
     },
 ]);
 
-const WARNING_IDS = new Set(WARNINGS.map(w => w.id));
 
 function warning(id, detail) {
     const spec = WARNINGS.find(w => w.id === id);
@@ -282,7 +280,5 @@ function takeEnvelope(input) {
     };
 }
 
-module.exports = {
-    ENVELOPE_KINDS, WARNINGS, WARNING_IDS, MEDIA_TRANSPORT, EXPIRES_HINT_S,
-    preSpendEnvelope, takeEnvelope, warning, mimeFor, mediaItem,
-};
+module.exports = {    WARNINGS, MEDIA_TRANSPORT, EXPIRES_HINT_S,
+    preSpendEnvelope, takeEnvelope, warning, mimeFor, mediaItem,};

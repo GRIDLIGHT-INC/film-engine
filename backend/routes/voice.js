@@ -10,10 +10,9 @@
  * GET  /film/audio/:projectId/:filename         - Serve audio files
  */
 
-const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
+const { getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { extractDialogue, buildVoicePayload, dialogueFilename } = require('../lib/dialogue-builder');
 
@@ -103,9 +102,6 @@ function json(res, status, data) {
 // with the project id so spend can be attributed. See that file for why.
 const parseProjectConfig = providerConfigFor;
 
-function hashPrompt(text) {
-    return crypto.createHash('sha256').update(String(text || '')).digest('hex');
-}
 
 function filenameForResult(baseFilename, result) {
     const format = result && result.meta && result.meta.format ? result.meta.format : '';
@@ -185,7 +181,7 @@ async function generateVoiceForShotId(shotId, req_body) {
     if (!scene) return { error: 'Scene not found' };
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[voice] stored sceneCard is not valid JSON; using the default:', e.message); }
 
     const dialogueLines = extractDialogue(sceneCard);
     if (dialogueLines.length === 0) {
@@ -414,7 +410,7 @@ function previewVoice(req, res, shotId, query) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[voice] stored sceneCard is not valid JSON; using the default:', e.message); }
     const lines = extractDialogue(sceneCard);
 
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(scene.project_id);
@@ -472,7 +468,7 @@ async function generateVoiceStream(req, res, shotId) {
     if (!scene) return json(res, 404, { error: 'Scene not found' });
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[voice] stored sceneCard is not valid JSON; using the default:', e.message); }
 
     const dialogueLines = extractDialogue(sceneCard);
     if (dialogueLines.length === 0) {
@@ -589,7 +585,7 @@ async function batchVoiceStream(req, res, projectId) {
     for (const shot of shots) {
         if (clientGone || res.writableEnded) break; // client disconnected — stop remaining shots
         let sceneCard = {};
-        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[voice] stored sceneCard is not valid JSON; using the default:', e.message); }
         const dialogueLines = extractDialogue(sceneCard);
         if (dialogueLines.length === 0) continue;
 
@@ -665,7 +661,7 @@ async function batchVoice(req, res, projectId) {
     const withDialogue = [];
     for (const shot of shots) {
         let sceneCard = {};
-        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[voice] stored sceneCard is not valid JSON; using the default:', e.message); }
         const dialogueLines = extractDialogue(sceneCard);
         if (dialogueLines.length === 0) continue;
         withDialogue.push({ ...shot, dialogue_lines: dialogueLines.length });

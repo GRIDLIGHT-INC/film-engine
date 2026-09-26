@@ -222,10 +222,6 @@ function msToTimecodeDF(ms, fps = 29.97) {
         remainder += dropFrames;
     }
 
-    const totalMinutes = tenMinChunks * 10 + minuteInChunk;
-    const displayFrameInMinute = (minuteInChunk === 0 && tenMinChunks === 0 && totalMinutes === 0)
-        ? frameCount
-        : remainder;
 
     // Now convert the remaining frames to SS:FF within this minute
     // But we need a simpler approach — use the standard DF formula
@@ -746,7 +742,6 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
 
     let fileIndex = 1;
     let videoOffset = 0;
-    let transIndex = 1;
 
     for (let si = 0; si < shots.length; si++) {
         const shot = shots[si];
@@ -773,7 +768,6 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
             xml += `            <end>${videoOffset}</end>\n`;
             xml += `            <alignment>center</alignment>\n`;
             xml += `          </transitionitem>\n`;
-            transIndex++;
         }
 
         xml += `          <clipitem id="clipitem-${fileIndex}">\n`;

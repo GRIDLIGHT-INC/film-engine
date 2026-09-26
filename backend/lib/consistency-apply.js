@@ -299,15 +299,12 @@ function applyConsistencyToVoicePayload(payload, context, characterName) {
     return p;
 }
 
-module.exports = {
-    fitAdditions,
+module.exports = {    fitAdditions,
     ADDITION_RANK,
     identify,
     hasReference,
     fitAdditions,
     ADDITION_RANK,
     normalizeName,
-    shouldUseLockedSeed,
     applyConsistencyToImagePayload,
-    applyConsistencyToVoicePayload,
-};
+    applyConsistencyToVoicePayload,};

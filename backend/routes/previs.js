@@ -20,9 +20,9 @@ const {
     RIGS, MOVEMENTS, SHOT_TYPES,
     solveShot, samplePath, sampleSequence, normalizeCameraKeys, rigCanPerform, defaultBlocking, cardOptics, resolveTarget,
     legTimings, DEFAULT_MOVE_MS,
-    DEFAULT_EYE_HEIGHT_M, DEFAULT_SUBJECT_HEIGHT_M,
+    DEFAULT_SUBJECT_HEIGHT_M,
 } = require('../lib/previs-blocking');
-const { PRIMITIVES, primitiveGeometry } = require('../lib/previs-primitives');
+const { PRIMITIVES } = require('../lib/previs-primitives');
 const crypto = require('crypto');
 const { validateSceneCards } = require('../lib/scene-card-schema');
 const { directorIntentFromCard, applyDirectorIntent, applicationFingerprints, decisionParts, DECISION_CHIPS } = require('../lib/decision-contract');
@@ -1150,7 +1150,7 @@ function fromCard(req, res, shotId) {
 
     // One reading of the card's optics, shared with playback's move — see
     // cardOptics in lib/previs-blocking.js.
-    const { shotType, movement, focalMm, sensorId, fStop, heightM } = cardOptics(cam, filmDefaults);
+    const { shotType, movement, focalMm, sensorId, fStop } = cardOptics(cam, filmDefaults);
 
     const sensor = sensorFor(sensorId);
 
@@ -1191,8 +1191,6 @@ function fromCard(req, res, shotId) {
         names.forEach((entry, i) => {
             const row = findRow(entry.kind === 'character' ? chars : props, entry.n);
             const h = Number(row && row.height_m) > 0 ? Number(row.height_m) : null;
-            // Spread left, right, left… around the framing point.
-            const step = 1.4 * Math.ceil(i / 2) * (i % 2 === 0 ? -1 : 1);
             staged.push({
                 kind: entry.kind === 'character' ? 'human' : 'cube',
                 name: entry.n,

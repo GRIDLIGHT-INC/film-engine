@@ -32,7 +32,6 @@
  * reason never to turn the gate on.
  */
 
-const crypto = require('crypto');
 const { generateId } = require('../db/database');
 
 const ORIGINS = Object.freeze(['original', 'generated', 'licensed', 'public_domain', 'unknown']);
@@ -227,7 +226,5 @@ function recordGenerated(db, assetId, provider) {
     return { asset_id: assetId, status: 'unknown', origin: 'generated' };
 }
 
-module.exports = {
-    ORIGINS, STATUSES, STATUS_ORDER, GATES, ACTIONS, DERIVATIVE_WRITERS, DEFAULT_POLICY, POLICY_NOTE,
-    validatePolicy, rightsPolicy, assetLineage, scoreLineage, evaluate, evaluateProject, recordDerivative, recordGenerated, mostEncumbered,
-};
+module.exports = {    ORIGINS, STATUSES, GATES, ACTIONS, DERIVATIVE_WRITERS, DEFAULT_POLICY, POLICY_NOTE,
+    validatePolicy, assetLineage, scoreLineage, evaluate, evaluateProject, recordDerivative, recordGenerated,};

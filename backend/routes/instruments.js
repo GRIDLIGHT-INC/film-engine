@@ -170,8 +170,23 @@ function keepPreset(req, res) {
     const body = req.body || {};
     try {
         if (body.preset_path) {
-            const file = path.resolve(String(body.preset_path));
-            if (!fs.existsSync(file)) return json(res, 400, { error: `there is no preset at ${file}` });
+            // Only an NKS preset inside a Native Instruments folder. This API
+            // answers any origin with no login, so a path taken as given let a
+            // caller learn whether any file on the Mac exists and read it; the
+            // refusal is the same whether or not the file is there.
+            const refuse = () => json(res, 400, {
+                error: 'preset_path must be an .nksf preset inside a Native Instruments folder',
+                searched: PRESET_ROOTS,
+            });
+            const asked = path.resolve(String(body.preset_path));
+            if (path.extname(asked).toLowerCase() !== '.nksf') return refuse();
+            let file;
+            try { file = fs.realpathSync(asked); } catch (_) { return refuse(); }
+            const inside = PRESET_ROOTS.filter(Boolean).some(r => {
+                let root; try { root = fs.realpathSync(r); } catch (_) { return false; }
+                return file.startsWith(root + path.sep);
+            });
+            if (!inside) return refuse();
             const read = presets.readPreset(file);
             if (!body.plugin) return json(res, 400, { error: 'name the plugin that plays this preset' });
             const format = instruments.formatOf(body.plugin);

@@ -397,8 +397,6 @@ async function preflight(opts) {
     };
 }
 
-module.exports = {
-    preflight, stages, checkCapability, checkConformDependency, checkInstrumentDependency, ADAPTER_DEPENDENCY, checkDependency, checkStageDependency, reachable,
-    HANDOFF, LOCAL_STAGES, HEAD_STAGES, TAIL_STAGES, STEP_EXTERNAL_DEPENDENCY, DEPENDENCY_CHECKS,
-    GRIDLIGHT_URL,
-};
+module.exports = {    preflight, stages, checkCapability, checkConformDependency, checkDependency, checkStageDependency, reachable,
+    HANDOFF, DEPENDENCY_CHECKS,
+    GRIDLIGHT_URL,};

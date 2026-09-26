@@ -7,7 +7,6 @@
  * character/style modifiers. No DB dependency.
  */
 
-const { VALID_SHOT_TYPES, VALID_CAMERA_MOVES, VALID_LIGHTING } = require('./scene-card-schema');
 
 // ── Shot Type → Camera Description ──────────────────────────────────
 
@@ -250,10 +249,14 @@ function trimToAllowance(text, allowance) {
 
     const cut = t.slice(0, allowance);
     // Prefer a sentence end, then a clause, then a word.
-    for (const boundary of [/[.!?]\s[^.!?]*$/, /,\s[^,]*$/, /\s\S*$/]) {
+    // A new regex literal is a new object, so comparing the loop's boundary
+    // to one was never true and a sentence cut lost its full stop. The
+    // sentence boundary is the first in the list; keep its punctuation.
+    const boundaries = [/[.!?]\s[^.!?]*$/, /,\s[^,]*$/, /\s\S*$/];
+    for (const [bi, boundary] of boundaries.entries()) {
         const m = cut.match(boundary);
         if (m && m.index > allowance * 0.5) {
-            return cut.slice(0, m.index + (boundary === /[.!?]\s[^.!?]*$/ ? 1 : 0)).trim().replace(/[,;]$/, '');
+            return cut.slice(0, m.index + (bi === 0 ? 1 : 0)).trim().replace(/[,;]$/, '');
         }
     }
     return cut.trim();
@@ -446,9 +449,6 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // roomier provider receives more of what was written rather than the same
     // truncation with headroom to spare.
     const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
-    // Supplied by the two-pass wrapper: unlimited on the first pass, the real
-    // carve-up on the second.
-    const allow = opts.allow || allowancesFor(ceiling);
     // Subjects the caller has attached a reference image for. Empty map when
     // there are none, so the prose path below is unchanged for every project
     // that has not generated plates yet.
@@ -1053,27 +1053,21 @@ function rankContributions(contributions, shot) {
     });
 }
 
-module.exports = {
-    rankContributions,
+module.exports = {    rankContributions,
     trimToAllowance,
     PROMPT_PRIORITY,
     DIRECTION_MODES,
     allowancesFor,
-    scaleNotesFor,
-    ALLOWANCE_SHARE,
     previsPromptParts,
-    trimToAllowance,
     MAX_PROMPT_CHARS,
     ACTION_ALLOWANCE,
     APPEARANCE_ALLOWANCE,
     LOCATION_ALLOWANCE,
     STYLE_ALLOWANCE,
-    DIRECTION_ALLOWANCE,
     buildStoryboardPrompt,
     applyStyleLock,
     SHOT_TYPE_MAP,
     MOVEMENT_MAP,
     LIGHTING_MAP,
     STYLE_PRESETS,
-    DEFAULT_NEGATIVE_PROMPT,
-};
+    DEFAULT_NEGATIVE_PROMPT,};

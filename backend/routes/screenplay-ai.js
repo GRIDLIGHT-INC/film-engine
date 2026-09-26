@@ -341,7 +341,6 @@ async function processScreenplayAI(req, res, projectId) {
 async function processScreenplayAIStream(req, res, projectId) {
     const body = req.body || {};
     const {
-        mode = 'brainstorm',
         message,
         conversation_history = [],
         current_scene_fountain = ''
@@ -407,6 +406,7 @@ async function processScreenplayAIStream(req, res, projectId) {
         sendEvent('status', { phase: 'generating', message: 'AI is responding...' });
 
         let accumulated = '';
+        if (clientGone) return;
         const result = await streamProjectLLM(project, {
             question: fullQuestion,
             conversation_history: gridlightHistory.length > 0 ? gridlightHistory : undefined,
@@ -424,6 +424,7 @@ async function processScreenplayAIStream(req, res, projectId) {
             },
             onError: (data) => sendEvent('error', { message: data.error || 'AI service returned error' }),
         });
+        if (clientGone) return;
         if (!result.ok && !result.aborted) sendEvent('error', { message: result.error || 'AI service returned error' });
 
         sendEvent('done', { message: 'Complete', content: accumulated });

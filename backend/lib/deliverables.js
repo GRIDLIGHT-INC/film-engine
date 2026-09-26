@@ -300,8 +300,6 @@ function settingsFromProfiles(profiles, project) {
     };
 }
 
-module.exports = {
-    DELIVERY_PROFILES, PACKAGES, PLATFORMS, CAPTION_MODES, STATUSES,
-    planDeliverables, nativeRatiosFor, frameCount, keyFor, validateDeliverable,
-    settingsForPackage, settingsFromProfiles,
-};
+module.exports = {    DELIVERY_PROFILES, PACKAGES, STATUSES,
+    planDeliverables, nativeRatiosFor, frameCount, validateDeliverable,
+    settingsForPackage, settingsFromProfiles,};

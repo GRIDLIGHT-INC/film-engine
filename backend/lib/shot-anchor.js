@@ -259,7 +259,5 @@ function subjectsCoveredBy(db, anchor, keep) {
     return covered;
 }
 
-module.exports = {
-    pickAnchor, ref, anchorLeadPhrase, anchorPhrase, ANCHOR_NEGATIVE,
-    activeAnchorFor, anchorCandidate, subjectsCoveredBy, platesForcedBy, IDENTITY_FRAMINGS,
-};
+module.exports = {    pickAnchor, ref, anchorLeadPhrase, anchorPhrase, ANCHOR_NEGATIVE,
+    activeAnchorFor, anchorCandidate, subjectsCoveredBy, platesForcedBy,};

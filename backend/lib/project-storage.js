@@ -383,8 +383,5 @@ function upgradeLayouts() {
     return report;
 }
 
-module.exports = {
-    upgradeLayouts,
-    storageReport, assignOnCreate, moveProject, defaultParent, resolveRequested,
-    otherRoots, countFiles, textColumns, rewritePrefixes,
-};
+module.exports = {    upgradeLayouts,
+    storageReport, assignOnCreate, moveProject, defaultParent, resolveRequested,};

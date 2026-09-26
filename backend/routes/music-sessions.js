@@ -283,7 +283,7 @@ async function renderTrack(sessionId, trackId) {
     }, { length_ms: lengthMs });
     if (!checked.ok) return reply(400, { error: checked.errors[0], errors: checked.errors });
 
-    const { saveFile, getFilePath, getFileUrl, ensureDir } = require('../lib/file-storage');
+    const { getFilePath, getFileUrl, ensureDir } = require('../lib/file-storage');
     const host = require('../lib/instrument-host');
     ensureDir(session.project_id, 'music');
     const fileName = `track_${trackId.slice(0, 8)}_${Date.now().toString(36)}.wav`;

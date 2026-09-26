@@ -22,7 +22,7 @@
 const fs = require('fs');
 const { db, generateId } = require('../db/database');
 const { callGridlight, relayGridlightSSE, serviceUnavailableError, THREED_ENDPOINTS } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
+const { getFileUrl, getFilePath, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const {
     normalizeSubject,
@@ -581,7 +581,7 @@ async function meshOp(req, res, assetId, op) {
     if (!asset) return json(res, 404, { error: 'Model asset not found' });
 
     let meta = {};
-    try { meta = JSON.parse(asset.metadata || '{}'); } catch (_) {}
+    try { meta = JSON.parse(asset.metadata || '{}'); } catch (e) { console.error('[threed] stored meta is not valid JSON; using the default:', e.message); }
     if (meta.kind && !String(meta.kind).startsWith('model')) {
         return json(res, 400, { error: 'Asset is not a 3D model' });
     }

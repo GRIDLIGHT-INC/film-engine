@@ -17,7 +17,6 @@
  * assumed.
  */
 
-const { execFileSync } = require('child_process');
 
 /**
  * Which cut of a shot ships, best first.
@@ -558,7 +557,5 @@ async function runConform(projectId, options) {
     };
 }
 
-module.exports = {
-    planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE, engineSound,
-    findProjectMaster, findProjectMix, PROJECT_MASTER_KIND,
-};
+module.exports = {    planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE,
+    findProjectMaster, findProjectMix,};

@@ -399,11 +399,9 @@ function saveCamera(db, shotId, camera) {
     return camera;
 }
 
-module.exports = {
-    WORLD_ASSET_KINDS, COPIED_KINDS,
+module.exports = {    WORLD_ASSET_KINDS, COPIED_KINDS,
     createWorld, getWorld, worldsFor, updateWorld, deleteWorld, lockWorld,
     newVersion, getVersion, versionsFor, worldOf, calibrateVersion,
-    ingestWorld, worldGeometry, rawGeometry,
+    ingestWorld, worldGeometry,
     pinShot, unpinShot, pinFor,
-    planVersion, generateVersion, saveCamera,
-};
+    planVersion, generateVersion, saveCamera,};

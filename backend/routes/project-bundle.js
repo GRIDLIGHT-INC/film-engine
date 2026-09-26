@@ -5,7 +5,7 @@
  * POST /film/projects/import             — Import project from .tar.gz upload
  */
 
-const { db } = require('../db/database');
+const { pipeFile } = require('../lib/file-storage');
 const { exportProject, importProject } = require('../lib/project-bundle');
 const fs = require('fs');
 
@@ -40,7 +40,7 @@ function handleProjectBundle(req, res, urlParts, query) {
 
 function handleExport(req, res, projectId) {
     try {
-        const { archivePath, manifest, archiveName } = exportProject(projectId);
+        const { archivePath, archiveName } = exportProject(projectId);
 
         const stat = fs.statSync(archivePath);
         res.writeHead(200, {
@@ -48,11 +48,10 @@ function handleExport(req, res, projectId) {
             'Content-Disposition': `attachment; filename="${archiveName}"`,
             'Content-Length': stat.size,
         });
-        const stream = fs.createReadStream(archivePath);
-        stream.pipe(res);
+        const stream = pipeFile(archivePath, res);
         stream.on('end', () => {
             // Clean up the archive file after sending
-            try { fs.unlinkSync(archivePath); } catch (_) {}
+            try { fs.unlinkSync(archivePath); } catch (e) { console.error('[project-bundle] could not remove a temporary file:', e.message); }
         });
     } catch (err) {
         if (err.message === 'Project not found') {

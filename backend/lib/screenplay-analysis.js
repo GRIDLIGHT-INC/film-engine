@@ -580,9 +580,7 @@ function sampleAnalysis() {
     };
 }
 
-module.exports = {
-    DIMENSIONS, LAYERS, NOTE_FIELDS, CONFIDENCE, NOTE_KINDS,
-    FORBIDDEN_NOTE_FIELDS, MECHANICAL_CHECKS, INSTRUCTIONS,
+module.exports = {    DIMENSIONS, LAYERS, NOTE_FIELDS, CONFIDENCE,
+    MECHANICAL_CHECKS, INSTRUCTIONS,
     runMechanical, validateNote, validateAnalysis, buildBrief,
-    sampleNote, sampleAnalysis,
-};
+    sampleNote, sampleAnalysis,};

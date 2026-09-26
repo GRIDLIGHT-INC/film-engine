@@ -6,8 +6,7 @@
  * calculates frame/duration parameters.
  */
 
-const { buildStoryboardPrompt, MOVEMENT_MAP } = require('./storyboard-prompt');
-const { VALID_CAMERA_MOVES } = require('./scene-card-schema');
+const { buildStoryboardPrompt } = require('./storyboard-prompt');
 
 // ── Camera Control Map ──────────────────────────────────────────────
 // Maps scene card camera.movement to video generation camera_control payload

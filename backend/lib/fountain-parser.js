@@ -147,17 +147,6 @@
      * Extract inline notes from text
      * Returns { text: cleanedText, notes: [...] }
      */
-    function extractInlineNotes(text) {
-        const notes = [];
-        const cleaned = text.replace(PATTERNS.NOTE_INLINE, (match, content) => {
-            notes.push({
-                type: ELEMENT_TYPES.NOTE,
-                text: content.trim()
-            });
-            return '';
-        });
-        return { text: cleaned.trim(), notes };
-    }
 
     /**
      * Parse scene heading for INT/EXT and time of day
@@ -314,7 +303,6 @@
         let prevLineBlank = true;
         let currentElement = null;
         let expectingDialogue = false;
-        let lastCharacterDual = false;
         let dualDialogueActive = false;
 
         function pushElement(el) {
@@ -341,9 +329,6 @@
                 finishCurrentElement();
                 prevLineBlank = true;
                 expectingDialogue = false;
-                if (!dualDialogueActive) {
-                    lastCharacterDual = false;
-                }
                 continue;
             }
 
@@ -531,7 +516,6 @@
 
                         pushElement(element);
                         expectingDialogue = true;
-                        lastCharacterDual = !!isDual;
                         prevLineBlank = false;
                         continue;
                     }

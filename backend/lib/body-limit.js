@@ -70,7 +70,5 @@ function limitForPath(parts) {
     return bodyLimitFor(list);
 }
 
-module.exports = {
-    bodyLimitFor, limitForPath, carriesFile,
-    FILE_CARRYING_SEGMENTS, JSON_LIMIT, FILE_LIMIT, BUNDLE_LIMIT, CHUNK_LIMIT,
-};
+module.exports = {    bodyLimitFor, limitForPath, carriesFile,
+    FILE_LIMIT, BUNDLE_LIMIT, CHUNK_LIMIT,};

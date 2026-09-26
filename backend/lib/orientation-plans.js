@@ -46,7 +46,5 @@ function dropAllOrientationPlans() {
     return archiveRows(db.prepare(`SELECT id, file_path FROM film_assets WHERE ${WHERE_PLAN}`).all());
 }
 
-module.exports = {
-    WHERE_PLAN, replaceOrientationPlan, dropOrientationPlan,
-    dropOrientationPlansForProject, dropAllOrientationPlans,
-};
+module.exports = {    replaceOrientationPlan, dropOrientationPlan,
+    dropOrientationPlansForProject, dropAllOrientationPlans,};

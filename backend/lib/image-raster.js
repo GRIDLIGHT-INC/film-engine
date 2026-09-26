@@ -82,7 +82,7 @@ function readDimensions(filePath) {
     } catch (_) {
         return null;
     } finally {
-        if (fd !== null) { try { fs.closeSync(fd); } catch (_) {} }
+        if (fd !== null) { try { fs.closeSync(fd); } catch (e) { console.error('[image-raster] could not close a file handle:', e.message); } }
     }
 }
 

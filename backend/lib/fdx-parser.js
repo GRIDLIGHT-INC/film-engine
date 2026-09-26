@@ -18,16 +18,6 @@ function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function parseXMLElement(xml, tagName) {
-    const safe = escapeRegex(tagName);
-    const regex = new RegExp(`<${safe}[^>]*>([\\s\\S]*?)<\\/${safe}>`, 'gi');
-    const matches = [];
-    let match;
-    while ((match = regex.exec(xml)) !== null) {
-        matches.push(match[1]);
-    }
-    return matches;
-}
 
 function parseXMLAttributes(tag) {
     const attrs = {};
@@ -59,16 +49,6 @@ function getAllTags(xml, tagName) {
     return results;
 }
 
-function getSelfClosingTags(xml, tagName) {
-    const safe = escapeRegex(tagName);
-    const regex = new RegExp(`<${safe}([^/>]*)\\/>`, 'gi');
-    const results = [];
-    let match;
-    while ((match = regex.exec(xml)) !== null) {
-        results.push(parseXMLAttributes(match[1]));
-    }
-    return results;
-}
 
 /**
  * Decode XML entities

@@ -52,7 +52,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
@@ -477,7 +476,5 @@ async function importStems(db, sessionId, input) {
     return { ok: true, operation_id: operationId, session_id: sessionId, start_ms: startMs, imported, warnings };
 }
 
-module.exports = {
-    STEM_FORMATS, RIGHTS_STATUSES, ROLE_WORDS, NORMALIZE_RATE,
-    detectFormat, inspectStem, hintsFor, hintsFromName, normaliseKey, roleFromName, stemOf, importStems,
-};
+module.exports = {    STEM_FORMATS, RIGHTS_STATUSES,
+    detectFormat, inspectStem, roleFromName, importStems,};

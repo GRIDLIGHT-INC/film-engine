@@ -17,7 +17,6 @@
  * future frame from something the director was only trying out.
  */
 
-const path = require('path');
 const { db, generateId } = require('../db/database');
 const { validateStylePreset, SPEC_KINDS, allowedSpecValues, validateSpec, applyProjectSpecs } = require('../lib/look-development');
 

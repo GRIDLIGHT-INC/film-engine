@@ -607,10 +607,7 @@ function readScoreSession(db, sessionId, opts) {
     };
 }
 
-module.exports = {
-    VOCABULARY, RANGES, AUTOMATION_RANGES, TRANSITIONS, JSON_COLUMNS, BOOLEAN_COLUMNS,
+module.exports = {    VOCABULARY, RANGES, AUTOMATION_RANGES, TRANSITIONS, JSON_COLUMNS,
     SCORE_SESSION_SHAPE, TABLES, VALIDATORS,
-    validateSession, validateTrack, validateClip, validateTempoMap, validateEmotionRange,
-    validateMarker, validateAutomation, validateOperation, validatePoints,
-    canTransition, toRow, fromRow, clipEndMs, readScoreSession,
-};
+    validateTempoMap,
+    canTransition, toRow, fromRow, clipEndMs, readScoreSession,};

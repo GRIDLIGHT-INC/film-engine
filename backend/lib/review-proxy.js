@@ -196,7 +196,4 @@ function parseDuration(text) {
     return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 }
 
-module.exports = {
-    stillFor, proxyFor, sourceKey, cachePathFor, parseDuration,
-    CACHE_DIR, DEFAULT_MAX_SECONDS, PROXY_HEIGHT,
-};
+module.exports = {    stillFor, proxyFor, sourceKey, cachePathFor, parseDuration,};

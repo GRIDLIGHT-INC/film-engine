@@ -169,7 +169,5 @@ function revokeScope(scope) {
     return n;
 }
 
-module.exports = {
-    mintHandle, resolveHandle, revokeScope, publicBase,
-    HANDLE_TTL_MS, HANDLE_REFUSALS,
-};
+module.exports = {    mintHandle, resolveHandle, revokeScope, publicBase,
+    HANDLE_REFUSALS,};

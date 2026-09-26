@@ -13,7 +13,7 @@
 
 const { db, generateId } = require('../db/database');
 const { serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, ensureDir } = require('../lib/file-storage');
+const { getFileUrl, ensureDir } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
 const { resolve, get } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
@@ -591,7 +591,7 @@ async function colorMatchProject(req, res, projectId) {
     }
 
     const eligible = [];
-    for (const [sceneId, sceneShots] of Object.entries(byScene)) {
+    for (const [, sceneShots] of Object.entries(byScene)) {
         // Skip first shot in each scene (it's the reference)
         for (let i = 1; i < sceneShots.length; i++) {
             if (findLatestVideo(sceneShots[i].shot_id) && findLatestVideo(sceneShots[i - 1].shot_id)) {

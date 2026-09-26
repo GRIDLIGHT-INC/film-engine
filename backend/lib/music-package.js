@@ -587,7 +587,5 @@ function packageBytes(db, body) {
     return { error: { ok: false, status: 400, error: 'send the package as asset_id, or as data (a data URI or base64)' } };
 }
 
-module.exports = {
-    FORMAT, VERSION, SUPPORTED_VERSIONS, MANIFEST_SECTIONS, PICTURE_MAX_BYTES,
-    buildPackage, listPackages, validatePackage, importPackage, packageBytes, wavInfo, toBwf, writeZip, canonical,
-};
+module.exports = {    FORMAT, VERSION, MANIFEST_SECTIONS,
+    buildPackage, listPackages, validatePackage, importPackage, packageBytes, canonical,};

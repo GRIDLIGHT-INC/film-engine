@@ -272,8 +272,6 @@ function filmOptics(db, projectId) {
     return previsDefaults(rows.map(r => ({ kind: r.spec_kind, value: r.spec_value })));
 }
 
-module.exports = {
-    validateStylePreset, SUBJECT_WORDS, LOOK_EXCEPTIONS,
+module.exports = {    validateStylePreset,
     SPEC_KINDS, allowedSpecValues, validateSpec,
-    applyProjectSpecs, previsDefaults, styleReferences, filmOptics,
-};
+    applyProjectSpecs, previsDefaults, styleReferences, filmOptics,};

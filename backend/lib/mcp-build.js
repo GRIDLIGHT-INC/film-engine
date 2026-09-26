@@ -77,7 +77,6 @@ function diskNames() {
     const saved = SURFACE_MODULES.map(f => require.cache[f]);
     try {
         SURFACE_MODULES.forEach(f => { delete require.cache[f]; });
-        // eslint-disable-next-line global-require
         const fresh = require(SURFACE_MODULES[0]);
         return fresh.listTools().map(t => t.name).sort();
     } catch (_) {

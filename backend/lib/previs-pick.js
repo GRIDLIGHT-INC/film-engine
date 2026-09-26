@@ -248,7 +248,5 @@ function frameAll(objects, cameraPosition) {
     return { centre, radius, distance };
 }
 
-module.exports = {
-    projectPoint, groundPoint, pickObject, objectBounds, boundsCorners, basis, frameAll,
-    DEFAULT_PICK_RADIUS, DEFAULT_MAX_GROUND_M,
-};
+module.exports = {    projectPoint, groundPoint, pickObject, objectBounds, basis, frameAll,
+    DEFAULT_PICK_RADIUS,};

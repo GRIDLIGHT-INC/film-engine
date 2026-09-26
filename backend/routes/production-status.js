@@ -142,7 +142,6 @@ function evaluateSceneStatus(scene, shots) {
     const approved = statusCounts['approved'] || 0;
     const complete = statusCounts['complete'] || 0;
     const generating = statusCounts['generating'] || 0;
-    const pending = statusCounts['pending'] || 0;
 
     // All shots approved → scene approved
     if (approved === total && currentIdx < SCENE_STATUSES.indexOf('approved')) {
@@ -352,7 +351,5 @@ function buildStatusSummary(projectId) {
 // PROJECT_PHASES is exported for lib/nav-flow.js: the sidebar is ordered by the
 // same state machine that advances a project, so the menu and the status a
 // project reports can never disagree about what phase the work is in.
-module.exports = {
-    handleProductionStatus, evaluateSceneStatus, evaluateProjectStatus,
-    PROJECT_PHASES, SCENE_STATUSES, SHOT_STATUSES,
-};
+module.exports = {    handleProductionStatus,
+    PROJECT_PHASES, SHOT_STATUSES,};

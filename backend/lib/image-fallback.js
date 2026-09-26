@@ -316,12 +316,8 @@ async function generateImageWithFallback(payloadOrFactory, projectConfig, opts) 
     return runImageFallbackChain(chain, payloadOrFactory, opts);
 }
 
-module.exports = {
-    orderForFloor,
+module.exports = {    orderForFloor,
     runImageFallbackChain,
     imageProviderChain,
     generateImageWithFallback,
-    isRefusal,
-    REFUSAL_PATTERNS,
-    OUR_FAULT_PATTERNS,
-};
+    isRefusal,};

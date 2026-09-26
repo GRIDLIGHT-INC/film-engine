@@ -23081,84 +23081,7 @@ THREE.GLTFLoader = GLTFLoader;
         'note': 'Describe what note you need (e.g., "Production note about special effects needed")'
     };
 
-    function openAIGenerateModal() {
-        const block = getCurrentBlock();
-        const elementType = block?.dataset?.elementType || 'scene-heading';
 
-        document.getElementById('aiGenCurrentType').textContent = elementType.replace('-', ' ');
-        document.getElementById('aiGenPromptHint').textContent = AI_GENERATE_HINTS[elementType] || 'Describe what you want to generate...';
-        document.getElementById('aiGenPrompt').value = '';
-        document.getElementById('aiGenerateModal').classList.add('active');
-        document.getElementById('aiGenPrompt').focus();
-    }
-
-    async function executeAIGenerate() {
-        const prompt = document.getElementById('aiGenPrompt').value.trim();
-        if (!prompt) {
-            setStatus('Please enter a prompt');
-            return;
-        }
-
-        const block = getCurrentBlock();
-        const elementType = block?.dataset?.elementType || 'scene-heading';
-        const useContext = document.getElementById('aiGenUseContext').checked;
-
-        // Get surrounding context if enabled
-        let context = '';
-        if (useContext) {
-            const editor = document.getElementById('screenplayEditor');
-            const blocks = editor.querySelectorAll('[data-element-type]');
-            const currentIndex = Array.from(blocks).indexOf(block);
-
-            // Get 5 blocks before and after for context
-            const start = Math.max(0, currentIndex - 5);
-            const end = Math.min(blocks.length, currentIndex + 5);
-
-            for (let i = start; i < end; i++) {
-                if (i === currentIndex) continue;
-                const b = blocks[i];
-                context += `[${b.dataset.elementType}] ${b.innerText.trim()}\n`;
-            }
-        }
-
-        const submitBtn = document.getElementById('aiGenSubmitBtn');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Generating...';
-
-        try {
-            const data = await api('/projects/' + state.currentProject.id + '/screenplay-ai', {
-                method: 'POST',
-                body: JSON.stringify({
-                    mode: 'generate-element',
-                    element_type: elementType,
-                    prompt: prompt,
-                    context: context
-                })
-            });
-
-            // Insert generated content
-            if (data.content) {
-                if (block) {
-                    block.innerText = data.content;
-                } else {
-                    const newBlock = createBlock(data.content, elementType);
-                    document.getElementById('screenplayEditor').appendChild(newBlock);
-                    setCursorToBlock(newBlock);
-                }
-
-                editorDirty = true;
-                triggerAutoSave();
-                setStatus('Content generated');
-            }
-
-            closeModal('aiGenerateModal');
-        } catch (err) {
-            setStatus('AI error: ' + err.message);
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Generate';
-        }
-    }
 
     // FILM-116: Quick stats summary update without full recalculation
     function updateScriptStatsSummary() {
@@ -23866,10 +23789,6 @@ THREE.GLTFLoader = GLTFLoader;
     // FILM-114: Reject rewrite - dismiss the suggestion
     function rejectRewrite(messageIndex) {
         setStatus('Rewrite rejected');
-        // Optionally remove the message from chat
-        // state.aiChat.splice(messageIndex, 1);
-        // saveAIChatHistory();
-        // renderAIChatMessages();
     }
 
     // FILM-113: Insert AI content at cursor position
@@ -26084,23 +26003,6 @@ ${fountainText.slice(0, 50000)}`;
             placeholder="${esc(o.placeholder || '')}" value="${esc(value == null ? '' : String(value))}" ${common}>`;
     }
 
-    function ssPlates() {
-        const list = SS.views.length ? SS.views : [];
-        if (!list.length) {
-            return `<p class="text-muted">No plate yet. Generate one, or upload a picture you already have.</p>
-                ${ssPlateControls()}`;
-        }
-        return `<div class="cs-views">${list.map(v => {
-            const label = v.view === '__default__' || !v.view ? 'default' : v.view;
-            const url = v.image_url ? API_BASE + v.image_url : '';
-            return `<figure class="cs-tile${v.available === false ? ' ss-gone' : ''}">
-                ${url && v.available !== false
-                    ? `<img src="${esc(url)}" alt="${esc(label)}" onclick="openPlateViewer('${esc(url)}', ${jsAttr(label)})">`
-                    : `<div class="cs-drop">${v.available === false ? 'file missing' : 'not generated'}</div>`}
-                <figcaption>${esc(label)}</figcaption>
-            </figure>`;
-        }).join('')}</div>${ssPlateControls()}`;
-    }
 
     function ssPlateControls() {
         /*
@@ -27820,7 +27722,14 @@ ${fountainText.slice(0, 50000)}`;
      */
     /** Every shot in a scene, confirmed once and then run shot by shot. */
     async function generateSceneDialogue(sceneId, lineCount) {
-        const shots = (SCENE_SHOTS && SCENE_SHOTS[sceneId]) || [];
+        // Read the scene's shots here: nothing else on this page holds them,
+        // and a lookup into an undefined global threw before anything showed.
+        let shots = [];
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/shotlist`);
+            shots = ((r && (r.shots || r)) || []).filter(s => s.scene_id === sceneId);
+        } catch (err) { setStatus('Could not read this scene\'s shots: ' + err.message, true); return; }
+        if (!shots.length) { setStatus('This scene has no shots yet — break it down first.', true); return; }
         const first = shots[0];
         return confirmPaidImage({
             title: 'Generate the dialogue for this scene',
@@ -33457,14 +33366,6 @@ ${fountainText.slice(0, 50000)}`;
     let commentsVisible = false;
     let screenplayComments = [];
 
-    function toggleComments() {
-        commentsVisible = !commentsVisible;
-        const btn = document.getElementById('commentsToggle');
-        if (btn) btn.style.background = commentsVisible ? 'var(--gl-brand-pink)' : '';
-        if (btn) btn.style.color = commentsVisible ? 'white' : '';
-        if (commentsVisible) loadScreenplayComments();
-        else clearCommentHighlights();
-    }
 
     async function loadScreenplayComments() {
         if (!state.currentProject) return;
@@ -33478,33 +33379,6 @@ ${fountainText.slice(0, 50000)}`;
             screenplayComments = data.comments || [];
             renderCommentHighlights();
         } catch (err) { /* ignore */ }
-    }
-
-    function renderCommentHighlights() {
-        clearCommentHighlights();
-        if (!commentsVisible || screenplayComments.length === 0) return;
-        const editor = document.getElementById('screenplayEditor');
-        if (!editor) return;
-
-        // Show comment markers in the margin. Same list the anchor was written
-        // against — element_index is an index into the BODY, not into the DOM.
-        const blocks = bodyBlocks(editor);
-        screenplayComments.forEach(c => {
-            if (c.resolved) return;
-            const block = blocks[c.element_index];
-            if (!block) return;
-            block.style.borderRight = '3px solid #f59e0b';
-            block.title = (c.author || 'user') + ': ' + (c.content || '');
-        });
-    }
-
-    function clearCommentHighlights() {
-        const editor = document.getElementById('screenplayEditor');
-        if (!editor) return;
-        editor.querySelectorAll('[data-element-type]').forEach(b => {
-            b.style.borderRight = '';
-            b.title = '';
-        });
     }
 
     async function addScreenplayComment() {
@@ -33550,6 +33424,34 @@ ${fountainText.slice(0, 50000)}`;
             loadScreenplayComments();
         } catch (err) { setStatus('Error: ' + err.message); }
     }
+
+    function renderCommentHighlights() {
+        clearCommentHighlights();
+        if (!commentsVisible || screenplayComments.length === 0) return;
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+
+        // Show comment markers in the margin. Same list the anchor was written
+        // against — element_index is an index into the BODY, not into the DOM.
+        const blocks = bodyBlocks(editor);
+        screenplayComments.forEach(c => {
+            if (c.resolved) return;
+            const block = blocks[c.element_index];
+            if (!block) return;
+            block.style.borderRight = '3px solid #f59e0b';
+            block.title = (c.author || 'user') + ': ' + (c.content || '');
+        });
+    }
+
+    function clearCommentHighlights() {
+        const editor = document.getElementById('screenplayEditor');
+        if (!editor) return;
+        editor.querySelectorAll('[data-element-type]').forEach(b => {
+            b.style.borderRight = '';
+            b.title = '';
+        });
+    }
+
 
     // ══════════════════════════════════════════════════════════════
     // SSE STREAMING HELPER
@@ -42480,24 +42382,29 @@ ${fountainText.slice(0, 50000)}`;
               + `${plan.delivery.between.join(' and ')}, and hand it back with the two trim points.`
             : `Regenerate ${plan.cost.seconds.toFixed(2)}s inside ${plan.shot_code || 'this shot'} `
               + 'and splice it back in as a new version. The take you have now survives.';
-        const ok = await confirmGen({
+        // The shared confirmation re-reads the free plan, so what is shown is
+        // what the server would do now, not what it said when the marks were set.
+        return confirmPaidImage({
             title: isBridge ? 'Bridge this cut' : 'Repair this shot',
-            body: `${what}\n\nCost: $${plan.cost.usd.toFixed(2)} at ${plan.cost.resolution} `
-                + `(${plan.cost.basis}).\n\nNothing has been spent yet.`,
+            previewUrl: pbMarks.planUrl,
+            describe: d => `<p class="text-sm" style="line-height:1.5;">${esc(what)}</p>
+                <p class="text-sm">Cost: $${esc(((d && d.cost) || plan.cost).usd.toFixed(2))} at ${esc(((d && d.cost) || plan.cost).resolution)}
+                (${esc(((d && d.cost) || plan.cost).basis || '')}). Nothing has been spent yet.</p>`,
+            send: async () => {
+                try {
+                    setStatus('Repairing…', true);
+                    const r = await api(`/shots/${plan.shot_id}/repair`, {
+                        method: 'POST',
+                        body: JSON.stringify({ start_sec: plan.marked.start_sec, end_sec: plan.marked.end_sec,
+                            resolution: plan.cost.resolution, bridge: isBridge }),
+                    });
+                    if (!r.ok) { setStatus(`Repair failed at ${r.stage}: ${r.reason}`, true); return; }
+                    setStatus(`Repaired — version ${r.version}. Reloading the cut.`, true);
+                    pbClearMarks();
+                    await loadPlayback();
+                } catch (err) { setStatus(`Repair failed: ${err.message}`, true); }
+            },
         });
-        if (!ok) return;
-        try {
-            setStatus('Repairing…', true);
-            const r = await api(`/shots/${plan.shot_id}/repair`, {
-                method: 'POST',
-                body: JSON.stringify({ start_sec: plan.marked.start_sec, end_sec: plan.marked.end_sec,
-                    resolution: plan.cost.resolution, bridge: isBridge }),
-            });
-            if (!r.ok) { setStatus(`Repair failed at ${r.stage}: ${r.reason}`, true); return; }
-            setStatus(`Repaired — version ${r.version}. Reloading the cut.`, true);
-            pbClearMarks();
-            await loadPlayback();
-        } catch (err) { setStatus(`Repair failed: ${err.message}`, true); }
     }
 
     function pbMarkIn() { pbMarks.inMs = pbAbsoluteMs(); pbMarks.plan = null; pbRenderMarks(); }
@@ -42573,6 +42480,7 @@ ${fountainText.slice(0, 50000)}`;
         try {
             const plan = await api(query);
             pbMarks.plan = plan;
+            pbMarks.planUrl = query;
             if (plan.refused) { cost.textContent = plan.reason; return; }
             const kind = plan.delivery && plan.delivery.kind === 'bridge'
                 ? `bridge across ${plan.delivery.between.join('/')}` : 'repair';
@@ -42933,10 +42841,6 @@ ${fountainText.slice(0, 50000)}`;
     }
 
 
-    function parseTripletInput(id, fallback) {
-        const parts = document.getElementById(id).value.split(',').map(v => Number(v.trim()));
-        return parts.length === 3 && parts.every(Number.isFinite) ? parts : fallback;
-    }
 
 
     // ==== CODEX:END ====
@@ -43058,7 +42962,6 @@ function pgNode(key) { return PG.byKey.get(key); }
 function pgSrc(url) { return url ? mediaUrl(url) : ''; }
 function pgShots() { return (PG.graph ? PG.graph.nodes : []).filter(n => n.type === 'shot'); }
 function pgSecs(ms) { return ms ? (Math.round(ms / 100) / 10) + 's' : '—'; }
-function pgMoney(e) { return e && e.usd != null ? '$' + Number(e.usd).toFixed(2) : null; }
 
 // ── Canvas ────────────────────────────────────────────────────────────────
 

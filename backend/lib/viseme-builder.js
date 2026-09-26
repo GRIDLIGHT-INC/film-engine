@@ -175,8 +175,6 @@ function mergeVisemesWithAudio(visemeTrack, audioTimings) {
     // audioTimings: [{ word, start_ms, end_ms }]
     // Re-distribute visemes across the actual audio word timings
     const newVisemes = [];
-    let visemeIdx = 0;
-    const originalVisemes = visemeTrack.visemes;
 
     for (const wordTiming of audioTimings) {
         const wordPhonemes = textToPhonemes(wordTiming.word);
@@ -232,14 +230,10 @@ function estimateDuration(text, speed) {
     return Math.max(500, Math.round((minutes * 60 * 1000) / (speed || 1.0)));
 }
 
-module.exports = {
-    VISEME_LIST,
+module.exports = {    VISEME_LIST,
     VISEME_MAP,
-    LETTER_PHONEME_MAP,
-    DIGRAPH_PHONEME_MAP,
     textToPhonemes,
     phonemesToVisemes,
     buildVisemeTrack,
     mergeVisemesWithAudio,
-    buildVisemePayload,
-};
+    buildVisemePayload,};

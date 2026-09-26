@@ -221,8 +221,5 @@ function sweepUploads(maxAgeMs = STALE_AFTER_MS) {
     return { swept };
 }
 
-module.exports = {
-    claimUpload,
-    beginUpload, appendChunk, uploadStatus, completeUpload, abandonUpload, sweepUploads,
-    STALE_AFTER_MS,
-};
+module.exports = {    claimUpload,
+    beginUpload, appendChunk, uploadStatus, completeUpload, abandonUpload, sweepUploads,};

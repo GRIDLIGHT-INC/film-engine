@@ -365,6 +365,11 @@ function main() {
     });
 }
 
-if (require.main === module) main();
+if (require.main === module) {
+    // Logged to stderr: stdout is the JSON-RPC channel. A tool that fails
+    // asynchronously must not end the connection the host is holding.
+    process.on('unhandledRejection', err => { console.error('[mcp] unhandled rejection:', err); });
+    main();
+}
 
 module.exports = { METHODS, handle, toolResult, SUPPORTED_PROTOCOLS, SERVER_INFO };

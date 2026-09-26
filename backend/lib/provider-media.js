@@ -176,7 +176,7 @@ function stripAudioTrack(filePath) {
         // Only replace once the new file plausibly exists: a truncated remux
         // over a good clip would destroy footage that was just paid for.
         const st = fs.statSync(tmp);
-        if (!st || st.size < 1024) { try { fs.unlinkSync(tmp); } catch (_) {} return { stripped: false, reason: 'remux produced nothing' }; }
+        if (!st || st.size < 1024) { try { fs.unlinkSync(tmp); } catch (e) { console.error('[provider-media] could not remove a temporary file:', e.message); } return { stripped: false, reason: 'remux produced nothing' }; }
         fs.renameSync(tmp, filePath);
         return { stripped: true };
     } catch (err) {
@@ -210,11 +210,10 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
      * take is a take whatever the medium.
      */
     const VERSIONED = ['video', 'music', 'audio'];
-    let archived = null;
     if (VERSIONED.includes(subdir)) {
         try {
             const { getFilePath } = require('./file-storage');
-            archived = archivePreviousTake(getFilePath(projectId, subdir, filename));
+            archivePreviousTake(getFilePath(projectId, subdir, filename));
         } catch (_) { /* an archive that cannot be made must not block the save */ }
     }
 
@@ -251,7 +250,7 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
 }
 
 module.exports = { persistProviderMedia, extractMediaUrl, resolveMediaUrl, isGatewayUrl,
-    stripAudioTrack, archivePreviousTake };
+    archivePreviousTake,};
 
 /**
  * How much image a data: URI may carry.

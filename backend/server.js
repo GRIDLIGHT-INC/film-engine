@@ -236,7 +236,6 @@ function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
         const chunks = [];
         let body = '';
         let size = 0;
-        let oversize = false;
         req.on('data', chunk => {
             size += chunk.length;
             if (size > maxSize) {
@@ -279,7 +278,6 @@ function readBody(req, maxSize = 10 * 1024 * 1024, res = null) {
                         max_file_mb: Math.floor(limitMb * 0.75),
                     }));
                 }
-                oversize = true;
                 req.destroy();
                 reject(new Error(`Request body too large (limit ${limitMb}MB)`));
                 return;
@@ -444,7 +442,7 @@ const server = http.createServer(async (req, res) => {
     try {
         // Route: /film/storyboards/:projectId/:filename — serve storyboard images
         if (parts[1] === 'storyboards' && parts[2] && parts[3]) {
-            return handleStoryboard(req, res, parts, query);
+            return await handleStoryboard(req, res, parts, query);
         }
 
         // Route: /film/refsheets/:projectId/:filename — serve character reference images
@@ -598,7 +596,7 @@ const server = http.createServer(async (req, res) => {
             || (parts[1] === 'claims' && parts[2])
             || (parts[1] === 'projects' && parts[2]
                 && (parts[3] === 'claims' || parts[3] === 'compliance'))) {
-            return handleBrands(req, res, parts, query);
+            return await handleBrands(req, res, parts, query);
         }
 
         /*
@@ -609,7 +607,7 @@ const server = http.createServer(async (req, res) => {
          */
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'deliverables')
             || (parts[1] === 'deliverables' && parts[2])) {
-            return handleDeliverables(req, res, parts, query);
+            return await handleDeliverables(req, res, parts, query);
         }
 
         // Route: the style book — the director's library, and applying an
@@ -618,12 +616,12 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'style-book')
             || (parts[1] === 'shots' && parts[2] && parts[3] === 'style-book')
             || parts[1] === 'style-book') {
-            return handleStyleBook(req, res, parts, query);
+            return await handleStyleBook(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/bible[/:section] and /bible-drift
         if (parts[1] === 'projects' && parts[2] && (parts[3] === 'bible' || parts[3] === 'bible-drift')) {
-            return handleStoryBible(req, res, parts);
+            return await handleStoryBible(req, res, parts);
         }
 
         // Outstanding generations. Registered BEFORE the project catch-alls
@@ -654,12 +652,12 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/projects/:id/advance-status
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'advance-status') {
-            return handleProductionStatus(req, res, parts, query);
+            return await handleProductionStatus(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/call-sheet
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'call-sheet') {
-            return handleCallSheets(req, res, parts, query);
+            return await handleCallSheets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/screenplay/suggestions (FILM-121)
@@ -685,7 +683,7 @@ const server = http.createServer(async (req, res) => {
         // replace? Above everything, because it takes no project id and would
         // otherwise fall through to a project lookup.
         if (parts[1] === 'agent' && !parts[2]) {
-            return handleAgentPresence(req, res, parts, query);
+            return await handleAgentPresence(req, res, parts, query);
         }
 
         // Route: casting and auditioning. Above /characters/:id and
@@ -717,22 +715,22 @@ const server = http.createServer(async (req, res) => {
         // /projects/:id matcher below would swallow them.
         if (parts[1] === 'projects' && parts[2]
             && (parts[3] === 'treatment' || parts[3] === 'analysis' || parts[3] === 'timing')) {
-            return handleStoryDevelopment(req, res, parts, query);
+            return await handleStoryDevelopment(req, res, parts, query);
         }
         if (parts[1] === 'analysis' && parts[2]) {
-            return handleStoryDevelopment(req, res, parts, query);
+            return await handleStoryDevelopment(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/beats and /film/projects/:id/directives.
         // Above the generic project routes, or they swallow it — the trap that
         // has now bitten four times in this codebase.
         if (parts[1] === 'projects' && parts[2] && (parts[3] === 'beats' || parts[3] === 'directives')) {
-            return handleStoryStructure(req, res, parts, query);
+            return await handleStoryStructure(req, res, parts, query);
         }
 
         // Route: /film/beats/:id
         if (parts[1] === 'beats' && parts[2]) {
-            return handleStoryStructure(req, res, parts, query);
+            return await handleStoryStructure(req, res, parts, query);
         }
 
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'scenes') {
@@ -760,140 +758,140 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/projects/:id/subtitles[/export/:fmt|/languages|/convert]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'subtitles') {
-            return handleSubtitles(req, res, parts, query);
+            return await handleSubtitles(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/audio-deliverables[/manifest]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'audio-deliverables') {
-            return handleAudioDeliverables(req, res, parts, query);
+            return await handleAudioDeliverables(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/characters
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'characters') {
-            return handleCharacters(req, res, parts, query);
+            return await handleCharacters(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/locations
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'locations') {
-            return handleLocations(req, res, parts, query);
+            return await handleLocations(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/props
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'props') {
-            return handleLocations(req, res, parts, query);
+            return await handleLocations(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/assets
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'assets') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/flows  and  /film/flows/:id[/validate]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'flows') {
-            return handleFlows(req, res, parts, query);
+            return await handleFlows(req, res, parts, query);
         }
         if (parts[1] === 'flows' && parts[2]) {
-            return handleFlows(req, res, parts, query);
+            return await handleFlows(req, res, parts, query);
         }
         if (parts[1] === 'flow-runs' && parts[2]) {
-            return handleFlows(req, res, parts, query);
+            return await handleFlows(req, res, parts, query);
         }
         if (parts[1] === 'flow-templates') {
-            return handleFlows(req, res, parts, query);
+            return await handleFlows(req, res, parts, query);
         }
 
         // Route: /film/shots/:id/previs[/solve]  and  /film/previs/taxonomy
         // /motion rides with previs because previs owns the blocking it reads.
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'motion') {
-            return handlePrevis(req, res, ['film', 'shots', parts[2], 'previs', 'motion'], query);
+            return await handlePrevis(req, res, ['film', 'shots', parts[2], 'previs', 'motion'], query);
         }
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'previs') {
-            return handlePrevis(req, res, parts, query);
+            return await handlePrevis(req, res, parts, query);
         }
         if (parts[1] === 'previs' || parts[1] === 'nav-flow') {
-            return handlePrevis(req, res, parts, query);
+            return await handlePrevis(req, res, parts, query);
         }
 
         // ==== CODEX:START ops-compliance-routes ====
         // Route: /film/projects/:id/jobs[/summary]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'jobs') {
-            return handleJobs(req, res, parts, query);
+            return await handleJobs(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/rights
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'rights') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/rights/:id
         if (parts[1] === 'rights' && parts[2]) {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/provenance[/export]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'provenance') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/assets/:id/provenance
         if (parts[1] === 'assets' && parts[2] && parts[3] === 'provenance') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
         // ==== CODEX:END ====
 
         // Route: /film/projects/:id/music-cues
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'music-cues') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/color-presets
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'color-presets') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/music-rights
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'music-rights') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/continuity[/board]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'continuity') {
-            return handleContinuity(req, res, parts, query);
+            return await handleContinuity(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/credits[/reorder]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'credits') {
-            return handleCredits(req, res, parts, query);
+            return await handleCredits(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/title-cards
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'title-cards') {
-            return handleCredits(req, res, parts, query);
+            return await handleCredits(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/marketing
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'marketing') {
-            return handleMarketing(req, res, parts, query);
+            return await handleMarketing(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/budget/estimate[/analyze|/web-search|/ai|/:eid]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'budget' && parts[4] === 'estimate') {
-            return handleBudgetEstimate(req, res, parts, query);
+            return await handleBudgetEstimate(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/budget[/ledger|/forecast|/limit]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'budget') {
-            return handleBudget(req, res, parts, query);
+            return await handleBudget(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/spend[/usage|/backfill] — what AI actually cost
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'spend') {
-            return handleBudget(req, res, parts, query);
+            return await handleBudget(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/backups
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'backups') {
-            return handleBackups(req, res, parts, query);
+            return await handleBackups(req, res, parts, query);
         }
 
         /*
@@ -905,41 +903,41 @@ const server = http.createServer(async (req, res) => {
          * as a working endpoint returning nonsense rather than as a missing one.
          */
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'dry-run') {
-            return handleDashboard(req, res, parts, query);
+            return await handleDashboard(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/dashboard
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'home') {
-            return handleDashboard(req, res, parts, query);
+            return await handleDashboard(req, res, parts, query);
         }
 
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'dashboard') {
-            return handleDashboard(req, res, parts, query);
+            return await handleDashboard(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/status-board
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'status-board') {
-            return handleDashboard(req, res, parts, query);
+            return await handleDashboard(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/milestones[/:mid]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'milestones') {
-            return handleDashboard(req, res, parts, query);
+            return await handleDashboard(req, res, parts, query);
         }
 
         // Route: /film/projects/import (must come before generic /film/projects/:id)
         if (parts[1] === 'projects' && parts[2] === 'import') {
-            return handleProjectBundle(req, res, parts, query);
+            return await handleProjectBundle(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/bundle — export project archive
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'bundle') {
-            return handleProjectBundle(req, res, parts, query);
+            return await handleProjectBundle(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/export[/fcpxml|edl|premiere]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'export') {
-            return handleNLEExport(req, res, parts, query);
+            return await handleNLEExport(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/storyboard[/generate[/stream]]
@@ -979,7 +977,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/projects/:id/qa[/run|/latest|/continuity|/rubric]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'qa') {
-            return handleQA(req, res, parts, query);
+            return await handleQA(req, res, parts, query);
         }
 
         /*
@@ -1006,7 +1004,7 @@ const server = http.createServer(async (req, res) => {
          * credentials, so the id is the credential.
          */
         if (parts[1] === 'frame-handle' && parts[2]) {
-            return handleFrameHandles(req, res, parts);
+            return await handleFrameHandles(req, res, parts);
         }
 
         // Route: /film/projects/:id/bridges — free listing of bridge deliverables.
@@ -1036,35 +1034,35 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/projects/:id/providers — per-project provider selection
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'providers') {
-            return handleProviders(req, res, parts, query);
+            return await handleProviders(req, res, parts, query);
         }
 
         // Route: /film/providers[/:provider/credentials] — provider catalog + credentials
         if (parts[1] === 'providers') {
-            return handleProviders(req, res, parts, query);
+            return await handleProviders(req, res, parts, query);
         }
 
         // Route: /film/projects/:id/consistency[/profiles|/audit] — consistency profiles
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'consistency') {
-            return handleConsistency(req, res, parts, query);
+            return await handleConsistency(req, res, parts, query);
         }
 
         // Route: /film/consistency/... and /film/shots/:id/consistency/audit
         if (parts[1] === 'consistency') {
-            return handleConsistency(req, res, parts, query);
+            return await handleConsistency(req, res, parts, query);
         }
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'consistency') {
-            return handleConsistency(req, res, parts, query);
+            return await handleConsistency(req, res, parts, query);
         }
 
         // Route: /film/projects/demo — create demo project
         if (parts[1] === 'projects' && parts[2] === 'demo') {
-            return handleDemoProject(req, res);
+            return await handleDemoProject(req, res);
         }
 
         // Route: /film/projects/:id/settings/preset
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'settings' && parts[4] === 'preset') {
-            return handleProjectSettingsPreset(req, res, parts);
+            return await handleProjectSettingsPreset(req, res, parts);
         }
 
         // ==== CLAUDE:START editorial routes (gaps 3/4/5/7d) ====
@@ -1074,28 +1072,28 @@ const server = http.createServer(async (req, res) => {
 
         // Gap 3: /film/projects/:id/timeline[/notes]
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'timeline') {
-            return handleTimeline(req, res, parts, query);
+            return await handleTimeline(req, res, parts, query);
         }
 
         // Gap 5: /film/projects/:id/selects
         if (parts[1] === 'projects' && parts[2] && parts[3] === 'selects') {
-            return handleTakes(req, res, parts, query);
+            return await handleTakes(req, res, parts, query);
         }
 
         // Gap 5: /film/shots/:id/takes
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'takes') {
-            return handleTakes(req, res, parts, query);
+            return await handleTakes(req, res, parts, query);
         }
 
         // Gap 5: /film/versions/:id/select
         if (parts[1] === 'versions' && parts[2] && parts[3] === 'select') {
-            return handleTakes(req, res, parts, query);
+            return await handleTakes(req, res, parts, query);
         }
 
         // Gap 7d: /film/shots/:id/prompt-history, /film/shots/:id/prompt-diff
         if (parts[1] === 'shots' && parts[2] &&
             (parts[3] === 'prompt-history' || parts[3] === 'prompt-diff')) {
-            return handleRenderLedger(req, res, parts, query);
+            return await handleRenderLedger(req, res, parts, query);
         }
         // ==== CLAUDE:END ====
 
@@ -1118,17 +1116,17 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/audio/:projectId/:filename — serve audio files
         if (parts[1] === 'audio' && parts[2] && parts[3]) {
-            return handleVoice(req, res, parts, query);
+            return await handleVoice(req, res, parts, query);
         }
 
         // Route: /film/video/:projectId/:filename — serve video files
         if (parts[1] === 'video' && parts[2] && parts[3]) {
-            return handleVideoGen(req, res, parts, query);
+            return await handleVideoGen(req, res, parts, query);
         }
 
         // Route: /film/music/:projectId/:filename — serve music files
         if (parts[1] === 'music' && parts[2] && parts[3]) {
-            return handleMusicGen(req, res, parts, query);
+            return await handleMusicGen(req, res, parts, query);
         }
 
         // Route: /film/3d/:projectId/:filename — serve 3D model files
@@ -1148,7 +1146,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/scenes/:id/call-sheet
         if (parts[1] === 'scenes' && parts[2] && parts[3] === 'call-sheet') {
-            return handleCallSheets(req, res, parts, query);
+            return await handleCallSheets(req, res, parts, query);
         }
 
         // Route: /film/scenes/:id/music/generate[/stream]
@@ -1168,7 +1166,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/scenes/:id/qa/run
         if (parts[1] === 'scenes' && parts[2] && parts[3] === 'qa') {
-            return handleQA(req, res, parts, query);
+            return await handleQA(req, res, parts, query);
         }
 
         // Route: /film/scenes/:id
@@ -1178,42 +1176,42 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/subtitles/:id
         if (parts[1] === 'subtitles') {
-            return handleSubtitles(req, res, parts, query);
+            return await handleSubtitles(req, res, parts, query);
         }
 
         // Route: /film/audio-deliverables/:id
         if (parts[1] === 'audio-deliverables') {
-            return handleAudioDeliverables(req, res, parts, query);
+            return await handleAudioDeliverables(req, res, parts, query);
         }
 
         // Route: /film/continuity/:id
         if (parts[1] === 'continuity') {
-            return handleContinuity(req, res, parts, query);
+            return await handleContinuity(req, res, parts, query);
         }
 
         // Route: /film/credits/:id
         if (parts[1] === 'credits') {
-            return handleCredits(req, res, parts, query);
+            return await handleCredits(req, res, parts, query);
         }
 
         // Route: /film/title-cards/:id
         if (parts[1] === 'title-cards') {
-            return handleCredits(req, res, parts, query);
+            return await handleCredits(req, res, parts, query);
         }
 
         // Route: /film/marketing/:id[/generate]
         if (parts[1] === 'marketing') {
-            return handleMarketing(req, res, parts, query);
+            return await handleMarketing(req, res, parts, query);
         }
 
         // Route: /film/budget/templates, /film/budget/talent-tiers, /film/budget/location-types
         if (parts[1] === 'budget' && (parts[2] === 'templates' || parts[2] === 'talent-tiers' || parts[2] === 'location-types')) {
-            return handleBudgetEstimate(req, res, parts, query);
+            return await handleBudgetEstimate(req, res, parts, query);
         }
 
         // Route: /film/budget/:id
         if (parts[1] === 'budget') {
-            return handleBudget(req, res, parts, query);
+            return await handleBudget(req, res, parts, query);
         }
 
         // Route: /film/instruments[...] — the director's own plugins and patches.
@@ -1224,7 +1222,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/spend/rates — the published rate book, and corrections
         if (parts[1] === 'spend') {
-            return handleBudget(req, res, parts, query);
+            return await handleBudget(req, res, parts, query);
         }
 
         // Route: /film/music-cues/:id/rights
@@ -1238,11 +1236,11 @@ const server = http.createServer(async (req, res) => {
          * looks identical to a working one until someone presses it.
          */
         if (parts[1] === 'music-cues' && parts[2] && !parts[3]) {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
         // /film/music-cues/:id/midi[/parts/:part/import] — the cue's notes (GRD-3994).
         if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'midi') {
-            return handleMusicMidi(req, res, parts, query);
+            return await handleMusicMidi(req, res, parts, query);
         }
         // /film/music-cues/:id/generate — generate the cue that was written.
         // Registered beside the other music-cue verbs; handled by music-gen.js
@@ -1251,17 +1249,17 @@ const server = http.createServer(async (req, res) => {
             return await handleMusicGen(req, res, parts, query);
         }
         if (parts[1] === 'music-cues' && parts[2] && parts[3] === 'rights') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/backups/:id[/download|/restore]
         if (parts[1] === 'backups') {
-            return handleBackups(req, res, parts, query);
+            return await handleBackups(req, res, parts, query);
         }
 
         // Route: /film/characters/:id/cost
         if (parts[1] === 'characters' && parts[2] && parts[3] === 'cost') {
-            return handleBudgetEstimate(req, res, parts, query);
+            return await handleBudgetEstimate(req, res, parts, query);
         }
 
         // Route: /film/characters/:id/model[/generate|from-image[/stream]] — 3D generation
@@ -1271,12 +1269,12 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/characters/:id[/voice|/costumes]
         if (parts[1] === 'characters') {
-            return handleCharacters(req, res, parts, query);
+            return await handleCharacters(req, res, parts, query);
         }
 
         // Route: /film/locations/:id/cost
         if (parts[1] === 'locations' && parts[2] && parts[3] === 'cost') {
-            return handleBudgetEstimate(req, res, parts, query);
+            return await handleBudgetEstimate(req, res, parts, query);
         }
 
         // Route: /film/locations/:id/model[/generate|from-image[/stream]] — 3D
@@ -1290,7 +1288,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/locations/:id
         if (parts[1] === 'locations') {
-            return handleLocations(req, res, parts, query);
+            return await handleLocations(req, res, parts, query);
         }
 
         // Route: /film/props/:id/model[/generate|from-image[/stream]] — 3D generation
@@ -1301,34 +1299,34 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/props/:id
         // The registries the location and prop sheets are built from.
         if (parts[1] === 'sheet-spec') {
-            return handleLocations(req, res, parts, query);
+            return await handleLocations(req, res, parts, query);
         }
         if (parts[1] === 'props') {
-            return handleLocations(req, res, parts, query);
+            return await handleLocations(req, res, parts, query);
         }
 
         // Route: /film/assets/:id
         if (parts[1] === 'assets') {
-            return handleAssets(req, res, parts, query);
+            return await handleAssets(req, res, parts, query);
         }
 
         // Route: /film/scripts/:id/comments
         if (parts[1] === 'scripts' && parts[2] && parts[3] === 'tag') {
-            return handleComments(req, res, parts, query);
+            return await handleComments(req, res, parts, query);
         }
 
         if (parts[1] === 'scripts' && parts[2] && parts[3] === 'comments') {
-            return handleComments(req, res, parts, query);
+            return await handleComments(req, res, parts, query);
         }
 
         // Route: /film/comments/:id (update/delete)
         if (parts[1] === 'comments' && parts[2]) {
-            return handleComments(req, res, parts, query);
+            return await handleComments(req, res, parts, query);
         }
 
         // Route: /film/notes/:id (update/delete)
         if (parts[1] === 'notes') {
-            return handleNotes(req, res, parts, query);
+            return await handleNotes(req, res, parts, query);
         }
 
         // Route: /film/shots/:id/storyboard/regenerate
@@ -1373,7 +1371,7 @@ const server = http.createServer(async (req, res) => {
 
         // Route: /film/shots/:id/qa/run
         if (parts[1] === 'shots' && parts[2] && parts[3] === 'qa') {
-            return handleQA(req, res, parts, query);
+            return await handleQA(req, res, parts, query);
         }
 
         // Route: /film/shots/:id/notes, /film/shots/:id/review,
@@ -1383,10 +1381,10 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'shots' && parts[2] && parts[3]) {
             const sub = parts[3];
             if (sub === 'notes' || sub === 'review') {
-                return handleNotes(req, res, parts, query);
+                return await handleNotes(req, res, parts, query);
             }
             if (sub === 'render' || sub === 'renders' || sub === 'versions' || sub === 're-render') {
-                return handleRenderLedger(req, res, parts, query);
+                return await handleRenderLedger(req, res, parts, query);
             }
             if (sub === 'storyboard') {
                 return await handleStoryboard(req, res, parts, query);
@@ -1406,12 +1404,12 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/events — an SSE stream that fires when another process
         // (the MCP server) has written to the database.
         if (parts[1] === 'events' && !parts[2]) {
-            return handleEvents(req, res);
+            return await handleEvents(req, res);
         }
 
         // Route: /film/settings — who is using the app, not what they are making.
         if (parts[1] === 'settings' && !parts[2]) {
-            return handleAppSettings(req, res);
+            return await handleAppSettings(req, res);
         }
 
         // Route: /film/card-vocabulary — the lists a scene card may draw on.
@@ -1509,5 +1507,16 @@ function start() {
         console.log('          /film/audio/*, /film/video/*, /film/music/*, /film/*/refsheet');
     });
 }
+
+/*
+ * A route that fails asynchronously must cost one request, never the server.
+ * Every dispatch above is awaited so its own catch answers 500; this is the
+ * floor under anything that still escapes (a timer, a detached promise). On
+ * Node 15+ an unhandled rejection otherwise terminates the process, taking
+ * every page and every MCP call with it.
+ */
+process.on('unhandledRejection', err => {
+    console.error('Unhandled rejection (the request that caused it failed; the server stays up):', err);
+});
 
 start();

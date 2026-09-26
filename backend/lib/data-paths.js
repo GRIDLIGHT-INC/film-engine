@@ -213,7 +213,5 @@ function repairPaths(db, opts) {
     return report;
 }
 
-module.exports = {
-    DATA_DIR, PATH_COLUMNS, NOT_PATHS, SUBDIRS,
-    toStored, resolveStored, storedExists, repairPaths, tailOf,
-};
+module.exports = {    DATA_DIR, PATH_COLUMNS, NOT_PATHS,
+    toStored, resolveStored, storedExists, repairPaths, tailOf,};

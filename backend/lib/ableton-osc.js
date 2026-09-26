@@ -341,7 +341,5 @@ function createAbletonClient(opts) {
     };
 }
 
-module.exports = {
-    ABLETONOSC_PIN, LIVE_SUPPORTED, OSC_PORTS, OSC_ADDRESSES, SIDECAR_OPS, UNSUPPORTED,
-    markerOf, markerIn, withMarker, checkArgs, createAbletonClient,
-};
+module.exports = {    ABLETONOSC_PIN, LIVE_SUPPORTED, OSC_PORTS, OSC_ADDRESSES, SIDECAR_OPS, UNSUPPORTED,
+    markerOf, markerIn, withMarker, createAbletonClient,};

@@ -10,6 +10,7 @@
  * GET  /film/storyboards/:projectId/:filename           — Serve storyboard image
  */
 
+const { pipeFile } = require('../lib/file-storage');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -20,7 +21,6 @@ const { buildShotReferencePayload, applyConsistencyToImagePayload, recordConsist
 const { resolveGenerator } = require('../lib/providers');
 const { spendContext } = require('../lib/provider-config');
 const { imageOverride, promptOverride } = require('../lib/generation-override');
-const { selectReferences } = require('../lib/reference-images');
 const { generateImageWithFallback, imageProviderChain } = require('../lib/image-fallback');
 // Moved to a lib so the orchestrated payload path can gather the same plates.
 // While it lived here, only the three board paths could reach it, and every
@@ -32,14 +32,13 @@ const {
 const { endpointFor: gridlightEndpointFor } = require('../lib/providers/gridlight-adapter');
 const { extractMediaUrl, resolveMediaUrl, isGatewayUrl } = require('../lib/provider-media');
 const {
-    imageRequestPayload, providerConfigOf, loadShotContext, buildCapabilityPayload,
+    imageRequestPayload, loadShotContext, buildCapabilityPayload,
     buildImagePayloadForAdapter,
 } = require('../lib/capability-payloads');
 const { loadBlocking, approvalState } = require('./previs');
 const { effectiveCamera } = require('../lib/previs-blocking');
 const { filmOptics } = require('../lib/look-development');
 
-const os = require('os');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Where a project's frames live is file-storage's decision (a project folder,
 // or the old data/<kind>/<project> layout) — never recomputed here.
@@ -158,7 +157,7 @@ function fileCollectedFrame({ shotId, sourcePath, provider, providerModel, jobId
         catch (_) { /* never fails a delivery: store it as it arrived */ }
     }
     fs.writeFileSync(imgPath, bytes);
-    if (path.resolve(sourcePath) !== path.resolve(imgPath)) { try { fs.unlinkSync(sourcePath); } catch (_) {} }
+    if (path.resolve(sourcePath) !== path.resolve(imgPath)) { try { fs.unlinkSync(sourcePath); } catch (e) { console.error('[storyboard] could not remove a temporary file:', e.message); } }
     const asset = registerStoryboardAsset(shot.project_id, shot.id, imgPath, `${shot.shot_code}.png`, {
         provider: provider || null, provider_model: providerModel || null,
         direction_mode: directionMode || 'action',
@@ -323,7 +322,7 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
         raster: fitted.conformed
             ? { conformed: true, from: fitted.from, to: fitted.to }
             : (fitted.reason ? { conformed: false, got: fitted.got || null, reason: fitted.reason } : null),
-        provider: result.provider || provider.id,
+        provider: result.provider || 'unknown',
         model: result.provider_model || requestBody.model,
     };
 }
@@ -861,11 +860,14 @@ function serveStoryboardImage(res, projectId, filename, width) {
                 'Cache-Control': 'public, max-age=86400',
                 'X-Thumbnail': thumb ? 'hit' : 'source',
             });
-            fs.createReadStream(serving).pipe(res);
+            pipeFile(serving, res);
         }).catch(() => {
+            // Headers already out means the thumbnail itself was being sent;
+            // starting a second response would throw ERR_HTTP_HEADERS_SENT.
+            if (res.headersSent) { if (!res.writableEnded) res.end(); return; }
             res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream',
                 'Cache-Control': 'public, max-age=3600' });
-            fs.createReadStream(filePath).pipe(res);
+            pipeFile(filePath, res);
         });
     }
 
@@ -873,7 +875,7 @@ function serveStoryboardImage(res, projectId, filename, width) {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',
         'Cache-Control': 'public, max-age=3600',
     });
-    fs.createReadStream(filePath).pipe(res);
+    pipeFile(filePath, res);
 }
 
 // ── FILM-019: Get Storyboard ───────────────────────────────────────

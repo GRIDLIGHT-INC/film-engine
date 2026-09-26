@@ -14,13 +14,12 @@
  * picked up by the pipeline and ship a reading the director was only trying.
  */
 
+const { pipeFile } = require('../lib/file-storage');
 const crypto = require('crypto');
 const { db, generateId } = require('../db/database');
 const VC = require('../lib/voice-casting');
 const { resolveGenerator } = require('../lib/providers');
-const { providerConfigOf } = require('../lib/provider-config');
 const { saveFile, getFileUrl } = require('../lib/file-storage');
-const { buildVoicePayload } = require('../lib/dialogue-builder');
 
 function json(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -486,7 +485,7 @@ async function runTableRead(req, res, sceneId) {
         const key = lineKey(line, voice_id);
         const existingName = `read_${sceneId}_${line.index}_${key}.mp3`;
         let existingPath = null;
-        try { existingPath = getFilePath(found.scene.project_id, 'auditions', existingName); } catch (_) {}
+        try { existingPath = getFilePath(found.scene.project_id, 'auditions', existingName); } catch (e) { console.error('[voice-casting] getFilePath failed; carrying on without existingPath:', e.message); }
         if (!(req.body && req.body.regenerate === true) && existingPath && fs.existsSync(existingPath)) {
             reused++;
             out.push({ ...line, voice_id, cast: !!voice_id, reused: true,
@@ -563,7 +562,7 @@ function serveAudition(req, res, projectId, fileName) {
         'Content-Length': fs.statSync(filePath).size,
         'Cache-Control': 'no-store',
     });
-    fs.createReadStream(filePath).pipe(res);
+    pipeFile(filePath, res);
 }
 
 /* ── routing ───────────────────────────────────────────────────────────── */

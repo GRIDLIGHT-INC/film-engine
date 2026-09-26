@@ -12,7 +12,6 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 const { execFile } = require('child_process');
 const { resolveFfmpeg } = require('./ffmpeg');
 

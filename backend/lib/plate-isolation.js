@@ -224,7 +224,5 @@ function projectMedium(projectId, database) {
     }
 }
 
-module.exports = {
-    ISOLATED_KINDS, ISOLATION_CLAUSE, ISOLATION_NEGATIVE, isolationNegativeFor,
-    subjectPlateOpening, projectMedium, mediumFromStyle, MEDIUM_WORDS, DEFAULT_MEDIUM,
-};
+module.exports = {    ISOLATED_KINDS, ISOLATION_CLAUSE, isolationNegativeFor,
+    subjectPlateOpening, projectMedium, mediumFromStyle, DEFAULT_MEDIUM,};

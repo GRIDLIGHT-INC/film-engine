@@ -44,7 +44,8 @@ function getCredential(providerId) {
     const envKey = process.env[`${String(providerId).toUpperCase()}_API_KEY`];
     let apiKey = envKey || '';
     let meta = {};
-    if (!apiKey || true) {
+    // Always read the stored row: an env key still takes the stored meta.
+    {
         const db = database();
         let row = db.prepare('SELECT api_key, meta FROM film_provider_credentials WHERE provider = ?').get(providerId);
         /*

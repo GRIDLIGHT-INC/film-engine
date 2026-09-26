@@ -334,7 +334,5 @@ function proposalFrom(solved, opts) {
     };
 }
 
-module.exports = {
-    MARKS, ESTIMATES, APPLIES, NEVER_APPLIES, MARK_WEIGHT, DEFAULT_SENSOR,
-    solveMatch, proposalFrom, confidenceFor, marksPresent,
-};
+module.exports = {    MARKS, ESTIMATES, APPLIES, NEVER_APPLIES, DEFAULT_SENSOR,
+    solveMatch, proposalFrom,};

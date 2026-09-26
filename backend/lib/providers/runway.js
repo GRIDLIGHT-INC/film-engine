@@ -1116,22 +1116,16 @@ const adapter = {
     },
 };
 
-module.exports = {
-    buildVideoRequest,
+module.exports = {    buildVideoRequest,
     estimateVideoCredits, quoteVideo, checkBudget, USD_PER_CREDIT,
     describeVideoRequest,
-    KNOWN_VIDEO_MODELS,
-    KNOWN_IMAGE_MODELS,
     pickModel,
     IMAGE_RATIOS,
     snapImageRatio,
     adapter,
     buildVideoRequest,
     buildImageRequest,
-    pickRatio,
-    clampDuration,
     normalizeSeed,
-    normalizeReferenceImages,
     mapTaskStatus,
     isRetryable,
     extractOutputUrl,
@@ -1141,10 +1135,7 @@ module.exports = {
     supports,
     VIDEO_RATIOS,
     TASK_STATUSES,
-    RUNWAY_VERSION,
     RUNWAY_VIDEO_MODELS,
     buildRunwayMotionPrompt,
     buildMultiShotRequest,
-    durationForModel,
-    estimateVideoCredits,
-};
+    estimateVideoCredits,};

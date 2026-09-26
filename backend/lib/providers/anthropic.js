@@ -154,16 +154,23 @@ async function callAnthropic(body, apiKey, opts = {}) {
  * under the default display setting, so relaying them would emit nothing and
  * look like a stall.
  */
-async function streamAnthropic(body, apiKey, callbacks = {}) {
+async function streamAnthropic(body, apiKey, callbacks = {}, res = null) {
     const cb = callbacks || {};
+    // The AbortError branch below had nothing that could ever abort: a
+    // browser that left kept the model generating to the end. Abort when the
+    // response closes, as the gateway stream already does.
+    const controller = new AbortController();
+    if (res && typeof res.on === 'function') res.on('close', () => controller.abort());
     let response;
     try {
         response = await fetch(`${BASE_URL()}/messages`, {
             method: 'POST',
             headers: headers(apiKey),
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
     } catch (err) {
+        if (err.name === 'AbortError') return { ok: false, finalData: null, error: 'client_disconnected', aborted: true };
         const error = `anthropic request failed: ${err.message}`;
         if (cb.onError) cb.onError({ error });
         return { ok: false, finalData: null, error };
@@ -330,7 +337,7 @@ const adapter = {
             if (callbacks && callbacks.onError) callbacks.onError({ error });
             return { ok: false, finalData: null, error };
         }
-        return streamAnthropic(body, apiKey, callbacks);
+        return streamAnthropic(body, apiKey, callbacks, res);
     },
 };
 

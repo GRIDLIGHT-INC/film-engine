@@ -110,13 +110,6 @@ function plateSize(aspect) {
 }
 
 /** One line a report or a confirmation can print. */
-function describeStandard() {
-    return `${HOUSE.label} via MuAPI — storyboard frames ${SIZES.storyboard.label} `
-        + `(${SIZES.storyboard.width}x${SIZES.storyboard.height}), plates ${SIZES.plate.label} `
-        + `(${SIZES.plate.longEdge}px long edge)`;
-}
 
-module.exports = {
-    HOUSE, STANDARD_MODELS, STANDARD_PROVIDERS, SIZES, PLATE_KINDS,
-    standardModelFor, isStandardProvider, storyboardSize, plateSize, describeStandard,
-};
+module.exports = {    HOUSE, STANDARD_MODELS, STANDARD_PROVIDERS, SIZES, PLATE_KINDS,
+    standardModelFor, isStandardProvider, storyboardSize, plateSize,};

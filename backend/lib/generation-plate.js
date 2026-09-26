@@ -201,8 +201,6 @@ function decodePlateImage(dataUri) {
     return { ok: true, bytes };
 }
 
-module.exports = {
-    SPENDS, PLATE_OUTPUTS, WHY_NOT_FINGERPRINTED, DIRECTION_WORDS,
+module.exports = {    SPENDS, PLATE_OUTPUTS, WHY_NOT_FINGERPRINTED,
     platePromptLead, plateSizeFor, buildPlateRecord, plateState, moveProse,
-    decodePlateImage, PNG_MAGIC,
-};
+    decodePlateImage,};

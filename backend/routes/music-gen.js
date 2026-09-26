@@ -13,9 +13,9 @@
 
 const { db, generateId } = require('../db/database');
 const { callGridlight, serviceUnavailableError } = require('../lib/gridlight-client');
-const { saveFile, getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
+const { getFileUrl, ensureDir, serveFile } = require('../lib/file-storage');
 const { persistProviderMedia } = require('../lib/provider-media');
-const { buildMusicPrompt, buildSFXPrompts, buildAmbientPrompt } = require('../lib/music-prompt');
+const { buildSFXPrompts, buildAmbientPrompt } = require('../lib/music-prompt');
 const { buildMixPayload, calculateDucking, buildStemExport, generateSRT } = require('../lib/audio-mixer');
 const { resolve, get } = require('../lib/providers');
 const { providerConfigFor, spendContext } = require('../lib/provider-config');
@@ -897,7 +897,7 @@ async function generateSFX(req, res, shotId) {
     const sfxProvider = resolveGenerator('sfx', spendContext({ id: scene.project_id }, shot, scene, cueOverride(req, 'sfx')));
 
     let sceneCard = {};
-    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+    try { sceneCard = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[music-gen] stored sceneCard is not valid JSON; using the default:', e.message); }
 
     const sfxPayloads = buildSFXPrompts(sceneCard, scene);
     if (sfxPayloads.length === 0) {
@@ -1517,7 +1517,7 @@ function exportSRT(req, res, projectId) {
 
     for (const shot of shots) {
         let card = {};
-        try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (_) {}
+        try { card = JSON.parse(shot.scene_card_yaml || '{}'); } catch (e) { console.error('[music-gen] stored card is not valid JSON; using the default:', e.message); }
         const dialogue = card.dialogue || [];
         const shotDur = shot.duration_ms || 4000;
         const lineInterval = dialogue.length > 0 ? shotDur / dialogue.length : shotDur;

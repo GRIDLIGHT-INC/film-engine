@@ -64,7 +64,6 @@ const { handleVideoGen } = require('../routes/video-gen');
 const { handleVoice } = require('../routes/voice');
 const { handleSequences } = require('../routes/sequences');
 const { handleAnnotations } = require('../routes/annotations');
-const { handleBreakdown } = require('../routes/breakdown');
 const { handlePrevis } = require('../routes/previs');
 const { handleThreeD } = require('../routes/threed');
 const { handleProductionReports } = require('../routes/production-reports');
@@ -3854,7 +3853,6 @@ const PRODUCTION_TOOLS = [
                     + 'refine means "keep this picture", and a second image arriving uninvited is what pulls '
                     + 'a refine back toward a fresh generation. Refused if no anchor has a frame.',
             },
-            shot_id: { type: 'string' },
             instruction: { type: 'string', description: 'The one change, in a sentence. Everything else is kept.' },
             version: { type: 'number', description: 'Refine this stored version instead of the current frame.' },
             use_annotations: {
@@ -5233,8 +5231,6 @@ function isFailure(result) {
     return result.ok === false;
 }
 
-module.exports = {
-    listTools, buildTools: listTools, hasTool, callTool, isFailure, presentResult,
-    toolNameForNodeType, normalizeInputs, callRoute,
-    NODE_TOOL_PREFIX, ROUTE_TOOLS, PRODUCTION_TOOLS, BATCH_TOOLS, ALL_ROUTE_TOOLS, SSE_EXCEPTION,
-};
+module.exports = {    listTools, buildTools: listTools, hasTool, callTool, isFailure, presentResult,
+    toolNameForNodeType, callRoute,
+    NODE_TOOL_PREFIX, ROUTE_TOOLS, PRODUCTION_TOOLS, BATCH_TOOLS, ALL_ROUTE_TOOLS, SSE_EXCEPTION,};

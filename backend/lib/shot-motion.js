@@ -582,9 +582,7 @@ function attachTracks(db, projectId, timeline) {
     return timeline;
 }
 
-module.exports = {
-    TRACK_FRAMES, CROP_LIMIT, PERCEPTIBLE, REFERENCE_DISTANCE_M, wordAmount,
-    screenAt, aimVector, cropFor, cardStage, stagedDistance,
+module.exports = {    REFERENCE_DISTANCE_M, wordAmount,
+    screenAt, aimVector, stagedDistance,
     motionTrack, transformAt, cssTransform,
-    rowToBlocking, blockingFor, loadShotMotion, attachTracks,
-};
+    rowToBlocking, blockingFor, loadShotMotion, attachTracks,};

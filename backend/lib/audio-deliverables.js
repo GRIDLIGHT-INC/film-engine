@@ -150,15 +150,9 @@ function validateAudioDeliverable(fields) {
     return { valid: errors.length === 0, errors };
 }
 
-module.exports = {
-    DELIVERABLE_TYPES,
-    DELIVERABLE_TYPE_IDS,
-    CHANNEL_LAYOUTS,
-    SAMPLE_RATES,
-    BIT_DEPTHS,
+module.exports = {    DELIVERABLE_TYPES,
     LUFS_TARGETS,
     generate51Specification,
     generateMESpec,
     generateStemManifest,
-    validateAudioDeliverable,
-};
+    validateAudioDeliverable,};

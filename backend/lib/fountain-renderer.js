@@ -337,7 +337,7 @@
 
         if (otherFields.length > 0) {
             lines.push('<div class="sp-title-page-contact">');
-            for (const [key, value] of otherFields) {
+            for (const [, value] of otherFields) {
                 lines.push(`<div class="sp-title-page-item">${escapeHTML(value)}</div>`);
             }
             lines.push('</div>');

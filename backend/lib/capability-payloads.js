@@ -426,10 +426,6 @@ function videoAdapter(project) {
     }
 }
 
-function videoReferenceContract(project) {
-    const adapter = videoAdapter(project);
-    return (adapter && adapter.referenceContract) || undefined;
-}
 
 function imagePromptLimit(project) {
     try {
@@ -1450,8 +1446,7 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
     return { path, subdir };
 }
 
-module.exports = {
-    imageBudget,
+module.exports = {    imageBudget,
     imagePromptLimit,
     buildImagePayloadForAdapter,
     withTierModel,
@@ -1459,14 +1454,8 @@ module.exports = {
     IMAGE_DEFAULTS,
     gridUnitFor,
     CAPABILITY_BUILDERS,
-    preconditionError,
     buildCapabilityPayload,
     loadShotContext,
     persistCapabilityResult,
     imageRequestPayload,
-    providerConfigOf,
-    tagSpend,
-    IMAGE_DEFAULTS,
-    dimensionsForAspect,
-    DEFAULT_POST_JOB_TYPE,
-};
+    providerConfigOf,};

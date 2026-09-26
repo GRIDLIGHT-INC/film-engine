@@ -153,7 +153,7 @@ function generateVTT(cues, options = {}) {
 
         // Apply style (bold, italic, color)
         let style = {};
-        try { style = typeof cue.style === 'string' ? JSON.parse(cue.style) : (cue.style || {}); } catch (_) {}
+        try { style = typeof cue.style === 'string' ? JSON.parse(cue.style) : (cue.style || {}); } catch (e) { console.error('[subtitle-generator] stored style is not valid JSON; using the default:', e.message); }
         if (style.bold) text = `<b>${text}</b>`;
         if (style.italic) text = `<i>${text}</i>`;
         if (style.color) text = `<c.${style.color}>${text}</c>`;
@@ -229,8 +229,7 @@ function vttToSrt(vtt) {
     return generateSRT(cues);
 }
 
-module.exports = {
-    generateSRT,
+module.exports = {    generateSRT,
     parseSRT,
     generateVTT,
     parseVTT,
@@ -239,6 +238,4 @@ module.exports = {
     msToSrtTime,
     msToVttTime,
     srtTimeToMs,
-    vttTimeToMs,
-    VTT_POSITIONS,
-};
+    vttTimeToMs,};

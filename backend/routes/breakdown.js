@@ -385,6 +385,7 @@ async function breakdownStream(req, res, projectId) {
             }
         };
 
+        if (clientGone) return;
         const result = await streamProjectLLM(project, { question: fullQuestion, stream: true }, res, {
             onToken: (text) => {
                 accumulated += text;
@@ -393,6 +394,9 @@ async function breakdownStream(req, res, projectId) {
             onComplete: (data) => parseAndSend(data.answer || accumulated),
             onError: (data) => sendEvent('error', { message: data.error || 'AI service returned error' }),
         });
+        // Nobody is listening: do not parse or auto-save shots for a request
+        // the browser abandoned.
+        if (clientGone) return;
         if (!result.ok && !result.aborted) sendEvent('error', { message: result.error || 'AI service returned error' });
         if (result.ok && !parsedSent) parseAndSend(result.finalData && result.finalData.answer);
 
