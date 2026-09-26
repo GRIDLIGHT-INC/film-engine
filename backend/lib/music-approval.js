@@ -236,7 +236,24 @@ function scoreMixArgs(input, placements, output, opts) {
     if (o.silentBaseSeconds) args.push('-f', 'lavfi', '-t', String(o.silentBaseSeconds), '-i', 'anullsrc=r=48000:cl=stereo');
     const base = o.silentBaseSeconds ? `[${placements.length + 1}:a]` : '[0:a]';
     const parts = [`${base}${fmt}[f]`];
-    placements.forEach((p, i) => parts.push(`[${i + 1}:a]${fmt},adelay=${Math.round(p.offset_ms)}|${Math.round(p.offset_ms)}[s${i}]`));
+    /*
+     * A placement may also carry how much of the file plays, its fades and its
+     * level (the engine's own dialogue and scene beds do; an approved score is
+     * the mix and carries none of them, so its chain is exactly what it was).
+     */
+    const shape = p => {
+        const f = [];
+        const play = Number(p.play_ms) > 0 ? Number(p.play_ms) / 1000 : null;
+        if (play) f.push(`atrim=0:${play.toFixed(3)}`, 'asetpts=PTS-STARTPTS');
+        if (Number(p.fade_in_ms) > 0) f.push(`afade=t=in:st=0:d=${(Number(p.fade_in_ms) / 1000).toFixed(3)}`);
+        if (Number(p.fade_out_ms) > 0 && play) {
+            const d = Math.min(Number(p.fade_out_ms) / 1000, play);
+            f.push(`afade=t=out:st=${Math.max(0, play - d).toFixed(3)}:d=${d.toFixed(3)}`);
+        }
+        if (Number.isFinite(Number(p.gain_db)) && Number(p.gain_db) !== 0) f.push(`volume=${Number(p.gain_db)}dB`);
+        return f.length ? `,${f.join(',')}` : '';
+    };
+    placements.forEach((p, i) => parts.push(`[${i + 1}:a]${fmt}${shape(p)},adelay=${Math.round(p.offset_ms)}|${Math.round(p.offset_ms)}[s${i}]`));
     parts.push(`[f]${placements.map((_, i) => `[s${i}]`).join('')}amix=inputs=${placements.length + 1}:normalize=0:duration=first:dropout_transition=0[a]`);
     args.push('-filter_complex', parts.join(';'), '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output);
     return args;
@@ -253,7 +270,7 @@ function mixScoreIntoFilm(filmPath, placements, opts) {
     const r = require('child_process').spawnSync(found.bin, scoreMixArgs(filmPath, placements, tmp, { silentBaseSeconds }), { encoding: 'utf8', timeout: o.timeoutMs || 600000 });
     if (r.status !== 0 || !fs.existsSync(tmp)) {
         try { fs.unlinkSync(tmp); } catch (_) { /* nothing written */ }
-        return { ok: false, error: `mixing the approved score into the film failed: ${String(r.stderr || r.error || '').trim().split('\n').slice(-2).join(' ')}` };
+        return { ok: false, error: `mixing the film's sound into the master failed: ${String(r.stderr || r.error || '').trim().split('\n').slice(-2).join(' ')}` };
     }
     fs.renameSync(tmp, filmPath);
     return { ok: true };

@@ -415,6 +415,7 @@ film-engine/
 │       ├── board-grouping.test.js      # Every axis groups the whole board; setups share conditioning
 │       ├── look-specs.test.js          # Board specs reach previs and project settings; images become references
 │       ├── conform.test.js             # Every shot contributes one clip; a missing shot refuses
+│       ├── conform-sound.test.js       # The master carries the film's own dialogue, score and ambience — measured, not grepped
 │       ├── project-delete.test.js      # A worked-on project deletes, and takes every child with it
 │       ├── prompt-budget.test.js       # Plates are photographs, not documents; prose drops only where tags bind
 │       ├── provider-prompt-limit.test.js # Each provider's own ceiling; allowances scale with it
@@ -3635,6 +3636,8 @@ Served at `GET /projects/:id/spend`, `GET /projects/:id/spend/usage`, `POST /pro
 
 `lib/conform.js` plans the film: which cut of each shot ships (`video_final` > `video_synced` > `video_raw`, so a graded shot is never conformed from its raw clip), in timeline order, with the project audio mix as master when one exists and the clips' own audio when it does not — inventing a silent track would deliver a mute film that looks successful. **A missing shot refuses the conform**: a film that renders while missing shot 7 plays fine and is wrong, and nobody finds out until somebody watches all of it.
 
+**The master carries the film's own sound.** It kept only the sound inside the clips, so a film whose dialogue, score and ambience were all generated here was assembled SILENT — every file played in Playback and reached the NLE lanes, and none reached the master. `engineSound()` reads the placements off the same timeline Playback plays (`routes/timeline.loadTimeline`) and maps them onto the conform's own cut: each shot's lines from its start with the card's pauses, and each scene bed at its offset with the cue's level and fades, stopped where the scene ends. Dialogue is laid only under a clip with NO sound of its own — Playback does the same, because a clip can carry its own speech and laying both says every line twice. An approved score session keeps its own placement and the scene music it replaces is already out of the timeline; a finished project mix is the soundtrack and nothing is laid over it. One ffmpeg pass lays all of it (`scoreMixArgs`, which now takes a length, fades and a level per placement). `tests/conform-sound.test.js` MEASURES the file: silence before a line, the line where its shot plays, a bed's level in dB.
+
 **Planning is pure and separate from executing**, which is what makes the feature testable at all: conforming needs a media tool this repo deliberately does not depend on, and ffmpeg is not installed on the machine this was written on. `availableExecutors()` probes rather than assumes — local ffmpeg, or the provider stitch path — and reports why each is unavailable. `buildFfmpegArgs` returns an argument **array**, never a shell string, since file paths and titles come from the database.
 
 ### Deleting a Project (and a bug that hid behind empty ones)
@@ -6280,6 +6283,7 @@ node --test backend/tests/prompt-control.test.js
 node --test backend/tests/board-grouping.test.js
 node --test backend/tests/look-specs.test.js
 node --test backend/tests/conform.test.js
+node --test backend/tests/conform-sound.test.js
 node --test backend/tests/project-delete.test.js
 node --test backend/tests/prompt-budget.test.js
 node --test backend/tests/provider-prompt-limit.test.js

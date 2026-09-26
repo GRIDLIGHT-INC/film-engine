@@ -22,8 +22,8 @@ const { execFileSync, spawnSync } = require('child_process');
  * scene music on both scenes, and a session over scene 2's sequence whose
  * bounce is a real render. Scene 1 keeps its legacy music; scene 2's legacy
  * music is dropped under the approved score, which starts exactly where scene
- * 2's first shot starts. The master is MEASURED: silent before the score,
- * the score's tone after.
+ * 2's first shot starts. The master is MEASURED: scene 1's own music before
+ * the score, the score's tone after.
  */
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
@@ -256,7 +256,13 @@ const PROBES = {
         const out = await conform.runConform(f.projectId, { filename: 'scored_master' });
         assert.ok(out.ok, out.error);
         const before = meanDb(out.output, 0.5, 3), during = meanDb(out.output, 4.5, 3);
-        assert.ok(before === null || before < -60, `the film is not silent before the score (${before} dB)`);
+        // Scene 1 is not under the score, so its own music plays there: the
+        // conform lays the film's generated sound as Playback does
+        // (tests/conform-sound.test.js). It used to be silent because NO
+        // generated sound reached the master at all.
+        assert.ok(before !== null && before > -45, `scene 1's own music is not in the master before the score (${before} dB)`);
+        assert.ok(!(plan.sound.placements || []).some(p => p.kind === 'music' && p.scene_id === f.scene[1]),
+            'scene 2\'s legacy music is laid under the approved score');
         assert.ok(during !== null && during > -45, `the score is not in the master where it belongs (${during} dB)`);
         assert.ok(Math.abs(inspectMedia(out.output).durationSeconds - 8) < 0.3, 'the score changed the film\'s length');
     },
