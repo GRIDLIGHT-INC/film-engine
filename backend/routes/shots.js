@@ -111,6 +111,22 @@ function mergeBlock(existing, incoming) {
  */
 const SHOT_STATUSES = Object.freeze(['pending', 'generating', 'complete', 'failed', 'approved']);
 
+/**
+ * The length a card ASKS for, in milliseconds.
+ *
+ * The card format says `duration_seconds` — it is what shot_create documents,
+ * what the schema validates and what every agent writes — and the insert read
+ * only `duration_ms`. So every shot created from a card was stored at 0 and
+ * played at the timeline's four-second default, and a score for a scene with no
+ * footage yet had nothing to measure but its dialogue.
+ */
+function cardDurationMs(card) {
+    const c = card || {};
+    if (Number(c.duration_ms) > 0) return Math.round(Number(c.duration_ms));
+    if (Number(c.duration_seconds) > 0) return Math.round(Number(c.duration_seconds) * 1000);
+    return 0;
+}
+
 function updateShotCard(req, res, shotId) {
     const shot = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) {
@@ -162,6 +178,10 @@ function updateShotCard(req, res, shotId) {
 
     if (changed.length) {
         db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shotId);
+        // A card whose length changed carries it to the column the timeline reads.
+        if (cardDurationMs(card) > 0) {
+            db.prepare('UPDATE film_shots SET duration_ms = ? WHERE id = ?').run(cardDurationMs(card), shotId);
+        }
     }
 
     /*
@@ -347,7 +367,7 @@ function insertShotAfter(req, res, afterShotId) {
             db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms, sort_order, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)`)
                 .run(newId, scene.id, newCode, JSON.stringify(card),
-                    card.duration_ms || 0, at + 1, new Date().toISOString());
+                    cardDurationMs(card), at + 1, new Date().toISOString());
             // The new shot takes the next position; everything after it moves
             // down one. Order is what changed — the CODES deliberately did not.
             following.forEach((sib, i) => {
@@ -610,7 +630,7 @@ function createShots(req, res) {
         const cardYaml = JSON.stringify(card, null, 2);
         const now = new Date().toISOString();
 
-        insertStmt.run(shotId, body.scene_id, card.shot_code, cardYaml, card.duration_ms || 0, now);
+        insertStmt.run(shotId, body.scene_id, card.shot_code, cardYaml, cardDurationMs(card), now);
         stampShot(shotId, body.scene_id);
         inserted.push(selectStmt.get(shotId));
     }

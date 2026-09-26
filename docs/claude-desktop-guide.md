@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**367 tools, 76 families.** Everything the app can do, you can ask for in a
+**368 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -172,6 +172,11 @@ so a reading you were trying out can never be mistaken for the take that ships.
 `table_read` does a whole scene, each character in their cast voice, before the
 breakdown. Both have free previews: `voice_audition_preview` and
 `table_read_get`.
+
+`voice_generate` makes the take that ships: every line on one shot's card, in
+each character's cast voice, stored as that shot's dialogue for playback, the
+NLE sound lanes and the conform. An unchanged line is reused rather than bought
+again; pass `regenerate` for a new take of every line.
 
 An uncast character is not an error: their lines generate in the provider's
 default voice, which sounds like a decision rather than an omission. Cast

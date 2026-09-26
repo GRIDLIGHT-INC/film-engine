@@ -91,6 +91,88 @@ function storyboardVersionPath(projectId, shotCode, version) {
  * Never throws: failing to archive an old attempt must not fail a generation
  * that has already succeeded and been paid for.
  */
+/**
+ * WHAT A FRAME GENERATION IS FOR, written onto its handle.
+ *
+ * Nano Banana Pro at 4K routinely outruns the agent host's sixty seconds, so a
+ * frame asked for over MCP comes back as a handle. The plate roads stamped what
+ * they were for and could be filed on collect; a storyboard frame did not, so
+ * collecting it wrote `collected_<job>.png` into the storyboard folder — a
+ * finished, billed frame the board never showed. Only the paths that write the
+ * shot's LIVE frame stamp this: an in-between station is a different file.
+ */
+function frameJobMeta(shotId, payload, extra) {
+    return { jobMeta: { storyboard_frame: {
+        shot_id: shotId,
+        prompt: payload && payload.prompt ? String(payload.prompt).slice(0, 4000) : '',
+        negative_prompt: payload && payload.negative_prompt ? String(payload.negative_prompt).slice(0, 2000) : '',
+        seed: payload && payload.seed != null ? payload.seed : null,
+        // The raster that was ASKED for, so a collected frame is conformed to it
+        // exactly as the live road conforms one (lib/board-raster).
+        width: payload && Number(payload.width) > 0 ? Number(payload.width) : null,
+        height: payload && Number(payload.height) > 0 ? Number(payload.height) : null,
+        // How it was directed, so the version this becomes can say so.
+        direction_mode: (extra && extra.direction_mode) || 'action',
+    } } };
+}
+
+/**
+ * File a frame that arrived after its call was abandoned, exactly as the live
+ * road would have: archive what the shot shows, write the live frame, register
+ * a new version. `sourcePath` is where the collected bytes were stored.
+ */
+function fileCollectedFrame({ shotId, sourcePath, provider, providerModel, jobId, prompt, negativePrompt, seed,
+    width, height, directionMode }) {
+    const shot = db.prepare(`SELECT sh.id, sh.shot_code, sh.aspect_ratio AS shot_aspect, s.project_id,
+            p.aspect_ratio AS project_aspect, p.board_locked_at FROM film_shots sh
+        JOIN film_scenes s ON s.id = sh.scene_id JOIN film_projects p ON p.id = s.project_id
+        WHERE sh.id = ?`).get(shotId);
+    if (!shot) return { ok: false, error: `shot ${shotId} no longer exists` };
+    if (!sourcePath || !fs.existsSync(sourcePath)) return { ok: false, error: 'the collected frame is not on disk' };
+    /*
+     * A locked board is not re-pointed by a frame that arrives late either.
+     * The bytes stay where the collect stored them, so unlocking and collecting
+     * again files them — nothing is lost and nothing is bought twice.
+     */
+    const locked = boardLocked({ board_locked_at: shot.board_locked_at });
+    if (locked) {
+        return { ok: false, code: 'BOARD_LOCKED', error: `${locked.error} The collected frame is kept at `
+            + `${path.basename(sourcePath)}; unlock the board and collect this job again to put it on ${shot.shot_code}.` };
+    }
+    const imgPath = storyboardImagePath(shot.project_id, shot.shot_code);
+    archiveExistingFrame(shot.project_id, shot.id, shot.shot_code);
+    fs.mkdirSync(path.dirname(imgPath), { recursive: true });
+    // Conformed to the raster that was asked for — the live road does this in
+    // callImageGen, and a collected frame skipping it arrives at the provider's
+    // own tier (5504x3072 from MuAPI's 4K) instead of the board's size. A handle
+    // stamped before the ask was recorded falls back to the house standard for
+    // the shot's own shape.
+    let want = (Number(width) > 0 && Number(height) > 0) ? { width: Number(width), height: Number(height) } : null;
+    if (!want) {
+        try { want = require('../lib/image-standard').storyboardSize(shot.shot_aspect || shot.project_aspect || '16:9'); }
+        catch (_) { want = null; }
+    }
+    let bytes = fs.readFileSync(sourcePath);
+    if (want) {
+        try { bytes = require('../lib/board-raster').conformBoardBuffer(bytes, want).buffer || bytes; }
+        catch (_) { /* never fails a delivery: store it as it arrived */ }
+    }
+    fs.writeFileSync(imgPath, bytes);
+    if (path.resolve(sourcePath) !== path.resolve(imgPath)) { try { fs.unlinkSync(sourcePath); } catch (_) {} }
+    const asset = registerStoryboardAsset(shot.project_id, shot.id, imgPath, `${shot.shot_code}.png`, {
+        provider: provider || null, provider_model: providerModel || null,
+        direction_mode: directionMode || 'action',
+        collected_from_job: jobId || null,
+    });
+    try {
+        logToRenderLedger(shot.id, { model: providerModel, provider, seed, prompt,
+            negative_prompt: negativePrompt, output_path: imgPath, mode: 'creative' });
+    } catch (_) { /* the ledger never fails a delivery */ }
+    db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('complete', shot.id);
+    return { ok: true, asset_id: asset.id, shot_id: shot.id, shot_code: shot.shot_code,
+        file_path: imgPath, image_url: storyboardImageUrl(shot.project_id, shot.shot_code) };
+}
+
 function archiveExistingFrame(projectId, shotId, shotCode) {
     try {
         const current = storyboardImagePath(projectId, shotCode);
@@ -168,7 +250,7 @@ async function imageResultToBuffer(data) {
  *
  * @param {object} [projectConfig] - parsed film_projects.provider_config
  */
-async function callImageGen(prompt, negativePrompt, seed, options, projectConfig, payloadFactory) {
+async function callImageGen(prompt, negativePrompt, seed, options, projectConfig, payloadFactory, callOpts) {
     const requestBody = imageRequestPayload({
         ...(options || {}),
         prompt,
@@ -186,7 +268,7 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
     // the chain skips an incompatible adapter rather than slicing that string.
     const result = await generateImageWithFallback(
         typeof payloadFactory === 'function' ? payloadFactory : requestBody,
-        projectConfig || {}, { timeout: 300000 });
+        projectConfig || {}, { timeout: 300000, ...(callOpts || {}) });
 
     if (!result || !result.ok) {
         const tried = (result && result._chain || [])
@@ -1086,7 +1168,8 @@ async function generateStoryboard(req, res, projectId, query) {
             }, adapter);
             const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
                 await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
-                    imagePayload, spendContext(project, shot, null, imageOverride(body)), payloadFactory);
+                    imagePayload, spendContext(project, shot, null, imageOverride(body)), payloadFactory,
+                    frameJobMeta(shot.shot_id, imagePayload));
 
             // Save image to disk
             const imgPath = storyboardImagePath(projectId, shot.shot_code);
@@ -2713,7 +2796,8 @@ async function recomposeShot(req, res, shotId) {
         };
         const { buffer, provider, model } = await callImageGen(
             payload.prompt, payload.negative_prompt, undefined, payload,
-            spendContext(project, bg.shot, null, imageOverride(body)));
+            spendContext(project, bg.shot, null, imageOverride(body)), null,
+            frameJobMeta(shotId, payload));
 
         const imgPath = storyboardImagePath(project.id, bg.shot.shot_code);
         archiveExistingFrame(project.id, shotId, bg.shot.shot_code);
@@ -2955,7 +3039,8 @@ async function refineShot(req, res, shotId) {
         };
         const { buffer, provider, model } = await callImageGen(
             payload.prompt, payload.negative_prompt, undefined, payload,
-            spendContext(project, shot, null, imageOverride(body)));
+            spendContext(project, shot, null, imageOverride(body)), null,
+            frameJobMeta(shotId, payload));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         archiveExistingFrame(project.id, shotId, shot.shot_code);
@@ -3210,7 +3295,8 @@ async function regenerateShot(req, res, shotId) {
             : null;
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
-                imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory);
+                imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory,
+                frameJobMeta(shotId, imagePayload, { direction_mode: directionMode }));
 
         const imgPath = storyboardImagePath(project.id, shot.shot_code);
         // Keep what is about to be replaced. Every attempt cost money.
@@ -3370,5 +3456,7 @@ module.exports = {
     // The shared refine request, so a strip station and the refine button
     // cannot come to ask for different things.
     generateRefinedFrame, registerStoryboardAsset, ensureStoryboardDir, storyboardImagePath,
+    // A frame collected after its call was abandoned is filed by the same rule.
+    fileCollectedFrame, frameJobMeta,
     // The board's own shot query, so its order is checkable.
     getStoryboardShots: loadProjectShots };

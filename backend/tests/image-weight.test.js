@@ -77,6 +77,9 @@ test('every picture with real weight asks for a size', () => {
         // is judged at, like the viewer; its node thumbnails ask for w=320.
         [/class="pg-dimg"/, 'the drawer is where a frame is judged, full size'],
         [/src\(m\.still\.path\)/, 'the playback monitor plays the frame the cut holds, like the Playback page'],
+        // Rendered in the page from the world itself: a 320x180 JPEG data URI
+        // drawn by SPLAT.thumb's renderer, never a file fetched from the server.
+        [/EXPLORE\.thumbs\[/, 'a 320x180 JPEG the page renders itself — nothing is downloaded'],
     ];
     const offenders = [];
     for (const tag of servedImageTags()) {

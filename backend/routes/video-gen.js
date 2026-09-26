@@ -91,7 +91,8 @@ function videoTierOf(req, query) {
 function applyTier(tier, req, query) {
     const src = { ...(query || {}), ...((req && req.body) || {}) };
     return {
-        model: src.model || tier.preferredModel || undefined,
+        // `video_model` is what the MCP tools send; see videoOverrideOf.
+        model: src.model || src.video_model || tier.preferredModel || undefined,
         durationSeconds: Number(src.duration_s) || tier.durationSeconds || undefined,
         resolution: src.resolution || tier.resolution || undefined,
         tierId: tier.id,
@@ -100,6 +101,15 @@ function applyTier(tier, req, query) {
 
 function videoOverrideOf(req, query) {
     const src = { ...(query || {}), ...((req && req.body) || {}) };
+    /*
+     * The MCP tools name the override `video` / `video_model` (the capability's
+     * own keys, as provider_config spells them); the page sends `provider` /
+     * `model`. Reading only the second meant an agent's override reached
+     * nothing: the clip generated on the project's provider while the tool said
+     * it had been told otherwise.
+     */
+    if (src.video && !src.provider) src.provider = src.video;
+    if (src.video_model && !src.model) src.model = src.video_model;
     const o = imageOverride(src);
     if (!o) return null;
     // imageOverride speaks in image_* keys; video resolves on `video`.
@@ -124,6 +134,9 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
     catch (err) { return json(res, 404, { error: err.message }); }
     if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
 
+    // The model this generation would be told to use, exactly as generateVideo
+    // sets it — or the preview describes a clip on a model nobody asked for.
+    if (tierChoice && tierChoice.model) ctx.overrides = { ...(ctx.overrides || {}), model: tierChoice.model };
     let payload, meta;
     try { ({ payload, meta } = buildCapabilityPayload('video', ctx)); }
     catch (err) {

@@ -61,6 +61,7 @@ const { handleStyleBook } = require('../routes/style-book');
 const { handleAssets } = require('../routes/assets');
 const { handleMediaImport } = require('../routes/media-import');
 const { handleVideoGen } = require('../routes/video-gen');
+const { handleVoice } = require('../routes/voice');
 const { handleSequences } = require('../routes/sequences');
 const { handleAnnotations } = require('../routes/annotations');
 const { handleBreakdown } = require('../routes/breakdown');
@@ -1170,10 +1171,13 @@ const PRODUCTION_TOOLS = [
         name: 'video_preview',
         handler: handleVideoGen, method: 'GET',
         path: a => `/film/shots/${a.shot_id}/video/preview`
-            + (a.tier ? `?tier=${encodeURIComponent(a.tier)}` : ''),
+            + ((q => (q ? `?${q}` : ''))(['tier', 'video', 'video_model']
+                .filter(k => a[k]).map(k => `${k}=${encodeURIComponent(a[k])}`).join('&'))),
         description: 'What a clip for this shot would be asked for, and what it would COST \u2014 free, and nothing is generated. Reports the model, the length, whether the storyboard frame is attached, the reference package the model would receive, and an itemised credit estimate including reference charges and any minimum. Pass `tier` (draft | production | hero) to price the tier you are considering: a draft is 25 credits for five seconds, the cheap way to check blocking before buying the real shot. SPENDS NOTHING.',
         schema: { shot_id: { type: 'string' },
-            tier: { type: 'string', enum: ['draft', 'production', 'hero'], description: 'Price and plan this tier. draft = Gen-4 Turbo, 5s, 25 credits — the blocking check. production = H3 768P with the reference package. hero = your choice.' } },
+            tier: { type: 'string', enum: ['draft', 'production', 'hero'], description: 'Price and plan this tier. draft = Gen-4 Turbo, 5s, 25 credits — the blocking check. production = H3 768P with the reference package. hero = your choice.' },
+            video: { type: 'string', description: 'Preview a different provider for this one clip — the same override video_generate takes.' },
+            video_model: { type: 'string', description: 'Preview a different model for this one clip.' } },
         required: ['shot_id'],
     },
     {
@@ -1194,6 +1198,31 @@ const PRODUCTION_TOOLS = [
         },
         required: ['shot_id'],
         bodyKeys: ['video', 'video_model'],
+        probe: { shot_id: '00000000-0000-0000-0000-000000000000' },
+    },
+    {
+        /*
+         * The shot's DIALOGUE, as the take the film uses. The route shipped in
+         * phase 4 and was reachable from the page and from curl only; an agent
+         * had node_gen_voice, which stores nothing when run alone, so a
+         * screenplay could be taken to a final movie over MCP in every stage
+         * except the one where the characters speak.
+         */
+        name: 'voice_generate',
+        handler: handleVoice, method: 'POST',
+        description:
+            'Generate the dialogue for one shot: one audio file per line of its scene card, in each '
+            + 'character\'s cast voice (voice_cast first, or the provider default is used). SPENDS '
+            + 'MONEY. An unchanged line is REUSED rather than bought again — pass regenerate: true '
+            + 'for a new take of every line. The files are the shot\'s dialogue: playback, the audio '
+            + 'lanes of an NLE export and the conform read them.',
+        path: a => `/film/shots/${a.shot_id}/voice/generate`,
+        schema: {
+            shot_id: { type: 'string' },
+            regenerate: { type: 'boolean', description: 'Buy a new take of every line, including unchanged ones.' },
+        },
+        required: ['shot_id'],
+        bodyKeys: ['regenerate'],
         probe: { shot_id: '00000000-0000-0000-0000-000000000000' },
     },
     {

@@ -223,13 +223,17 @@ function cueFromBrief(brief) {
  * before it, is a real decision. Nothing measured returns NULL, never a number,
  * because "no footage" and "a zero-length scene" are different answers.
  */
-function cueSeconds({ cue_ms, cut_ms, dialogue_ms, explain } = {}) {
+function cueSeconds({ cue_ms, cut_ms, dialogue_ms, card_ms, explain } = {}) {
     const pick = (ms, source) => (explain
         ? { seconds: Math.round(Number(ms) / 1000), source }
         : Math.round(Number(ms) / 1000));
 
     if (Number(cue_ms) > 0) return pick(cue_ms, 'cue');
     if (Number(cut_ms) > 0) return pick(cut_ms, 'footage');
+    // Not yet shot: the longer of what the cards plan and what the dialogue
+    // runs. A shot is held for its lines, so dialogue can outrun the cards;
+    // a quiet scene of held shots outruns its dialogue.
+    if (Number(card_ms) > Number(dialogue_ms || 0)) return pick(card_ms, 'shot cards');
     if (Number(dialogue_ms) > 0) return pick(dialogue_ms, 'dialogue');
     return explain ? { seconds: null, source: 'nothing measured' } : null;
 }

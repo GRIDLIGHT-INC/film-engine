@@ -102,4 +102,46 @@ async function thumbnailFor(sourcePath, requestedWidth) {
     try { return await job; } catch (_) { return null; }
 }
 
-module.exports = { thumbnailFor, normalizeWidth, WIDTHS, CACHE_DIRNAME };
+/**
+ * A keyframe small enough to send INLINE to a video model.
+ *
+ * The house standard makes a board frame 4K, and a 4K PNG is ~10MB — twice
+ * Runway's documented 5MB ceiling for a data URI. So every 4K keyframe was
+ * refused for the clip it existed to pin: the image-to-video call either sent
+ * no frame at all or was refused before spending. A video model renders at 720p
+ * to 1080p and cannot use the extra pixels anyway, so it is handed a JPEG at a
+ * 1920 long edge — the SAME frame, the size the clip is actually made at.
+ *
+ * Synchronous, because the payload is built synchronously. Cached by source
+ * identity like a thumbnail, so a regenerated frame misses and rebuilds. Never
+ * throws: no encoder or a failed encode returns null and the caller keeps the
+ * original.
+ */
+function videoKeyframeFor(sourcePath, longEdge) {
+    const edge = Number(longEdge) > 0 ? Number(longEdge) : 1920;
+    if (!/\.(png|jpe?g|webp)$/i.test(sourcePath || '')) return null;
+    let st;
+    try { st = fs.statSync(sourcePath); } catch (_) { return null; }
+    const out = path.join(path.dirname(sourcePath), CACHE_DIRNAME,
+        `${path.basename(sourcePath)}.${st.mtimeMs.toFixed(0)}.${st.size}.video${edge}.jpg`);
+    if (fs.existsSync(out)) return out;
+    const bin = resolveFfmpeg();
+    if (!bin || !bin.available) return null;
+    try { fs.mkdirSync(path.dirname(out), { recursive: true }); } catch (_) { return null; }
+    const tmp = `${out}.${process.pid}.tmp.jpg`;
+    try {
+        require('child_process').execFileSync(bin.bin, [
+            '-y', '-loglevel', 'error', '-i', sourcePath,
+            // Long edge to `edge`, only ever down, aspect kept, even dimensions.
+            '-vf', `scale='if(gte(iw,ih),min(${edge},iw),-2)':'if(gte(iw,ih),-2,min(${edge},ih))':flags=lanczos`,
+            '-q:v', '2', tmp,
+        ], { timeout: 30000, stdio: 'ignore' });
+        fs.renameSync(tmp, out);
+        return out;
+    } catch (_) {
+        try { fs.unlinkSync(tmp); } catch (_) {}
+        return null;
+    }
+}
+
+module.exports = { thumbnailFor, normalizeWidth, WIDTHS, CACHE_DIRNAME, videoKeyframeFor };

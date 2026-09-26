@@ -228,6 +228,30 @@ function plateBindingOf(opts, meta) {
     return null;
 }
 
+/**
+ * The shot whose LIVE frame a handle was bought for. The four board paths that
+ * write a shot's frame stamp `storyboard_frame` on the handle; an older handle
+ * can be named by the caller with `belongs_to: { kind: 'storyboard_frame', shot_id }`.
+ */
+function frameBindingOf(opts, meta) {
+    const b = opts && opts.belongs_to;
+    if (b && b.kind === 'storyboard_frame' && b.shot_id) return { shot_id: b.shot_id };
+    const f = meta && meta.storyboard_frame;
+    if (f && f.shot_id) return f;
+    return null;
+}
+
+/** File a frame a job delivered as that shot's live storyboard frame. */
+function fileFrame(job, frame, sourcePath, meta) {
+    const filed = require('../routes/storyboard').fileCollectedFrame({
+        shotId: frame.shot_id, sourcePath,
+        provider: job.provider, providerModel: (meta && meta.meter && meta.meter.model) || '',
+        jobId: job.id, prompt: frame.prompt, negativePrompt: frame.negative_prompt, seed: frame.seed,
+        width: frame.width, height: frame.height, directionMode: frame.direction_mode,
+    });
+    return filed;
+}
+
 /** File the picture a settled job left on disk as the plate it was bought for. */
 async function adoptPlate(job, plate) {
     const meta = safeMeta(job);
@@ -288,6 +312,20 @@ async function collect(jobId, opts) {
          */
         const claimed = plateBindingOf(opts, safeMeta(job));
         if (claimed) return adoptPlate(job, claimed);
+        const frameClaim = frameBindingOf(opts, safeMeta(job));
+        if (frameClaim && job.capability === 'image') {
+            const { getFilePath } = require('./file-storage');
+            let onDisk = null;
+            try { onDisk = getFilePath(job.project_id, 'storyboards', `collected_${job.id}.png`); } catch (_) { onDisk = null; }
+            const filed = fileFrame(job, frameClaim, onDisk, safeMeta(job));
+            if (filed.ok) {
+                return { ok: true, job_id: job.id, adopted: true, frame: filed,
+                    note: 'This job had already been collected but never filed. The frame it left on disk '
+                        + 'is now the shot\'s current storyboard frame — nothing was regenerated or re-bought.' };
+            }
+            return { ok: false, status: 409, job_id: job.id,
+                error: `job ${job.id} is completed and its collected frame could not be filed — ${filed.error}` };
+        }
         return { ok: true, already: job.status, job, note: 'this job was already completed' };
     }
     const retryingFailed = job.status === 'failed';
@@ -332,6 +370,7 @@ async function collect(jobId, opts) {
     let stored = null;
     let assetId = null;
     let plateFiled = null;
+    let frameFiled = null;
     try {
         /*
          * BYTES OR A URL. Seedance returns a CDN link and no buffer, and this
@@ -391,6 +430,19 @@ async function collect(jobId, opts) {
                 : `collected_${job.id}.${ext}`;
             stored = await persistCapabilityResult(job.capability, out,
                 { project: { id: job.project_id }, project_id: job.project_id }, name);
+            const frame = !leg && job.capability === 'image' ? frameBindingOf(opts, meta) : null;
+            if (frame) {
+                const filed = fileFrame(job, frame,
+                    typeof stored === 'string' ? stored : (stored && stored.path) || '', meta);
+                if (!filed.ok) {
+                    return { ok: false, status: 500, job_id: job.id,
+                        error: `${job.provider} returned the frame and it could not be filed — ${filed.error}` };
+                }
+                assetId = filed.asset_id;
+                stored = { path: filed.file_path };
+                plateFiled = null;
+                frameFiled = filed;
+            }
             if (leg) {
                 assetId = require('./sequence-delivery').fileSequenceClip({
                     projectId: job.project_id,
@@ -452,7 +504,11 @@ async function collect(jobId, opts) {
                  kind: plateFiled.kind, subject_id: plateFiled.subject_id, view: plateFiled.view,
                  file_name: plateFiled.file_name, image_url: plateFiled.image_url,
                  filed: 'This plate finished after the call was abandoned and is now the reference '
-                      + 'for that view — it is in the character library, not a loose file.' } } : {}),
+                      + `for that view — it is in the ${plateFiled.kind || 'subject'}'s library, not a loose file.` } } : {}),
+             ...(frameFiled ? { frame: {
+                 shot_id: frameFiled.shot_id, shot_code: frameFiled.shot_code, image_url: frameFiled.image_url,
+                 filed: 'This frame finished after the call was abandoned and is now the shot\'s current '
+                      + 'storyboard frame, as a new version — not a loose file.' } } : {}),
              stored: stored ? stored.path : null, url: out.url || null };
 }
 

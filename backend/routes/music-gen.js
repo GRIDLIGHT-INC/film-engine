@@ -160,7 +160,7 @@ async function generateFromCue(req, res, cueId, opts) {
     const context = sceneScoreContext(scene);
     const length = cueSeconds({
         cue_ms: cue.duration_ms, cut_ms: context.cut_ms,
-        dialogue_ms: context.dialogue_ms, explain: true,
+        dialogue_ms: context.dialogue_ms, card_ms: context.card_ms, explain: true,
     });
 
     // ---- Ambient ---------------------------------------------------------
@@ -410,7 +410,7 @@ function handleMusicGen(req, res, urlParts, query) {
  */
 function sceneScoreContext(scene) {
     const { sceneCutLength } = require('../lib/clip-coverage');
-    const shots = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE scene_id = ?').all(scene.id);
+    const shots = db.prepare('SELECT id, scene_card_yaml, duration_ms FROM film_shots WHERE scene_id = ?').all(scene.id);
 
     let dialogueLines = 0;
     const cast = new Set();
@@ -446,6 +446,18 @@ function sceneScoreContext(scene) {
         shot_count: shots.length,
         cut_ms: sceneCutLength(db, scene.id),
         dialogue_ms: dialogueMs,
+        /*
+         * What the shot cards PLAN, for a scene not yet shot. Without it a
+         * scene of three five-second shots and two short lines was scored at
+         * two seconds — the length of its dialogue.
+         */
+        card_ms: shots.reduce((t, sh) => {
+            let c = {};
+            try { c = JSON.parse(sh.scene_card_yaml || '{}') || {}; } catch (_) { c = {}; }
+            const ms = Number(sh.duration_ms) > 0 ? Number(sh.duration_ms)
+                : Number(c.duration_seconds) > 0 ? Number(c.duration_seconds) * 1000 : 0;
+            return t + ms;
+        }, 0),
     };
 }
 
@@ -549,6 +561,7 @@ function cueForScene(scene, project, body) {
         cue_ms: written && written.duration_ms,
         cut_ms: context.cut_ms,
         dialogue_ms: context.dialogue_ms,
+        card_ms: context.card_ms,
         explain: true,
     });
 
@@ -976,6 +989,7 @@ function ambientOptions(scene, body, namedCue) {
         cue_ms: cue && cue.duration_ms,
         cut_ms: context.cut_ms,
         dialogue_ms: context.dialogue_ms,
+        card_ms: context.card_ms,
         explain: true,
     });
     return {

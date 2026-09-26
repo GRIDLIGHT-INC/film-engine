@@ -1234,6 +1234,17 @@ function loadShotContext(shotId, opts) {
                 const mime = /\.jpe?g$/i.test(imgPath) ? 'image/jpeg'
                     : /\.webp$/i.test(imgPath) ? 'image/webp' : 'image/png';
                 initImage = `data:${mime};base64,${fs.readFileSync(imgPath).toString('base64')}`;
+                /*
+                 * Too big to send inline — a 4K board frame is ~10MB of PNG
+                 * against a 5MB ceiling. Hand the video model the same frame
+                 * as a 1920 JPEG instead (lib/thumbnails.videoKeyframeFor):
+                 * refusing the clip, or sending it with no frame, is worse.
+                 */
+                const media = require('./provider-media');
+                if (media.tooLargeForDataUri(initImage, media.DATA_URI_LIMIT)) {
+                    const small = require('./thumbnails').videoKeyframeFor(imgPath, 1920);
+                    if (small) initImage = `data:image/jpeg;base64,${fs.readFileSync(small).toString('base64')}`;
+                }
             }
         } catch (_) { initImage = null; }
     }
