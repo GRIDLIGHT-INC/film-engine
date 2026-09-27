@@ -1,9 +1,12 @@
 {
   "name": "film-engine-backend",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Film Engine backend API server",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,5 +1,7 @@
 # Film Engine
 
+**Version 1.0.1.** The version lives in `backend/package.json` and nowhere else by hand: the health check, the MCP `initialize` and `mcp-build` read it; `gridlight.json`, `src/app.json`, the lockfile, the iOS `MARKETING_VERSION` and the README badge declare the same, held by `tests/version.test.js`. A release is tagged `v<version>`.
+
 AI film production pipeline for Gridlight. Transforms screenplays into editor-ready output through automated scene breakdown, storyboarding, and asset generation.
 
 ## Quick Start
@@ -381,6 +383,7 @@ film-engine/
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
 │       ├── screenplay-change-safety.test.js # Every way the screenplay is written leaves every shot alive, on its own scene, on the board
 │       ├── title-page-and-print.test.js # The title page opens and saves every field; the PDF is a shooting script with no browser furniture
+│       ├── version.test.js           # One version, stated in package.json, declared identically everywhere and read by the servers
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
@@ -6140,6 +6143,7 @@ node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-change-safety.test.js
 node --test backend/tests/title-page-and-print.test.js
+node --test backend/tests/version.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js

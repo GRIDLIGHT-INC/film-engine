@@ -25,7 +25,7 @@ Nothing inside the tool list can warn you about this, because a stale connection
 serves a stale list — a diagnostic tool would be missing from exactly the
 connections that need it. Two things do reach it:
 
-- **`initialize`** reports the build, e.g. `0.1.0+206tools.2026-08-29T18:39:00Z`.
+- **`initialize`** reports the build, e.g. `1.0.1+372tools.2026-09-27T12:00:00Z`.
   That timestamp is when the connection's server process started.
 - **Calling a tool this build does not have** returns an error that names the
   tools on disk it is missing and tells you to reconnect.

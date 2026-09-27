@@ -163,7 +163,7 @@ test('initialize hands the client the build, not a constant nobody updates', asy
     const hello = await server.METHODS.initialize({
         protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' },
     });
-    assert.match(hello.serverInfo.version, /^0\.1\.0\+\d+tools\.\d{4}-\d{2}-\d{2}T/,
+    assert.match(hello.serverInfo.version, new RegExp(`^${require('../package.json').version.replace(/\./g, '\\.')}\\+\\d+tools\\.\\d{4}-\\d{2}-\\d{2}T`),
         `initialize tells a client nothing about which build it reached: ${hello.serverInfo.version}`);
     assert.equal(hello.serverInfo.name, 'film-engine');
 

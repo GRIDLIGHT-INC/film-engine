@@ -356,7 +356,7 @@ const server = http.createServer(async (req, res) => {
     // Health check
     if (pathname === '/api/health' || pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', service: 'film-engine', version: '0.1.0' }));
+        res.end(JSON.stringify({ status: 'ok', service: 'film-engine', version: require('./package.json').version }));
         return;
     }
 

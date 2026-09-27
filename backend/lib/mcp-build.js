@@ -155,7 +155,7 @@ function serverInfo(base) {
     try { count = require('./mcp-tools').listTools().length; } catch (_) { count = 0; }
     return {
         ...(base || {}),
-        version: `${(base && base.version) || '0.1.0'}+${count}tools.${LOADED_AT}`,
+        version: `${(base && base.version) || require('../package.json').version}+${count}tools.${LOADED_AT}`,
     };
 }
 

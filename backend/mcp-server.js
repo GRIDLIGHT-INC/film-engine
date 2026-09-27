@@ -71,7 +71,8 @@ const readline = require('readline');
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DEFAULT_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 
-const SERVER_INFO = { name: 'film-engine', version: '0.1.0' };
+// The version is the package's, never a literal (tests/version.test.js).
+const SERVER_INFO = { name: 'film-engine', version: require('./package.json').version };
 
 /**
  * What the connected model reads before it calls anything.
@@ -212,7 +213,7 @@ const METHODS = {
              *
              * A host fixes its tool list when it spawns this process, so the
              * only record of WHICH build a connection is serving is what it
-             * says here. `0.1.0` told a reader nothing; `0.1.0+206tools.<when>`
+             * says here. `1.0.1` alone told a reader nothing; `1.0.1+206tools.<when>`
              * makes the age of a connection answerable without reading a
              * process table.
              */

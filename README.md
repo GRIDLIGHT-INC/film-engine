@@ -1,5 +1,9 @@
 # Film Engine
 
+[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/GRIDLIGHT-INC/film-engine/releases/tag/v1.0.1)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-339933)](https://nodejs.org)
+
 Film Engine takes a film from a screenplay to a finished movie in one app. You
 write the screenplay, break it into scenes and shots, design the characters,
 locations and props, generate storyboards and previs, generate video, voices,
@@ -78,7 +82,7 @@ You should see it listening on `http://localhost:3100`. Check it with:
 
 ```bash
 curl http://localhost:3100/api/health
-# {"status":"ok","service":"film-engine","version":"0.1.0"}
+# {"status":"ok","service":"film-engine","version":"1.0.1"}
 ```
 
 **2. The web app** (port 3200), from the repository root:
