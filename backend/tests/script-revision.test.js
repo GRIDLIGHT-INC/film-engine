@@ -175,3 +175,64 @@ test('the agent tool defaults to the safe path', () => {
     assert.ok(/reconcil/i.test(tool.description),
         'the tool never tells the model that scenes are reconciled rather than rebuilt');
 });
+
+// ---------------------------------------------------------------------------
+// The case that actually shipped broken.
+//
+// Every test above passes `sync_scenes: true`, which is why the bug survived
+// them: the MCP tool sets that flag, so the agent path was covered and looked
+// like the whole story. The WEB UI posts `{ fountain_content }` and nothing
+// else — opening the screenplay and letting it save was enough to take the
+// film. The old default read `body.replace_scenes !== false`, and `undefined
+// !== false` is true, so the unflagged write was the destructive one.
+//
+// These two pin the unflagged payload specifically. If someone reintroduces a
+// destructive default, the tests above still pass and these do not.
+// ---------------------------------------------------------------------------
+
+test('a revision with NO flags — the payload the UI sends — keeps every child', async () => {
+    const seed = await seedProduction();
+    for (const child of CHILDREN) {
+        assert.strictEqual(child.count(seed), 1, `${child.id} was not seeded`);
+    }
+
+    const res = await call(handleScripts, 'POST', `/film/projects/${seed.projectId}/script`,
+        { fountain_content: DRAFT_TWO });
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+
+    const lost = CHILDREN.filter(c => c.count(seed) === 0).map(c => c.id);
+    assert.deepStrictEqual(lost, [],
+        `an unflagged save destroyed: ${lost.join(', ')} — the default is destructive again`);
+
+    const after = db.prepare("SELECT id FROM film_scenes WHERE project_id = ? AND status != 'removed' ORDER BY scene_number")
+        .all(seed.projectId).map(r => r.id);
+    assert.ok(after.includes(seed.scenes[1].id),
+        'the revised scene was rebuilt under a new id, so the surviving shot is orphaned');
+});
+
+test('an unflagged revision warns that the shots are now stale', async () => {
+    // Keeping the shots is only half the fix. A shot whose card was written
+    // from the old text is wrong in a way nothing on screen shows, so the
+    // response has to say so — that is the "warn me, do not delete" the
+    // destructive default was standing in for.
+    const seed = await seedProduction();
+    const res = await call(handleScripts, 'POST', `/film/projects/${seed.projectId}/script`,
+        { fountain_content: DRAFT_TWO });
+
+    assert.ok(Array.isArray(res.body.warnings), 'the response carries no warnings array');
+    const stale = res.body.warnings.find(w => w.type === 'shots_may_be_stale');
+    assert.ok(stale, `no staleness warning after rewriting scene 2: ${JSON.stringify(res.body.warnings)}`);
+    assert.strictEqual(stale.count, 1, 'the warning does not say how many shots are affected');
+});
+
+test('the deliberate reset says what it destroyed', async () => {
+    // The destructive path stays, and stays destructive (pinned above). What
+    // it must not do is stay silent about it.
+    const seed = await seedProduction();
+    const res = await call(handleScripts, 'POST', `/film/projects/${seed.projectId}/script`,
+        { fountain_content: DRAFT_TWO, replace_scenes: true });
+
+    const destroyed = (res.body.warnings || []).find(w => w.type === 'shots_destroyed');
+    assert.ok(destroyed, `a reset deleted shots without reporting it: ${JSON.stringify(res.body.warnings)}`);
+    assert.strictEqual(destroyed.count, 1, 'the warning does not say how many shots went');
+});

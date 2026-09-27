@@ -42,6 +42,15 @@ const LEGACY_VIEWS = Object.freeze({
     side: 'side-left',
     'three-quarter': 'front',
     'back-three-quarter': 'back',
+    // The bare compass words. `plate_generate` accepts a free-text view and
+    // did NOT refuse these, so a plate generated as `right` was paid for,
+    // written to disk, ranked -- and then invisible on the sheet, because
+    // canonicalView returned null and the four slots matched nothing. An
+    // alias is cheaper than a migration and rescues the plates already out
+    // there.
+    right: 'side-right',
+    left: 'side-left',
+    profile: 'side-left',
 });
 
 /** Which official view this stored view name belongs to, or null. */

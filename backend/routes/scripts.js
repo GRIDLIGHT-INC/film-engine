@@ -325,6 +325,94 @@ function extractScenesFromFountain(parsed, projectId) {
 }
 
 /**
+ * Decide, SAFELY, what a script write should do to the scenes under it.
+ *
+ * The old rule was `if (body.replace_scenes !== false) DELETE`. Deleting is
+ * what `film_shots.scene_id ON DELETE CASCADE` turns into "the whole shot list
+ * is gone", and it was the DEFAULT: a caller had to know to opt out of losing
+ * their production. The stated reason was that changing the default would
+ * change what a first upload does — but a first upload has no scenes and no
+ * shots, so the two cases can simply be told apart by looking.
+ *
+ * So: reconcile whenever the project ALREADY HAS scenes, replace only when it
+ * does not, and hard-delete only when a caller asks for it in so many words.
+ * A revision can now never be destructive by omission.
+ *
+ * Returns { syncReport, warnings } — warnings names the shots whose scene text
+ * moved underneath them, which is the thing the old code destroyed instead of
+ * mentioning.
+ */
+function reconcileOrReplaceScenes(projectId, parsedFountain, body = {}) {
+    const existing = db.prepare(
+        "SELECT COUNT(*) AS n FROM film_scenes WHERE project_id = ? AND status != 'removed'"
+    ).get(projectId).n;
+
+    const shotsBefore = db.prepare(
+        `SELECT s.id, s.shot_code, s.scene_id FROM film_shots s
+         JOIN film_scenes sc ON sc.id = s.scene_id
+         WHERE sc.project_id = ?`
+    ).all(projectId);
+
+    // An explicit destructive request is still honoured, loudly.
+    if (body.replace_scenes === true) {
+        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
+        return {
+            syncReport: null,
+            replaced: true,
+            warnings: shotsBefore.length ? [{
+                type: 'shots_destroyed',
+                count: shotsBefore.length,
+                detail: `replace_scenes was requested explicitly, so ${shotsBefore.length} shot(s) were deleted with their scenes.`
+            }] : []
+        };
+    }
+
+    // The safe path, and now the default for any project that has scenes.
+    if (parsedFountain && (body.sync_scenes || existing > 0)) {
+        const syncReport = syncScenesWithScreenplay(projectId, parsedFountain);
+        const warnings = [];
+        if (shotsBefore.length && (syncReport.scenes_updated || syncReport.scenes_removed)) {
+            warnings.push({
+                type: 'shots_may_be_stale',
+                count: shotsBefore.length,
+                scenes_updated: syncReport.scenes_updated,
+                scenes_removed: syncReport.scenes_removed,
+                detail: 'Scene text changed under existing shots. The shots were KEPT and their scene ids are intact, '
+                      + 'but their cards were written from the old text. Check staleness_report, then fix them with '
+                      + 'shot_update, or delete and re-derive that scene.'
+            });
+        }
+        return { syncReport, replaced: false, warnings };
+    }
+
+    /*
+     * Scenes exist and there is no Fountain to reconcile against — a plain-text
+     * upload. The reconciler needs the parsed document, so it cannot run; and
+     * falling through to the first-upload branch below DELETED every scene and,
+     * by cascade, every shot. The scenes are left exactly as they are and the
+     * caller is told why.
+     */
+    if (existing > 0) {
+        return {
+            syncReport: null, replaced: false,
+            warnings: [{
+                type: 'scenes_not_synced',
+                count: existing,
+                detail: 'This draft is plain text, so it cannot be matched scene by scene. The existing '
+                    + `${existing} scene(s) and their shots were left untouched. Save it as Fountain to `
+                    + 'bring the scene list in step, or pass replace_scenes: true to start the scenes over.',
+            }],
+        };
+    }
+
+    // No scenes yet: a genuine first upload. Nothing to protect.
+    if (body.replace_scenes !== false) {
+        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
+    }
+    return { syncReport: null, replaced: true, warnings: [] };
+}
+
+/**
  * FILM-120: Sync scenes with screenplay content
  * Matches scenes by number first, then by location+time similarity.
  * Creates new scenes, updates existing ones, marks deleted as 'removed'.
@@ -447,9 +535,18 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
         // Collect characters
         (newScene.characters_present || []).forEach(c => report.characters_found.add(c));
 
-        // Find matching existing scene by scene_number
+        /*
+         * Same number AND same place. Number alone is positional: delete scene
+         * 2 and rewrite scene 3 in one save, and new #2 (the rewritten garage)
+         * matched old #2 (the deleted street) — the street's row took the
+         * garage's text and the garage's own shots went off the board on a
+         * "removed" row. A number match that also names the same location is
+         * the same scene; one that does not is left to the location pass, and
+         * only then to number alone (a scene whose heading was renamed).
+         */
+        const samePlace = es => (es.location || '').toLowerCase() === (newScene.location || '').toLowerCase();
         const match = existingScenes.find(es =>
-            es.scene_number === newScene.scene_number && !matchedExistingIds.has(es.id)
+            String(es.scene_number) === String(newScene.scene_number) && samePlace(es) && !matchedExistingIds.has(es.id)
         );
 
         if (match) {
@@ -525,6 +622,30 @@ function syncScenesWithScreenplay(projectId, parsedFountain) {
             if (moved(match, newScene)) report.scenes_updated++;
             else report.scenes_unchanged++;
         }
+    }
+
+    /*
+     * Last resort, by number alone: a scene whose heading was renamed in place
+     * (STREET → AVENUE) has no content, location or place match, and is still
+     * the same scene with the same shots. Run only after every better match
+     * has claimed its row, so it can never steal a row another scene owns.
+     */
+    for (let i = 0; i < newScenes.length; i++) {
+        if (matchedNewIndices.has(i)) continue;
+        const newScene = newScenes[i];
+        const match = existingScenes.find(es =>
+            String(es.scene_number) === String(newScene.scene_number) && !matchedExistingIds.has(es.id));
+        if (!match) continue;
+        matchedExistingIds.add(match.id);
+        matchedNewIndices.add(i);
+        db.prepare(`
+            UPDATE film_scenes SET int_ext = ?, location = ?, time_of_day = ?, description = ?, characters_present = ?
+            WHERE id = ?
+        `).run(newScene.int_ext, newScene.location, newScene.time_of_day,
+            (newScene.description || '').slice(0, 10000), JSON.stringify(newScene.characters_present || []), match.id);
+        stampScene(match.id);
+        if (moved(match, newScene)) report.scenes_updated++;
+        else report.scenes_unchanged++;
     }
 
     // Create new scenes for unmatched new scenes
@@ -1021,12 +1142,9 @@ function uploadScript(req, res, projectId) {
      * change what an existing first upload does, and a first upload has no
      * shots to protect.
      */
-    let syncReport = null;
-    if (body.sync_scenes && parsedFountain) {
-        syncReport = syncScenesWithScreenplay(projectId, parsedFountain);
-    } else if (body.replace_scenes !== false) {
-        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
-    }
+    const sceneWrite = reconcileOrReplaceScenes(projectId, parsedFountain, body);
+    const syncReport = sceneWrite.syncReport;
+    const sceneWarnings = sceneWrite.warnings;
 
     // Insert extracted scenes
     const insertedScenes = [];
@@ -1036,7 +1154,9 @@ function uploadScript(req, res, projectId) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const scene of (syncReport ? [] : parsedScenes)) {
+    // Only a replace inserts: a reconcile already wrote its rows, and a draft
+    // that could not be reconciled must not add a second copy of every scene.
+    for (const scene of (sceneWrite.replaced ? parsedScenes : [])) {
         const sceneId = generateId();
         const sceneNow = new Date().toISOString();
         stampAfter.push(sceneId);
@@ -1075,7 +1195,8 @@ function uploadScript(req, res, projectId) {
         // What the reconciler did, when it ran. Reported rather than silent:
         // "3 updated, 1 added, 1 removed" is the difference between a revision
         // someone can check and one they have to take on trust.
-        sync: syncReport
+        sync: syncReport,
+        warnings: sceneWarnings
     }));
 }
 
@@ -1142,10 +1263,11 @@ function importFDX(req, res, projectId) {
     // Extract scenes from Fountain AST
     const parsedScenes = extractScenesFromFountain(processed.parsed, projectId);
 
-    // Replace scenes for this project
-    if (body.replace_scenes !== false) {
-        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
-    }
+    // Replace scenes for this project -- but never by omission. See
+    // reconcileOrReplaceScenes: an import into a project that already has
+    // scenes reconciles, so an existing shot list survives the import.
+    const sceneWrite = reconcileOrReplaceScenes(projectId, processed.parsed, body);
+    const sceneWarnings = sceneWrite.warnings;
 
     // Insert extracted scenes
     const insertedScenes = [];
@@ -1154,7 +1276,7 @@ function importFDX(req, res, projectId) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const scene of parsedScenes) {
+    for (const scene of (sceneWrite.replaced ? parsedScenes : [])) {
         const sceneId = generateId();
         insertScene.run(
             sceneId,
@@ -1182,7 +1304,9 @@ function importFDX(req, res, projectId) {
         script: scriptRow,
         scenes_extracted: insertedScenes.length,
         scenes: insertedScenes,
-        import_metadata: parsed.metadata
+        import_metadata: parsed.metadata,
+        sync: sceneWrite.syncReport,
+        warnings: sceneWarnings
     }));
 }
 
@@ -1254,38 +1378,23 @@ function updateScript(req, res, projectId, version) {
 
     let syncReport = null;
 
-    // FILM-120: Sync scenes with screenplay (incremental update)
-    if (body.sync_scenes && parsedFountain) {
-        syncReport = syncScenesWithScreenplay(projectId, parsedFountain);
-    }
-    // Legacy: Replace all scenes if requested
-    else if (body.update_scenes && parsedFountain) {
-        db.prepare('DELETE FROM film_scenes WHERE project_id = ?').run(projectId);
-        const parsedScenes = extractScenesFromFountain(parsedFountain, projectId);
-
-        const insertScene = db.prepare(`
-            INSERT INTO film_scenes (id, project_id, scene_number, int_ext, location, time_of_day, description, characters_present, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        for (const scene of parsedScenes) {
-            insertScene.run(
-                generateId(),
-                projectId,
-                scene.scene_number,
-                scene.int_ext,
-                scene.location,
-                scene.time_of_day,
-                (scene.description || '').slice(0, 10000),
-                JSON.stringify(scene.characters_present),
-                new Date().toISOString()
-            );
-        }
+    // Scenes follow the script, non-destructively. The legacy `update_scenes`
+    // branch used to DELETE every scene here, which cascaded the shot list
+    // away on an ordinary auto-save; it now routes through the same reconciler
+    // as every other write.
+    let sceneWarnings = [];
+    if ((body.sync_scenes || body.update_scenes) && parsedFountain) {
+        const sceneWrite = reconcileOrReplaceScenes(projectId, parsedFountain, body);
+        syncReport = sceneWrite.syncReport;
+        sceneWarnings = sceneWrite.warnings;
     }
 
     const response = { script: updated };
     if (syncReport) {
         response.sync_report = syncReport;
+    }
+    if (sceneWarnings.length) {
+        response.warnings = sceneWarnings;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });

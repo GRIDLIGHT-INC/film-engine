@@ -267,19 +267,24 @@ function editScene(req, res, sceneId) {
         return res.end(JSON.stringify({ error: 'This project has no Fountain screenplay to edit.' }));
     }
 
-    const { sceneSpans } = require('../lib/scene-splice');
     const ordered = db.prepare(
         `SELECT id FROM film_scenes WHERE project_id = ? AND status != 'removed'
           ORDER BY CAST(scene_number AS INTEGER), scene_number`).all(scene.project_id);
-    const index = ordered.findIndex(r => r.id === sceneId);
-    const spans = sceneSpans(script.fountain_content);
-    if (index < 0 || !spans[index]) {
+    const positional = ordered.findIndex(r => r.id === sceneId);
+    if (positional < 0) {
         res.writeHead(409, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'That scene is not in the current screenplay.' }));
     }
+    // Checked, not assumed: the phrase is found in THIS scene's text, not in
+    // whichever scene sits at its position after an autosave.
+    const found = locateSceneSpan(scene, script.fountain_content, positional);
+    if (found.error) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(found.error));
+    }
 
     const lines = script.fountain_content.split('\n');
-    const span = spans[index];
+    const span = found.span;
     let text = lines.slice(span.start, span.end + 1).join('\n');
 
     // DRY RUN FIRST. Every edit is checked against the scene before any is
@@ -502,6 +507,42 @@ function restoreSceneVersion(req, res, sceneId, version) {
     return updateScene({ ...req, body: { fountain: text } }, res, sceneId);
 }
 
+/**
+ * Where this scene is in the screenplay, checked rather than assumed.
+ *
+ * Scenes are matched to the document by POSITION among the scene rows, which
+ * is only right while the rows and the document agree. The editor's autosave
+ * changes the document without touching the rows, so a scene typed in above
+ * this one made position 3 the wrong scene — and an edit overwrote its
+ * neighbour's text, reporting success. So the heading at that position must
+ * be this scene's; if it is not, the scene is found by its heading; and if
+ * that is ambiguous or absent, the caller is refused rather than guessed for.
+ */
+function locateSceneSpan(scene, fountain, positionalIndex) {
+    const { sceneSpans } = require('../lib/scene-splice');
+    const spans = sceneSpans(fountain);
+    const place = String(scene.location || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const time = String(scene.time_of_day || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const names = sp => {
+        const n = ` ${String(sp.heading || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim()} `;
+        return !!place && n.includes(` ${place} `) && (!time || n.includes(` ${time} `));
+    };
+    if (positionalIndex >= 0 && spans[positionalIndex] && names(spans[positionalIndex])) {
+        return { index: positionalIndex, span: spans[positionalIndex] };
+    }
+    const candidates = spans.filter(names);
+    if (candidates.length === 1) return { index: candidates[0].index, span: candidates[0] };
+    return {
+        error: {
+            error: 'The screenplay and the scene list are out of step, so this scene cannot be found in the '
+                + 'document by position, and its heading ' + (candidates.length ? 'appears more than once' : 'is not in it')
+                + '. Nothing was changed.',
+            code: 'SCENES_OUT_OF_STEP',
+            action: 'Save the screenplay (a new version reconciles the scene list), then edit the scene again.',
+        },
+    };
+}
+
 function updateScene(req, res, sceneId) {
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(sceneId);
     if (!scene) {
@@ -553,11 +594,18 @@ function updateScene(req, res, sceneId) {
     const ordered = db.prepare(
         `SELECT id FROM film_scenes WHERE project_id = ? AND status != 'removed'
           ORDER BY CAST(scene_number AS INTEGER), scene_number`).all(scene.project_id);
-    const index = ordered.findIndex(r => r.id === sceneId);
+    let index = ordered.findIndex(r => r.id === sceneId);
     if (index < 0) {
         res.writeHead(409, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'That scene has been removed from the screenplay.' }));
     }
+
+    const found = locateSceneSpan(scene, script.fountain_content, index);
+    if (found.error) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(found.error));
+    }
+    index = found.index;
 
     let next;
     try {

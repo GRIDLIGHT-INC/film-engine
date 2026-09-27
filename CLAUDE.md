@@ -379,6 +379,7 @@ film-engine/
 │       ├── spec-consumption.test.js    # Every mood board spec changes a real payload, not just a column
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
+│       ├── screenplay-change-safety.test.js # Every way the screenplay is written leaves every shot alive, on its own scene, on the board
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
@@ -3446,6 +3447,17 @@ It was reachable from the UI, and once `script_write` shipped it was reachable f
 
 `tests/script-revision.test.js` is set-based over the child tables a revision must not orphan, because a cascade is only safe if *every* child survives: a test that checks shots alone passes while previs blocking is swept away with them.
 
+### Nothing Built on a Screenplay Is Lost When It Changes
+After the replace-by-default fix, an audit of every path that writes the screenplay found three more ways a change could still destroy, hide or misplace work. A shot is only safe if it survives, stays on a scene that is on the board (the board hides shots under a `removed` scene), and stays on ITS scene.
+
+**A plain-text upload into a project with scenes deleted them all.** The reconciler needs the parsed Fountain; a `content` upload has none, so it fell through to the first-upload branch and ran the DELETE — every scene, and by cascade every shot. Scenes are now left untouched and the response carries `scenes_not_synced`; only a replace inserts scenes, so an unreconciled draft cannot add a second copy either.
+
+**Deleting a scene and rewriting the next in one save misattached them.** The number pass matched new #2 (the rewritten garage) to old #2 (the deleted street): the street's row took the garage's text and the garage's shots went off the board on a removed row. A number match now also has to name the same location; number alone is a last pass, after every better match, which is what keeps a heading renamed in place (STREET → AVENUE) on its own row.
+
+**Editing a scene by id could overwrite its neighbour.** The splice finds a scene by POSITION among the rows, and the editor's autosave changes the document without touching the rows — a scene typed in above made position 3 the wrong scene, and the edit replaced another scene's text while reporting success. `locateSceneSpan` checks the heading at that position is this scene's, falls back to the heading when it is unique, and otherwise refuses with `SCENES_OUT_OF_STEP` and saves nothing. The phrase edit reads its text through the same helper.
+
+`tests/screenplay-change-safety.test.js` runs every writer — upload (Fountain and plain text), update with and without sync, FDX import, append, insert, outline, scene update, phrase edit — on a production with a shot and blocking under every scene, and requires every shot alive and visible. The writer list is derived from the source, so a new way to write the screenplay arrives covered or fails.
+
 ### The Title Page Is for Printing
 It sat at the top of the editor as a non-editable slab you scrolled past on every open and clicked by accident when you meant to put the cursor on FADE IN. It is now `display: none` on screen and `display: block` in `@media print`, which is the one moment a title page is read. Hidden rather than removed — the block carries the data the Fountain serialiser writes back, so deleting it would lose the title page itself — and the toolbar's **Title Page** button was always the real way to edit it.
 
@@ -6118,6 +6130,7 @@ node --test backend/tests/review-proxy.test.js
 node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
+node --test backend/tests/screenplay-change-safety.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
