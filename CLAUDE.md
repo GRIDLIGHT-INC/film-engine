@@ -153,6 +153,7 @@ film-engine/
 │   │   ├── reference-plates.js    # Location + prop plate generation (shared implementation)
 │   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
 │   │   ├── gridlight-client.js    # Shared HTTP client + request queue + 429 retry
+│   │   ├── gridlight-video.js     # The gateway's video contract: capabilities, references, SSE, shot list, every error
 │   │   ├── file-storage.js        # Shared file storage utilities
 │   │   ├── project-folders.js     # One folder per film, laid out in the order the film is made
 │   │   ├── project-storage.js     # Choosing a project's folder, reading it, and moving it — files first, rows second, both or neither
@@ -565,6 +566,7 @@ film-engine/
 │       ├── fdx-generator.test.js     # FDX generator unit tests
 │       ├── project-bundle.test.js   # Project bundle export/import tests
 │       ├── gridlight-client.test.js # Gridlight client + queue tests
+│       ├── gridlight-video.test.js  # Every reference kind, error status, SSE event and limit, against a fake gateway
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
@@ -3976,6 +3978,56 @@ Missing prerequisites throw with `err.code = 'PRECONDITION'`; the orchestrator c
 
 Related: `file-storage.getFilePath()` enforces that a DB-sourced `file_name` cannot resolve outside its project directory, and **throws** rather than silently correcting. `POST /projects/:id/assets` accepts `file_name` unsanitised, and several paths base64 whatever they read into a generation payload, so containment lives at the one function all callers route through.
 
+### Gridlight Video Speaks the Gateway's Own Contract
+*"For generating videos with Gridlight (we'll start implementing and eventually using Gridlight for a lot of work), make sure you have the following properly implemented."*: the Gridlight Video Integration Brief.
+
+The adapter was a pass-through: it posted Film Engine's payload to `/video` with a checkpoint name the gateway does not serve, took one keyframe, and read the answer as JSON. The gateway serves several models that take different things, and publishes which. `lib/gridlight-video.js` is the one module that speaks that contract, so the clip, the stream and the shot list cannot disagree.
+
+**`GET /media/capabilities` is the only statement of what a model takes.** Only `available: true` models are offered. A named model the gateway withholds is refused with its `withheld_reason`. An unknown ask (the old `animatediff-sdxl`) runs the first available model that takes a keyframe, and says it substituted. The model is always sent. Cached for a minute. Free at `GET /film/providers/gridlight/video-capabilities` and as `gridlight_video_capabilities`.
+
+**Film Engine roles become gateway kinds, cut by the model's own `inputs[]`.**
+- keyframe and in-between become keyframes (`start`, `end`, or seconds).
+- character and creature become character panels; location and prop map to their own kinds.
+- `clips` and `transform` are taken when a payload carries them.
+- style, motion and audio are refused by name, as the gateway does with a 422.
+
+A reference is dropped, **and reported with its reason**, for any of these:
+- a kind the model does not declare;
+- a MIME type (read from the bytes) outside `accepts`;
+- a placement outside `at`;
+- over the kind's `max`;
+- over the six-panel sheet;
+- an `excludes` clash;
+- a transform effect not listed;
+- a keyframe within 8 frames of another.
+
+A time past the end is clamped with a warning. A transform must stand alone, so it is considered first and everything it excludes yields. A model that reads `init_image`/`init_video` (Wan) gets the field, not a `references` array.
+
+**Refused before a byte is sent:**
+- the prompt (≤ 2000);
+- duration (≤ 60 s);
+- fps (8–30);
+- the body budget, raw × 4/3 against the model's `max_body_bytes`, answered 413 with nothing posted.
+
+Size snaps down to a multiple of 32 inside 3840×2160, with a note.
+
+**The stream is read with fetch and a reader.** Keep-alive comments are ignored. Every documented event is passed on with its phase. Only `completed` is success: a stream that just stops is `STREAM_INCOMPLETE`. `507:` in an error event is GPU out of memory ("retry smaller"), and a licence message is a 424. The `video_url` is fetched from the gateway with the same Bearer and must be an MP4. The seed is kept on the result and on the buffer. `completed.mode` and `completed.resolution` are not trusted: the mode is read from what was sent, and the size is measured from the file.
+
+**Errors are mapped as the brief says**, set-based in the test over `ERRORS`:
+- 429 waits `retry_after` and tries again, reporting `queued_locally`.
+- 502 is retried once.
+- 400, 401, 413, 422, 424 and 503 are reported with the gateway's own words and never replayed.
+- 503 reads "the video server is off", a normal state.
+
+**One video at a time.** Requests are serialised in this process, so the agent never sees two at once.
+
+**The shot list** is `POST /video/production` with 1–20 shots, reached through `sequence_generate_native` when the project resolves video to Gridlight:
+- Each shot is pinned to its approved frame at `start`, except across a `continuous` join, where the start is left out so the gateway carries the previous shot's last frame in.
+- Joins map to `cut` / `crossfade` / `fade_black`.
+- Drops are reported per shot, and a bad shot is named.
+
+The adapter's `referenceContract` is the gateway's documented ceiling (8 keyframes and a 6-panel sheet). The model's manifest is the real limit and cuts it at generation time. `maxKeyframes` is 2. The free video preview reports which model the gateway will run and what will not be sent, from the last manifest read.
+
 ### Lip-Sync
 Combines raw video with dialogue audio to produce lip-synced video. Requires both `video_raw` and `audio_dialogue` assets. Output stored as `data/video/{project_id}/{shot_code}_synced.mp4`.
 
@@ -6351,6 +6403,7 @@ node --test backend/tests/scheduling-engine.test.js
 node --test backend/tests/fdx-generator.test.js
 node --test backend/tests/project-bundle.test.js
 node --test backend/tests/gridlight-client.test.js
+node --test backend/tests/gridlight-video.test.js
 node --test backend/tests/project-presets.test.js
 node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js

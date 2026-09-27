@@ -57,9 +57,27 @@ describe('Pipeline end-to-end (scene → final, mock gateway)', () => {
     before(async () => {
         fs.mkdirSync(TEST_DIR, { recursive: true });
         // Mock gateway: every generation endpoint succeeds.
+        // Video speaks the gateway's own contract (lib/gridlight-video.js): a
+        // capabilities manifest, SSE from POST /video, and an MP4 at video_url.
+        const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(32)]);
         mockGateway = http.createServer((req, res) => {
+            if (req.method === 'GET' && req.url === '/media/capabilities') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ media: [{ medium: 'video', models: [{ id: 'ltx-2.5', available: true,
+                    inputs: [{ kind: 'keyframe', field: 'references', accepts: ['image/png', 'image/jpeg'], max: 8, at: ['start', 'end', 'seconds'] }] }] }] }));
+            }
+            if (req.method === 'GET' && req.url.startsWith('/outputs/')) {
+                res.writeHead(200, { 'Content-Type': 'video/mp4' });
+                return res.end(MP4);
+            }
             let raw = ''; req.on('data', c => raw += c);
             req.on('end', () => {
+                if (req.url === '/video') {
+                    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+                    res.write('data: ' + JSON.stringify({ event: 'started' }) + '\n\n');
+                    res.write('data: ' + JSON.stringify({ event: 'completed', video_url: '/outputs/clip.mp4', seed: 7, model: 'ltx-2.5' }) + '\n\n');
+                    return res.end();
+                }
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ ok: true, url: 'mock' }));
             });

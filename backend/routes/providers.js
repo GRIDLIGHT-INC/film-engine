@@ -62,6 +62,24 @@ function credStatus(provider) {
     };
 }
 
+/**
+ * What the Gridlight gateway's video models accept, read from the gateway
+ * (`GET /media/capabilities`). Free. A gateway that is off answers with its
+ * reason and status rather than an empty list that reads as "no models".
+ */
+async function gridlightVideoCapabilities(res, query) {
+    const gv = require('../lib/gridlight-video');
+    const caps = await gv.fetchCapabilities({ force: !!(query && (query.refresh === '1' || query.refresh === 'true')) });
+    if (!caps.ok) return json(res, caps.status || 503, { error: caps.error, code: caps.code, models: [] });
+    return json(res, 200, {
+        models: caps.models.map(m => ({ id: m.id, label: m.label, available: m.available, has_audio: m.has_audio,
+            withheld_reason: m.withheld_reason, max_body_bytes: m.max_body_bytes, inputs: m.inputs })),
+        available: caps.available, read_at: caps.read_at,
+        limits: gv.LIMITS, kinds: gv.KINDS, sheet_panels: gv.SHEET_PANELS,
+        roles: gv.ROLE_TO_KIND, refused_roles: gv.REFUSED_ROLES,
+    });
+}
+
 function handleProviders(req, res, urlParts, query) {
     // /film/projects/:id/providers
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'providers') {
@@ -88,6 +106,10 @@ function handleProviders(req, res, urlParts, query) {
             if (sub === 'release-client' && req.method === 'POST') return releaseRegisteredClient(res, provider);
             if (sub === 'search' && req.method === 'GET') return sourceSearch(res, provider, query);
             if (sub === 'license' && req.method === 'POST') return sourceLicense(req, res, provider);
+            // FREE: the gateway's own manifest of what each video model takes.
+            if (provider === 'gridlight' && sub === 'video-capabilities' && req.method === 'GET') {
+                return gridlightVideoCapabilities(res, query);
+            }
             return json(res, 405, { error: 'Method not allowed' });
         }
         // /film/providers

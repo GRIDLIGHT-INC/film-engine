@@ -415,8 +415,8 @@ async function generateVideo(req, res, shotId) {
 
         if (!result.ok) {
             db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', result.error, jobId);
-            if (videoProvider.id === 'gridlight' && result.status === 503) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
-            return json(res, result.status || 500, { error: result.error });
+            if (videoProvider.id === 'gridlight' && result.status === 503 && !result.code) return json(res, 503, serviceUnavailableError(VIDEO_ENDPOINT, 'video'));
+            return json(res, result.status || 500, { error: result.error, ...(result.code ? { code: result.code } : {}), ...(result.references_dropped ? { references_dropped: result.references_dropped } : {}) });
         }
 
         /*

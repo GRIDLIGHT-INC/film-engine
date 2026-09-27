@@ -60,6 +60,7 @@ test('there are several places that inline image bytes', () => {
  */
 const NOT_AN_IMAGE = Object.freeze({
     'providers/oauth.js': 'base64url for a PKCE verifier — never sent as media',
+    'gridlight-video.js': 'the Gridlight gateway\'s documented references[].data is BARE base64 (Video Integration Brief); a data: URI there is the malformed input',
     // World Labs documents `data_base64` as RAW base64 with a separate
     // `extension` field — a data: URI in it is refused. This is the one
     // provider here whose contract wants the bare blob, which is why the

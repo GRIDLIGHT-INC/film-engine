@@ -1036,10 +1036,11 @@ async function generateNativeSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
     const shots = shotsOf(row);
+    const provider = resolve('video', seqConfig(row.project_id, req));
+    if (provider && provider.id === 'gridlight') return generateGridlightProduction(req, res, row, shots, provider);
     if (shots.length < 3 || shots.length > 5) return json(res, 409, { error: 'Native multi-shot requires 3–5 shots' });
     if (shots.some(s => !s.keyframe)) return json(res, 409, { error: 'Every native multi-shot sequence needs an approved frame' });
-    const provider = resolve('video', seqConfig(row.project_id, req));
-    if (!provider || provider.id !== 'runway') return json(res, 409, { error: 'Native multi-shot requires the Runway provider' });
+    if (!provider || provider.id !== 'runway') return json(res, 409, { error: 'Native multi-shot requires the Runway provider or the Gridlight gateway' });
     const { toDataUri } = require('../lib/reference-images');
     const payload = {
         runway_recipe: 'multi_shot_video', mode: 'custom', ratio: (req.body && req.body.ratio) || '1280:720',
@@ -1073,6 +1074,61 @@ async function generateNativeSequence(req, res, id) {
     } catch (_) { /* never fail a clip that already cost money */ }
     db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?").run(assetId, id);
     return json(res, 200, { sequence_id: id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName), mode: 'native_multi_shot' });
+}
+
+/**
+ * The Gridlight shot list: POST /video/production, 1–20 shots, one stitched MP4.
+ *
+ * Each shot is pinned to its own approved frame at `start` — EXCEPT across a
+ * `continuous` join, where the start is left out so the gateway carries the
+ * previous shot's last frame into this one, which is what a continuous join
+ * means. Joins map onto the list's three transitions (a dissolve is a
+ * crossfade; anything without a word is a cut).
+ */
+async function generateGridlightProduction(req, res, row, shots, provider) {
+    const { LIMITS, transitionFor } = require('../lib/gridlight-video');
+    const [lo, hi] = LIMITS.production_shots;
+    if (shots.length < lo || shots.length > hi) return json(res, 409, { error: `A Gridlight shot list takes ${lo}–${hi} shots; this sequence has ${shots.length}` });
+    const missing = shots.filter((s, i) => !s.keyframe && i === 0);
+    if (missing.length) return json(res, 409, { error: 'The first shot needs an approved frame: nothing comes before it to carry into it' });
+    const joins = parseJoins(row);
+    const project = db.prepare('SELECT target_resolution, target_fps FROM film_projects WHERE id = ?').get(row.project_id) || {};
+    const [w, h] = String(project.target_resolution || '').split('x').map(Number);
+    const body = req.body || {};
+    const payload = {
+        gridlight_production: true,
+        model: body.model || undefined,
+        width: body.width || w || undefined,
+        height: body.height || h || undefined,
+        fps: body.fps || Number(project.target_fps) || 24,
+        shots: shots.map((s, i) => {
+            const join = i > 0 ? (joins[i - 1] || {}) : {};
+            const continuous = i > 0 && (join.type === 'continuous');
+            return {
+                label: s.shot_code,
+                prompt: `${s.description || row.description || 'Continue the story.'}${join.prompt ? ` ${join.prompt}` : ''}`.trim(),
+                duration_seconds: Math.max(1, Math.round((s.duration_ms || 5000) / 1000)),
+                ...(s.keyframe && !continuous ? { init_image: s.keyframe } : {}),
+                ...(i > 0 ? { transition: transitionFor(join) } : {}),
+            };
+        }),
+    };
+    const result = await provider.generate('video', payload, { timeout: 3600000 });
+    if (!result.ok) return json(res, result.status && result.status < 600 ? result.status : 502, {
+        error: result.error, code: result.code, shot: result.shot, shots: result.shots });
+    const fileName = sequenceFileName(row.id, shots[0].shot_code, 'production');
+    const saved = await persistProviderMedia(row.project_id, 'video', fileName, result.data, { serveDir: 'videos' });
+    const assetId = generateId();
+    db.prepare(`INSERT INTO film_assets
+        (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata, provider, provider_model, provider_job_id)
+        VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?, 'gridlight', ?, NULL)`)
+        .run(assetId, row.project_id, shots[0].id, typeof saved === 'string' ? saved : saved.path, fileName,
+            JSON.stringify({ sequence_id: row.id, kind: 'native_multi_shot', seed: result.seed, shots: result.shots,
+                measured: result.measured }), result.provider_model || 'gridlight-production');
+    db.prepare("UPDATE film_sequences SET output_asset_id = ?, status = 'complete', updated_at = datetime('now') WHERE id = ?").run(assetId, row.id);
+    return json(res, 200, { sequence_id: row.id, asset_id: assetId, url: getFileUrl('video', row.project_id, fileName),
+        mode: 'native_multi_shot', provider: 'gridlight', model: result.provider_model, seed: result.seed,
+        shots: result.shots, measured: result.measured });
 }
 
 /**

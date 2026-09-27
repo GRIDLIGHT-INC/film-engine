@@ -2642,6 +2642,25 @@ const PRODUCTION_TOOLS = [
         required: [],
     },
     {
+        name: 'gridlight_video_capabilities',
+        handler: handleProviders, method: 'GET',
+        description:
+            'What the Gridlight gateway\u2019s video models accept, read from the gateway itself '
+            + '(GET /media/capabilities). FREE: reads a manifest, generates nothing. Per model: whether '
+            + 'it is available (and why not), whether it makes audio, its body-size ceiling, and its '
+            + 'inputs \u2014 which reference kinds (keyframe, clip, character, location, prop, transform), '
+            + 'how many of each, where each can be placed, which transform effects exist, and what '
+            + 'excludes what. Read this before video_generate on a Gridlight project: support differs '
+            + 'per model (LTX-2.5 takes all six kinds, Wan 2.2 one start image or clip, MiniMax H3 none), '
+            + 'and a reference the chosen model does not take is dropped and reported. A 503 means the '
+            + 'video server is off \u2014 a normal state, not a crash.',
+        path: a => `/film/providers/gridlight/video-capabilities${a.refresh ? '?refresh=1' : ''}`,
+        schema: {
+            refresh: { type: 'boolean', description: 'Optional. Re-read the gateway instead of the one-minute cache.' },
+        },
+        required: [],
+    },
+    {
         name: 'spend_rates',
         handler: handleBudget, method: 'GET',
         description: 'The rate book every cost is priced from: per provider and capability, the billing unit, the provider-native unit (usually credits), the USD rate, the published source URL and the date it was checked. Meshy publishes credit costs but not what a credit costs, so its dollar figure is the Pro-plan rate and can be corrected per install; a rate marked inferred was not in the published table and inherits its tier.',

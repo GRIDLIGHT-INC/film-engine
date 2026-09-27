@@ -8,6 +8,9 @@
  */
 
 const { callGridlight, relayGridlightSSE, checkEndpointHealth, GRIDLIGHT_URL, GRIDLIGHT_API_KEY } = require('../gridlight-client');
+// Video speaks the gateway's own contract — capabilities, references, SSE,
+// the shot list, every documented error — in one module (lib/gridlight-video.js).
+const gridlightVideo = require('../gridlight-video');
 
 // capability -> Gridlight endpoint path (mirrors the per-domain *_ENDPOINT constants).
 /*
@@ -223,7 +226,19 @@ const gridlightAdapter = {
     // module.exports is invisible to every caller and the preview falls
     // back to reporting the payload as fact.
     describeVideoRequest,
-    maxKeyframes: 1,
+    /*
+     * A start and an end frame. No longer a guess: the gateway publishes what
+     * each model takes (GET /media/capabilities), and a model that takes no
+     * end keyframe has it dropped AND REPORTED before the request is sent —
+     * the silent-destination failure this used to guard against cannot happen.
+     */
+    maxKeyframes: 2,
+    /*
+     * The package offered to the video builder: the gateway's documented
+     * ceiling (8 keyframes, a 6-panel sheet). The chosen model's inputs[] cut
+     * it down at generation time, every cut named. See lib/gridlight-video.js.
+     */
+    referenceContract: gridlightVideo.REFERENCE_CONTRACT,
     maxReferenceImages: 3,
     supportsReferenceImages: true,
     // reference_images / ip_adapter_image condition the result; no tag syntax.
@@ -237,6 +252,11 @@ const gridlightAdapter = {
     async generate(capability, payload, opts) {
         const endpoint = endpointFor(capability);
         if (!endpoint) return { ok: false, status: 400, error: `gridlight: unsupported capability '${capability}'` };
+        if (capability === 'video') {
+            return (payload && payload.gridlight_production)
+                ? gridlightVideo.generateProduction(payload, opts)
+                : gridlightVideo.generateVideo(payload, opts);
+        }
         return callGridlight(endpoint, payload, opts);
     },
 
@@ -245,6 +265,7 @@ const gridlightAdapter = {
         const endpoint = endpointFor(capability);
         if (!endpoint) return { ok: false, error: `gridlight: unsupported capability '${capability}'` };
         if (capability === 'llm') return streamGridlightLLM(endpoint, payload, res, callbacks);
+        if (capability === 'video') return streamGridlightVideo(payload, res, callbacks);
         return relayGridlightSSE(endpoint, payload, res, callbacks);
     },
 
@@ -267,6 +288,42 @@ const gridlightAdapter = {
  * because a swappable local agent decides that for itself and this process
  * cannot know. Named as an unknown rather than guessed.
  */
+/**
+ * The stream road for video: the same client as generate(), with the
+ * gateway's progress events relayed to the page as they arrive, and the MP4
+ * handed to onComplete as bytes — so the route persists exactly what the
+ * non-streaming road would.
+ */
+async function streamGridlightVideo(payload, res, callbacks) {
+    const cb = callbacks || {};
+    const send = obj => {
+        if (res && !res.writableEnded && typeof res.write === 'function') {
+            try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) { /* the page left */ }
+        }
+    };
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    if (res && typeof res.on === 'function') res.on('close', onClose);
+    try {
+        const result = await gridlightVideo.generateVideo(payload, {
+            signal: controller.signal,
+            onEvent: evt => {
+                const { event, phase, step, total, total_steps, num_frames, resolution, retry_after } = evt;
+                send({ type: 'progress', event, phase, step, total: total || total_steps, num_frames, resolution, retry_after });
+                if (cb.onProgress) cb.onProgress(evt);
+            },
+        });
+        if (!result.ok) {
+            if (cb.onError) cb.onError({ error: result.error, status: result.status, code: result.code });
+            return { ok: false, finalData: null, error: result.error, status: result.status, code: result.code };
+        }
+        if (cb.onComplete) cb.onComplete(result.data);
+        return { ok: true, finalData: result.data, result };
+    } finally {
+        if (res && typeof res.removeListener === 'function') res.removeListener('close', onClose);
+    }
+}
+
 function describeVideoRequest(payload) {
     const p = payload || {};
     const notes = ['This is the local Gridlight service, which forwards the request as supplied. '
@@ -274,11 +331,21 @@ function describeVideoRequest(payload) {
     if (!p.init_image && !p.image_url) {
         notes.push('No image is attached, so this generates from words alone.');
     }
+    // What the gateway's own manifest says this request becomes, when it has
+    // been read: which references travel, which are dropped and why.
+    const gateway = gridlightVideo.describe(p);
+    if (gateway.known && gateway.model) notes.push(`The gateway will run ${gateway.model}.`);
+    if (gateway.references_dropped && gateway.references_dropped.length) {
+        notes.push(`${gateway.references_dropped.length} reference(s) will not be sent: `
+            + gateway.references_dropped.map(d => `${d.kind} — ${d.reason}`).join('; '));
+    }
+    if (!gateway.known) notes.push(gateway.note);
     return {
         provider: 'gridlight',
-        mode: (p.init_image || p.image_url) ? 'image_to_video' : 'text_to_video',
-        model: p.model || DEFAULT_VIDEO_MODEL,
-        model_is_requested_not_resolved: true,
+        gateway,
+        mode: gateway.mode || ((p.init_image || p.image_url) ? 'image_to_video' : 'text_to_video'),
+        model: gateway.model || p.model || DEFAULT_VIDEO_MODEL,
+        model_is_requested_not_resolved: !gateway.model,
         duration_s: Number(p.duration_s !== undefined ? p.duration_s : p.duration) || null,
         ratio: (p.width && p.height) ? `${p.width}:${p.height}` : null,
         prompt: p.prompt || '',

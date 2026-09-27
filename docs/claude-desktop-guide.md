@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**372 tools, 76 families.** Everything the app can do, you can ask for in a
+**373 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -25,7 +25,7 @@ Nothing inside the tool list can warn you about this, because a stale connection
 serves a stale list — a diagnostic tool would be missing from exactly the
 connections that need it. Two things do reach it:
 
-- **`initialize`** reports the build, e.g. `1.0.1+372tools.2026-09-27T12:00:00Z`.
+- **`initialize`** reports the build, e.g. `1.0.1+373tools.2026-09-27T12:00:00Z`.
   That timestamp is when the connection's server process started.
 - **Calling a tool this build does not have** returns an error that names the
   tools on disk it is missing and tells you to reconnect.
@@ -273,6 +273,13 @@ references, make the picture, show it for approval, upload it. It becomes the
 shot's current frame and the one it replaces is kept as a recoverable version.
 Then `video_preview` shows exactly what a clip would cost before you buy one, and
 `video_generate` buys it — one clip for one shot, from its selected frame.
+
+On a project whose video runs on the Gridlight gateway, read
+`gridlight_video_capabilities` first. It is free and reads the gateway's own
+manifest: which models are up, and which references each takes (keyframes,
+clips, characters, locations, props, a transform), how many, and where. A
+reference the chosen model does not take is dropped and reported, never sent
+for a 422. A 503 means the GPU box is off, which is a normal state.
 
 `storyboard_generate` · `storyboard_regenerate` · `storyboard_refine` ·
 - `storyboard_angles_preview` · `storyboard_angles` · `storyboard_angles_list` · `storyboard_angles_pick` — explore FOUR ANGLES on one shot: four separate Nano Banana Pro images, one camera each, at the project's resolution, joined into a contact sheet. Nothing replaces the frame until you pick one ("use B"), which makes it a new version on the board. The preview is free and shows the four prompts; the exploration costs four images.

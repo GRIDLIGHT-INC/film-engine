@@ -64,13 +64,23 @@ describe('Video Generation Integration (mock Gridlight)', () => {
     before(async () => {
         fs.mkdirSync(TEST_DIR, { recursive: true });
 
+        // The gateway as the Gridlight Video Integration Brief describes it:
+        // a capabilities manifest, POST /video answered as Server-Sent Events,
+        // and a gateway-relative video_url served as MP4 bytes.
+        const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.from('FAKE-MP4-DATA')]);
         mockGridlight = http.createServer((req, res) => {
-            // Serving endpoint — the real gateway returns binary here even though
-            // its generation endpoints answer with JSON URLs.
             if (req.method === 'GET') {
+                if (req.url === '/media/capabilities') {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ media: [{ medium: 'video', models: [{
+                        id: 'ltx-2.5', available: true, has_audio: true,
+                        inputs: [{ id: 'keyframe', kind: 'keyframe', field: 'references',
+                            accepts: ['image/png', 'image/jpeg', 'image/webp'], max: 8, at: ['start', 'end', 'seconds'] }],
+                    }] }] }));
+                }
                 if (req.url.startsWith('/videos/')) {
                     res.writeHead(200, { 'Content-Type': 'video/mp4' });
-                    return res.end(Buffer.from('FAKE-MP4-DATA'));
+                    return res.end(MP4);
                 }
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
                 return res.end('not found');
@@ -79,25 +89,16 @@ describe('Video Generation Integration (mock Gridlight)', () => {
             req.on('data', c => raw += c);
             req.on('end', () => {
                 let reqBody = {}; try { reqBody = JSON.parse(raw || '{}'); } catch { /* ignore */ }
-                if (mockMode === 'error500') { res.writeHead(500, { 'Content-Type': 'text/plain' }); return res.end('boom'); }
-                if (reqBody.stream === true) {
-                    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-                    res.write('data: ' + JSON.stringify({ event: 'progress', pct: 50 }) + '\n\n');
-                    res.write('data: ' + JSON.stringify({ event: 'complete', video_url: `http://${req.headers.host}/videos/vid_abc123.mp4` }) + '\n\n');
-                    return res.end();
-                }
-                // Documented Gridlight shape: application/json carrying a URL, NOT
-                // inline binary. Exercising only the binary branch is what let the
-                // "generated media never lands on disk" bug ship green.
-                if (mockMode === 'json' || mockMode === 'jsonBadUrl') {
-                    const videoUrl = mockMode === 'jsonBadUrl'
-                        ? `http://${req.headers.host}/missing/nope.mp4`
-                        : `http://${req.headers.host}/videos/vid_abc123.mp4`;
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    return res.end(JSON.stringify({ status: 'success', video_url: videoUrl, seed: 42, model_used: 'ltx-2' }));
-                }
-                res.writeHead(200, { 'Content-Type': 'video/mp4' });
-                return res.end(Buffer.from('FAKE-MP4-DATA'));
+                if (mockMode === 'error500') { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end('{"error":"boom"}'); }
+                // Gateway-relative, fetched with the same Bearer. A URL that
+                // does not serve is the "generated but could not be stored" case.
+                const videoUrl = mockMode === 'jsonBadUrl' ? '/missing/nope.mp4' : '/videos/vid_abc123.mp4';
+                res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+                res.write('data: ' + JSON.stringify({ event: 'started' }) + '\n\n');
+                res.write('data: ' + JSON.stringify({ event: 'progress', step: 1, total: 2 }) + '\n\n');
+                res.write('data: ' + JSON.stringify({ event: 'completed', video_url: videoUrl, seed: 42,
+                    model: reqBody.model, has_audio: true }) + '\n\n');
+                return res.end();
             });
         });
         await new Promise(r => mockGridlight.listen(0, '127.0.0.1', r));
