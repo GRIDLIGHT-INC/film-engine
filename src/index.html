@@ -2176,6 +2176,19 @@
         .frame-busy-label { font-size: 12px; letter-spacing: .02em; }
 
         .title-page-block { display: none !important; }
+        .title-page-card {
+            display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+            max-width: 8.5in; width: 100%; margin: 0 auto 12px; padding: 10px 16px;
+            box-sizing: border-box; text-align: left; cursor: pointer;
+            background: var(--gl-bg-surface); color: var(--gl-text-primary);
+            border: 1px dashed var(--gl-border-subtle); border-radius: var(--gl-radius-md, 6px);
+            font: inherit; font-size: 13px;
+        }
+        .title-page-card:hover { border-style: solid; background: var(--gl-bg-elevated); }
+        .title-page-card .tpc-label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--gl-text-muted); }
+        .title-page-card .tpc-title { font-family: 'Courier New', monospace; font-weight: 600; text-transform: uppercase; }
+        .title-page-card .tpc-meta { color: var(--gl-text-muted); }
+        .title-page-card .tpc-edit { margin-left: auto; color: var(--gl-brand-pink, #ec4899); }
 
         .title-page-block {
             text-align: center;
@@ -5702,6 +5715,9 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 
                     <!-- Editor Container -->
                     <div class="screenplay-scroll-container" id="editorViewContainer">
+                        <button type="button" class="title-page-card" id="titlePageCard" onclick="openTitlePageModal()"
+                            title="Edit the title page: title, credit, author, source, draft date, contact, copyright, notes. It prints as the first page of the PDF.">
+                            <span class="tpc-label">Title page</span><span class="tpc-edit">Edit</span></button>
                         <div class="screenplay-page"
                              id="screenplayEditor"
                              contenteditable="true"
@@ -8391,7 +8407,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                 <div class="form-row">
                     <div class="form-group">
                         <label>Draft Date</label>
-                        <input type="text" id="titlePageDraft" placeholder="January 2026">
+                        <input type="text" id="titlePageDraftDate" placeholder="January 2026">
                     </div>
                     <div class="form-group">
                         <label>Copyright</label>
@@ -19239,14 +19255,7 @@ THREE.GLTFLoader = GLTFLoader;
         if (Object.keys(titlePage).length > 0) {
             const titlePageData = JSON.stringify(titlePage).replace(/"/g, '&quot;');
             let titleHtml = '<div class="screenplay-block title-page-block" data-element-type="title-page" data-title-page-data="' + titlePageData + '" contenteditable="false" onclick="openTitlePageModal()">';
-            titleHtml += '<div class="title-page-content">';
-            if (titlePage.title) titleHtml += `<div class="title-page-title">${escapeHtml(titlePage.title)}</div>`;
-            if (titlePage.credit) titleHtml += `<div class="title-page-credit">${escapeHtml(titlePage.credit)}</div>`;
-            if (titlePage.author) titleHtml += `<div class="title-page-author">${escapeHtml(titlePage.author)}</div>`;
-            if (titlePage.source) titleHtml += `<div class="title-page-source">${escapeHtml(titlePage.source)}</div>`;
-            if (titlePage.draft_date) titleHtml += `<div class="title-page-draft">${escapeHtml(titlePage.draft_date)}</div>`;
-            if (titlePage.contact) titleHtml += `<div class="title-page-contact">${escapeHtml(titlePage.contact.replace(/\n/g, '<br>'))}</div>`;
-            titleHtml += '</div>';
+            titleHtml += titlePageInnerHtml(titlePage);
             titleHtml += '<button class="title-page-edit-btn" onclick="openTitlePageModal()" title="Edit Title Page">Edit</button>';
             titleHtml += '</div>';
             htmlParts.push(titleHtml);
@@ -19462,6 +19471,9 @@ THREE.GLTFLoader = GLTFLoader;
     function normalizeEditor(editor) {
         const ed = editor || document.getElementById('screenplayEditor');
         if (!ed) return;
+        // Every way the editor is written ends here, so the title-page card
+        // cannot fall out of step with the block it describes.
+        if (ed.id === 'screenplayEditor') renderTitlePageCard();
 
         const existingBlocks = ed.querySelectorAll('[data-element-type]:not([data-element-type="title-page"])');
         const defaultType = existingBlocks.length === 0 ? 'scene-heading' : 'action';
@@ -21511,6 +21523,19 @@ THREE.GLTFLoader = GLTFLoader;
         return SCRIPT_TIMING;
     }
 
+    /*
+     * The timing rows that belong to scene headings, in order.
+     *
+     * The report opens with a row for whatever sits above the first heading —
+     * a title page or a note — with no heading and scene number 0. Matching
+     * rows to headings by position without dropping it shifted every scene by
+     * one: the gutter showed the preamble's eighths beside scene 1, and each
+     * scene the one before it. One rule, for the gutter and for the print.
+     */
+    function timingRowsForHeadings(timing) {
+        return ((timing && timing.scenes) || []).filter(r => r && String(r.heading || '').trim());
+    }
+
     /** Shot codes per scene number, from the shot list the breakdown produced. */
     function shotCodesByScene() {
         const out = {};
@@ -21552,9 +21577,10 @@ THREE.GLTFLoader = GLTFLoader;
         const codes = shotCodesByScene();
         const headings = [...editor.querySelectorAll('[data-element-type="scene-heading"]')];
         const editorTop = editor.offsetTop;
+        const rows = timingRowsForHeadings(timing);
 
         gutter.innerHTML = headings.map((el, i) => {
-            const scene = timing.scenes[i];
+            const scene = rows[i];
             if (!scene) return '';
             const top = el.offsetTop + editorTop;
             const num = scene.scene_number;
@@ -22293,6 +22319,8 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('titlePageSource').value = currentTitlePage.source || '';
         document.getElementById('titlePageDraftDate').value = currentTitlePage.draft_date || '';
         document.getElementById('titlePageContact').value = currentTitlePage.contact || '';
+        document.getElementById('titlePageCopyright').value = currentTitlePage.copyright || '';
+        document.getElementById('titlePageNotes').value = currentTitlePage.notes || '';
 
         // Through showModal: `open` is the only class .modal-overlay is
         // displayed by, AND the helper is what puts this above whatever it was
@@ -22370,12 +22398,15 @@ THREE.GLTFLoader = GLTFLoader;
             author: document.getElementById('titlePageAuthor').value.trim(),
             source: document.getElementById('titlePageSource').value.trim(),
             draft_date: document.getElementById('titlePageDraftDate').value.trim(),
-            contact: document.getElementById('titlePageContact').value.trim()
+            contact: document.getElementById('titlePageContact').value.trim(),
+            copyright: document.getElementById('titlePageCopyright').value.trim(),
+            notes: document.getElementById('titlePageNotes').value.trim(),
         };
 
         updateEditorTitlePage(currentTitlePage);
 
-        modal.classList.remove('active');
+        // `open` is the class that shows a modal; removing `active` closed nothing.
+        if (modal) closeModal('titlePageModal');
         editorDirty = true;
         triggerAutoSave();
         setStatus('Title page updated');
@@ -22388,7 +22419,52 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('titlePageSource').value = '';
         document.getElementById('titlePageDraftDate').value = '';
         document.getElementById('titlePageContact').value = '';
+        document.getElementById('titlePageCopyright').value = '';
+        document.getElementById('titlePageNotes').value = '';
     }
+
+    /*
+     * One renderer for the title page, used by the editor load and by a save.
+     * There were two copies, and both escaped a `<br>` they had just inserted,
+     * so a multi-line contact printed the letters "<br>". Newlines are kept as
+     * text and shown by `white-space: pre-line`.
+     */
+    function titlePageInnerHtml(tp) {
+        const row = (cls, v) => v ? `<div class="${cls}">${escapeHtml(v)}</div>` : '';
+        return '<div class="title-page-content">'
+            + row('title-page-title', tp.title) + row('title-page-credit', tp.credit)
+            + row('title-page-author', tp.author) + row('title-page-source', tp.source)
+            + row('title-page-draft', tp.draft_date) + row('title-page-contact', tp.contact)
+            + row('title-page-copyright', tp.copyright) + row('title-page-notes', tp.notes)
+            + '</div>';
+    }
+
+    /*
+     * The title page as something you can CLICK. The block itself stays hidden
+     * in the editor — it is furniture inside a contenteditable, and a slab
+     * above FADE IN was clicked by accident when the caret was meant to go on
+     * the first line. This card sits outside the editable page, says what the
+     * title page holds, and opens the modal.
+     */
+    function renderTitlePageCard() {
+        const card = document.getElementById('titlePageCard');
+        const editor = document.getElementById('screenplayEditor');
+        if (!card || !editor) return;
+        const block = editor.querySelector('[data-element-type="title-page"]');
+        let tp = null;
+        try { tp = block ? JSON.parse(block.dataset.titlePageData || '{}') : null; } catch (_) { tp = null; }
+        if (tp && (tp.title || tp.author)) {
+            card.innerHTML = `<span class="tpc-label">Title page</span>`
+                + `<span class="tpc-title">${escapeHtml(tp.title || 'Untitled')}</span>`
+                + (tp.author ? `<span class="tpc-meta">${escapeHtml(tp.credit || 'Written by')} ${escapeHtml(tp.author)}</span>` : '')
+                + (tp.draft_date ? `<span class="tpc-meta">${escapeHtml(tp.draft_date)}</span>` : '')
+                + `<span class="tpc-edit">Edit</span>`;
+        } else {
+            card.innerHTML = `<span class="tpc-label">Title page</span>`
+                + `<span class="tpc-meta">None yet: add a title, author and draft date</span><span class="tpc-edit">Add</span>`;
+        }
+    }
+    window.renderTitlePageCard = renderTitlePageCard;
 
     function updateEditorTitlePage(titlePage) {
         const editor = document.getElementById('screenplayEditor');
@@ -22402,6 +22478,7 @@ THREE.GLTFLoader = GLTFLoader;
 
         // Only add if there's content
         if (!titlePage.title && !titlePage.author) {
+            renderTitlePageCard();
             return;
         }
 
@@ -22413,26 +22490,7 @@ THREE.GLTFLoader = GLTFLoader;
         block.contentEditable = 'false';
         block.onclick = () => openTitlePageModal();
 
-        let html = '<div class="title-page-content">';
-        if (titlePage.title) {
-            html += `<div class="title-page-title">${escapeHtml(titlePage.title)}</div>`;
-        }
-        if (titlePage.credit) {
-            html += `<div class="title-page-credit">${escapeHtml(titlePage.credit)}</div>`;
-        }
-        if (titlePage.author) {
-            html += `<div class="title-page-author">${escapeHtml(titlePage.author)}</div>`;
-        }
-        if (titlePage.source) {
-            html += `<div class="title-page-source">${escapeHtml(titlePage.source)}</div>`;
-        }
-        if (titlePage.draft_date) {
-            html += `<div class="title-page-draft">${escapeHtml(titlePage.draft_date)}</div>`;
-        }
-        if (titlePage.contact) {
-            html += `<div class="title-page-contact">${escapeHtml(titlePage.contact.replace(/\n/g, '<br>'))}</div>`;
-        }
-        html += '</div>';
+        let html = titlePageInnerHtml(titlePage);
         html += '<button class="title-page-edit-btn" onclick="openTitlePageModal()" title="Edit Title Page">Edit</button>';
 
         block.innerHTML = html;
@@ -22440,6 +22498,7 @@ THREE.GLTFLoader = GLTFLoader;
         // Insert at the beginning of editor
         editor.insertBefore(block, editor.firstChild);
         normalizeEditor();   // every way in leaves the editor sound
+        renderTitlePageCard();
     }
 
     function serializeTitlePageToFountain(titlePage) {
@@ -22471,6 +22530,14 @@ THREE.GLTFLoader = GLTFLoader;
             for (let i = 1; i < contactLines.length; i++) {
                 lines.push(`   ${contactLines[i]}`);
             }
+        }
+        if (titlePage.copyright) {
+            lines.push(`Copyright: ${titlePage.copyright}`);
+        }
+        if (titlePage.notes) {
+            const noteLines = titlePage.notes.split('\n');
+            lines.push(`Notes: ${noteLines[0]}`);
+            for (let i = 1; i < noteLines.length; i++) lines.push(`   ${noteLines[i]}`);
         }
 
         return lines.join('\n') + '\n\n';
@@ -22706,13 +22773,21 @@ THREE.GLTFLoader = GLTFLoader;
         return result.join('\n').trim();
     }
 
-    function exportToPDF() {
+    async function exportToPDF() {
         const editor = document.getElementById('screenplayEditor');
 
         if (!editor.innerText.trim()) {
             setStatus('Nothing to export');
             return;
         }
+
+        // Opened BEFORE anything is awaited: a pop-up opened after an await is
+        // no longer the direct result of the click, and browsers block it.
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) { setStatus('The browser blocked the print window — allow pop-ups for this page.'); return; }
+        // Fresh, not the copy the gutter loaded: the numbers and eighths must
+        // describe the draft being printed.
+        await loadScriptTiming();
 
         /*
          * Paginate a DETACHED CLONE, never the live editor.
@@ -22726,6 +22801,8 @@ THREE.GLTFLoader = GLTFLoader;
          */
         const printable = editor.cloneNode(true);
         paginateInto(printable);
+        shootingScriptMarks(printable, SCRIPT_TIMING);
+        toPrintSheets(printable);
 
         // Sanitize for print
         const content = printable.innerHTML
@@ -22736,8 +22813,7 @@ THREE.GLTFLoader = GLTFLoader;
         const projectTitle = state.currentProject?.title || 'Screenplay';
         const printHTML = generatePrintHTML(content, projectTitle);
 
-        // Open in new window and print
-        const printWindow = window.open('', '_blank');
+        // Into the window opened before the timing was fetched.
         printWindow.document.write(printHTML);
         printWindow.document.close();
 
@@ -22751,6 +22827,91 @@ THREE.GLTFLoader = GLTFLoader;
         document.getElementById('exportDropdown').classList.remove('open');
     }
 
+    /*
+     * Each page as its own sheet, with its own margins.
+     *
+     * The browser prints its own header and footer — the date, the title and
+     * the page's address — INSIDE the @page margins, and the address of a
+     * pop-up written with document.write is "about:blank", which is what
+     * appeared bottom-left on every page. With @page margins at zero there is
+     * nowhere for them to go; the screenplay margins move onto these sheets,
+     * which the paginator has already cut at legal breaks. Page numbers are
+     * drawn the way a screenplay numbers them: top right, from page 2.
+     */
+    /*
+     * A shooting script: every scene heading carries its scene number in BOTH
+     * margins, and its length in page eighths under the right-hand one.
+     *
+     * Numbers and eighths come from the same /timing report the editor's gutter
+     * shows, matched to the headings in order — the gutter's own rule — so the
+     * page and the screen cannot disagree. A heading the report has no row for
+     * (a scene typed since the last save) is numbered by position and printed
+     * without eighths rather than with a guess.
+     */
+    function shootingScriptMarks(container, timing) {
+        const scenes = timingRowsForHeadings(timing);
+        const headings = [...container.querySelectorAll('[data-element-type="scene-heading"]')];
+        headings.forEach((h, i) => {
+            h.querySelectorAll('.scene-number-gutter').forEach(g => g.remove());
+            const row = scenes[i] || null;
+            const num = row && row.scene_number != null && row.scene_number !== '' ? row.scene_number : i + 1;
+            const left = document.createElement('span');
+            left.className = 'shoot-num shoot-num-left';
+            left.textContent = num;
+            const right = document.createElement('span');
+            right.className = 'shoot-num shoot-num-right';
+            right.textContent = num;
+            if (row && row.eighths) {
+                const e = document.createElement('span');
+                e.className = 'shoot-eighths';
+                e.textContent = row.eighths;
+                right.appendChild(e);
+            }
+            h.classList.add('shoot-heading');
+            h.prepend(left);
+            h.appendChild(right);
+        });
+        return headings.length;
+    }
+
+    function toPrintSheets(container) {
+        const sheets = [];
+        let cur = null;
+        for (const node of [...container.childNodes]) {
+            if (node.nodeType === 1 && node.classList.contains('title-page-block')) {
+                const tp = document.createElement('div');
+                tp.className = 'print-sheet print-title-sheet';
+                tp.appendChild(node);
+                sheets.push(tp);
+                cur = null;
+                continue;
+            }
+            if (node.nodeType === 1 && node.classList.contains('page-break-indicator')) { cur = null; continue; }
+            if (!cur) {
+                if (node.nodeType !== 1 && !String(node.textContent || '').trim()) continue;
+                cur = document.createElement('div');
+                cur.className = 'print-sheet';
+                sheets.push(cur);
+            }
+            cur.appendChild(node);
+        }
+        container.innerHTML = '';
+        let n = 0;
+        for (const sheet of sheets) {
+            if (!sheet.classList.contains('print-title-sheet')) {
+                n++;
+                if (n > 1) {
+                    const num = document.createElement('div');
+                    num.className = 'print-page-number';
+                    num.textContent = n + '.';
+                    sheet.prepend(num);
+                }
+            }
+            container.appendChild(sheet);
+        }
+        return sheets.length;
+    }
+
     function generatePrintHTML(editorContent, title) {
         return `<!DOCTYPE html>
 <html>
@@ -22758,13 +22919,32 @@ THREE.GLTFLoader = GLTFLoader;
     <meta charset="UTF-8">
     <title>${escapeHtml(title)}</title>
     <style>
+        /* Zero margins: the browser draws its header and footer (date, title,
+           "about:blank") in the page margins, so none leaves nothing to draw
+           them in. The screenplay margins live on each .print-sheet. */
         @page {
             size: letter;
-            margin: 1in;
+            margin: 0;
         }
-        @page :first {
-            margin-top: 0.5in;
+        .print-sheet {
+            position: relative;
+            width: 8.5in;
+            height: 11in;
+            padding: 1in 1in 0.5in 1.5in;
+            box-sizing: border-box;
+            page-break-after: always;
+            break-after: page;
         }
+        .print-sheet:last-child { page-break-after: auto; break-after: auto; }
+        .print-page-number { position: absolute; top: 0.5in; right: 1in; }
+        /* Shooting-script scene numbers, both margins; eighths under the right. */
+        .shoot-heading { position: relative; }
+        .shoot-num { position: absolute; top: 0; font-weight: bold; }
+        .shoot-num-left { left: -0.9in; }
+        .shoot-num-right { right: -0.75in; text-align: right; }
+        .shoot-eighths { display: block; font-weight: normal; font-size: 9pt; margin-top: 2pt; }
+        .title-page-copyright { font-size: 10pt; margin-top: 12pt; }
+        .title-page-notes { font-size: 10pt; margin-top: 12pt; white-space: pre-line; }
         body {
             font-family: 'Courier New', Courier, monospace;
             font-size: 12pt;
@@ -22776,9 +22956,8 @@ THREE.GLTFLoader = GLTFLoader;
         }
         /* Title Page */
         .title-page-block {
-            page-break-after: always;
             text-align: center;
-            padding-top: 3in;
+            padding-top: 2in;
         }
         .title-page-title { font-size: 24pt; text-transform: uppercase; margin-bottom: 36pt; font-weight: normal; }
         .title-page-credit { font-size: 12pt; margin-bottom: 12pt; }

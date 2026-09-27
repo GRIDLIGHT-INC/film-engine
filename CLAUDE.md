@@ -380,6 +380,7 @@ film-engine/
 │       ├── shot-card-edit.test.js      # A scene card can be edited, merged not replaced, and goes stale
 │       ├── script-revision.test.js     # Revising a story does not cascade the production away
 │       ├── screenplay-change-safety.test.js # Every way the screenplay is written leaves every shot alive, on its own scene, on the board
+│       ├── title-page-and-print.test.js # The title page opens and saves every field; the PDF is a shooting script with no browser furniture
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
@@ -3458,6 +3459,13 @@ After the replace-by-default fix, an audit of every path that writes the screenp
 
 `tests/screenplay-change-safety.test.js` runs every writer — upload (Fountain and plain text), update with and without sync, FDX import, append, insert, outline, scene update, phrase edit — on a production with a shot and blocking under every scene, and requires every shot alive and visible. The writer list is derived from the source, so a new way to write the screenplay arrives covered or fails.
 
+### A Printed Screenplay Is a Shooting Script, and Carries Nothing the Browser Added
+*"On the PDF, left down on the page it says about:blank."* The browser's own footer — the pop-up's address — printed in the @page margins. `@page` is now `margin: 0`, so the browser has nowhere to draw a header or footer, and the screenplay margins live on one `.print-sheet` per page, cut by `toPrintSheets` at the breaks `paginateInto` already chose. Pages are numbered top right from page 2. `shootingScriptMarks` puts each scene's number in both margins and its eighths under the right-hand one, from the same `/timing` report the editor's gutter reads. Verified in Chrome headless with headers and footers ON: the old style printed the date, title and `file://` address; the new prints only the script.
+
+`timingRowsForHeadings` is the one rule for matching timing rows to headings. The report opens with a heading-less row for whatever precedes the first heading, and matching by raw position shifted every scene by one — the gutter had shown the preamble's 1/8 beside scene 1.
+
+**The title page opens.** The form's field was `titlePageDraft` while every function used `titlePageDraftDate`, so the open threw before the modal showed; save closed it with `active`, which displays nothing; Copyright and Notes were on the form and read by nothing. A **Title page** card above the editor — outside the contenteditable, refreshed by `normalizeEditor` — shows what the title page holds and opens the modal. `tests/title-page-and-print.test.js` holds every field id the functions touch to the form, and Copyright and Notes to a round trip through Fountain.
+
 ### The Title Page Is for Printing
 It sat at the top of the editor as a non-editable slab you scrolled past on every open and clicked by accident when you meant to put the cursor on FADE IN. It is now `display: none` on screen and `display: block` in `@media print`, which is the one moment a title page is read. Hidden rather than removed — the block carries the data the Fountain serialiser writes back, so deleting it would lose the title page itself — and the toolbar's **Title Page** button was always the real way to edit it.
 
@@ -6131,6 +6139,7 @@ node --test backend/tests/spec-consumption.test.js
 node --test backend/tests/shot-card-edit.test.js
 node --test backend/tests/script-revision.test.js
 node --test backend/tests/screenplay-change-safety.test.js
+node --test backend/tests/title-page-and-print.test.js
 node --test backend/tests/screenplay-drift.test.js
 node --test backend/tests/impact.test.js
 node --test backend/tests/mcp-no-server-llm.test.js
