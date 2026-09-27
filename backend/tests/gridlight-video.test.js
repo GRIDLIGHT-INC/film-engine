@@ -507,3 +507,37 @@ test('the capabilities are readable for free, over HTTP and MCP', async () => {
     const tools = require('../lib/mcp-tools');
     assert.ok(tools.hasTool('gridlight_video_capabilities'));
 });
+
+// -- the live gateway's own manifest ---------------------------------------------------
+
+/*
+ * Copied from the real gateway on 2026-09-27 (GET /media/capabilities through
+ * /film/providers/gridlight/video-capabilities). It names its inputs
+ * `start_frame` / `reference_clip`, NOT the brief's `keyframe` / `clip`, and
+ * gives them no `at` — so a kind-only match dropped the one picture Wan takes.
+ */
+const LIVE_WAN = { id: 'wan-2.2-ti2v-5b', label: 'Wan 2.2 TI2V 5B', available: true, has_audio: false, max_body_bytes: 52428800,
+    inputs: [
+        { id: 'start_frame', kind: 'start_frame', field: 'init_image', accepts: ['image/png', 'image/jpeg', 'image/webp'], max: 1, at: [], effects: [], excludes: ['reference_clip'] },
+        { id: 'reference_clip', kind: 'reference_clip', field: 'init_video', accepts: ['video/mp4'], max: 1, at: [], effects: [], excludes: ['start_frame'] },
+    ] };
+
+test('live manifest: a start frame reaches Wan through init_image, and its exclusion holds', () => {
+    const built = gv.buildVideoRequest(base({ model: LIVE_WAN.id, init_image: png(), end_image: png() }), LIVE_WAN);
+    assert.ok(built.body.init_image, 'the board frame did not reach init_image');
+    assert.strictEqual(built.body.references, undefined);
+    assert.match(built.references_dropped.find(d => d.at === 'end').reason, /declares no keyframe/);
+    const both = gv.buildVideoRequest(base({ init_image: png(), init_video: mp4() }), LIVE_WAN);
+    assert.ok(both.body.init_image && !both.body.init_video);
+    assert.match(both.references_dropped[0].reason, /cannot be combined/);
+    assert.strictEqual(gv.pickModel([LIVE_WAN], undefined).model.id, LIVE_WAN.id, 'a model reading init_image counts as taking a keyframe');
+});
+
+test('live manifest: nothing available names every model and why', async () => {
+    GW.state.models = [{ ...LIVE_WAN, available: false, withheld_reason: 'no_agent' },
+        { id: 'minimax-h3', available: false, withheld_reason: 'territory', inputs: [] }];
+    const r = await gv.generateVideo(base({ model: undefined }), opts());
+    assert.strictEqual(r.code, 'NO_MODEL');
+    assert.match(r.error, /wan-2\.2-ti2v-5b \(no_agent\).*minimax-h3 \(territory\)/);
+    assert.strictEqual(GW.state.posts.length, 0);
+});

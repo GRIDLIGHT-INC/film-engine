@@ -4026,6 +4026,8 @@ Size snaps down to a multiple of 32 inside 3840×2160, with a note.
 - Joins map to `cut` / `crossfade` / `fade_black`.
 - Drops are reported per shot, and a bad shot is named.
 
+**The live gateway does not use the brief's kind names for Wan.** It names the inputs `start_frame` (field `init_image`) and `reference_clip` (field `init_video`), with no `at`. So a start keyframe or start clip is matched by the field its model reads it from, as well as by kind. The live manifest is pinned in the test.
+
 The adapter's `referenceContract` is the gateway's documented ceiling (8 keyframes and a 6-panel sheet). The model's manifest is the real limit and cuts it at generation time. `maxKeyframes` is 2. The free video preview reports which model the gateway will run and what will not be sent, from the last manifest read.
 
 ### Lip-Sync

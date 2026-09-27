@@ -267,7 +267,7 @@ function pickModel(models, wanted) {
     const available = list.filter(m => m.available);
     const envModel = process.env.GRIDLIGHT_VIDEO_MODEL && byId(process.env.GRIDLIGHT_VIDEO_MODEL);
     const chosen = (envModel && envModel.available && envModel)
-        || available.find(m => m.inputs.some(i => i.kind === 'keyframe'))
+        || available.find(m => m.inputs.some(i => i.kind === 'keyframe' || i.field === 'init_image'))
         || available[0];
     if (!chosen) {
         const withheld = list.filter(m => !m.available)
@@ -367,6 +367,23 @@ function candidatesFrom(payload) {
     return out;
 }
 
+/**
+ * The input on this model that takes a candidate. By its kind first; else, for
+ * a START frame or a START clip, by the legacy field the model reads it from.
+ * The live gateway names Wan's inputs `start_frame` (field `init_image`) and
+ * `reference_clip` (field `init_video`) rather than `keyframe` / `clip`, so a
+ * kind-only match would drop the one picture Wan can take.
+ */
+const START_FIELD = Object.freeze({ keyframe: 'init_image', clip: 'init_video' });
+function inputFor(c, model) {
+    const inputs = (model && model.inputs) || [];
+    const byKind = inputs.find(i => i.kind === c.kind);
+    if (byKind) return byKind;
+    const field = START_FIELD[c.kind];
+    if (field && (c.at === undefined || c.at === 'start')) return inputs.find(i => i.field === field) || null;
+    return null;
+}
+
 /** Seconds, from `start` / `end` / a number, for spacing and clamping. */
 function secondsOf(at, duration) {
     if (at === 'start' || at === undefined) return 0;
@@ -384,8 +401,7 @@ function referencesFor(payload, model, frame) {
     const duration = Number(f.duration_seconds) || 5;
     const fps = Number(f.fps) || 24;
     const minGap = LIMITS.keyframe_gap_frames / fps;
-    const inputs = new Map(((model && model.inputs) || []).map(i => [i.kind, i]));
-    const kept = [];
+        const kept = [];
     const dropped = [];
     const warnings = [];
     const drop = (c, reason) => dropped.push({ kind: c.kind, from: c.from, label: c.label || null, at: c.at === undefined ? null : c.at, reason });
@@ -395,7 +411,7 @@ function referencesFor(payload, model, frame) {
     const ordered = candidatesFrom(payload).sort((a, b) => (b.kind === 'transform') - (a.kind === 'transform'));
     for (const c of ordered) {
         if (c.refused) { drop(c, c.refused); continue; }
-        const input = inputs.get(c.kind);
+        const input = inputFor(c, model);
         if (!input) { drop(c, `${model ? model.id : 'this model'} declares no ${c.kind} input`); continue; }
         const bytes = bytesOf(c.src);
         if (!bytes) { drop(c, 'its picture could not be read as bytes (a URL must be fetched first)'); continue; }
@@ -405,6 +421,7 @@ function referencesFor(payload, model, frame) {
             continue;
         }
         let at = c.at;
+        if (input.field !== 'references') at = undefined; // a legacy start field has no placement
         if (typeof at === 'number' || (at !== undefined && at !== 'start' && at !== 'end')) {
             const n = Number(at);
             if (!Number.isFinite(n)) { drop(c, `"${at}" is not a time`); continue; }
@@ -422,14 +439,14 @@ function referencesFor(payload, model, frame) {
             }
         }
         const cap = input.max !== null ? input.max : (KINDS[c.kind] ? KINDS[c.kind].max : Infinity);
-        if (kept.filter(k => k.kind === c.kind).length >= cap) { drop(c, `the model takes at most ${cap} ${c.kind} reference${cap === 1 ? '' : 's'}`); continue; }
+        if (kept.filter(k => k.input === input).length >= cap) { drop(c, `the model takes at most ${cap} ${c.kind} reference${cap === 1 ? '' : 's'}`); continue; }
         if (KINDS[c.kind] && KINDS[c.kind].sheet && kept.filter(k => KINDS[k.kind] && KINDS[k.kind].sheet).length >= SHEET_PANELS) {
             drop(c, `the reference sheet holds ${SHEET_PANELS} panels (characters, locations and props together)`);
             continue;
         }
-        const clash = kept.find(k => (inputs.get(k.kind).excludes || []).includes(c.kind) || input.excludes.includes(k.kind));
+        const clash = kept.find(k => (k.input.excludes || []).includes(input.kind) || input.excludes.includes(k.input.kind));
         if (clash) { drop(c, `${c.kind} cannot be combined with ${clash.kind} on this model`); continue; }
-        kept.push({ ...c, at, bytes, mime, input });
+        kept.push({ ...c, at: input.field !== 'references' ? undefined : at, bytes, mime, input });
     }
 
     // A transform must be the only reference. It is only ever explicit, so it wins.
