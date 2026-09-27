@@ -232,6 +232,8 @@ film-engine/
 │   │   ├── agent-presence.js     # Is an agent host attached, and what it would replace
 │   │   ├── artefact-fingerprint.js # What a generated artefact was made from (staleness)
 │   │   ├── screenplay-drift.js    # Which shots a rewrite left behind, and what was built on them
+│   │   ├── shot-audit.js          # The pre-flight: a subject a card names that reaches the model as neither picture nor words
+│   │   ├── shots-resync.js        # Reconcile cards with the screenplay — dry run first, never rewrites prose, never deletes a shot
 │   │   ├── impact.js              # One change, all the way down: redo now vs waiting on something above
 │   │   ├── scene-splice.js        # Replace one scene in a screenplay, byte-identical elsewhere
 │   │   ├── story-bible.js         # Bible sections, and the link back from what was written from them
@@ -386,6 +388,9 @@ film-engine/
 │       ├── title-page-and-print.test.js # The title page opens and saves every field; the PDF is a shooting script with no browser furniture
 │       ├── version.test.js           # One version, stated in package.json, declared identically everywhere and read by the servers
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
+│       ├── shot-audit.test.js          # A plural in the prose still finds the subject; an unresolvable one is an ERROR
+│       ├── plate-versions.test.js      # Replacing a plate archives the old one; plates were the last paid artefact still deleted
+│       ├── shots-resync.test.js        # A dry run writes nothing; an apply never touches a description or a shot id
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM
 │       ├── mcp-staleness.test.js  # A connection that predates the capability it is asked for

@@ -168,8 +168,18 @@ test('the board paints its frames before it waits for any report', () => {
     const filler = page.indexOf('async function loadBoardBanners');
     assert.ok(filler > 0, 'nothing fills the banner strip after the frames are painted');
     const fill = page.slice(filler, page.indexOf('\n    /**', filler + 10));
-    assert.ok(/screenplayDriftBanner\(\)/.test(fill) && /impactBanner\(\)/.test(fill),
-        'the banners are never rendered at all');
+    /*
+     * Both notices still reach the board — asserted through the composer
+     * rather than by counting two calls here. The two full-width cards are now
+     * one strip: `impactBanner()` composes the drift notice and the impact
+     * notice into a single line each, which is what "intrusive" cost them.
+     * What must not regress is that BOTH still arrive.
+     */
+    assert.ok(/impactBanner\(\)/.test(fill), 'the notices are never rendered at all');
+    const composer = page.slice(page.indexOf('function impactBanner()'),
+        page.indexOf('function impactBanner()') + 400);
+    assert.ok(/screenplayDriftNotice\(\)/.test(composer) && /impactNotice\(\)/.test(composer),
+        'the strip drops one of the two notices, so a whole class of warning stopped being shown');
 
     /*
      * And the PER-FRAME marks are repainted with them. A banner saying six

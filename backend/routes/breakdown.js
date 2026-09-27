@@ -10,6 +10,7 @@
 const { db, generateId } = require('../db/database');
 const { stampShot } = require('../lib/screenplay-drift');
 const { validateSceneCards } = require('../lib/scene-card-schema');
+const { resolveCardSubjects } = require('../lib/shot-references');
 const { parseFountain, ELEMENT_TYPES } = require('../lib/fountain-parser');
 const { callProjectLLM, streamProjectLLM } = require('../lib/llm-client');
 const { fallbackNotice } = require('../lib/agent-presence');
@@ -794,6 +795,19 @@ function normalizeCard(card) {
         characters: Array.isArray(card.characters)
             ? card.characters.map(c => typeof c === 'string' ? { name: c } : c)
             : [],
+        /*
+         * PROPS WERE DROPPED HERE, and that was the whole bug.
+         *
+         * This normaliser rebuilds the card field by field, and `props` was
+         * not one of the fields -- so whatever the model proposed was thrown
+         * away before the card was ever written. Every shot from the breakdown
+         * therefore reached generation with an EMPTY prop list, and the only
+         * thing standing between a scene's objects and the picture was a
+         * regex over the action line at request time.
+         */
+        props: Array.isArray(card.props)
+            ? card.props.map(p => (typeof p === 'string' ? p : (p && p.name))).filter(Boolean)
+            : [],
         dialogue: Array.isArray(card.dialogue) ? card.dialogue : [],
         duration_ms: Math.max(1000, Math.min(15000, parseInt(card.duration_ms || card.duration_s * 1000) || 4000)),
         generation_mode: card.generation_mode || 'creative'
@@ -838,8 +852,33 @@ function autoSaveShots(sceneGroups) {
         const saved = [];
         const now = new Date().toISOString();
 
+        /*
+         * WHO IS IN THIS SHOT IS DECIDED NOW, NOT AT GENERATION TIME.
+         *
+         * The subjects used to be worked out from the description on every
+         * request, which made the cast of a frame a property of how a sentence
+         * was phrased. Resolving once and writing it down puts the answer on
+         * the card, where the director can see it and change it, and stops a
+         * prose rewrite quietly removing a creature.
+         *
+         * `unresolved` is kept on the card rather than discarded: a name the
+         * card asserts that matches nothing in the project is the failure that
+         * produces a confident wrong frame, and it must be visible to the
+         * audit rather than inferred from an absence.
+         */
+        const sceneRow = db.prepare('SELECT project_id FROM film_scenes WHERE id = ?').get(group.scene_id);
+        const projectId = sceneRow && sceneRow.project_id;
+
         for (const card of group.cards) {
             const shotId = generateId();
+            if (projectId) {
+                try {
+                    const resolved = resolveCardSubjects(db, projectId, card);
+                    card.characters = resolved.characters.map(name => ({ name }));
+                    card.props = resolved.props;
+                    if (resolved.unresolved.length) card.unresolved_subjects = resolved.unresolved;
+                } catch (_) { /* a project mid-migration still saves its shots */ }
+            }
             const cardYaml = JSON.stringify(card, null, 2);
             insertStmt.run(shotId, group.scene_id, card.shot_code, cardYaml, card.duration_ms || 4000, now);
             // Which draft of the scene this card was written from. Without it a

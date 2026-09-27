@@ -267,6 +267,38 @@ function handleProductionReports(req, res, urlParts, query) {
         return json(res, 200, simple[urlParts[3]](urlParts[2], query || {}));
     }
 
+    /*
+     * GET  /film/projects/:id/shot-audit          — the pre-flight, free.
+     * POST /film/projects/:id/shots-resync        — dry run unless apply:true.
+     *
+     * The two halves of "the screenplay moved and the board did not": one says
+     * what is wrong, the other reconciles what can be reconciled without
+     * making a judgement on somebody's film. Both are GET-shaped reads except
+     * the apply, which is the only thing here that writes.
+     */
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'shot-audit') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const { auditShots } = require('../lib/shot-audit');
+        const report = auditShots(urlParts[2], (query || {}).shot_id || null);
+        // Errors are reported with 200, not 4xx: the audit SUCCEEDED, and the
+        // caller asked what is wrong rather than to be refused.
+        return json(res, 200, report);
+    }
+
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'shots-resync') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+        const { resyncShots } = require('../lib/shots-resync');
+        const body = req.body || {};
+        return json(res, 200, resyncShots(urlParts[2], {
+            // Opt IN to writing. An apply that cannot be previewed is how the
+            // last reconciler took a shot list with it.
+            apply: body.apply === true,
+            scene_id: body.scene_id || null,
+        }));
+    }
+
     if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'run-plan') {
         if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });

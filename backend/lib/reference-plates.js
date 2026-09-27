@@ -780,6 +780,81 @@ function plateFileName(kind, subjectName, view) {
 }
 
 /**
+ * Keep the plate that is being replaced, instead of deleting it.
+ *
+ * Regenerating a plate used to `DELETE FROM film_assets` for that view and
+ * write the new picture over the same filename, inserting the replacement at a
+ * hard-coded `version: 1`. So the column existed, never moved, and every
+ * earlier attempt was gone from both the ledger and the disk.
+ *
+ * That is the exact defect the storyboard version store was built to end, and
+ * the reasoning transfers without modification: a generation is a coin flip
+ * you have already paid for, so the attempt you preferred is often an earlier
+ * one. A plate costs the same money as a frame and is MORE consequential,
+ * because every frame of that subject is conditioned on it.
+ *
+ * The live plate keeps the plain filename, so nothing that links to it has to
+ * change. The outgoing picture is copied to `versions/{name}_v{n}.png` and its
+ * row is kept, re-pointed at the copy and marked `superseded` — a role
+ * `sendableSql()` already excludes, so a kept version can never be picked up
+ * as the reference by a gather query.
+ *
+ * Never throws. Failing to archive an old attempt must not fail a generation
+ * that has already succeeded and been paid for.
+ *
+ * Returns the version number the INCOMING plate should carry.
+ */
+function supersedePlate(projectId, subject, spec, fileName, incomingPath) {
+    const fs_ = require('fs');
+    const path_ = require('path');
+    try {
+        const prior = db.prepare(
+            `SELECT id, version, file_path, file_name, metadata FROM film_assets
+              WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?
+              ORDER BY version DESC`).all(projectId, subject.id, spec.assetType, fileName);
+        if (!prior.length) return 1;
+
+        const highest = prior.reduce((n, r) => Math.max(n, Number(r.version) || 1), 1);
+        const live = prior[0];
+        const livePath = live.file_path || '';
+        const incoming = typeof incomingPath === 'string' ? incomingPath : (incomingPath && incomingPath.path) || '';
+
+        // Only the row still pointing at the live file needs its picture moved
+        // aside; an already-archived version owns its own copy.
+        const sameFile = livePath && incoming && path_.resolve(livePath) === path_.resolve(incoming);
+        if (sameFile && fs_.existsSync(livePath)) {
+            const dest = path_.join(path_.dirname(livePath), 'versions',
+                `${path_.basename(fileName, '.png')}_v${live.version || 1}.png`);
+            fs_.mkdirSync(path_.dirname(dest), { recursive: true });
+            fs_.copyFileSync(livePath, dest);
+            db.prepare('UPDATE film_assets SET file_path = ?, file_name = ? WHERE id = ?')
+                .run(dest, path_.basename(dest), live.id);
+        }
+
+        // Every prior row for this view steps out of the way of the new one.
+        for (const row of prior) {
+            let meta = {};
+            try { meta = JSON.parse(row.metadata || '{}'); } catch (_) { meta = {}; }
+            if (meta.plate_role === 'superseded') continue;
+            meta.plate_role = 'superseded';
+            meta.superseded_at = new Date().toISOString();
+            db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+                .run(JSON.stringify(meta), row.id);
+        }
+        return highest + 1;
+    } catch (_) {
+        /*
+         * The archive failed and the generation did not. Falling back to the
+         * old destructive behaviour here would be the worst of both, so the
+         * prior rows are left exactly as they are and the incoming plate takes
+         * a version above them — a duplicate reference is visible and
+         * recoverable; a deleted one is not.
+         */
+        return 2;
+    }
+}
+
+/**
  * Generate, store and register one plate.
  *
  * Returns { ok, asset_id, file_name, image_url, style_applied, error }.
@@ -1012,23 +1087,27 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
      * let the gather query pick an older look at random. But deleting them all
      * would mean generating a second view of a location destroys the first,
      * which is the whole reason a location could only ever have one.
+     *
+     * It is no longer a DELETE: the prior rows are archived and marked
+     * superseded, which keeps them out of every gather query just as firmly
+     * while leaving the pictures on disk.
      */
     // An exploration replaces nothing: keeping every attempt is the point of
     // exploring, and the whole reason its filename is unique.
+    let nextVersion = 1;
     if (!explore) {
-        db.prepare(`DELETE FROM film_assets
-                    WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
-            .run(projectId, subject.id, spec.assetType, fileName);
+        nextVersion = supersedePlate(projectId, subject, spec, fileName, filePath);
     }
 
     const assetId = generateId();
     db.prepare(
         `INSERT INTO film_assets (id, project_id, ${spec.fkColumn}, asset_type, file_path, file_name,
             format, mime_type, version, metadata, provider, provider_model)
-         VALUES (?, ?, ?, ?, ?, ?, 'png', 'image/png', 1, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, 'png', 'image/png', ?, ?, ?, ?)`
     ).run(assetId, projectId, subject.id, spec.assetType,
         typeof filePath === 'string' ? filePath : (filePath && filePath.path) || '',
         fileName,
+        nextVersion,
         JSON.stringify(explore
             // Born a concept. Inert until somebody promotes it, or every
             // exploration would immediately condition the next frame.

@@ -37384,7 +37384,9 @@ ${fountainText.slice(0, 50000)}`;
         const host = document.getElementById('boardBanners');
         if (!host) return;
         if (!state.currentProject || state.currentProject.id !== projectAtStart) return;
-        host.innerHTML = screenplayDriftBanner() + impactBanner();
+        // One strip for both notices now — impactBanner() composes them, so the
+        // board gets a single line rather than two stacked paragraphs.
+        host.innerHTML = impactBanner();
         /*
          * The per-frame marks read the same two reports, so they are repainted
          * once the reports are in. Without this the banner would say six shots
@@ -38696,29 +38698,70 @@ ${fountainText.slice(0, 50000)}`;
         } catch (_) { /* the board still renders; the warning is additive */ }
     }
 
-    /** The banner above the board. Says the work, not the status. */
-    function screenplayDriftBanner() {
-        if (!DRIFT.scenes.length) return '';
+    /**
+     * A LINE, NOT A LECTURE.
+     *
+     * This was two full-width cards of prose stacked above the board, and the
+     * director's verdict on them was "intrusive" — which is the correct word
+     * for a paragraph that appears every time you open a page and whose only
+     * affordance is a button saying "ignore". The explanation was good and it
+     * was still wrong, because a warning read once is documentation and a
+     * warning read forty times is furniture.
+     *
+     * So: one line, the count, and the actions. The prose that used to be the
+     * banner is still here, one click away under "why", for the first time
+     * someone meets it. Everything that reads as an instruction to the person
+     * — what to fix, in what order — belongs in the audit and the resync plan,
+     * which are the things that can actually be acted on.
+     */
+    function noticeStrip(items) {
+        const live = items.filter(Boolean);
+        if (!live.length) return '';
+        const rows = live.map(it => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+                 padding:5px 0;line-height:1.4;">
+            <span style="width:7px;height:7px;border-radius:50%;background:${it.colour};flex:none;"></span>
+            <span class="text-sm" style="color:${it.colour};font-weight:600;">${it.title}</span>
+            <span class="text-sm text-muted">${it.detail}</span>
+            <span style="flex:1;"></span>
+            ${it.actions}
+        </div>
+        <div id="${it.id}Why" class="text-sm text-muted" hidden
+             style="margin:0 0 6px 15px;padding:8px 10px;border-left:2px solid ${it.colour};line-height:1.55;">
+            ${it.why}
+        </div>`).join('');
+        return `<div class="card" style="grid-column:1/-1;padding:6px 12px;">${rows}</div>`;
+    }
+
+    function toggleWhy(id) {
+        const el = document.getElementById(id);
+        if (el) el.hidden = !el.hidden;
+    }
+
+    /** The screenplay half of the strip. */
+    function screenplayDriftNotice() {
+        if (!DRIFT.scenes.length) return null;
         const shots = DRIFT.scenes.reduce((n, s) => n + s.shots_behind.length, 0);
         const where = DRIFT.scenes.map(s => `scene ${esc(s.scene_number)}`).join(', ');
-        return `<div class="card" style="grid-column:1/-1;border-color:var(--gl-warning,#f59e0b);
-                     background:rgba(245,158,11,.07);padding:12px 14px;">
-            <strong style="color:var(--gl-warning,#f59e0b);">The screenplay moved on without ${shots} shot${shots === 1 ? '' : 's'}</strong>
-            <p class="text-sm" style="margin:6px 0 0;line-height:1.55;">
-                ${where} changed after ${shots === 1 ? 'this card was' : 'these cards were'} written, so
+        return {
+            id: 'drift',
+            colour: 'var(--gl-warning,#f59e0b)',
+            title: 'Screenplay changed',
+            detail: `${shots} shot${shots === 1 ? '' : 's'} \u00b7 ${where}`,
+            actions: `
+                <button class="btn btn-primary btn-sm" onclick="previewResync()"
+                        title="Show exactly what a resync would change. Nothing is written until you say so.">Resync\u2026</button>
+                <button class="btn btn-secondary btn-sm" onclick="runShotAudit()"
+                        title="Check every card for subjects that would reach the model as neither picture nor description \u2014 free">Audit</button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleWhy('driftWhy')">why</button>
+                <button class="btn btn-ghost btn-sm" onclick="acceptScreenplayDrift(this)"
+                        title="Record these cards as still matching the screenplay \u2014 free">Still matches</button>`,
+            why: `${where} changed after ${shots === 1 ? 'this card was' : 'these cards were'} written, so
                 ${shots === 1 ? 'it still describes' : 'they still describe'} the previous version of the story.
-                Nothing is blocked &mdash; edit the card to match the new scene, or delete the shots and break
-                that scene down again. The affected frames are marked below.
-            </p>
-            <p class="text-sm text-muted" style="margin:8px 0 0;line-height:1.55;">
-                If you have re-read ${where} and the cards still hold, say so and this clears. No card is
-                changed and nothing is regenerated; a later rewrite of the scene will warn again.
-            </p>
-            <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="acceptScreenplayDrift(this)"
-                    title="Record these shot cards as still matching the screenplay as it stands — free">
-                These cards still match the screenplay
-            </button>
-        </div>`;
+                Nothing is blocked. <strong>Resync</strong> reconciles what can be reconciled without a
+                judgement \u2014 who and what is in each frame, dialogue that still matches word for word \u2014
+                and shows you the plan first. It never rewrites a description and never deletes a shot.
+                Anything needing a decision comes back as a list. The affected frames are marked below.`,
+        };
     }
 
     /** "I read the new scene, and these cards still hold." One act, stated. */
@@ -38798,32 +38841,125 @@ ${fountainText.slice(0, 50000)}`;
             title="${esc(why)}">${label}</span>`;
     }
 
-    /** One banner for both reports, ordered as the work is done. */
-    function impactBanner() {
-        if (!IMPACT.redo_now && !IMPACT.waiting) return '';
+    /** The generated-work half of the strip. */
+    function impactNotice() {
+        if (!IMPACT.redo_now && !IMPACT.waiting) return null;
         const parts = [];
-        if (IMPACT.redo_now) parts.push(`<strong>${IMPACT.redo_now}</strong> to regenerate now`);
-        if (IMPACT.waiting) parts.push(`<strong>${IMPACT.waiting}</strong> waiting on ${IMPACT.redo_now ? 'those' : 'work above them'}`);
-        return `<div class="card" style="grid-column:1/-1;border-color:var(--gl-danger,#ef4444);
-                     background:rgba(239,68,68,.06);padding:12px 14px;">
-            <strong style="color:var(--gl-danger,#ef4444);">Generated work is behind what it was made from</strong>
-            <p class="text-sm" style="margin:6px 0 0;line-height:1.55;">
-                ${parts.join(', ')}. Do the <em>regenerate now</em> items first &mdash; the waiting ones are
-                only behind because something above them is, and regenerating one now would build on the same
-                old inputs and cost money to produce something that is still wrong.
+        if (IMPACT.redo_now) parts.push(`${IMPACT.redo_now} to redo`);
+        if (IMPACT.waiting) parts.push(`${IMPACT.waiting} waiting`);
+        return {
+            id: 'impact',
+            colour: 'var(--gl-danger,#ef4444)',
+            title: 'Generated work behind its inputs',
+            detail: parts.join(' \u00b7 '),
+            actions: `
+                <button class="btn btn-ghost btn-sm" onclick="toggleWhy('impactWhy')">why</button>
+                <button class="btn btn-ghost btn-sm" onclick="acceptAllStale(this)"
+                        title="Record everything as still current for the inputs it has now \u2014 free">Still current</button>`,
+            why: `Do the <em>redo</em> items first \u2014 the waiting ones are only behind because something
+                above them is, and regenerating one now would build on the same old inputs and cost money to
+                produce something still wrong. &ldquo;Behind&rdquo; means the inputs a frame was made from have
+                changed since: a card, a description, the style, or how the engine builds prompts. It does
+                <strong>not</strong> mean the picture is wrong.`,
+        };
+    }
+
+    /** Both notices, one strip, ordered as the work is done. */
+    function impactBanner() {
+        return noticeStrip([screenplayDriftNotice(), impactNotice()]);
+    }
+
+    /**
+     * RESYNC, PREVIEWED.
+     *
+     * The plan is shown before anything is written, and the apply is a second
+     * deliberate click. That is not ceremony: the last thing in this codebase
+     * that reconciled a screenplay against a board did it on the default path
+     * with no preview, and took sixteen shots, their blocking and their
+     * annotations with it through an ON DELETE CASCADE.
+     */
+    async function previewResync() {
+        if (!state.currentProject) return;
+        showModalHtml('resyncModal', '<h3>Resync</h3><p class="text-sm text-muted">Working out what would change\u2026</p>');
+        let plan;
+        try {
+            plan = await api(`/projects/${state.currentProject.id}/shots-resync`,
+                { method: 'POST', body: JSON.stringify({ apply: false }) });
+        } catch (err) {
+            return showModalHtml('resyncModal',
+                `<h3>Resync</h3><p class="text-sm">Could not build the plan: ${esc(err.message)}</p>
+                 <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('resyncModal')">Close</button></div>`);
+        }
+
+        const changes = (plan.plan || []).flatMap(sc => sc.shots.map(sh =>
+            `<li><strong>${esc(sh.shot_code)}</strong> \u2014 ${sh.updates.map(u => esc(u.field)).join(', ')}</li>`)).join('');
+        const asks = (plan.plan || []).flatMap(sc => sc.needs_a_person.map(n =>
+            `<li><strong>${esc(n.shot_code || ('scene ' + sc.scene_number))}</strong> \u2014
+                 ${esc(String(n.kind).replace(/_/g, ' '))}${n.line ? `: <em>${esc(n.line)}</em>` : ''}
+                 <br><span class="text-muted">${esc(n.why)}</span></li>`)).join('');
+
+        showModalHtml('resyncModal', `
+            <h3>Resync \u2014 ${plan.cards_changed} card${plan.cards_changed === 1 ? '' : 's'} would change</h3>
+            <p class="text-sm text-muted" style="line-height:1.55;">
+                Nothing has been written. Resync refreshes only what follows from the screenplay without a
+                judgement. It <strong>never</strong> rewrites a description, and it <strong>never</strong>
+                deletes a shot. Camera, direction note, duration, shot code and the shot itself are untouched.
             </p>
-            <p class="text-sm text-muted" style="margin:8px 0 0;line-height:1.55;">
-                &ldquo;Behind&rdquo; means the inputs a frame was made from have changed since &mdash; a card,
-                a description, the style, or how the engine builds prompts. It does <strong>not</strong> mean
-                the picture is wrong. If this work is still the film you want, say so once and the warning
-                clears; nothing is regenerated and nothing is spent.
+            ${changes ? `<h4 class="text-sm" style="margin:14px 0 4px;">Would be reconciled</h4>
+                <ul class="text-sm" style="margin:0;padding-left:20px;line-height:1.7;">${changes}</ul>` : ''}
+            ${asks ? `<h4 class="text-sm" style="margin:14px 0 4px;">Left for you \u2014 ${plan.needs_a_person} item(s)</h4>
+                <ul class="text-sm" style="margin:0;padding-left:20px;line-height:1.7;">${asks}</ul>` : ''}
+            ${!changes && !asks ? '<p class="text-sm">Everything already matches the screenplay.</p>' : ''}
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('resyncModal')">Cancel</button>
+                ${changes ? `<button class="btn btn-primary" onclick="applyResync(this)">Resync ${plan.cards_changed} card${plan.cards_changed === 1 ? '' : 's'}</button>` : ''}
+            </div>`);
+    }
+
+    async function applyResync(btn) {
+        if (!state.currentProject) return;
+        if (btn) { btn.disabled = true; btn.textContent = 'Resyncing\u2026'; }
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/shots-resync`,
+                { method: 'POST', body: JSON.stringify({ apply: true }) });
+            closeModal('resyncModal');
+            setStatus(`${r.cards_changed} card(s) reconciled. ${r.needs_a_person} item(s) still need you.`);
+            await loadScreenplayDrift();
+            loadStoryboard();
+        } catch (err) {
+            setStatus('Resync failed: ' + err.message);
+            if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+        }
+    }
+
+    /** The pre-flight, on demand. Free, and it spends nothing. */
+    async function runShotAudit() {
+        if (!state.currentProject) return;
+        showModalHtml('auditModal', '<h3>Audit</h3><p class="text-sm text-muted">Checking every card\u2026</p>');
+        let r;
+        try {
+            r = await api(`/projects/${state.currentProject.id}/shot-audit`);
+        } catch (err) {
+            return showModalHtml('auditModal',
+                `<h3>Audit</h3><p class="text-sm">Could not run it: ${esc(err.message)}</p>
+                 <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('auditModal')">Close</button></div>`);
+        }
+        const tone = { error: 'var(--gl-danger,#ef4444)', warning: 'var(--gl-warning,#f59e0b)', info: 'var(--gl-text-muted,#94a3b8)' };
+        const rows = (r.findings || []).map(f => `<li style="margin-bottom:8px;">
+            <span class="tag" style="border-color:${tone[f.severity]};color:${tone[f.severity]};">${esc(f.severity)}</span>
+            <strong>${esc(f.shot_code)}</strong> \u2014 ${esc(String(f.type).replace(/_/g, ' '))}${f.subject ? `: ${esc(f.subject)}` : ''}
+            <br><span class="text-sm text-muted">${esc(f.why)}</span>
+            ${f.fix ? `<br><span class="text-sm" style="opacity:.8;">\u2192 ${esc(f.fix)}</span>` : ''}
+        </li>`).join('');
+        showModalHtml('auditModal', `
+            <h3>Audit \u2014 ${r.shots_checked} shot${r.shots_checked === 1 ? '' : 's'}</h3>
+            <p class="text-sm text-muted" style="line-height:1.55;">
+                ${r.counts.error} error \u00b7 ${r.counts.warning} warning \u00b7 ${r.counts.info} note.
+                ${esc(r.note)}
             </p>
-            <button class="btn btn-secondary btn-sm" style="margin-top:10px;"
-                    onclick="acceptAllStale(this)"
-                    title="Record everything as still current for the inputs it has now — free">
-                This is all still current
-            </button>
-        </div>`;
+            ${rows ? `<ul class="text-sm" style="margin:12px 0 0;padding-left:20px;line-height:1.6;">${rows}</ul>`
+                   : '<p class="text-sm">Nothing to report.</p>'}
+            <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('auditModal')">Close</button></div>`);
     }
 
     /**
@@ -44794,7 +44930,7 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(applyProductionFl
     { id:'write',      label:'Write & Design', blurb:'The script, and everything designed out of it.',
       pages:['screenplay','scenes','notes','moodboard','characters','locations','props','threed'] },
     { id:'plan',       label:'Plan',           blurb:'Board it, block it, and know what it costs.',
-      pages:['deliverables','storyboard','previs','consistency','milestones','budget'] },
+      pages:['storyboard','deliverables','previs','consistency','milestones','budget'] },
     { id:'production', label:'Production',     blurb:'Run the pipeline: picture, voice, score.',
       pages:['productiongraph','shotboard','videoshots','music','musiccues','musicws','playback','pipeline','flows'] },
     { id:'post',       label:'Post',           blurb:'Export it, and keep the files straight.',

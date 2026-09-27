@@ -167,9 +167,41 @@ test('every INSERT INTO film_shots is accounted for by a creation path', () => {
 
 test('the board warns where the frames are, not on a page of its own', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
-    assert.ok(/function screenplayDriftBanner\(/.test(html), 'no banner on the board');
-    assert.ok(/function screenplayDriftTag\(/.test(html), 'no per-frame mark, so the banner points nowhere');
+    // Asserted on the BEHAVIOUR rather than on one function's name. The notice
+    // was a full-width card of prose and is now a single line in a shared
+    // strip; the thing worth pinning is that the board still says it, and
+    // still marks the frames it is about.
+    assert.ok(/function screenplayDriftNotice\(/.test(html), 'no drift notice on the board');
+    assert.ok(/function noticeStrip\(/.test(html), 'the notices have no strip to live in');
+    assert.ok(/function screenplayDriftTag\(/.test(html), 'no per-frame mark, so the notice points nowhere');
     assert.ok(/loadScreenplayDrift\(\)/.test(html), 'the board never asks which shots are behind');
+});
+
+test('the warning offers a way to FIX it, not only a way to dismiss it', () => {
+    /*
+     * The defect this guards is a product one and it is the reason the banner
+     * was rewritten: the only button on it said, in effect, "ignore me". A
+     * notice whose single affordance is dismissal teaches the reader to
+     * dismiss it, and then the real warning goes with the rest.
+     *
+     * Resync must also be PREVIEWED. The last thing here that reconciled a
+     * screenplay against a board did it with no preview and took sixteen
+     * shots, their blocking and their annotations through a cascade.
+     */
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/previewResync\(\)/.test(html), 'no way to resync from the board');
+    assert.ok(/function applyResync\(/.test(html), 'the resync can be previewed and never applied');
+    assert.ok(/runShotAudit\(\)/.test(html), 'no way to audit the cards from the board');
+
+    const preview = html.slice(html.indexOf('async function previewResync'));
+    assert.ok(/apply:\s*false/.test(preview.slice(0, 1200)),
+        'the preview does not ask for a dry run, so opening it would write');
+
+    const strip = html.slice(html.indexOf('function screenplayDriftNotice'),
+        html.indexOf('function screenplayDriftNotice') + 2600);
+    assert.ok(/Still matches/.test(strip), 'the dismiss affordance was lost in the rewrite');
+    assert.ok(strip.indexOf('previewResync') < strip.indexOf('Still matches'),
+        'dismiss is offered before the fix, which is how a warning trains people to ignore it');
 });
 
 test('a first stamp is a baseline, not a change', () => {

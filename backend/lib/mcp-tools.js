@@ -2509,6 +2509,48 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'shot_audit',
+        handler: handleProductionReports, method: 'GET',
+        description: 'FREE pre-flight over the shot list — what is wrong with the CARDS before anything '
+            + 'generates. The finding that matters is `unresolved_subject`: a subject a card names that '
+            + 'reaches the provider as neither a reference picture nor a description, so the model invents '
+            + 'it and the result looks like a rendering choice rather than a missing record. That is the '
+            + 'only ERROR and the only thing that should stop a run. Also reports subjects in the frame '
+            + 'only because the prose happens to name them (they vanish on the next rewrite), subjects on '
+            + 'the card the description never uses, missing sizes, negative phrasing, and — across a '
+            + 'continuous sequence — a subject that leaves and returns with nothing moving it. Mechanical '
+            + 'only: this is the call sheet, not the screenplay notes. Use analysis_brief for those.',
+        path: a => `/film/projects/${a.project_id}/shot-audit`
+            + (a.shot_id ? `?shot_id=${encodeURIComponent(a.shot_id)}` : ''),
+        schema: {
+            project_id: { type: 'string' },
+            shot_id: { type: 'string', description: 'Audit one shot instead of the whole board.' },
+        },
+        required: ['project_id'],
+    },
+    {
+        name: 'shots_resync',
+        handler: handleProductionReports, method: 'POST',
+        description: 'Reconcile the shot cards with the screenplay after a rewrite — the ACTION the drift '
+            + 'warning never had. DRY RUN unless you pass apply:true, and it never rewrites a description '
+            + 'and never deletes a shot, whatever you pass. It refreshes only what is derivable without a '
+            + 'judgement — which characters and props are in the frame, dialogue that still matches word '
+            + 'for word, the location — and restamps the fingerprints so the warning clears. Everything '
+            + 'needing a person comes back under `needs_a_person`: cards whose scene moved under them, '
+            + 'lines that changed or went, and screenplay material no shot covers. Splitting a scene into '
+            + 'shots is a coverage decision and is left to the director. Camera, direction note, duration, '
+            + 'shot code and shot id are preserved — the id above all, because film_shots.scene_id is ON '
+            + 'DELETE CASCADE and losing it takes the blocking, the annotations and the frames too.',
+        path: a => `/film/projects/${a.project_id}/shots-resync`,
+        body: a => ({ apply: a.apply === true, scene_id: a.scene_id || null }),
+        schema: {
+            project_id: { type: 'string' },
+            apply: { type: 'boolean', description: 'WRITES. Omit or false to preview the plan first.' },
+            scene_id: { type: 'string', description: 'Reconcile one scene rather than the whole screenplay.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'screenplay_drift',
         handler: handleProductionReports, method: 'GET',
         description: 'Which shots were written from an EARLIER draft of their scene, and what has been generated from them. Run this after any screenplay change: revising a scene does not update the shot cards derived from it, so those cards keep describing the previous story with nothing to show for it. Reports per scene with the next action for each. Warns only — nothing is blocked.',
@@ -4983,7 +5025,7 @@ const BATCH_TOOLS = [
     },
     {
         name: 'plate_generate',
-        description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 generating a plate DELETES the existing one for that subject, so a batch run replaces work you may want to keep. kind is character, location or prop. A location or prop can hold SEVERAL named views \u2014 pass `view` to generate one side without touching the others.',
+        description: 'Generate the reference plate for ONE subject. SPENDS CREDITS. Use this rather than plate_generate_all when some subjects already have a plate worth keeping \u2014 a batch run regenerates subjects you were happy with. The plate being replaced is NOT lost — it is archived to versions/ and marked superseded, so it stays on disk and in the ledger but can never be picked up as the reference again. The same protection storyboard frames have, for the same reason: a generation is a coin flip you already paid for. kind is character, location or prop. A location or prop can hold SEVERAL named views \u2014 pass `view` to generate one side without touching the others.',
         schema: {
             subject_id: { type: 'string' },
             kind: { type: 'string', description: 'character | location | prop' },

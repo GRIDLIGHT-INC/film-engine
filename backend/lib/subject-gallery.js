@@ -43,6 +43,17 @@ const ROLES = Object.freeze([
         why: 'Nothing should be conditioned on a sketch until somebody says it is the one. Promote it and it becomes the reference.',
     },
     {
+        id: 'superseded',
+        title: 'Superseded',
+        what: 'An earlier attempt at this view, kept when a newer plate replaced it.',
+        reaches_generation: false,
+        why: 'A plate is a generation somebody paid for, and regenerating one used to DELETE the row and '
+            + 'overwrite the file — so the attempt you preferred was gone and the ledger pointed at '
+            + 'whichever picture happened to be there last. Frames have been archived on exactly this '
+            + 'reasoning since the version store shipped; plates were the one paid artefact still being '
+            + 'thrown away. Excluded from generation, because "the plate" must stay one picture per view.',
+    },
+    {
         id: 'inspiration',
         title: 'Inspiration',
         what: 'Gathered rather than made: a film still, a photograph, a painting, the real location.',

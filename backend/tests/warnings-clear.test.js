@@ -37,13 +37,17 @@ const PAGE = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html
 const WARNINGS = Object.freeze({
     drift: {
         report: async pid => (await callTool('screenplay_drift', { project_id: pid })).body.shots_behind,
-        banner: 'The screenplay moved on without',
+        // The notice text, not the old headline. This was a full-width card of
+        // prose and is now one line in a shared strip — the director's word
+        // for the old one was "intrusive", which is the right word for a
+        // paragraph you are shown every time you open the board.
+        banner: "title: 'Screenplay changed'",
         button: 'acceptScreenplayDrift',
         route: '/screenplay-drift/accept',
     },
     impact: {
         report: async pid => { const r = (await callTool('impact_report', { project_id: pid })).body; return r.redo_now + r.waiting; },
-        banner: 'Generated work is behind what it was made from',
+        banner: "title: 'Generated work behind its inputs'",
         button: 'acceptAllStale',
         route: '/staleness/accept',
     },
@@ -133,9 +137,26 @@ test('accepting says it is a claim, and changes nothing but the record', async (
 test('the page offers each warning its own button, and names what it answers', () => {
     for (const [name, w] of Object.entries(WARNINGS)) {
         const at = PAGE.indexOf(w.banner);
-        assert.ok(at > 0, `${name}: the banner is gone`);
-        const region = PAGE.slice(at, PAGE.indexOf('</div>`', at));
-        assert.match(region, new RegExp(`onclick="${w.button}\\(`), `${name}: its banner offers no button that answers it`);
+        assert.ok(at > 0, `${name}: the notice is gone`);
+        // To the end of the notice object, which is where its actions live.
+        const region = PAGE.slice(at, at + 2600);
+        assert.match(region, new RegExp(`onclick="${w.button}\\(`), `${name}: its notice offers no button that answers it`);
         assert.match(PAGE, new RegExp(`async function ${w.button}\\(`), `${w.button} is not defined`);
     }
+});
+
+test('a warning offers a way to FIX it before a way to dismiss it', () => {
+    /*
+     * The ordering is the product decision, not decoration. Every notice on
+     * this board used to end in a single button that meant "ignore me", and a
+     * notice whose only affordance is dismissal teaches the reader to dismiss
+     * it — after which the warning that matters is dismissed along with the
+     * rest. Drift can now be RESYNCED, and the resync is offered first.
+     */
+    const at = PAGE.indexOf("title: 'Screenplay changed'");
+    assert.ok(at > 0, 'the drift notice is gone');
+    const region = PAGE.slice(at, at + 2600);
+    assert.ok(/previewResync\(\)/.test(region), 'drift can still only be dismissed, never fixed');
+    assert.ok(region.indexOf('previewResync') < region.indexOf('acceptScreenplayDrift'),
+        'dismissal is offered before the fix');
 });

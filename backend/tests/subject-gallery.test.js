@@ -58,9 +58,11 @@ const G = require('../lib/subject-gallery');
 /* ── the vocabulary ────────────────────────────────────────────────────── */
 
 describe('roles', () => {
-    it('names exactly the three roles, and says which reaches a prompt', () => {
-        assert.deepEqual(G.ROLES.map(r => r.id), ['reference', 'concept', 'inspiration'],
-            'the roles are not the three the design names, in order of commitment');
+    it('names exactly the four roles, and says which reaches a prompt', () => {
+        // `superseded` is an earlier plate kept when a newer one replaced it:
+        // a paid attempt that is no longer the reference and reaches no prompt.
+        assert.deepEqual(G.ROLES.map(r => r.id), ['reference', 'concept', 'superseded', 'inspiration'],
+            'the roles are not the four the design names, in order of commitment');
         for (const role of G.ROLES) {
             assert.ok(role.what && role.what.length > 20, `${role.id}: no description`);
             assert.equal(typeof role.reaches_generation, 'boolean',
@@ -286,7 +288,7 @@ describe('the gallery, over a real database', () => {
             `${sqlSays.size} of 8 rows are sendable; five plate shapes should send and three declared roles should not`);
     });
 
-    it('every subject kind can hold all three roles', () => {
+    it('every subject kind can hold every role', () => {
         // Per kind, because the columns differ: character_id, location_id and
         // prop_id are three separate foreign keys and a gallery wired to one
         // is no evidence for the others.
@@ -310,7 +312,7 @@ describe('the gallery, over a real database', () => {
             }
 
             const gallery = G.loadGallery(db, kind, subjectId);
-            assert.equal(gallery.length, 3, `${kind}: the gallery does not hold all three roles`);
+            assert.equal(gallery.length, G.ROLES.length, `${kind}: the gallery does not hold every role`);
             const byRole = Object.fromEntries(gallery.map(g => [g.role, g]));
             for (const role of G.ROLES) {
                 assert.ok(byRole[role.id], `${kind}: '${role.id}' did not come back`);

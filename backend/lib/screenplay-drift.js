@@ -79,9 +79,77 @@ function sceneFingerprint(scene) {
 function dialogueOf(scene) {
     if (!scene || !scene.id) return [];
     try {
+        const db = database();
+        const script = db.prepare(
+            `SELECT fountain_content FROM film_scripts
+              WHERE project_id = ? AND fountain_content IS NOT NULL
+              ORDER BY version DESC LIMIT 1`).get(scene.project_id);
+        if (!script || !script.fountain_content) return [];
+
+        const { sceneSpans } = require('./scene-splice');
+        const fountain = String(script.fountain_content);
+        const lines = fountain.split('\n');
+        const heading = [scene.int_ext, scene.location].filter(Boolean).join('. ')
+            + (scene.time_of_day ? ' - ' + scene.time_of_day : '');
+        const spans = sceneSpans(fountain);
+        const want = heading.toUpperCase();
+        const bare = [scene.int_ext, scene.location].filter(Boolean).join('. ').toUpperCase();
+        /*
+         * POSITION FIRST when it agrees with the heading.
+         *
+         * Two scenes in this production carry the identical heading
+         * "EXT. CITY AVENUE - BATTLE - CONTINUOUS", and a heading search
+         * returns the FIRST of them for both — so scene 5 was fingerprinted
+         * against scene 3's dialogue and a resync offered to give scene 5
+         * scene 3's lines. Taking the span at the scene's own index whenever
+         * its heading matches settles it; the heading search stays for a
+         * scene that has MOVED, where position is the thing that is wrong.
+         */
+        const atIndex = spans[Number(scene.scene_number) - 1];
+        const headingOf = sp => String(sp && sp.heading || '').toUpperCase();
+        const span = (atIndex && (headingOf(atIndex) === want || headingOf(atIndex) === bare))
+            ? atIndex
+            : (spans.find(sp => headingOf(sp) === want)
+                || spans.find(sp => headingOf(sp) === bare)
+                || atIndex);
+        if (!span) return [];
+
+        const { parseFountain } = require('./fountain-parser');
+        const text = lines.slice(span.start, span.end + 1).join('\n');
+        const out = [];
+        let who = '';
+        for (const el of (parseFountain(text).elements || [])) {
+            if (el.type === 'character') who = String(el.text || '').trim();
+            else if (el.type === 'dialogue') out.push(`${who}:${String(el.text || '').trim()}`);
+        }
+        return out;
+    } catch (_) { return []; }
+}
+
+/**
+ * The fingerprint as it was computed while dialogue came from the SHOT CARDS.
+ *
+ * Kept only so the correction below does not report every scene in every
+ * existing project as rewritten — the same amnesty `legacySceneFingerprint`
+ * provides, for the same reason, one formula later.
+ */
+function emptyDialogueSceneFingerprint(scene) {
+    if (!scene) return null;
+    return hash({
+        int_ext: scene.int_ext || '',
+        location: scene.location || '',
+        time_of_day: scene.time_of_day || '',
+        description: scene.description || '',
+        dialogue: JSON.stringify([]),
+    });
+}
+
+function cardDialogueSceneFingerprint(scene) {
+    if (!scene || !scene.id) return null;
+    const out = [];
+    try {
         const rows = database().prepare(
             'SELECT scene_card_yaml FROM film_shots WHERE scene_id = ? ORDER BY shot_code').all(scene.id);
-        const out = [];
         for (const r of rows) {
             let card = {};
             try { card = JSON.parse(r.scene_card_yaml || '{}'); } catch (_) { continue; }
@@ -89,8 +157,14 @@ function dialogueOf(scene) {
                 out.push(`${(d && d.character) || ''}:${(d && d.line) || ''}`);
             }
         }
-        return out;
-    } catch (_) { return []; }
+    } catch (_) { /* fall through with what we have */ }
+    return hash({
+        int_ext: scene.int_ext || '',
+        location: scene.location || '',
+        time_of_day: scene.time_of_day || '',
+        description: scene.description || '',
+        dialogue: JSON.stringify(out),
+    });
 }
 
 /**
@@ -147,6 +221,35 @@ function matchesScene(scene, stamp) {
     if (scene.source_fingerprint && scene.source_fingerprint === legacySceneFingerprint(scene)) {
         return stamp === scene.source_fingerprint;
     }
+    /*
+     * THE FORMULA USED TO DEPEND ON ITS OWN ANSWER.
+     *
+     * `dialogueOf` read the scene's dialogue from the SHOT CARDS, so a scene
+     * stamped before it had shots was hashed with no dialogue, and the act of
+     * deriving shots from it changed the very number used to judge them. Every
+     * shot in the engine was born stale: named behind a screenplay nobody had
+     * edited, on a warning no amount of re-deriving could clear, because
+     * re-stamping wrote the same unreachable value back.
+     *
+     * Dialogue now comes from the screenplay, which is the only thing a
+     * screenplay fingerprint can honestly be a function of. This branch
+     * forgives a stamp left over from that era, on the same terms as the
+     * legacy one: only while the SCENE is still carrying the old hash too, so
+     * a scene genuinely rewritten since still matches neither.
+     */
+    if (scene.source_fingerprint && scene.source_fingerprint === cardDialogueSceneFingerprint(scene)) {
+        return stamp === scene.source_fingerprint;
+    }
+    /*
+     * And the commonest shape of that era: a scene stamped while it had NO
+     * shots, hashed against an empty dialogue list, whose shots were then
+     * derived from it moments later. That is not an edge case — it is the
+     * normal order of work, script before shots, so it described every shot
+     * in every project built the recommended way.
+     */
+    if (scene.source_fingerprint && scene.source_fingerprint === emptyDialogueSceneFingerprint(scene)) {
+        return stamp === scene.source_fingerprint;
+    }
     return false;
 }
 
@@ -169,7 +272,10 @@ function stampScene(sceneId) {
         // is a re-baseline, not a rewrite. Update the hash and leave the
         // timestamp alone, or widening the formula would report every scene in
         // every existing project as behind.
-        if (scene.source_fingerprint && scene.source_fingerprint === legacySceneFingerprint(scene)) {
+        if (scene.source_fingerprint
+            && (scene.source_fingerprint === legacySceneFingerprint(scene)
+                || scene.source_fingerprint === cardDialogueSceneFingerprint(scene)
+                || scene.source_fingerprint === emptyDialogueSceneFingerprint(scene))) {
             db.prepare('UPDATE film_scenes SET source_fingerprint = ? WHERE id = ?').run(fp, sceneId);
             // Carry the SHOTS with it. Migrating the scene alone leaves every
             // shot holding a hash nothing will ever match again, which is how
@@ -354,4 +460,6 @@ function acceptDrift(projectId, opts) {
 
 module.exports = {
     acceptDrift,
-    legacySceneFingerprint, sceneFingerprint, matchesScene, stampScene, stampShot, drift, adoptBaseline, tracking };
+    legacySceneFingerprint,
+    cardDialogueSceneFingerprint,
+    emptyDialogueSceneFingerprint, sceneFingerprint, matchesScene, stampScene, stampShot, drift, adoptBaseline, tracking };

@@ -220,37 +220,84 @@ test('if any edit in a batch fails, NONE are written', async () => {
         'the refusal does not say which edit failed');
 });
 
-test('rewriting DIALOGUE marks the scene as changed', async () => {
-    // The bug this phase found. `film_scenes.description` holds ACTION only —
-    // the parser never put dialogue in it — so `sceneFingerprint` could not see
-    // a dialogue rewrite, and every shot in the scene went on reporting as
-    // current. It is the most consequential thing it could have missed:
-    // dialogue is what gets rewritten most and is the direct input to voice
-    // generation, so a line changed after the voice was cut left an audio file
-    // saying something the script no longer says.
+test('rewriting a card\u2019s DIALOGUE invalidates what was generated from it', async () => {
+    /*
+     * THE CONCERN IS REAL AND IT MOVED LAYERS.
+     *
+     * The original of this test asserted that editing a shot card's dialogue
+     * moved the SCENE fingerprint, so that a line changed after the voice was
+     * cut could not leave an audio file saying something the script no longer
+     * says. That danger is real and this test still guards it.
+     *
+     * But putting card dialogue into the SCENE fingerprint made that
+     * fingerprint a function of its own output: `sceneFingerprint` read the
+     * dialogue off the shot cards, so a scene stamped before it had shots got
+     * one hash and the act of deriving shots from it changed that hash. Every
+     * shot in the engine was then born stale — reported behind a screenplay
+     * nobody had edited, on a warning that re-deriving could not clear because
+     * re-stamping wrote the same unreachable value back. A sixteen-shot board
+     * showed sixteen false warnings the day it was built.
+     *
+     * The two concerns are different questions about different things:
+     *
+     *   scene fingerprint  : has the SCREENPLAY moved under these cards?
+     *   artefact fingerprint: has the CARD moved under what it generated?
+     *
+     * `lib/artefact-fingerprint.js` already hashes the whole scene card, and
+     * therefore its dialogue, into every artefact's `input_fingerprint`. So
+     * the voice is protected where it should be, by the report that exists to
+     * say what is behind its inputs — and the scene fingerprint is free to be
+     * what its name claims, a fact about the screenplay.
+     */
     const { handleScenes } = require('../routes/scenes');
     const { handleShots } = require('../routes/shots');
     const pid = await project();
     const scene = scenes(pid)[0];
 
-    // Dialogue lives on the shot card, which is what generation reads.
     await callRoute(handleShots, 'POST', '/film/shots', {
         scene_id: scene.id,
         cards: [{ shot_code: '1A', action: 'MAREK at the window.',
             dialogue: [{ character: 'MAREK', line: 'Lowest since March.' }] }],
     });
-    const { stampScene, sceneFingerprint } = require('../lib/screenplay-drift');
-    stampScene(scene.id);
-    const before = db.prepare('SELECT source_fingerprint FROM film_scenes WHERE id = ?').get(scene.id).source_fingerprint;
-
     const shot = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE scene_id = ?').get(scene.id);
+
+    const { fingerprintFor } = require('../lib/artefact-fingerprint');
+    const beforeVoice = fingerprintFor('voice', { shotId: shot.id });
+    assert.ok(beforeVoice, 'no artefact fingerprint for voice, so nothing protects a cut line');
+
     const card = JSON.parse(shot.scene_card_yaml);
     card.dialogue = [{ character: 'MAREK', line: 'Lowest I have ever seen.' }];
     db.prepare('UPDATE film_shots SET scene_card_yaml = ? WHERE id = ?').run(JSON.stringify(card), shot.id);
 
-    const after = sceneFingerprint(db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(scene.id));
-    assert.notStrictEqual(after, before,
-        'a dialogue rewrite does not move the fingerprint — the scene reports as current');
+    const afterVoice = fingerprintFor('voice', { shotId: shot.id });
+    assert.notStrictEqual(afterVoice, beforeVoice,
+        'a rewritten line leaves the generated voice reporting as current \u2014 which is an audio file '
+        + 'saying something the script no longer says');
+});
+
+test('the scene fingerprint follows the SCREENPLAY, not the cards derived from it', async () => {
+    /*
+     * The other half, and the one that makes the warning trustworthy: a scene
+     * must not change because work was done on it. Deriving shots is work on a
+     * scene; it is not a revision of it.
+     */
+    const { handleShots } = require('../routes/shots');
+    const { sceneFingerprint } = require('../lib/screenplay-drift');
+    const pid = await project();
+    const scene = scenes(pid)[0];
+
+    const row = () => db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(scene.id);
+    const beforeShots = sceneFingerprint(row());
+
+    await callRoute(handleShots, 'POST', '/film/shots', {
+        scene_id: scene.id,
+        cards: [{ shot_code: '1A', action: 'MAREK at the window.',
+            dialogue: [{ character: 'MAREK', line: 'Lowest since March.' }] }],
+    });
+
+    assert.strictEqual(sceneFingerprint(row()), beforeShots,
+        'breaking a scene down changed the scene\u2019s own fingerprint, so every shot is born stale '
+        + 'against a screenplay nobody edited');
 });
 
 test('widening the fingerprint does not report old work as behind', () => {

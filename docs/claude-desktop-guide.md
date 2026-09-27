@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**373 tools, 76 families.** Everything the app can do, you can ask for in a
+**375 tools, 76 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -25,7 +25,7 @@ Nothing inside the tool list can warn you about this, because a stale connection
 serves a stale list — a diagnostic tool would be missing from exactly the
 connections that need it. Two things do reach it:
 
-- **`initialize`** reports the build, e.g. `1.0.1+373tools.2026-09-27T12:00:00Z`.
+- **`initialize`** reports the build, e.g. `1.0.1+375tools.2026-09-27T12:00:00Z`.
   That timestamp is when the connection's server process started.
 - **Calling a tool this build does not have** returns an error that names the
   tools on disk it is missing and tells you to reconnect.
@@ -94,6 +94,7 @@ Each stage names the tools it uses; you can still just describe the goal.
 `scene_card_write` · `outline_get` · `outline_write` ·
 `beats_get` · `beats_apply` · `beat_link` · `directives_get` ·
 `directives_write` · `screenplay_drift` · `screenplay_drift_accept` · `screenplay_baseline` ·
+`shots_resync` · `shot_audit` ·
 `treatment_get` · `treatment_write` · `treatment_versions` · `treatment_delete` ·
 `analysis_brief` · `analysis_write` · `analysis_get` · `analysis_delete` ·
 `script_timing`

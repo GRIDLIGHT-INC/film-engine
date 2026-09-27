@@ -67,9 +67,9 @@ const REMOVED = {
 /**
  * The menu, exactly as asked for: four labels, in this order, these pages.
  *
- * `deliverables` leads Plan for commercial work: on a spot the output list is
- * decided BEFORE anything is boarded, because it is what says which shots must
- * be shot vertical rather than cropped later. A film never opens it.
+ * `storyboard` leads Plan, so clicking Plan opens the board (asked for
+ * directly). `deliverables` sits second: on a spot the output list is still
+ * decided before anything is boarded, and a film never opens it.
  *
  * `titles` and `subtitles` were NOT in the original request and are added
  * deliberately: their routes shipped with the delivery work and neither had a
@@ -81,7 +81,7 @@ const REMOVED = {
 const WANTED = [
     ['Write & Design', ['screenplay', 'scenes', 'notes', 'moodboard',
         'characters', 'locations', 'props', 'threed']],
-    ['Plan',           ['deliverables', 'storyboard', 'previs', 'consistency', 'milestones', 'budget']],
+    ['Plan',           ['storyboard', 'deliverables', 'previs', 'consistency', 'milestones', 'budget']],
     // `productiongraph` was asked for later (design_handoff_production_graph):
     // the eight pages as one graph. The `production_graph` setting decides which
     // the menu SHOWS; every page stays in exactly one group either way.

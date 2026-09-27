@@ -219,6 +219,30 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     return selectReferences(candidates, { limit: opts && opts.limit });
 }
 
+/**
+ * Does this subject's name appear in this text, allowing for a plural?
+ *
+ * `\bSWARMER\b` does not match "SWARMERS" — `R` and `S` are both word
+ * characters, so there is no boundary between them. That cost a real frame: a
+ * card naming SWARMER, with an approved plate sitting in the gallery, resolved
+ * to NEITHER a reference image NOR a line of description, because the action
+ * line happened to say "SWARMERS pouring over rubble". The creature was
+ * invented by the model in the one shot whose whole purpose was a five-rung
+ * scale ladder, and nothing anywhere reported it.
+ *
+ * Singular and plural are the same subject to a director, so they are the same
+ * subject here. Handles the regular English plurals a scene heading or an
+ * action line actually uses -- SWARMERS, BRUTES, FLIERS, COLOSSUSES -- and
+ * deliberately not the irregular ones, because a false match attaches the
+ * wrong plate, which is worse than a miss you can see in the audit.
+ */
+function subjectNameMatches(name, text) {
+    if (!name || !text) return false;
+    const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Optional regular plural suffix, then a real word boundary.
+    return new RegExp(`\\b${escaped}(?:e?s)?\\b`, 'i').test(String(text));
+}
+
 function matchProps(sceneCard, dbProps) {
     const card = sceneCard || {};
     const all = dbProps || [];
@@ -234,15 +258,94 @@ function matchProps(sceneCard, dbProps) {
         take(typeof entry === 'string' ? entry : (entry && entry.name));
     }
 
+    /*
+     * A card may also file a prop under `characters`.
+     *
+     * Creatures, vehicles and anything else that acts in a scene without being
+     * cast reads as a character to whoever writes the card, and the breakdown
+     * puts it there. Only `card.props` and the description were consulted, so
+     * a subject listed under `characters` that is a prop in the database
+     * resolved to nothing at all -- named on the card, plate on disk, absent
+     * from the request.
+     */
+    for (const entry of (Array.isArray(card.characters) ? card.characters : [])) {
+        take(typeof entry === 'string' ? entry : (entry && entry.name));
+    }
+
     const text = String(card.description || card.action || '');
     if (text) {
         for (const prop of all) {
             if (!prop.name) continue;
-            const escaped = String(prop.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) chosen.set(prop.id || prop.name, prop);
+            if (subjectNameMatches(prop.name, text)) chosen.set(prop.id || prop.name, prop);
         }
     }
     return [...chosen.values()];
+}
+
+/**
+ * File a card's subjects explicitly, ONCE, at the moment the card is written.
+ *
+ * Resolution used to happen silently at generation time, from the description
+ * text, every time. That made the contents of a frame a property of how an
+ * action line happened to be phrased: rewrite "a BRUTE shoulders through" as
+ * "one of the big ones shoulders through" and the brute leaves the picture,
+ * with no warning and no diff. A director changing prose does not expect to be
+ * changing the cast.
+ *
+ * So the names are resolved here and WRITTEN DOWN, where they are visible on
+ * the card, editable by the person whose film it is, and stable under a
+ * rewrite. The description is still read -- it is how a subject nobody thought
+ * to list gets picked up -- but only to propose a name into the list, never as
+ * the standing answer.
+ *
+ * Returns the card's subject lists plus `unresolved`: names the card asserts
+ * that match nothing in the project. Those are the dangerous ones. A subject
+ * with no plate and no description is invented by the model, confidently, and
+ * looks like a rendering choice rather than a missing record.
+ */
+function resolveCardSubjects(db, projectId, card) {
+    const c = card || {};
+    const names = v => (Array.isArray(v) ? v : [])
+        .map(x => (typeof x === 'string' ? x : (x && x.name)))
+        .filter(Boolean)
+        .map(s => String(s).trim())
+        .filter(Boolean);
+
+    const dbCharacters = db.prepare('SELECT id, name FROM film_characters WHERE project_id = ?').all(projectId);
+    const dbProps = db.prepare('SELECT id, name FROM film_props WHERE project_id = ?').all(projectId);
+    const upper = s => String(s).toUpperCase();
+    const charByName = new Map(dbCharacters.map(r => [upper(r.name), r]));
+    const propByName = new Map(dbProps.map(r => [upper(r.name), r]));
+
+    const characters = new Map();
+    const props = new Map();
+    const unresolved = [];
+
+    for (const name of [...names(c.characters), ...names(c.props)]) {
+        const asChar = charByName.get(upper(name));
+        if (asChar) { characters.set(upper(asChar.name), asChar.name); continue; }
+        const asProp = propByName.get(upper(name));
+        if (asProp) { props.set(upper(asProp.name), asProp.name); continue; }
+        unresolved.push(name);
+    }
+
+    // Anything the action line names that nobody listed. Proposed into the
+    // list rather than left to be rediscovered at generation time.
+    const text = String(c.description || c.action || '');
+    if (text) {
+        for (const row of dbCharacters) {
+            if (subjectNameMatches(row.name, text)) characters.set(upper(row.name), row.name);
+        }
+        for (const row of dbProps) {
+            if (subjectNameMatches(row.name, text)) props.set(upper(row.name), row.name);
+        }
+    }
+
+    return {
+        characters: [...characters.values()],
+        props: [...props.values()],
+        unresolved,
+    };
 }
 
 function matchCharacters(cardCharacters, dbCharacters) {
@@ -370,6 +473,8 @@ module.exports = {    platedSubjects,
     gatherShotReferences,
     plateReferenceFor,
     matchProps,
+    subjectNameMatches,
+    resolveCardSubjects,
     matchCharacters,
     matchLocation,
     shotReferencesFor,};
