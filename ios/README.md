@@ -51,11 +51,20 @@ cp src/index.html ios/FilmEngine/Web/index.html
 
 `backend/tests/ios-app.test.js` fails if the two differ by a single byte.
 
+## Signing
+
+The project ships with **no development team set**, so it builds for the
+simulator out of the box and signs with whoever builds it. To run it on a device
+or upload it, open `ios/FilmEngine.xcodeproj`, select the FilmEngine target →
+*Signing & Capabilities* → pick your **Team**, and change the bundle id
+(`ai.gridlight.filmengine`) to one you own. For an App Store export, put your
+Team ID in `ios/ExportOptions.plist` in place of `YOUR_TEAM_ID`.
+
 ## TestFlight — the remaining step is yours
 
 Everything buildable is built and verified: the project compiles, the app runs
 on a simulator against the live API, and every Info.plist key and build setting
-an upload requires is set (team `3AXRJ22S9P`, bundle id `ai.gridlight.filmengine`,
+an upload requires is set (your own team — see *Signing* below; bundle id `ai.gridlight.filmengine`,
 version 1.0 build 3, icon, `ExportOptions.plist` with `app-store-connect`).
 
 **The archive and the export both work.** This section previously said Xcode had
@@ -80,7 +89,7 @@ a development signature archives happily and is rejected at upload:
 
 | | |
 |---|---|
-| Signed by | `Apple Distribution: Gridlight, Inc. (3AXRJ22S9P)` |
+| Signed by | `Apple Distribution: <your team>` |
 | Profile | `iOS Team Store Provisioning Profile: ai.gridlight.filmengine` |
 | `beta-reports-active` | `true` — the TestFlight entitlement |
 | `get-task-allow` | `false` — correct for distribution, not development |

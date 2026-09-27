@@ -66,8 +66,8 @@ Add this to `claude_desktop_config.json`:
   "mcpServers": {
     "film-engine": {
       "command": "node",
-      "args": ["/Users/mannyhenri/code/film-engine/backend/mcp-server.js"],
-      "env": { "FILM_DATA_DIR": "/Users/mannyhenri/.gridlight/film-engine/data" }
+      "args": ["/ABSOLUTE/PATH/TO/film-engine/backend/mcp-server.js"],
+      "env": { "FILM_DATA_DIR": "/Users/YOU/.gridlight/film-engine/data" }
     }
   }
 }

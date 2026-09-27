@@ -87,7 +87,7 @@ Nothing here spends. Every command was run against the live install.
 **Setup.** Start the API against your data profile:
 
 ```bash
-cd /Users/mannyhenri/code/film-engine
+cd film-engine
 export WORLDLABS_API_KEY=$(grep -o 'WORLDLABS_API_KEY=[^ ]*' ~/.zshrc | head -1 | cut -d= -f2- | tr -d '"'"'"'')
 
 # Idempotent: only start one if the port is free, so re-running this document
@@ -207,7 +207,7 @@ the camera work staged inside it.
 ### 3.10 The agent surface
 
 ```bash
-cd /Users/mannyhenri/code/film-engine && node -e "
+cd film-engine && node -e "
 const {listTools}=require('./backend/lib/mcp-tools');
 const n=listTools().map(t=>t.name).filter(x=>x.startsWith('world_'));
 console.log('world tools ('+n.length+'):', n.join(', '));

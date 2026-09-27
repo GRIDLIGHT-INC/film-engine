@@ -9,7 +9,7 @@
  *
  * Gridlight's generation endpoints use the JSON+URL shape — POST /video returns
  * { video_url }, POST /music returns { audio_url }, POST /image returns
- * { image_urls } (GRIDLIGHT_API_REFERENCE.md). Only the GET /videos/:file,
+ * { image_urls } (the Gridlight gateway's API reference). Only the GET /videos/:file,
  * /music/:file and /images/:file *serving* endpoints return binary.
  *
  * Routes used to write result.data straight into film_assets.file_path when it

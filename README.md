@@ -331,3 +331,10 @@ film-engine/
 
 The architecture, every subsystem and the reasons behind its design are
 documented at length in [`CLAUDE.md`](CLAUDE.md).
+
+---
+
+## Licence
+
+[MIT](LICENSE). Bundled third-party code and its licences are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

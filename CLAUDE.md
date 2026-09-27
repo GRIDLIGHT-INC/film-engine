@@ -1774,7 +1774,7 @@ says so in its own description, derived rather than written per node, and
 *"A tool call through the MCP host is abandoned at sixty seconds. Any generation
 still polling at that moment is not slow — it is LOST. The handler is torn down
 mid-await, nothing is written to `film_assets`, and the caller is told:*
-`Device 'mannys-mac-pro-local' did not respond within 60s.` *Which reads like a
+`Device 'my-mac-local' did not respond within 60s.` *Which reads like a
 connection fault. It is not. The provider very likely finished the job and
 billed for it; the result had nowhere to be delivered."*
 

@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 
 const PLANS = path.join(__dirname, '..', '..', 'docs', 'plans');
-const SCOPING = '/Users/mannyhenri/Documents/Git/gridlight/.claude/scoping';
+// The authoring workspace, outside this repo. Override with FILM_SCOPING_ROOT;
+// absent on any other machine, where the checks that need it skip.
+const SCOPING_ROOT = (process.env.FILM_SCOPING_ROOT || require('path').join(require('os').homedir(), 'Documents', 'Git', 'gridlight', '.claude'));
+const SCOPING = require('path').join(SCOPING_ROOT, 'scoping');
 
 /**
  * A SCOPED EPIC THAT IS NOT THE EPIC IS WORSE THAN NO COPY.
@@ -225,7 +228,7 @@ function isOursToJudge(epic) {
     });
 }
 
-const TASKS_DIR = '/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks';
+const TASKS_DIR = require('path').join(SCOPING_ROOT, 'tasks');
 
 /** Completed task files, grouped by the epic they name. */
 function completedByEpic() {

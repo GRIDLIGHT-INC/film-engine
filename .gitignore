@@ -20,3 +20,32 @@ backend/.venv/
 __pycache__/
 *.pyc
 .neoncore/
+
+# Personal notes, local tool config and private production material.
+# Kept on disk, never published (removed from the public repo 2026-09-27).
+feedback.txt
+RESTART-PROMPT.md
+WORKFLOW.md
+build-order.md
+AGENTS.md
+/*.docx
+GRIDLIGHT_API_REFERENCE.md
+docs/GRIDLIGHT-APP-STYLE-GUIDE.*
+.mcp.json
+.agents/
+.claude/
+.codex/
+.vscode/
+todos/
+/*.png
+assets/drive-in-ident/
+docs/plans/rbf-001-evidence/
+backend/tests/fixtures/dragon-neighborhood.fountain
+
+# Never commit secrets or databases.
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+.ruff_cache/

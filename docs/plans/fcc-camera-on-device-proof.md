@@ -16,7 +16,7 @@ columns are filled in.
 | iOS | **26.6.1** |
 | Identifier | `00008150-000908DC1188401C` (devicectl: `ACE6174C-7F0F-5369-906E-FA766D55A9A8`) |
 | State | paired, available, **locked** |
-| Signing | configured and valid — team `3AXRJ22S9P`, automatic, `ai.gridlight.filmengine` |
+| Signing | configured and valid — the developer team, automatic, `ai.gridlight.filmengine` |
 
 **This corrects the brief.** It was written when the only phone here was a 15
 Pro Max, and it named the hardware tier as one of two things that genuinely

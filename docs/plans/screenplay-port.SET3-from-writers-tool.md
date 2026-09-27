@@ -9,7 +9,7 @@ your repo — correct those, they are yours.
 Delivered as a file because `SendMessage` between our sessions is held for user
 approval and never arrives, and NeonCore exposes no agent-message route
 (`/api/agents/:id/message` + 3 siblings → 404). Full source-of-truth version
-with rationale: `/Users/mannyhenri/code/writers-tool/docs/screenplay-inventory.md`
+with rationale: `writers-tool/docs/screenplay-inventory.md` (a separate, private repository)
 (pushed as `0c70416` on `scrivener-parity`).
 
 ---

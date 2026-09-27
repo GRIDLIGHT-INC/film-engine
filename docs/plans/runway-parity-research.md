@@ -58,7 +58,7 @@
 
 ## Local Findings
 
-All paths are under `/Users/mannyhenri/code/film-engine/backend/`.
+All paths are under `film-engine/backend/` (relative to your clone).
 
 **The Runway adapter: `lib/providers/runway.js` (1150 lines)**
 

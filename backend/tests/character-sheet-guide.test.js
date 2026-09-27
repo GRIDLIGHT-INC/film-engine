@@ -95,7 +95,5 @@ test('the route asks before it replaces, rather than deleting every view', () =>
         'a view the orbit declined to overwrite is not reported, so it looks like it worked');
 });
 
-test('the guide itself is in the repo, so the rules can be re-read', () => {
-    assert.ok(fs.existsSync(path.join(__dirname, '../../Film_Engine_Character_Sheets_Guide.docx')),
-        'the guide these rules come from is not in the repo');
-});
+// The guide itself (a .docx) is private material and is not published with the
+// repo; the rules it states are the ones asserted above, against the code.

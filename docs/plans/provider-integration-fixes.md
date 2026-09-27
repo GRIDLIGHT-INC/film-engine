@@ -23,7 +23,7 @@ generation still polling at that moment is not slow — it is LOST. The handler 
 torn down mid-await, nothing is written to `film_assets`, and the caller is told:
 
 ```
-Device 'mannys-mac-pro-local' did not respond within 60s.
+Device 'my-mac-local' did not respond within 60s.
 ```
 
 Which reads like a connection fault. It is not. The provider very likely

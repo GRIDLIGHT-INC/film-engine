@@ -32,7 +32,10 @@ const { execFileSync } = require('child_process');
 
 const REPO = path.join(__dirname, '..', '..');
 const PLANS = path.join(REPO, 'docs', 'plans');
-const SCOPING = '/Users/mannyhenri/Documents/Git/gridlight/.claude/scoping';
+// The authoring workspace, outside this repo. Override with FILM_SCOPING_ROOT;
+// absent on any other machine, where the checks that need it skip.
+const SCOPING_ROOT = (process.env.FILM_SCOPING_ROOT || require('path').join(require('os').homedir(), 'Documents', 'Git', 'gridlight', '.claude'));
+const SCOPING = require('path').join(SCOPING_ROOT, 'scoping');
 
 /** The commit that answered the question. Fixed, never HEAD: once this task is
  *  committed HEAD carries the corrected text, and a baseline that moves with
@@ -197,9 +200,10 @@ test('the newly discovered constraint has a task, not just a paragraph', () => {
     assert.ok(hosting,
         'no task covers exposing frames at a URL the provider can fetch — the probe found '
         + 'this is required and nothing in the plan schedules it');
-    const taskFile = path.join('/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks',
-        `GRD-${3430 + Number(hosting[1].slice(4))}.md`);
-    assert.ok(fs.existsSync(taskFile) || fs.readdirSync('/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks')
-        .some(f => read(path.join('/Users/mannyhenri/Documents/Git/gridlight/.claude/tasks', f)).includes(hosting[1])),
+    const TASKS = path.join(SCOPING_ROOT, 'tasks');
+    if (!fs.existsSync(TASKS)) return;   // the task files live on the authoring machine only
+    const taskFile = path.join(TASKS, `GRD-${3430 + Number(hosting[1].slice(4))}.md`);
+    assert.ok(fs.existsSync(taskFile) || fs.readdirSync(TASKS)
+        .some(f => read(path.join(TASKS, f)).includes(hosting[1])),
         `${hosting[1]} is in the epic with no task file anywhere`);
 });

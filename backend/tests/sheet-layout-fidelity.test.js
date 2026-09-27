@@ -51,13 +51,9 @@ function baseCss() {
     return out;
 }
 
-test('the reference images are present, and they are the spec', () => {
-    for (const f of ['design-ref-character.png', 'design-ref-location.png', 'design-ref-prop.png']) {
-        const p = path.join(ROOT, f);
-        assert.ok(fs.existsSync(p), `${f} is missing — the spec for this layout is gone`);
-        assert.ok(fs.statSync(p).size > 50000, `${f} is too small to be the screenshot`);
-    }
-});
+// The reference screenshots (design-ref-*.png) are private and not published;
+// the layout they specify is the geometry asserted below, measured once in a
+// browser against them.
 
 /** A renderer's source, by brace depth from its declaration. */
 function renderer(name) {

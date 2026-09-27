@@ -263,8 +263,12 @@ test('every build setting an upload requires is set, with its reason', () => {
     for (const [key, why] of Object.entries(PROJECT_REQUIRED)) {
         assert.match(pbx, new RegExp(`${key}\\s*=`), `${key} is unset — ${why}`);
     }
-    assert.match(pbx, /DEVELOPMENT_TEAM\s*=\s*3AXRJ22S9P/,
-        'the project is not signed to the Gridlight team');
+    // The team is deliberately EMPTY in the published project: it signs with
+    // whoever builds it, set in Xcode (ios/README.md → Signing). A team id
+    // committed here is someone else's, and a clone could not sign with it.
+    assert.match(pbx, /DEVELOPMENT_TEAM\s*=\s*"";/, 'a specific development team is committed to the project');
+    assert.match(read(path.join(IOS, 'ExportOptions.plist')), /<key>teamID<\/key><string>YOUR_TEAM_ID<\/string>/,
+        'ExportOptions.plist carries a real team id instead of the placeholder');
 });
 
 test('there is an icon and a launch screen — an upload is rejected without them', () => {
