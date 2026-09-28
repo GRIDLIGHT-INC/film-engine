@@ -128,6 +128,11 @@ function handleProductionGraph(req, res, parts) {
             if (!plan) return json(res, 404, { error: 'Project not found' });
             return plan.error ? json(res, 400, plan) : json(res, 200, plan);
         }
+        if (parts[4] === 'nodes' && parts[5] && parts[6] === 'run-to-here' && !parts[7] && req.method === 'POST') {
+            const out = require('../lib/run-to-here').startRunToHere(parts[2], decodeURIComponent(parts[5]),
+                { ignore_budget: !!(req.body || {}).ignore_budget });
+            return json(res, out.status, out.body);
+        }
         if (parts[4] === 'run-changed' && !parts[5] && req.method === 'POST') {
             const out = require('../lib/run-changed').startRunChanged(parts[2], { ignore_budget: !!(req.body || {}).ignore_budget });
             return json(res, out.status, out.body);

@@ -131,4 +131,85 @@ function planForNode(projectId, key) {
     return { project_id: projectId, ...plan, budget, refused: !!budget.wouldExceed };
 }
 
-module.exports = { planRunToHere, planForNode, TARGETS };
+/**
+ * RUN TO HERE (PGN-009): each planned step through its EXISTING generate path.
+ * A frame or a shot's clip goes through the pipeline's executeStep (stale-input
+ * gate, persistence, fingerprint); a sequence through its own generate route;
+ * a sound through its cue's generate route — the routes the page and the MCP
+ * tools already use, reached in-process through the MCP layer's shim.
+ */
+function defaultDeps() {
+    return {
+        executeStep: (...a) => require('../routes/pipeline').executeStep(...a),
+        callRoute: (...a) => require('./mcp-tools').callRoute(...a),
+        loadShot: id => {
+            const { db } = require('../db/database');
+            const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(id);
+            const scene = shot && db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+            const project = scene && db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+            return shot && scene && project ? { shot, scene, project } : null;
+        },
+    };
+}
+
+const routeResult = (r, what) => {
+    const status = (r && r._status) || 500;
+    const body = (r && r.body) || {};
+    if (status < 300 && body.ok !== false) return { ok: true, status, body };
+    return { ok: false, code: body.code || null, error: body.error || `${what} answered ${status}` };
+};
+
+async function executeRunToHereItem(item, deps) {
+    const d = Object.assign(defaultDeps(), deps || {});
+    const { SOUND_KIND } = require('./production-graph');
+    if (item.stage === 'keyframe' || item.stage === 'video') {
+        const rows = d.loadShot(item.shot_id);
+        if (!rows) return { ok: false, error: `${item.stage}: the shot no longer exists` };
+        return d.executeStep(item.stage, rows.shot, rows.scene, rows.project);
+    }
+    if (item.stage === 'sequence') {
+        const r = await d.callRoute('POST', `/film/sequences/${item.sequence_id}/generate`, {},
+            (...a) => require('../routes/sequences').handleSequences(...a));
+        return routeResult(r, 'the sequence');
+    }
+    if (Object.values(SOUND_KIND).includes(item.stage)) {
+        const r = await d.callRoute('POST', `/film/music-cues/${item.cue_id}/generate`, {},
+            (...a) => require('../routes/music-gen').handleMusicGen(...a));
+        return routeResult(r, 'the cue');
+    }
+    return { ok: false, error: `${item.stage} is not a step "Run to here" can make` };
+}
+
+/** Run a node's plan: re-planned after each step, stopping at the first refusal (the PGN-007 runner). */
+function runToHere(projectId, key, opts, deps) {
+    const d = deps || {};
+    const rc = require('./run-changed');
+    return rc.runChanged(projectId, Object.assign({}, opts, { kind: 'run_to_here', target: key }), {
+        plan: d.plan || (() => planForNode(projectId, key)),
+        execute: d.execute || (item => executeRunToHereItem(item)),
+    });
+}
+
+let last = null;
+function startRunToHere(projectId, key, opts, deps) {
+    const rc = require('./run-changed');
+    const d = deps || {};
+    if (!rc.projectExists(projectId)) return { status: 404, body: { error: 'Project not found' } };
+    const plan = d.plan ? d.plan() : planForNode(projectId, key);
+    if (!plan) return { status: 404, body: { error: 'Project not found' } };
+    if (plan.error) return { status: 400, body: plan };
+    if ((plan.blockers || []).length) {
+        return { status: 409, body: { error: plan.blockers[0].reason, blockers: plan.blockers, plan } };
+    }
+    if (plan.refused && !(opts && opts.ignore_budget)) {
+        return { status: 402, body: { refused: true, budget: plan.budget || null, plan,
+            error: 'This would take the project over its budget. Nothing was run.' } };
+    }
+    if (!(plan.items || []).length) return { status: 200, body: { run_id: null, plan, message: plan.summary || 'Nothing to do.' } };
+    const runId = rc._recordRun(projectId, { total: plan.items.length, params: { kind: 'run_to_here', target: key } });
+    last = runToHere(projectId, key, Object.assign({}, opts, { run_id: runId }), d).catch(err => ({ ok: false, error: err.message }));
+    return { status: 202, body: { run_id: runId, plan } };
+}
+function _lastRun() { return last; }
+
+module.exports = { planRunToHere, planForNode, TARGETS, executeRunToHereItem, runToHere, startRunToHere, _lastRun };

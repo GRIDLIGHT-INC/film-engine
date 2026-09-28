@@ -165,7 +165,7 @@ function recordRun(projectId, patch, runId) {
             const id = generateId();
             db.prepare(`INSERT INTO film_pipeline_runs (id, project_id, run_type, status, started_at, params, total_steps)
                 VALUES (?, ?, 'project', 'running', datetime('now'), ?, ?)`)
-                .run(id, projectId, JSON.stringify({ kind: 'run_changed' }), patch.total || 0);
+                .run(id, projectId, JSON.stringify(patch.params || { kind: 'run_changed' }), patch.total || 0);
             return id;
         }
         db.prepare(`UPDATE film_pipeline_runs SET status = ?, current_step = ?, steps_completed = ?, steps_failed = ?,
@@ -190,7 +190,8 @@ async function runChanged(projectId, opts, injected) {
         return { ok: false, status: 402, refused: true, budget: first.budget || null,
             error: 'This would take the project over its budget. Nothing was run.', plan: first };
     }
-    const runId = o.run_id || recordRun(projectId, { total: first.items.length });
+    const runId = o.run_id || recordRun(projectId, { total: first.items.length,
+        params: { kind: o.kind || 'run_changed', ...(o.target ? { target: o.target } : {}) } });
     const attempted = new Set();
     const completed = [];
     let failed = null, stopped = null, current = first, stillBehind = [];
@@ -263,4 +264,4 @@ function getRun(projectId, runId) {
 }
 
 module.exports = { buildRunChangedPlan, planRunChanged, runChanged, startRunChanged, getRun, executeItem,
-    PERSON_STAGES, _setDeps, _lastRun };
+    PERSON_STAGES, _setDeps, _lastRun, _recordRun: recordRun, projectExists };

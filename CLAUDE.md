@@ -459,6 +459,7 @@ film-engine/
 │       ├── run-changed-plan.test.js   # Every stage the impact chain walks is priced and runnable or excluded by name; the plan spends nothing
 │       ├── run-changed-run.test.js    # One item at a time, re-planned after each; stops at the first refusal naming the rest; never buys twice
 │       ├── run-to-here-plan.test.js   # Every node type is a target or refused with why; frames before clips; borrowed frames traced; cycles refused
+│       ├── run-to-here-run.test.js    # Every planned stage reaches its own generate path; blockers refuse before anything runs; the menu offers it where the server plans it
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6267,6 +6268,7 @@ node --test backend/tests/production-graph-draw-states.test.js
 node --test backend/tests/run-changed-plan.test.js
 node --test backend/tests/run-changed-run.test.js
 node --test backend/tests/run-to-here-plan.test.js
+node --test backend/tests/run-to-here-run.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

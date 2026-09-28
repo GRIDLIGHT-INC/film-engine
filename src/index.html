@@ -44241,6 +44241,8 @@ function pgOpenMenu(x, y, key, group) {
         const runLabel = { shot: n.frames && n.frames.length ? 'Regenerate frame' : 'Generate frame', sequence: 'Generate sequence',
             sound: 'Generate sound', video: 'Play this version', audio: 'Play this version', link: 'Open the source sequence' }[n.type];
         if (runLabel) items.push(`<button onclick="pgMenuDo('run')">${runLabel}</button>`);
+        // Only where the server can plan it (PGN-009); the set is held equal to run-to-here TARGETS.
+        if (PG_RUN_TO_HERE_TYPES.includes(n.type)) items.push(`<button onclick="pgMenuDo('to-here')" title="Make everything this still needs, in order, after one confirmation">Run to here</button>`);
         if (n.type === 'shot' || n.type === 'sequence' || n.type === 'sound') items.push(`<button onclick="pgMenuDo('dup')">Duplicate</button>`);
         const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || (n.type === 'shot' && n.sequence_id);
         items.push(`<button onclick="pgMenuDo('remove')" ${removable ? '' : 'disabled title="A shot leaves the film on the Scenes page, not here"'}>${
@@ -44265,8 +44267,46 @@ async function pgMenuDo(what) {
         if (n.type === 'video' || n.type === 'audio') { pgSelect(n.key); pgSelectVersion(n.key); return; }
         return pgRunNode(n.key);
     }
+    if (what === 'to-here') return pgRunToHere(n.key);
     if (what === 'dup') return pgDuplicate(n);
     if (what === 'remove') return pgRemove(n);
+}
+
+/** The node types "Run to here" can start from — the server's run-to-here TARGETS. */
+const PG_RUN_TO_HERE_TYPES = Object.freeze(['shot', 'video', 'sequence', 'sound']);
+
+/** The confirmation body for "Run to here": each step with its price, the total, or what blocks it. */
+function pgRunToHereDescribe(plan) {
+    const p = plan || {};
+    const money = v => '$' + (Number(v) || 0).toFixed(2);
+    if ((p.blockers || []).length) {
+        return `<p style="color:#f06a4a;">This cannot run yet:</p><ul style="padding-left:18px;">${p.blockers.map(b => `<li>${esc(b.reason)}</li>`).join('')}</ul>`;
+    }
+    if (!(p.items || []).length) return `<p>${esc(p.summary || 'Nothing to do: everything this needs is already made and current.')}</p>`;
+    const who = it => esc(it.shot_code || it.name || it.key || '');
+    const rows = p.items.map(it => `<li><b>${who(it)}</b> · ${esc(it.stage)}${it.legs ? ` · ${it.legs} leg${it.legs === 1 ? '' : 's'}` : ''} · ${money(it.cost)}${it.why ? `<div class="text-muted" style="font-size:12px;">${esc(it.why)}</div>` : ''}</li>`).join('');
+    const over = p.refused ? `<p style="color:#f06a4a;">Over budget: this would take the project past its budget. Nothing will run unless you raise it.</p>` : '';
+    return `${over}<p>${p.items.length} step${p.items.length === 1 ? '' : 's'}, in this order, about <b>${money(p.total_cost)}</b>. It stops at the first refusal.</p><ol style="padding-left:18px;margin:6px 0;">${rows}</ol>`;
+}
+
+/** "Run to here": the node's free plan in the one confirmation, then the steps in order. */
+async function pgRunToHere(key) {
+    if (!state.currentProject) return;
+    const pid = state.currentProject.id;
+    const k = encodeURIComponent(key);
+    return confirmPaidImage({
+        capability: 'image',
+        title: 'Run to here',
+        previewUrl: `/projects/${pid}/production-graph/nodes/${k}/run-to-here/plan`,
+        describe: pgRunToHereDescribe,
+        send: async () => {
+            try {
+                const r = await api(`/projects/${pid}/production-graph/nodes/${k}/run-to-here`, { method: 'POST', body: '{}' });
+                setStatus(r && r.run_id ? `Running ${r.plan.items.length} step(s)…` : (r && r.message) || 'Nothing to do.');
+                pgPollRunning();
+            } catch (err) { setStatus('Run to here failed: ' + err.message, true); }
+        },
+    });
 }
 
 async function pgDuplicate(n) {
