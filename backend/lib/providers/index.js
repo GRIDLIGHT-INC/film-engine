@@ -665,81 +665,107 @@ function resolutionReport(projectConfig) {
  * as its cost is, from one source.
  */
 function withJobRecording_(adapter, capability, projectConfig) {
-    if (!adapter || typeof adapter.generate !== 'function' || !adapter.asyncGeneration) return adapter;
+    /*
+     * EVERY GENERATION IS A ROW WHILE IT RUNS (PGN-001), not only the async
+     * ones. The Production graph reads film_generation_jobs to learn what is
+     * running, and a synchronous image or voice line with no row was running
+     * invisibly. A refusal (the unavailable adapter) is not a generation, and
+     * an llm call is reasoning rather than something a director queues.
+     */
+    if (!adapter || typeof adapter.generate !== 'function' || !adapter.id || adapter.unavailable) return adapter;
+    if (capability === 'llm') return adapter;
     const cfg = projectConfig || {};
     const jobs = require('../generation-jobs');
+    const progress = require('../generation-progress');
     const inner = adapter.generate.bind(adapter);
+    const innerStream = typeof adapter.generateStream === 'function' ? adapter.generateStream.bind(adapter) : null;
+
+    const open = (cap, o) => progress.start({
+        provider: adapter.id, capability: cap || capability,
+        projectId: cfg.__project_id || null,
+        shotId: cfg.__shot_id || null,
+        sceneId: cfg.__scene_id || null,
+        meta: Object.assign({}, (o && o.jobMeta) || {}),
+    });
+
+    /*
+     * A settled row, from a result. `pending` means the provider still holds a
+     * job this call stopped waiting for: the row stays open and collectable. A
+     * row left pending after a call that plainly finished would offer a collect
+     * for a job already delivered, which is how a frame gets paid for twice.
+     */
+    const settle = (jobId, result) => {
+        try {
+            progress.flush(jobId);
+            if (!jobId) return;
+            if (result && result.ok) jobs.complete(jobId, {});
+            else if (!(result && result.pending)) jobs.fail(jobId, result && result.error);
+        } catch (_) { /* bookkeeping never fails a generation */ }
+    };
 
     const wrapped = Object.create(adapter);
     wrapped.generate = async (cap, payload, opts) => {
-        let jobId = null;
         const o = Object.assign({}, opts || {});
-        const theirs = o.onHandle;
-        o.onHandle = (requestId, meta) => {
-            /*
-             * WHAT THIS WILL COST, WORKED OUT WHILE THE PAYLOAD IS STILL HERE.
-             *
-             * Metering happens below, on the RESULT — and a generation that
-             * outruns the host's 60-second window never produces one here. It
-             * is delivered later by `generation_collect`, which has the handle
-             * and not the payload, and calls the adapter directly, outside this
-             * wrapper. Every video therefore billed at the provider and
-             * recorded ZERO: video is the capability that always exceeds the
-             * window, so the spend report was blind to the single most
-             * expensive thing the pipeline does.
-             *
-             * An adapter's `meter()` is a pure function of the payload for
-             * everything priced per second or per call, so the answer is
-             * knowable NOW. Stamped onto the handle, `collect` can post the
-             * spend without needing the request back.
-             */
-            let meterPlan = null;
-            try {
-                if (typeof adapter.meter === 'function') {
-                    const u = adapter.meter(cap || capability, payload, null);
-                    if (u && Number(u.quantity) > 0) {
-                        meterPlan = { unit: u.unit, quantity: u.quantity, model: u.model || null,
-                                      parts: u.parts || null };
-                    }
-                }
-            } catch (_) { /* a price that cannot be worked out is not a blocker */ }
-
-            jobId = jobs.record({
-                provider: adapter.id, capability: cap || capability, requestId,
-                projectId: cfg.__project_id || null,
-                shotId: cfg.__shot_id || null,
-                sceneId: cfg.__scene_id || null,
+        let jobId = open(cap, o);
+        if (adapter.asyncGeneration) {
+            const theirs = o.onHandle;
+            o.onHandle = (requestId, meta) => {
                 /*
-                 * WHAT THIS GENERATION IS, not just which capability it used.
+                 * WHAT THIS WILL COST, WORKED OUT WHILE THE PAYLOAD IS STILL HERE.
                  *
-                 * The adapter contributes the capability; the CALLER contributes
-                 * the thing being made -- which sequence leg, which shot. A
-                 * handle without that can be collected but not FILED: the bytes
-                 * arrive and nothing knows where they belong, which is a
-                 * recovered clip that still looks lost. Adapter facts win on a
-                 * key clash, since the adapter is the one that made the call.
+                 * Metering happens on the RESULT — and a generation that
+                 * outruns the host's 60-second window never produces one here.
+                 * It is delivered later by `generation_collect`, which has the
+                 * handle and not the payload. An adapter's `meter()` is a pure
+                 * function of the payload for everything priced per second or
+                 * per call, so the answer is knowable NOW, and stamped onto the
+                 * handle `collect` can post the spend without the request.
                  */
-                meta: Object.assign({}, o.jobMeta || {}, meta || {},
-                    meterPlan ? { meter: meterPlan } : {}),
-            });
-            if (typeof theirs === 'function') { try { theirs(requestId, meta); } catch (e) { console.error('[providers] an onHandle callback threw:', e.message); } }
-            return jobId;
-        };
-        o.onTimeout = (requestId, waitedMs) =>
-            jobs.timedOut({ provider: adapter.id, jobId, requestId, waitedMs });
-
-        const result = await inner(cap, payload, o);
-        /*
-         * Settle it. A handle left `pending` after a call that plainly finished
-         * would offer a collect for a job already delivered, which is how a
-         * frame gets paid for twice.
-         */
-        try {
-            if (jobId && result && result.ok) jobs.complete(jobId, {});
-            else if (jobId && result && !result.pending) jobs.fail(jobId, result && result.error);
-        } catch (_) { /* bookkeeping never fails a generation */ }
+                let meterPlan = null;
+                try {
+                    if (typeof adapter.meter === 'function') {
+                        const u = adapter.meter(cap || capability, payload, null);
+                        if (u && Number(u.quantity) > 0) {
+                            meterPlan = { unit: u.unit, quantity: u.quantity, model: u.model || null,
+                                          parts: u.parts || null };
+                        }
+                    }
+                } catch (_) { /* a price that cannot be worked out is not a blocker */ }
+                /*
+                 * WHAT THIS GENERATION IS, not just which capability it used:
+                 * the caller's jobMeta says which sequence leg or shot, so a
+                 * collected result can be FILED. Adapter facts win on a clash.
+                 */
+                const m = Object.assign({}, o.jobMeta || {}, meta || {}, meterPlan ? { meter: meterPlan } : {});
+                // The row opened at the start becomes the handle; if that write
+                // failed, record() still files the handle on its own.
+                jobId = jobId
+                    ? progress.attachHandle(jobId, requestId, m)
+                    : jobs.record({ provider: adapter.id, capability: cap || capability, requestId,
+                        projectId: cfg.__project_id || null, shotId: cfg.__shot_id || null,
+                        sceneId: cfg.__scene_id || null, meta: m });
+                if (typeof theirs === 'function') { try { theirs(requestId, meta); } catch (e) { console.error('[providers] an onHandle callback threw:', e.message); } }
+                return jobId;
+            };
+            o.onTimeout = (requestId, waitedMs) =>
+                jobs.timedOut({ provider: adapter.id, jobId, requestId, waitedMs });
+        }
+        let result;
+        try { result = await inner(cap, payload, o); }
+        catch (err) { settle(jobId, { ok: false, error: err && err.message }); throw err; }
+        settle(jobId, result);
         return result;
     };
+    if (innerStream) {
+        wrapped.generateStream = async (cap, payload, res, callbacks) => {
+            const jobId = open(cap, null);
+            let result;
+            try { result = await innerStream(cap, payload, res, callbacks); }
+            catch (err) { settle(jobId, { ok: false, error: err && err.message }); throw err; }
+            settle(jobId, result);
+            return result;
+        };
+    }
     return wrapped;
 }
 
@@ -809,4 +835,4 @@ _autoload();
 
 module.exports = {
     modelsFor, modelIdsFor,
-    firstConfigured, resolveIdWithReason, resolutionOf, resolutionReport, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
+    firstConfigured, resolveIdWithReason, resolutionOf, resolutionReport, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, withJobRecording: withJobRecording_, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

@@ -47,7 +47,7 @@ This epic brings the eight things ComfyUI's editor does well onto the graph, bui
 ## Target State
 | Component | Target State |
 |-----------|---------------|
-| Progress | A job record carries percent, phase and heartbeat (`backend/lib/generation-progress.js`, migration `backend/db/migrations/117_graph_progress_and_hold.sql`). Every async adapter reports what it can. The graph shows it on the running node, including jobs started by Claude. |
+| Progress | A job record carries percent, phase and heartbeat (`backend/lib/generation-progress.js`, migration `backend/db/migrations/117_generation_progress.sql`). Every async adapter reports what it can. The graph shows it on the running node, including jobs started by Claude. |
 | Node states | Every node carries a state from the impact report (current / redo / waiting / never made), drawn on the node and its edges. The map covers all six node types: `shot`, `video`, `sequence`, `link`, `sound` and `audio`. |
 | Run what changed | A free plan of the "redo now" items in dependency order with costs, one confirmation, then sequential runs that re-read the report after each step. |
 | Run to here | A free plan per target node listing each missing step and its cost, run in order through one confirmation; stops at the first refusal and names what was not attempted. |
@@ -86,7 +86,7 @@ This epic brings the eight things ComfyUI's editor does well onto the graph, bui
 ### Phase 1: Live Progress
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
-| PGN-001 | Progress on the job record | (F1) Migration 117 adds percent, phase, started_at and heartbeat_at to `film_generation_jobs`. `backend/lib/generation-progress.js` writes them at most once a second per job. Every generation gets a job row, including synchronous ones, so the page has one place to read what is running. | M | None |
+| PGN-001 | Progress on the job record | (F1) Migration 117 adds percent, phase, started_at, heartbeat_at and collectable to `film_generation_jobs`. `backend/lib/generation-progress.js` writes them at most once a second per job. Every generation gets a job row, including synchronous ones, so the page has one place to read what is running. | M | None |
 | PGN-002 | Adapters report what they can | (F1) Pass an onProgress callback through the resolve() funnel in `backend/lib/providers/index.js` to every adapter. Map Gridlight phase and step events and Meshy percentages; read a percentage from Runway, MuAPI and Seedance task polls where their responses carry one. Each adapter declares `reportsProgress`; a set-based test iterates every async adapter. | M | PGN-001 |
 | PGN-003 | Progress on the running node | (F1) The graph draws percent, phase and elapsed time on the running node, or elapsed time with "no percentage from this provider". Updates arrive through `backend/routes/events.js`, so jobs started by Claude show too. Replace the indeterminate bar only when a percentage exists. | M | PGN-002 |
 
@@ -121,7 +121,7 @@ This epic brings the eight things ComfyUI's editor does well onto the graph, bui
 ### Phase 6: Hold
 | Task | Title | Description | Size | Dependencies |
 |------|-------|-------------|------|--------------|
-| PGN-016 | Hold on shots, sequences and cues | (F6) Migration 117 adds held_at to `film_shots`, `film_sequences` and `film_music_cues`. Set and release it through the existing update routes and MCP update tools, with Ctrl+B and a menu item on the graph and a "held" badge. | S | PGN-001 |
+| PGN-016 | Hold on shots, sequences and cues | (F6) Migration 118 (`backend/db/migrations/118_graph_hold.sql`) adds held_at to `film_shots`, `film_sequences` and `film_music_cues`. Set and release it through the existing update routes and MCP update tools, with Ctrl+B and a menu item on the graph and a "held" badge. | S | PGN-001 |
 | PGN-017 | Honour the hold in every batch run | (F6) Held nodes are skipped, and reported as skipped, by `pgRunPending()`, `buildRunPlan()`, `executeShots()`, `generateStoryboard()`, `generateStoryboardStream()`, `batchVideo()`, `batchVideoStream()`, `batchMusic()`, `batchMusicStream()`, `batchVoice()`, `batchVoiceStream()`, and by Run what changed and Run to here. Conform and export ignore the hold. A set-based test derives the batch entry points from the code. | M | PGN-016, PGN-007, PGN-009 |
 
 ### Phase 7: Collapse

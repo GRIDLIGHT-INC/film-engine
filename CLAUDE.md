@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (113 migrations)
+│   │   └── migrations/     # SQL migration files (114 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -75,6 +75,7 @@ film-engine/
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
+│   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
@@ -512,6 +513,7 @@ film-engine/
 │       ├── manual-edit.test.js          # If the app stores it, a person can type it
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
+│       ├── generation-progress.test.js # Every generation is a row while it runs; a sync row is never offered for collect
 │       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
 │       ├── sound-library-files.test.js # EVERY sound file is a card, and one button makes a new one
@@ -5998,7 +6000,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (113 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (114 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6316,6 +6318,7 @@ node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
+node --test backend/tests/generation-progress.test.js
 node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
 node --test backend/tests/sound-library-files.test.js

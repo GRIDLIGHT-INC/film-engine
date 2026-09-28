@@ -103,7 +103,7 @@ test('the hold is honoured by every batch entry point the epic names, and each e
 
 test('every repo path the epic cites exists, except the files it proposes', () => {
     const PROPOSED = new Set(['backend/lib/generation-progress.js', 'backend/lib/graph-patterns.js',
-        'backend/db/migrations/117_graph_progress_and_hold.sql', 'backend/tests/production-graph-nodes.test.js']);
+        'backend/db/migrations/118_graph_hold.sql', 'backend/tests/production-graph-nodes.test.js']);
     const cited = [...new Set([...doc().matchAll(/`((?:backend|docs|src)\/[A-Za-z0-9_./-]+\.(?:js|md|sql|json|html))`/g)].map(m => m[1]))];
     assert.ok(cited.length >= 10, `only ${cited.length} paths cited`);
     assert.deepEqual(cited.filter(p => !PROPOSED.has(p) && !fs.existsSync(path.join(ROOT, p))), []);

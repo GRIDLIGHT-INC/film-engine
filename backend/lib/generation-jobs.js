@@ -120,9 +120,9 @@ function pending(projectId) {
         const { db } = handle();
         return projectId
             ? db.prepare(`SELECT * FROM film_generation_jobs
-                 WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`).all(projectId)
+                 WHERE project_id = ? AND status = 'pending' AND collectable = 1 ORDER BY created_at DESC`).all(projectId)
             : db.prepare(`SELECT * FROM film_generation_jobs
-                 WHERE status = 'pending' ORDER BY created_at DESC`).all();
+                 WHERE status = 'pending' AND collectable = 1 ORDER BY created_at DESC`).all();
     } catch (_) { return []; }
 }
 
@@ -142,7 +142,7 @@ function recoverable(projectId) {
     try {
         const { db } = handle();
         const sql = `SELECT * FROM film_generation_jobs
-             WHERE status = 'failed' AND request_id IS NOT NULL
+             WHERE status = 'failed' AND request_id IS NOT NULL AND collectable = 1
                AND created_at >= datetime('now', '-7 days')`;
         return projectId
             ? db.prepare(`${sql} AND project_id = ? ORDER BY created_at DESC`).all(projectId)
