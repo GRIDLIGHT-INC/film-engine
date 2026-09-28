@@ -462,6 +462,7 @@ film-engine/
 │       ├── run-to-here-plan.test.js   # Every node type is a target or refused with why; frames before clips; borrowed frames traced; cycles refused
 │       ├── run-to-here-run.test.js    # Every planned stage reaches its own generate path; blockers refuse before anything runs; the menu offers it where the server plans it
 │       ├── generation-queue.test.js   # Every job state lands in exactly one bucket or is left out on purpose; a running run records what is still to come
+│       ├── production-graph-queue-strip.test.js # Every bucket drawn with only its own actions; collect posts; re-run goes through the node's own confirmation
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6272,6 +6273,7 @@ node --test backend/tests/run-changed-run.test.js
 node --test backend/tests/run-to-here-plan.test.js
 node --test backend/tests/run-to-here-run.test.js
 node --test backend/tests/generation-queue.test.js
+node --test backend/tests/production-graph-queue-strip.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

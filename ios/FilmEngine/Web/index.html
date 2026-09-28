@@ -5343,6 +5343,16 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-vchips button { height:24px; padding:0 8px; border-radius:6px; border:1px solid rgba(255,255,255,.08); background:#1d1d20; color:#b7b7be;
   font:500 11px 'SF Mono',Consolas,monospace; cursor:pointer; }
 .pg-vchips button.on { border-color:#f5c451; color:#f5c451; }
+.pg-queue { flex-shrink:0; background:#131315; border-top:1px solid rgba(255,255,255,.06); font-size:11px; }
+.pg-qhead { display:flex; align-items:center; gap:10px; padding:6px 12px; color:#9a9aa6; flex-wrap:wrap; }
+.pg-qbody { display:flex; gap:16px; overflow-x:auto; padding:0 12px 10px; max-height:160px; }
+.pg-qsec { min-width:220px; } .pg-qtitle { font-weight:600; color:#d4d4dc; margin-bottom:4px; }
+.pg-qitem { display:flex; align-items:center; gap:6px; padding:3px 4px; border-radius:6px; cursor:pointer; }
+.pg-qitem:hover { background:rgba(255,255,255,.05); }
+.pg-qitem img, .pg-qnothumb { width:40px; height:24px; object-fit:cover; border-radius:3px; background:#222; flex-shrink:0; }
+.pg-qname { color:#e6e6ea; } .pg-qdetail { color:#8a8a94; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pg-qempty { padding:0 12px 10px; color:#8a8a94; }
+.pg-body.open .pg-queue { margin-right:420px; }
 .pg-playback { height:168px; flex-shrink:0; box-sizing:border-box; display:flex; gap:16px; padding:14px 16px; background:#151517;
   border-top:1px solid rgba(255,255,255,.07); transition:margin-right .15s; }
 .pg-body.open .pg-playback { margin-right:420px; }
@@ -6923,6 +6933,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     </div>
                     <div class="pg-minimap" id="pgMinimap" title="Click to move the view"></div>
                 </div>
+                <div class="pg-queue" id="pgQueue"></div>
                 <div class="pg-playback" id="pgPlayback"></div>
                 <aside class="pg-drawer" id="pgDrawer" aria-label="Inspector">
                     <div class="pg-dscroll" id="pgDrawerBody"></div>
@@ -43462,7 +43473,7 @@ const PG = {
     graph: null, byKey: new Map(), sel: null, zoom: 0.9, pan: { x: 0, y: 0 }, scene: 'all',
     busy: new Map(), drawerCache: {}, play: { index: 0, playing: false, t0: 0, timer: null, stills: true, audio: true },
     fitted: false, menuFor: null,
-    running: new Map(), pollTimer: null, behindOnly: false,
+    running: new Map(), pollTimer: null, behindOnly: false, queue: null, queueOpen: false,
 };
 
 /**
@@ -43551,6 +43562,7 @@ async function pgPollRunning() {
     } catch (_) { list = null; }
     if (!state.currentProject || state.currentProject.id !== pid) return;
     if (list) pgSetRunning(list);
+    pgLoadQueue();
     if (PG.running.size || PG.busy.size) PG.pollTimer = setTimeout(pgPollRunning, 1500);
 }
 
@@ -43596,6 +43608,7 @@ async function pgLoad() {
         pgRenderPlayback();
         pgRenderSide();
         if (PG.running.size || PG.busy.size) pgPollRunning();
+        pgLoadQueue();
     } catch (err) {
         const c = document.getElementById('pgCanvas');
         if (c) c.querySelector('.pg-empty').textContent = 'Could not load the graph: ' + err.message;
@@ -44206,6 +44219,77 @@ async function pgRunChanged() {
         },
     });
 }
+
+/** The queue strip's buckets — exactly the server's QUEUE_BUCKETS (PGN-011). */
+const PG_QUEUE_LABELS = Object.freeze({
+    running: 'Running', waiting: 'Waiting', done_today: 'Done today',
+    awaiting_collection: 'Waiting to be collected', failed: 'Failed',
+});
+
+/**
+ * The strip, from one queue read. Collapsed: the counts. Open: every bucket,
+ * each item panning to its node; Collect only where a provider holds the job,
+ * Re-run only on a failure — through the node's own run and its confirmation.
+ */
+function pgQueueHtml(q, open, labelOf) {
+    if (!q) return '';
+    const name = it => (it.key && labelOf ? labelOf(it.key) : '') || it.shot_code || it.provider || 'job';
+    const counts = Object.keys(PG_QUEUE_LABELS).map(b => `<span class="pg-qcount" data-count="${b}">${esc(PG_QUEUE_LABELS[b])} ${Number((q.counts || {})[b] || 0)}</span>`).join('');
+    const head = `<div class="pg-qhead"><button class="pg-sbtn" onclick="pgToggleQueue()">${open ? 'Hide queue' : 'Queue'}</button>${counts}</div>`;
+    if (!open) return head;
+    const total = Object.keys(PG_QUEUE_LABELS).reduce((n, b) => n + (q[b] || []).length, 0);
+    if (!total) return head + '<div class="pg-qempty">Nothing running, waiting or finished today.</div>';
+    const row = (b, it) => {
+        const go = it.key ? ` onclick="pgQueueGo('${esc(it.key)}')" role="button" tabindex="0"` : '';
+        const detail = b === 'running'
+            ? [it.phase, it.percent != null ? Math.round(it.percent) + '%' : null].filter(Boolean).join(' · ')
+            : (b === 'failed' ? (it.error || 'failed') : (it.stage || it.capability || ''));
+        const act = b === 'awaiting_collection' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCollect('${esc(it.job_id)}')">Collect</button>`
+            : (b === 'failed' && it.key ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueRerun('${esc(it.key)}')">Re-run</button>` : '');
+        return `<div class="pg-qitem"${go}>${it.thumb ? `<img src="${esc(it.thumb + (String(it.thumb).includes('?') ? '&w=96' : '?w=96'))}" alt="" loading="lazy">` : '<span class="pg-qnothumb"></span>'}
+            <span class="pg-qname">${esc(name(it))}</span><span class="pg-qdetail">${esc(detail)}</span>${act}</div>`;
+    };
+    const sections = Object.keys(PG_QUEUE_LABELS).filter(b => (q[b] || []).length)
+        .map(b => `<div class="pg-qsec" data-bucket="${b}"><div class="pg-qtitle">${esc(PG_QUEUE_LABELS[b])}</div>${q[b].map(it => row(b, it)).join('')}</div>`).join('');
+    return head + `<div class="pg-qbody">${sections}</div>`;
+}
+
+function pgQueueLabel(key) {
+    const n = pgNode(key);
+    return n ? (n.shot_code || n.name || n.title || n.parent_label || '') : '';
+}
+
+async function pgLoadQueue() {
+    if (!state.currentProject) return;
+    const pid = state.currentProject.id;
+    try {
+        const q = await api('/projects/' + pid + '/production-graph/queue');
+        if (!state.currentProject || state.currentProject.id !== pid) return;
+        PG.queue = q;
+    } catch (_) { /* the strip keeps its last read */ }
+    const el = document.getElementById('pgQueue');
+    if (el) el.innerHTML = pgQueueHtml(PG.queue, PG.queueOpen, pgQueueLabel);
+}
+
+function pgToggleQueue() {
+    PG.queueOpen = !PG.queueOpen;
+    const el = document.getElementById('pgQueue');
+    if (el) el.innerHTML = pgQueueHtml(PG.queue, PG.queueOpen, pgQueueLabel);
+}
+
+function pgQueueGo(key) { if (!pgNode(key)) return; pgSelect(key); pgPanTo(key); }
+
+/** Collect a job a provider still holds — free; it fetches what was already paid for. */
+async function pgQueueCollect(jobId) {
+    try {
+        const r = await api('/generation-jobs/' + encodeURIComponent(jobId) + '/collect', { method: 'POST', body: '{}' });
+        setStatus(r && r.pending ? 'Not finished yet — it stays in the queue.' : 'Collected.');
+    } catch (err) { setStatus('Collect failed: ' + err.message, true); }
+    await loadProductionGraph();
+}
+
+/** Re-run a failed node through its own run, so it goes through the one confirmation. */
+function pgQueueRerun(key) { if (pgNode(key)) return pgRunNode(key); }
 
 function pgToggleBehind() { PG.behindOnly = !PG.behindOnly; pgRender(); pgFit(); }
 
