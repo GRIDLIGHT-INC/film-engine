@@ -119,4 +119,148 @@ function planRunChanged(projectId) {
     return { project_id: projectId, ...plan, budget, refused: !!budget.wouldExceed };
 }
 
-module.exports = { buildRunChangedPlan, planRunChanged, PERSON_STAGES };
+/**
+ * RUN WHAT CHANGED (PGN-007).
+ *
+ * One item at a time, through the pipeline's own executeStep — the path that
+ * already applies the stale-input gate, persists the result and stamps its
+ * fingerprint. The plan is re-read before every item, because the report
+ * moves as work lands: a clip "waiting" on its frame becomes "redo" once the
+ * frame is regenerated, and runs next.
+ *
+ * Stops at the first refusal and names what was not attempted. Checks the
+ * budget before the first item and before each one after (spend accumulates).
+ * Never runs one item twice: something that ran and is still behind is
+ * reported as still behind, never bought again in a loop.
+ */
+const MAX_STEPS = 500;
+const itemId = it => `${it.stage}|${it.key}`;
+
+async function executeItem(item) {
+    const { db } = require('../db/database');
+    const { executeStep } = require('../routes/pipeline');
+    let shot = null, scene = null;
+    if (item.shot_id) {
+        shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(item.shot_id);
+        if (shot) scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    } else if (item.scene_id) {
+        scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(item.scene_id);
+        // A scene-scoped step runs in the context of one of the scene's shots,
+        // exactly as the orchestrator runs it.
+        if (scene) shot = db.prepare('SELECT * FROM film_shots WHERE scene_id = ? ORDER BY sort_order, shot_code LIMIT 1').get(scene.id);
+    }
+    if (!shot || !scene) return { ok: false, error: `${item.stage}: the ${item.shot_id ? 'shot' : 'scene'} no longer exists` };
+    const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(scene.project_id);
+    return executeStep(item.stage, shot, scene, project);
+}
+
+let deps = null;
+/** Test seam: the planner and executor, so every branch is provable without spending. */
+function _setDeps(d) { deps = d || null; }
+
+function recordRun(projectId, patch, runId) {
+    try {
+        const { db, generateId } = require('../db/database');
+        if (!runId) {
+            const id = generateId();
+            db.prepare(`INSERT INTO film_pipeline_runs (id, project_id, run_type, status, started_at, params, total_steps)
+                VALUES (?, ?, 'project', 'running', datetime('now'), ?, ?)`)
+                .run(id, projectId, JSON.stringify({ kind: 'run_changed' }), patch.total || 0);
+            return id;
+        }
+        db.prepare(`UPDATE film_pipeline_runs SET status = ?, current_step = ?, steps_completed = ?, steps_failed = ?,
+            steps_remaining = ?, error_message = ?, completed_at = CASE WHEN ? IN ('complete','failed') THEN datetime('now') END
+            WHERE id = ?`).run(patch.status, patch.current || '', JSON.stringify(patch.completed || []),
+            JSON.stringify(patch.failed ? [patch.failed] : []), JSON.stringify(patch.remaining || []),
+            patch.error || '', patch.status, runId);
+        return runId;
+    } catch (_) { return runId || null; }
+}
+
+async function runChanged(projectId, opts, injected) {
+    const o = opts || {};
+    const d = injected || deps || {};
+    const plan = d.plan || (() => planRunChanged(projectId));
+    const execute = d.execute || executeItem;
+
+    if (!projectExists(projectId)) return { ok: false, status: 404, error: 'Project not found' };
+    const first = plan();
+    if (!first) return { ok: false, status: 404, error: 'Project not found' };
+    if (first.refused && !o.ignore_budget) {
+        return { ok: false, status: 402, refused: true, budget: first.budget || null,
+            error: 'This would take the project over its budget. Nothing was run.', plan: first };
+    }
+    const runId = o.run_id || recordRun(projectId, { total: first.items.length });
+    const attempted = new Set();
+    const completed = [];
+    let failed = null, stopped = null, current = first, stillBehind = [];
+
+    for (let step = 0; step < MAX_STEPS; step++) {
+        if (step > 0) {
+            current = plan();
+            if (!current) break;
+            if (current.refused && !o.ignore_budget) { stopped = 'budget: the next item would take the project over its budget'; break; }
+        }
+        const next = (current.items || []).find(it => !attempted.has(itemId(it)));
+        if (!next) { stillBehind = (current.items || []).filter(it => attempted.has(itemId(it))); break; }
+        attempted.add(itemId(next));
+        recordRun(projectId, { status: 'running', current: itemId(next), completed }, runId);
+        let result;
+        try { result = await execute(next); } catch (err) { result = { ok: false, error: err && err.message || String(err) }; }
+        if (result && result.ok) { completed.push({ stage: next.stage, key: next.key, shot_code: next.shot_code || null }); continue; }
+        failed = { stage: next.stage, key: next.key, shot_code: next.shot_code || null,
+            code: (result && result.code) || null, error: (result && result.error) || 'the step did not complete' };
+        stopped = 'refused';
+        break;
+    }
+
+    const remaining = failed || stopped
+        ? ((plan() || current || {}).items || []).filter(it => !attempted.has(itemId(it)))
+            .map(it => ({ stage: it.stage, key: it.key, shot_code: it.shot_code || null }))
+        : [];
+    const ok = !failed && !stopped;
+    recordRun(projectId, { status: ok ? 'complete' : 'failed', completed, failed, remaining,
+        error: failed ? `${failed.stage} ${failed.shot_code || failed.key}: ${failed.error}` : (stopped || '') }, runId);
+    return { ok, run_id: runId, completed, failed, stopped, not_attempted: remaining,
+        still_behind: stillBehind.map(it => ({ stage: it.stage, key: it.key, shot_code: it.shot_code || null })) };
+}
+
+/**
+ * Start a run and answer at once. A run of several generations outlasts any
+ * request; its progress shows on the nodes (PGN-003) and in its run row.
+ */
+let last = null;
+function projectExists(projectId) {
+    try { return !!require('../db/database').db.prepare('SELECT 1 FROM film_projects WHERE id = ?').get(projectId); }
+    catch (_) { return false; }
+}
+
+function startRunChanged(projectId, opts) {
+    if (!projectExists(projectId)) return { status: 404, body: { error: 'Project not found' } };
+    const d = deps || {};
+    const plan = (d.plan || (() => planRunChanged(projectId)))();
+    if (!plan) return { status: 404, body: { error: 'Project not found' } };
+    if (plan.refused && !(opts && opts.ignore_budget)) {
+        return { status: 402, body: { refused: true, budget: plan.budget || null, plan,
+            error: 'This would take the project over its budget. Nothing was run.' } };
+    }
+    if (!(plan.items || []).length) return { status: 200, body: { run_id: null, plan, message: plan.summary || 'Nothing is behind.' } };
+    const runId = recordRun(projectId, { total: plan.items.length });
+    last = runChanged(projectId, Object.assign({}, opts, { run_id: runId })).catch(err => ({ ok: false, error: err.message }));
+    return { status: 202, body: { run_id: runId, plan } };
+}
+/** Test seam: the promise of the last started run. */
+function _lastRun() { return last; }
+
+function getRun(projectId, runId) {
+    const { db } = require('../db/database');
+    const r = db.prepare('SELECT * FROM film_pipeline_runs WHERE id = ? AND project_id = ?').get(runId, projectId);
+    if (!r) return null;
+    const j = (v, dflt) => { try { return JSON.parse(v); } catch (_) { return dflt; } };
+    return { run_id: r.id, status: r.status, current: r.current_step, completed: j(r.steps_completed, []),
+        failed: j(r.steps_failed, [])[0] || null, not_attempted: j(r.steps_remaining, []),
+        error: r.error_message || null, started_at: r.started_at, completed_at: r.completed_at };
+}
+
+module.exports = { buildRunChangedPlan, planRunChanged, runChanged, startRunChanged, getRun, executeItem,
+    PERSON_STAGES, _setDeps, _lastRun };

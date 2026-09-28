@@ -6904,6 +6904,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                 <div style="flex-grow:1;"></div>
                 <button class="pg-hbtn" title="Re-place the nodes you haven't moved" onclick="pgTidy()">Tidy layout</button>
                 <button class="pg-hbtn" id="pgLockBtn" title="Nothing that replaces a frame runs while the board is locked" onclick="pgToggleLock()">Lock board</button>
+                <button class="pg-hbtn" id="pgRunChangedBtn" title="Redo only what is behind, in order, after one confirmation" onclick="pgRunChanged()">Run what changed</button>
                 <button class="pg-hbtn primary" id="pgRunBtn" onclick="pgRunPending()">Run pending</button>
             </div>
             <div class="pg-body" id="pgBody">
@@ -44167,6 +44168,43 @@ function pgLegendHtml(nodes, on) {
     const keys = Object.keys(PG_IMPACT_LOOK);
     return keys.map(s => `<span class="pg-leg imp-${s}" title="${esc(PG_IMPACT_LOOK[s].label)}"><i></i>${counts[s] || 0} ${esc(PG_IMPACT_LOOK[s].label)}</span>`).join('')
         + `<button class="pg-chip${on ? ' on' : ''}" onclick="pgToggleBehind()" title="Show only what is behind and what it belongs to">Only what's behind (${behind})</button>`;
+}
+
+/**
+ * The confirmation's body for "Run what changed" (PGN-007): every item with its
+ * price, the total, everything left out with why, and a budget refusal said
+ * before the button that would spend.
+ */
+function pgRunChangedDescribe(plan) {
+    const p = plan || {};
+    const money = v => '$' + (Number(v) || 0).toFixed(2);
+    const who = it => esc(it.shot_code || (it.scene_id ? 'scene' : it.key || ''));
+    const items = (p.items || []).map(it => `<li><b>${who(it)}</b> · ${esc(it.stage)} · ${money(it.cost)}${it.why ? `<div class="text-muted" style="font-size:12px;">${esc(it.why)}</div>` : ''}</li>`).join('');
+    const skipped = (p.skipped || []).map(it => `<li><b>${who(it)}</b> · ${esc(it.stage)} — ${esc(it.reason)}</li>`).join('');
+    const refused = p.refused
+        ? `<p style="color:#f06a4a;">Over budget: this run would take the project past its budget${p.budget && p.budget.limit ? ` of ${money(p.budget.limit)}` : ''}. Nothing will run unless you raise the budget.</p>` : '';
+    return `${refused}<p>${(p.items || []).length} to redo, in this order, about <b>${money(p.total_cost)}</b>. Each runs one at a time; anything waiting runs once what it waits on is done.</p>
+        ${items ? `<ol style="padding-left:18px;margin:6px 0;">${items}</ol>` : '<p class="text-muted">Nothing can be redone right now.</p>'}
+        ${skipped ? `<details><summary>Left out (${(p.skipped || []).length})</summary><ul style="padding-left:18px;">${skipped}</ul></details>` : ''}`;
+}
+
+/** "Run what changed": the free plan in the one confirmation, then the run in the background. */
+async function pgRunChanged() {
+    if (!state.currentProject) return;
+    const pid = state.currentProject.id;
+    return confirmPaidImage({
+        capability: 'image',
+        title: 'Run what changed',
+        previewUrl: `/projects/${pid}/production-graph/run-changed/plan`,
+        describe: pgRunChangedDescribe,
+        send: async () => {
+            try {
+                const r = await api(`/projects/${pid}/production-graph/run-changed`, { method: 'POST', body: '{}' });
+                setStatus(r && r.run_id ? `Running ${r.plan.items.length} item(s) that changed…` : (r && r.message) || 'Nothing is behind.');
+                pgPollRunning();
+            } catch (err) { setStatus('Run what changed failed: ' + err.message, true); }
+        },
+    });
 }
 
 function pgToggleBehind() { PG.behindOnly = !PG.behindOnly; pgRender(); pgFit(); }

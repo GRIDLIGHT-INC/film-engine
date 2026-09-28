@@ -1199,4 +1199,4 @@ function getLatestSchedule(req, res, projectId) {
     json(res, 200, { ...run, schedule, residency });
 }
 
-module.exports = { handlePipeline, persistStepResult, STEP_CAPABILITY, CONFORM_STATES, runStatus, scoreGate };
+module.exports = { handlePipeline, persistStepResult, executeStep, STEP_CAPABILITY, CONFORM_STATES, runStatus, scoreGate };

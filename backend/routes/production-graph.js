@@ -119,6 +119,16 @@ function handleProductionGraph(req, res, parts) {
             const plan = require('../lib/run-changed').planRunChanged(parts[2]);
             return plan ? json(res, 200, plan) : json(res, 404, { error: 'Project not found' });
         }
+        // Run it: one confirmation on the page, then one item at a time in the
+        // background (PGN-007). Answers at once with the run id.
+        if (parts[4] === 'run-changed' && !parts[5] && req.method === 'POST') {
+            const out = require('../lib/run-changed').startRunChanged(parts[2], { ignore_budget: !!(req.body || {}).ignore_budget });
+            return json(res, out.status, out.body);
+        }
+        if (parts[4] === 'run-changed' && parts[5] && parts[5] !== 'plan' && req.method === 'GET') {
+            const run = require('../lib/run-changed').getRun(parts[2], parts[5]);
+            return run ? json(res, 200, run) : json(res, 404, { error: 'No such run' });
+        }
         if (parts[4] === 'layout' && req.method === 'PUT') return putLayout(req, res, parts[2]);
         if (parts[4] === 'tidy' && req.method === 'POST') return tidy(req, res, parts[2]);
         return json(res, 405, { error: 'Method not allowed' });

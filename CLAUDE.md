@@ -456,6 +456,7 @@ film-engine/
 │       ├── production-graph-impact.test.js # Every node's out-of-date state, from the impact report and nowhere else; untracked is said, not hidden
 │       ├── production-graph-draw-states.test.js # Every state drawn: class, pill with why and action, edge colour, legend, filter, drawer
 │       ├── run-changed-plan.test.js   # Every stage the impact chain walks is priced and runnable or excluded by name; the plan spends nothing
+│       ├── run-changed-run.test.js    # One item at a time, re-planned after each; stops at the first refusal naming the rest; never buys twice
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6262,6 +6263,7 @@ node --test backend/tests/production-graph-progress.test.js
 node --test backend/tests/production-graph-impact.test.js
 node --test backend/tests/production-graph-draw-states.test.js
 node --test backend/tests/run-changed-plan.test.js
+node --test backend/tests/run-changed-run.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
