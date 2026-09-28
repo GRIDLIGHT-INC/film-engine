@@ -453,6 +453,7 @@ film-engine/
 │       ├── production-graph.test.js     # Joins, linked frames, version pointers, playback order and pinned layout, through a real server
 │       ├── production-graph-progress.test.js # Every running job lands on its node; a real bar only when the provider sent a percentage
 │       ├── production-graph-impact.test.js # Every node's out-of-date state, from the impact report and nowhere else; untracked is said, not hidden
+│       ├── production-graph-draw-states.test.js # Every state drawn: class, pill with why and action, edge colour, legend, filter, drawer
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6257,6 +6258,7 @@ node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/production-graph.test.js
 node --test backend/tests/production-graph-progress.test.js
 node --test backend/tests/production-graph-impact.test.js
+node --test backend/tests/production-graph-draw-states.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

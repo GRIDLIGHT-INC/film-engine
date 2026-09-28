@@ -5217,6 +5217,21 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-pvrow.stale .pg-pvs, .pg-pvrow.conflict .pg-pvs, .pg-pvrow.card_ahead .pg-pvs { color:#e0a33e; }
 .pg-pvrow.trying .pg-pvs { color:#9db4ff; }
 .pg-pill { font-size:9px; padding:1px 6px; border-radius:20px; white-space:nowrap; }
+/* out-of-date states (PGN-005): colours mirror PG_IMPACT_LOOK */
+.pg-node.imp-redo { box-shadow:0 0 0 2px #f06a4a; }
+.pg-node.imp-waiting { box-shadow:0 0 0 2px #e3b341; }
+.pg-node.imp-untracked { box-shadow:0 0 0 1px #8f8fb0 inset; }
+.pg-imp { position:absolute; top:-9px; right:8px; display:flex; gap:3px; z-index:2; }
+.pg-imp span { font-size:8.5px; padding:1px 6px; border-radius:20px; background:#1b1b1f; border:1px solid currentColor; white-space:nowrap; }
+/* colour the pill, legend and drawer box only — never the node's own text */
+.pg-imp .imp-redo, .pg-leg.imp-redo, .pg-impbox.imp-redo { color:#f06a4a; }
+.pg-imp .imp-waiting, .pg-leg.imp-waiting, .pg-impbox.imp-waiting { color:#e3b341; }
+.pg-imp .imp-never, .pg-leg.imp-never, .pg-impbox.imp-never { color:#8a8a94; }
+.pg-imp .imp-untracked, .pg-leg.imp-untracked, .pg-impbox.imp-untracked { color:#a6a6c8; }
+.pg-leg.imp-current { color:#57c98a; }
+.pg-legend { display:flex; align-items:center; gap:8px; font-size:11px; flex-wrap:wrap; }
+.pg-leg i { display:inline-block; width:8px; height:8px; border-radius:50%; background:currentColor; margin-right:4px; }
+.pg-impbox { border-left:3px solid currentColor; }
 .pg-pill.play { background:rgba(102,144,255,.18); color:#9fb6ff; }
 .pg-pill.fail { background:rgba(240,110,110,.12); color:#f08a8a; }
 .pg-pill.stale { background:rgba(224,163,62,.14); color:#e0a33e; }
@@ -6884,6 +6899,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
             <div class="pg-header">
                 <h2>Production</h2>
                 <span class="pg-meta" id="pgMeta"></span>
+                <span class="pg-legend" id="pgLegend"></span>
                 <div class="pg-chips" id="pgScenes"></div>
                 <div style="flex-grow:1;"></div>
                 <button class="pg-hbtn" title="Re-place the nodes you haven't moved" onclick="pgTidy()">Tidy layout</button>
@@ -43445,7 +43461,7 @@ const PG = {
     graph: null, byKey: new Map(), sel: null, zoom: 0.9, pan: { x: 0, y: 0 }, scene: 'all',
     busy: new Map(), drawerCache: {}, play: { index: 0, playing: false, t0: 0, timer: null, stills: true, audio: true },
     fitted: false, menuFor: null,
-    running: new Map(), pollTimer: null,
+    running: new Map(), pollTimer: null, behindOnly: false,
 };
 
 /**
@@ -43594,6 +43610,7 @@ function pgSecs(ms) { return ms ? (Math.round(ms / 100) / 10) + 's' : '—'; }
 // ── Canvas ────────────────────────────────────────────────────────────────
 
 function pgVisible(n) {
+    if (PG.behindOnly && PG.graph && !pgBehindKeep(n, PG.graph.nodes)) return false;
     if (PG.scene === 'all') return true;
     if (n.type === 'shot') return n.scene_id === PG.scene;
     if (n.type === 'sequence') return n.shot_ids.some(id => { const s = pgNode('shot:' + id); return s && s.scene_id === PG.scene; });
@@ -43608,7 +43625,9 @@ function pgPort(dir, type, port, extra) {
     return `<span class="${cls}" data-port="${port}" data-dir="${dir}" data-type="${type || 'none'}"></span>`;
 }
 
-function pgNodeHtml(n) {
+function pgNodeHtml(n, raw) {
+    // Every node type is decorated with its out-of-date state in one place (PGN-005).
+    if (!raw) return pgImpactDecorate(pgNodeHtml(n, true), n);
     const sel = PG.sel === n.key ? ' sel' : '';
     const busy = PG.busy.get(n.key);
     const pos = `left:${n.x}px;top:${n.y}px;`;
@@ -43766,7 +43785,7 @@ function pgDrawEdges(ghost) {
         const b = pgPortCenter(e.to, toPort, 'in');
         if (!a || !b) continue;
         const hot = PG.sel && (PG.sel === e.from || PG.sel === e.to);
-        paths.push(`<path d="${pgPath(a, b)}" stroke="${e.style === 'dotted' ? '#5f5f67' : (PG_PORT_COLOR[e.type] || '#6c6cff')}"
+        paths.push(`<path d="${pgPath(a, b)}" stroke="${pgEdgeColor(e.style === 'dotted' ? '#5f5f67' : (PG_PORT_COLOR[e.type] || '#6c6cff'), e.to ? pgNode(e.to) : null)}"
             class="${e.style !== 'solid' ? e.style : ''}${hot ? ' hot' : ''}"></path>`);
     }
     // A sound with no version still points at its empty slot.
@@ -44075,6 +44094,8 @@ function pgHeader() {
         chips.innerHTML = `<button class="pg-chip${PG.scene === 'all' ? ' on' : ''}" onclick="pgScene('all')">All scenes</button>`
             + scenes.map(s => `<button class="pg-chip${PG.scene === s.id ? ' on' : ''}" onclick="pgScene('${s.id}')">${esc(s.label)}</button>`).join('');
     }
+    const legend = document.getElementById('pgLegend');
+    if (legend) legend.innerHTML = pgLegendHtml(g.nodes || [], !!PG.behindOnly);
     const lock = document.getElementById('pgLockBtn');
     if (lock) lock.textContent = g.board_locked ? '🔒 Unlock board' : 'Lock board';
     const run = document.getElementById('pgRunBtn');
@@ -44086,6 +44107,78 @@ function pgHeader() {
 }
 
 function pgScene(id) { PG.scene = id; pgRender(); pgFit(); pgRenderSide(); }
+
+/**
+ * HOW EACH OUT-OF-DATE STATE LOOKS (PGN-005). One table, keyed exactly by the
+ * server's IMPACT_STATES — a test holds the two equal, so a state added there
+ * cannot arrive undrawn here.
+ */
+const PG_IMPACT_LOOK = Object.freeze({
+    current: { label: 'current', color: '#57c98a' },
+    redo: { label: 'redo', color: '#f06a4a' },
+    waiting: { label: 'waiting', color: '#e3b341' },
+    never: { label: 'not made', color: '#6b6b75' },
+    untracked: { label: 'untracked', color: '#8f8fb0' },
+});
+
+function pgBehind(n) {
+    const s = n && n.impact && n.impact.state;
+    return s === 'redo' || s === 'waiting' || !!(n && n.impact && (n.impact.badges || []).length);
+}
+
+/** Behind, or the parent of something behind — so a stale clip keeps the shot it belongs to. */
+function pgBehindKeep(n, nodes) {
+    if (pgBehind(n)) return true;
+    return (nodes || []).some(c => c.parent === n.key && pgBehind(c));
+}
+
+function pgImpactPill(n) {
+    const im = n && n.impact;
+    if (!im) return '';
+    const look = PG_IMPACT_LOOK[im.state];
+    const badges = (im.badges || []).map(b => `<span class="pg-imp-b imp-${esc(b.state)}">${esc(b.stage)} ${esc(b.state)}</span>`).join('');
+    if ((!look || im.state === 'current') && !badges) return '';
+    const tip = [im.why, im.action].filter(Boolean).join(' ');
+    const main = look && im.state !== 'current' ? `<span class="pg-imp-s imp-${esc(im.state)}">${esc(look.label)}</span>` : '';
+    return `<div class="pg-imp" title="${esc(tip)}">${main}${badges}</div>`;
+}
+
+/** The node's own class and pill, applied to the node's opening tag. */
+function pgImpactDecorate(html, n) {
+    const im = n && n.impact;
+    if (!im || !PG_IMPACT_LOOK[im.state]) return html;
+    const marked = html.replace('class="pg-node', `class="pg-node imp-${im.state}`);
+    const pill = pgImpactPill(n);
+    if (!pill) return marked;
+    const open = marked.indexOf('>');
+    return open < 0 ? marked : marked.slice(0, open + 1) + pill + marked.slice(open + 1);
+}
+
+/** An edge into a node that is behind takes that state's colour. */
+function pgEdgeColor(base, to) {
+    const s = to && to.impact && to.impact.state;
+    return (s === 'redo' || s === 'waiting') ? PG_IMPACT_LOOK[s].color : base;
+}
+
+function pgLegendHtml(nodes, on) {
+    const counts = {};
+    for (const n of nodes || []) { const s = n.impact && n.impact.state; if (s) counts[s] = (counts[s] || 0) + 1; }
+    const behind = (nodes || []).filter(pgBehind).length;
+    const keys = Object.keys(PG_IMPACT_LOOK);
+    return keys.map(s => `<span class="pg-leg imp-${s}" title="${esc(PG_IMPACT_LOOK[s].label)}"><i></i>${counts[s] || 0} ${esc(PG_IMPACT_LOOK[s].label)}</span>`).join('')
+        + `<button class="pg-chip${on ? ' on' : ''}" onclick="pgToggleBehind()" title="Show only what is behind and what it belongs to">Only what's behind (${behind})</button>`;
+}
+
+function pgToggleBehind() { PG.behindOnly = !PG.behindOnly; pgRender(); pgFit(); }
+
+/** The drawer's explanation for a node that is not current. */
+function pgImpactDrawerHtml(n) {
+    const im = n && n.impact;
+    if (!im || im.state === 'current' || !PG_IMPACT_LOOK[im.state]) return '';
+    return `<div class="pg-dsec pg-impbox imp-${esc(im.state)}"><div class="pg-kicker"><span>${esc(PG_IMPACT_LOOK[im.state].label)}</span></div>
+        <div>${esc(im.why || '')}</div>${im.action ? `<div class="pg-dsub">${esc(im.action)}</div>` : ''}
+        ${(im.badges || []).map(b => `<div class="pg-dsub">${esc(b.stage)}: ${esc(b.state)}</div>`).join('')}</div>`;
+}
 
 async function pgTidy() {
     try {
@@ -44375,6 +44468,11 @@ function pgRenderDrawer() {
     else if (n.type === 'sound') pgDrawerSound(n, body, foot, close);
     else if (n.type === 'video' || n.type === 'audio') pgDrawerVersion(n, body, foot, close);
     else if (n.type === 'link') pgDrawerLink(n, body, foot, close);
+    const why = pgImpactDrawerHtml(n);
+    if (why) {
+        const head = body.querySelector('.pg-dhead');
+        if (head) head.insertAdjacentHTML('afterend', why); else body.insertAdjacentHTML('afterbegin', why);
+    }
     pgRenderPlayback();
 }
 

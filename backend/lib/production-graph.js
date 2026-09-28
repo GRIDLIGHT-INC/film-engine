@@ -580,8 +580,15 @@ const IMPACT_WHY = Object.freeze({
     link: 'The frame it borrows from another sequence has changed.',
     member: 'A shot in this sequence is behind; redo its frame first.',
 });
+/** What to DO about each state — shown beside the why, on the node and in the drawer (PGN-005). */
+const IMPACT_ACTION = Object.freeze({
+    redo: 'Regenerate this now.',
+    waiting: 'Wait: redo what it is built from first, then this.',
+    never: 'Generate it when you are ready.',
+    untracked: 'Regenerate it through Film Engine if you want it tracked.',
+});
 const BADGE_STAGES = ['voice', 'lipsync', 'sfx', 'post'];
-const out_ = (state, why, extra) => Object.assign({ state, why: why || IMPACT_WHY[state] || '' }, extra || {});
+const out_ = (state, why, extra) => Object.assign({ state, why: why || IMPACT_WHY[state] || '', action: IMPACT_ACTION[state] || '' }, extra || {});
 const stageState = s => (s === 'redo' || s === 'waiting' || s === 'current') ? s : null;
 const assetOf = (id, ctx) => (id && ctx.assets && ctx.assets[id]) || null;
 const SOUND_STAGE = { score: 'music', source: 'music', transition: 'music', ambient: 'ambient', sfx: 'sfx' };
@@ -692,6 +699,6 @@ function pendingWork(graph) {
 }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};
