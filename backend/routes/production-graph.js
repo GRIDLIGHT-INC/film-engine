@@ -113,6 +113,12 @@ function handleProductionGraph(req, res, parts) {
         // What is running right now, and on which node — free, polled by the page
         // while anything runs, because the live channel is silent about our own writes.
         if (parts[4] === 'running' && req.method === 'GET') return json(res, 200, { running: pg.runningWork(db, parts[2]) });
+        // "Run what changed", planned for free: the redo-now list, priced, with
+        // what is left out and why (PGN-006). Nothing here resolves a provider.
+        if (parts[4] === 'run-changed' && parts[5] === 'plan' && req.method === 'GET') {
+            const plan = require('../lib/run-changed').planRunChanged(parts[2]);
+            return plan ? json(res, 200, plan) : json(res, 404, { error: 'Project not found' });
+        }
         if (parts[4] === 'layout' && req.method === 'PUT') return putLayout(req, res, parts[2]);
         if (parts[4] === 'tidy' && req.method === 'POST') return tidy(req, res, parts[2]);
         return json(res, 405, { error: 'Method not allowed' });

@@ -242,6 +242,7 @@ film-engine/
 │   │   ├── home.js                # The six blocks the home page renders, all derived
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
+│   │   ├── run-changed.js         # "Run what changed": the impact report's redo-now rows, priced and ordered, with every exclusion named
 │   │   ├── repair-plan.js        # Marks in, plan out — and a floor that is named before it is met
 │   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
 │   │   ├── frame-handles.js      # A frame a provider can fetch: opaque, scoped, expiring
@@ -454,6 +455,7 @@ film-engine/
 │       ├── production-graph-progress.test.js # Every running job lands on its node; a real bar only when the provider sent a percentage
 │       ├── production-graph-impact.test.js # Every node's out-of-date state, from the impact report and nowhere else; untracked is said, not hidden
 │       ├── production-graph-draw-states.test.js # Every state drawn: class, pill with why and action, edge colour, legend, filter, drawer
+│       ├── run-changed-plan.test.js   # Every stage the impact chain walks is priced and runnable or excluded by name; the plan spends nothing
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6259,6 +6261,7 @@ node --test backend/tests/production-graph.test.js
 node --test backend/tests/production-graph-progress.test.js
 node --test backend/tests/production-graph-impact.test.js
 node --test backend/tests/production-graph-draw-states.test.js
+node --test backend/tests/run-changed-plan.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
