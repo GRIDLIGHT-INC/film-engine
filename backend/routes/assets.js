@@ -599,6 +599,8 @@ function getAssetProvenance(req, res, assetId) {
         disclosure: DISCLOSURE_TEXT,
         c2pa_status: 'sidecar_only_not_signed',
         manifest,
+        // How this version was made, as one structured read (PGN-013).
+        recipe: require('../lib/asset-recipe').assetRecipe(db, assetId),
     });
 }
 

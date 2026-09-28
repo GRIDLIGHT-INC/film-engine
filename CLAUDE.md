@@ -294,6 +294,7 @@ film-engine/
 │   │   ├── provider-config.js   # One provider-config reader, carrying the project id
 │   │   ├── prompt-diff.js        # Prompt/parameter diffing for A/B compare
 │   │   ├── provenance.js         # Provenance sidecar manifests
+│   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
 │   │   ├── timeline.js           # Timeline assembly logic
 │   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
@@ -465,6 +466,7 @@ film-engine/
 │       ├── generation-queue.test.js   # Every job state lands in exactly one bucket or is left out on purpose; a running run records what is still to come
 │       ├── production-graph-queue-strip.test.js # Every bucket drawn with only its own actions; collect posts; re-run goes through the node's own confirmation
 │       ├── cancel-honest.test.js      # Every async adapter declares a real cancel or stop-waiting; a batch stops before its next step once cancelled
+│       ├── asset-recipe.test.js       # Every recipe field present or named unknown, for a frame, a clip and a sound; nothing borrowed across versions
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6277,6 +6279,7 @@ node --test backend/tests/run-to-here-run.test.js
 node --test backend/tests/generation-queue.test.js
 node --test backend/tests/production-graph-queue-strip.test.js
 node --test backend/tests/cancel-honest.test.js
+node --test backend/tests/asset-recipe.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
