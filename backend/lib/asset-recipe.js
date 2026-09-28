@@ -101,6 +101,14 @@ function assetRecipe(db, assetId) {
         ledger_match: ledgerMatch,
         cost_match: costMatch,
     };
+    // Whether the provider honours a seed at all — read from the adapter, so
+    // "make another like this" never promises the same again from a provider
+    // that ignores the number. Null when there is no provider to ask.
+    out.seed_honoured = null;
+    if (out.provider) {
+        try { const ad = require('./providers').get(out.provider); if (ad && typeof ad.supportsSeed === 'boolean') out.seed_honoured = ad.supportsSeed; }
+        catch (_) { out.seed_honoured = null; }
+    }
     out.unknown = RECIPE_FIELDS.filter(f => out[f] === null || (Array.isArray(out[f]) && !out[f].length));
     return out;
 }

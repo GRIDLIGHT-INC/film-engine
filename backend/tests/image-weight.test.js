@@ -76,6 +76,9 @@ test('every picture with real weight asks for a size', () => {
         // The production graph's drawer shows the SELECTED frame at the size it
         // is judged at, like the viewer; its node thumbnails ask for w=320.
         [/class="pg-dimg"/, 'the drawer is where a frame is judged, full size'],
+        // The A/B wipe compares two versions of one frame: judging them is the
+        // whole point, and a thumbnail would compare two blurs.
+        [/pg-wipe-top/, 'an A/B wipe compares frames at the size they are judged'],
         [/src\(m\.still\.path\)/, 'the playback monitor plays the frame the cut holds, like the Playback page'],
         // Rendered in the page from the world itself: a 320x180 JPEG data URI
         // drawn by SPLAT.thumb's renderer, never a file fetched from the server.

@@ -40804,12 +40804,19 @@ ${fountainText.slice(0, 50000)}`;
          * for this capability -- one builder, so the generic dialog and the
          * rich path-specific ones cannot come to offer different things.
          */
-        const dials = await confirmExtras(d.prompt || '', Number(d.ceiling) || 0,
+        /*
+         * A pre-filled prompt ("make another like this") is offered in the box
+         * in place of what the card would send today, and it counts as an
+         * edit against today's prompt: the version's own words are the ones
+         * that go, unless somebody changes them back.
+         */
+        const dials = await confirmExtras(o.prefill || d.prompt || '', Number(d.ceiling) || 0,
             o.capability || 'image');
 
         const prompt = d.prompt || '';
         const ceiling = Number(d.ceiling) || 0;
         CONFIRM_GEN_PROMPT = prompt;
+        CONFIRM_GEN_EDITED = !!(o.prefill && o.prefill !== prompt);
 
         body.innerHTML = `
           ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
@@ -44731,6 +44738,12 @@ function pgDrawerShot(n, body, foot, close) {
           ${f ? `<button class="btn btn-secondary btn-sm" onclick="setAnchor('${n.id}')">Anchor</button>
                  <button class="btn btn-secondary btn-sm" onclick="openFrameViewer('${n.id}')">Mark up</button>` : ''}
         </div></div>
+      ${f ? `<div class="pg-dsec"><div class="pg-kicker"><span>How was v${f.version} made</span></div>
+        <div id="pgHowMade"><div class="pg-note">Reading how this was made…</div></div>
+        ${n.frames.length > 1 ? `<label class="pg-l">Compare with the selected frame</label>
+          <select onchange="pgCompareSelected('${n.key}', this.value)"><option value="">Pick a version…</option>
+            ${n.frames.filter(x => !x.selected).map(x => `<option value="${esc(x.asset_id)}">v${x.version}</option>`).join('')}</select>
+          <div id="pgCompare" style="margin-top:8px;"></div>` : ''}</div>` : ''}
       <div class="pg-dsec"><div class="pg-kicker"><span>From Previs</span><em id="pgPrevisCount"></em></div>
         <div class="pg-pvlist" id="pgPrevis"><div class="pg-note">Reading the directing decisions…</div></div>
         <div class="pg-btnrow"><button class="btn btn-secondary btn-sm" onclick="markCurrentShot('${n.id}');navigateTo('previs')">Open in Previs</button></div></div>
@@ -44769,6 +44782,7 @@ function pgDrawerShot(n, body, foot, close) {
         <button class="pg-hbtn primary" id="pgGenVideoBtn" onclick="pgGenerateVideo('${n.id}')" ${f ? '' : 'disabled title="A clip starts from the frame — generate or upload one first"'}>Generate video</button>`;
     pgLoadPrevis(n);
     pgLoadShotDetails(n);
+    if (f) pgLoadHowMade(f.asset_id, 'frame', n.key);
 }
 
 async function pgLoadShotDetails(n) {
@@ -45116,12 +45130,157 @@ function pgDrawerVersion(n, body, foot, close) {
       ${n.prompt ? `<div class="pg-dsec"><div class="pg-kicker"><span>Prompt it was made with</span>
           <em><a href="#" onclick="event.preventDefault();navigator.clipboard&&navigator.clipboard.writeText(${esc(JSON.stringify(n.prompt))});setStatus('Copied.')">Copy</a></em></div>
         <pre class="pg-pre">${esc(n.prompt)}</pre></div>` : ''}
+      <div class="pg-dsec"><div class="pg-kicker"><span>How was this made</span></div>
+        <div id="pgHowMade"><div class="pg-note">Reading how this was made…</div></div></div>
+      ${n.type === 'video' && !n.selected && siblings.some(v => v.selected) ? `<div class="pg-dsec"><div class="pg-kicker"><span>Compare</span></div>
+        <button class="btn btn-secondary btn-sm" onclick="pgCompareSelected('${n.parent}', '${n.asset_id}')">Compare with selected</button>
+        <div id="pgCompare" style="margin-top:8px;"></div></div>` : ''}
       <div class="pg-dsec"><div class="pg-kicker"><span>All versions of ${esc(n.parent_label || '')}</span></div>
         <div class="pg-list">${siblings.map(v => pgVersionRow(v, 'ver:' + v.asset_id)).join('')}</div></div>`;
+    pgLoadHowMade(n.asset_id, n.type, n.parent);
     foot.innerHTML = `${n.url ? `<a class="pg-hbtn" style="display:inline-flex;align-items:center;text-decoration:none;" href="${esc(pgSrc(n.url))}" download>Download</a>` : ''}
         <div class="grow"></div>
         ${n.selected ? `<button class="pg-hbtn" onclick="pgSelectVersion('${n.key}', true)">Unselect</button><button class="pg-hbtn primary" disabled>Playing ✓</button>`
                      : `<button class="pg-hbtn primary" onclick="pgSelectVersion('${n.key}')">Select — play this version</button>`}`;
+}
+
+// ── How was this made (PGN-014) ────────────────────────────────────────────
+
+/**
+ * The recipe a version was made from, every field in its place. A fact the
+ * engine never recorded is NAMED as not recorded rather than left out — an
+ * absent row reads as "there was nothing", which is a different claim — and a
+ * fact matched by time rather than by identity says so.
+ */
+function pgRecipeHtml(r) {
+    if (!r) return '<div class="pg-note">Nothing is recorded about how this was made.</div>';
+    const unknown = new Set(r.unknown || []);
+    const row = (label, val) => `<div class="pg-li"><span class="grow">${esc(label)}</span><span class="m">${val}</span></div>`;
+    const rows = [];
+    if (!unknown.has('provider')) rows.push(row('Generator', esc(r.provider) + (r.model ? ' · ' + esc(r.model) : '')));
+    else if (!unknown.has('model')) rows.push(row('Model', esc(r.model)));
+    if (!unknown.has('seed')) rows.push(row('Seed', esc(r.seed) + (r.seed_honoured === false
+        ? ` <em title="${esc(r.provider || 'this provider')} ignores a seed">· ignored by ${esc(r.provider || 'the provider')} — not honoured</em>` : '')));
+    if (!unknown.has('size')) rows.push(row('Size', esc(r.size)));
+    if (!unknown.has('tier')) rows.push(row('Tier', esc(r.tier)));
+    if (!unknown.has('fingerprint') && r.fingerprint) rows.push(row('Inputs', esc(r.fingerprint.state === 'behind'
+        ? 'behind — made from inputs that have since changed' : r.fingerprint.state)));
+    if (!unknown.has('ledger') && r.ledger) rows.push(row('Render ledger', `${esc(r.ledger.step || '')} v${esc(r.ledger.version)}`
+        + (r.ledger_match === 'nearest' ? ' <em>· matched by time</em>' : '')));
+    if (!unknown.has('cost') && r.cost) rows.push(row('Cost', `$${Number(r.cost.amount).toFixed(2)}`
+        + (r.cost_match === 'nearest' ? ' <em>· matched by time</em>' : '')));
+    if (!unknown.has('made_at')) rows.push(row('Made', esc(r.made_at)));
+    const refs = (r.references || []).length ? `<div class="pg-kicker" style="margin-top:8px;"><span>References</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">${r.references.map(x => x.thumb
+            ? `<img src="${esc(pgSrc(x.thumb))}?w=96" alt="${esc(x.file_name || '')}" title="${esc(x.file_name || '')}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">`
+            : `<span class="pg-note">${esc(x.file_name || x.asset_id)}${x.missing ? ' (gone)' : ''}</span>`).join('')}</div>` : '';
+    const prompt = !unknown.has('prompt') ? `<div class="pg-kicker" style="margin-top:8px;"><span>Prompt</span></div><pre class="pg-pre">${esc(r.prompt)}</pre>` : '';
+    const neg = !unknown.has('negative_prompt') ? `<div class="pg-kicker"><span>Negative</span></div><pre class="pg-pre">${esc(r.negative_prompt)}</pre>` : '';
+    const missing = [...unknown].map(f => f.replace(/_/g, ' '));
+    return `<div class="pg-list">${rows.join('')}</div>${prompt}${neg}${refs}
+        ${missing.length ? `<div class="pg-note" style="margin-top:8px;">Not recorded: ${esc(missing.join(', '))}</div>` : ''}`;
+}
+
+/**
+ * What "make another like this" would send, decided without spending. The
+ * version's prompt is offered pre-filled; its seed travels only where the
+ * provider honours one; references are gathered by the route from the shot as
+ * it stands, and that is said rather than implied. What cannot be reproduced
+ * is refused with the reason.
+ */
+function pgMakeAnotherPlan(r, kind, parent) {
+    if (!r) return { refused: 'Nothing is recorded about how this was made.' };
+    if (kind === 'audio' || (parent && parent.type === 'sound'))
+        return { refused: 'A sound is regenerated from its cue’s direction, not from a stored prompt — use Regenerate on the sound.' };
+    if (!parent || parent.type !== 'shot')
+        return { refused: 'A sequence clip is made from its legs and joins — regenerate the sequence instead.' };
+    if (!r.prompt) return { refused: 'No prompt was recorded for this version, so there is nothing to make another like.' };
+    const video = kind === 'video';
+    const body = {};
+    const notes = [];
+    if (r.seed != null && r.seed_honoured === true) body.seed = r.seed;
+    else if (r.seed != null && r.seed_honoured === false) notes.push(`The seed (${r.seed}) is not sent: ${r.provider || 'this provider'} ignores a seed, so the result will differ.`);
+    else if (r.seed != null) notes.push('The seed is not sent: whether this provider honours one is not known.');
+    notes.push(`References are the shot’s current plates, gathered at generation${(r.references || []).length
+        ? ` — this version was made from ${r.references.length}` : ''}.`);
+    return {
+        url: `/shots/${parent.id}/${video ? 'video/generate' : 'storyboard/regenerate'}`,
+        previewUrl: `/shots/${parent.id}/${video ? 'video/preview' : 'prompt'}`,
+        capability: video ? 'video' : 'image',
+        prefill: r.prompt, body, notes,
+    };
+}
+
+async function pgLoadHowMade(assetId, kind, parentKey) {
+    const box = document.getElementById('pgHowMade');
+    if (!box || !assetId) return;
+    PG.drawerCache.recipes = PG.drawerCache.recipes || {};
+    PG.drawerCache.howMade = { assetId, kind, parentKey };
+    box.innerHTML = '<div class="pg-note">Reading how this was made…</div>';
+    try {
+        const d = await api('/assets/' + assetId + '/provenance');
+        PG.drawerCache.recipes[assetId] = d.recipe || null;
+        if (!document.getElementById('pgHowMade')) return;
+        const plan = pgMakeAnotherPlan(d.recipe, kind, pgNode(parentKey));
+        box.innerHTML = pgRecipeHtml(d.recipe) + `<div class="pg-btnrow">
+            <button class="btn btn-secondary btn-sm" ${plan.refused ? `disabled title="${esc(plan.refused)}"` : ''}
+              onclick="pgMakeAnother('${assetId}')">Make another like this</button></div>`;
+    } catch (err) { box.innerHTML = `<div class="pg-warn">Could not read how this was made: ${esc(err.message)}</div>`; }
+}
+
+async function pgMakeAnother(assetId) {
+    const ctx = PG.drawerCache.howMade || {};
+    const r = (PG.drawerCache.recipes || {})[assetId];
+    const plan = pgMakeAnotherPlan(r, ctx.kind, pgNode(ctx.parentKey));
+    if (plan.refused) return setStatus(plan.refused);
+    return confirmPaidImage({
+        capability: plan.capability,
+        title: 'Make another like this',
+        previewUrl: plan.previewUrl,
+        prefill: plan.prefill,
+        note: 'Costs credits. The prompt is the one this version was made with; ' + plan.notes.join(' '),
+        send: async extras => {
+            PG.busy.set(ctx.parentKey, 'making another'); pgRender();
+            try {
+                await api(plan.url, { method: 'POST', body: JSON.stringify(Object.assign({}, plan.body, extras || {})) });
+                setStatus('Made another — it is a new version beside this one.');
+            } catch (err) { setStatus('Could not make another: ' + err.message); }
+            PG.busy.delete(ctx.parentKey);
+            await loadProductionGraph();
+        },
+    });
+}
+
+/** An A/B wipe: B underneath, A on top clipped to the slider. Frames and clips only. */
+function pgCompareHtml(a, b) {
+    if (!a || !b || !['image', 'video'].includes(a.kind) || a.kind !== b.kind) return '';
+    const el = (x, top) => a.kind === 'image'
+        ? `<img src="${esc(pgSrc(x.url))}" alt="" ${top ? 'class="pg-wipe-top"' : ''} style="position:${top ? 'absolute' : 'relative'};inset:0;width:100%;display:block;${top ? 'clip-path:inset(0 50% 0 0);' : ''}">`
+        : `<video src="${esc(pgSrc(x.url))}" muted loop autoplay playsinline ${top ? 'class="pg-wipe-top"' : ''} style="position:${top ? 'absolute' : 'relative'};inset:0;width:100%;display:block;${top ? 'clip-path:inset(0 50% 0 0);' : ''}"></video>`;
+    return `<div class="pg-wipe" style="position:relative;border-radius:8px;overflow:hidden;background:#08080a;">
+        ${el(b, false)}${el(a, true)}
+        <span class="pg-note" style="position:absolute;left:6px;top:4px;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:3px;">A · ${esc(a.label || '')}</span>
+        <span class="pg-note" style="position:absolute;right:6px;top:4px;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:3px;">B · ${esc(b.label || '')}</span></div>
+      <input type="range" min="0" max="100" value="50" style="width:100%;" oninput="pgWipe(this.value)" aria-label="Wipe between A and B">`;
+}
+
+function pgWipe(v) {
+    document.querySelectorAll('.pg-wipe-top').forEach(e => { e.style.clipPath = `inset(0 ${100 - Number(v)}% 0 0)`; });
+}
+
+/** Compare a version with whichever sibling is selected, in the drawer's own compare slot. */
+function pgCompareSelected(parentKey, assetId) {
+    const box = document.getElementById('pgCompare');
+    const parent = pgNode(parentKey);
+    if (!box || !parent) return;
+    const frames = parent.frames || [];
+    const isFrame = frames.some(f => f.asset_id === assetId);
+    const list = isFrame ? frames : (parent.videos || []);
+    const a = list.find(x => x.asset_id === assetId), b = list.find(x => x.selected);
+    if (!a || !b) { box.innerHTML = '<div class="pg-note">Nothing is selected to compare with.</div>'; return; }
+    if (a === b) { box.innerHTML = '<div class="pg-note">This is the selected version.</div>'; return; }
+    const kind = isFrame ? 'image' : 'video';
+    box.innerHTML = pgCompareHtml({ kind, url: a.url, label: 'v' + a.version }, { kind, url: b.url, label: 'v' + b.version + ' selected' });
 }
 
 function pgDrawerLink(n, body, foot, close) {

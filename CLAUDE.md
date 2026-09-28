@@ -467,6 +467,7 @@ film-engine/
 │       ├── production-graph-queue-strip.test.js # Every bucket drawn with only its own actions; collect posts; re-run goes through the node's own confirmation
 │       ├── cancel-honest.test.js      # Every async adapter declares a real cancel or stop-waiting; a batch stops before its next step once cancelled
 │       ├── asset-recipe.test.js       # Every recipe field present or named unknown, for a frame, a clip and a sound; nothing borrowed across versions
+│       ├── how-made-panel.test.js     # The recipe in the drawer, make-another pre-filled with a seed only where honoured, and an A/B wipe for frames and clips
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6280,6 +6281,7 @@ node --test backend/tests/generation-queue.test.js
 node --test backend/tests/production-graph-queue-strip.test.js
 node --test backend/tests/cancel-honest.test.js
 node --test backend/tests/asset-recipe.test.js
+node --test backend/tests/how-made-panel.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
