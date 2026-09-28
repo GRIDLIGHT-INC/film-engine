@@ -113,6 +113,12 @@ function handleProductionGraph(req, res, parts) {
         // What is running right now, and on which node — free, polled by the page
         // while anything runs, because the live channel is silent about our own writes.
         if (parts[4] === 'running' && req.method === 'GET') return json(res, 200, { running: pg.runningWork(db, parts[2]) });
+        // The queue strip's one read: running, waiting, done today, awaiting
+        // collection and failed, each with its node (PGN-010). Free.
+        if (parts[4] === 'queue' && req.method === 'GET') {
+            const out = require('../lib/generation-queue').projectQueue(parts[2]);
+            return out ? json(res, 200, out) : json(res, 404, { error: 'Project not found' });
+        }
         // "Run what changed", planned for free: the redo-now list, priced, with
         // what is left out and why (PGN-006). Nothing here resolves a provider.
         if (parts[4] === 'run-changed' && parts[5] === 'plan' && req.method === 'GET') {

@@ -661,6 +661,14 @@ const RUNNING_RULES = Object.freeze([
  */
 const RUNNING_SILENCE_SEC = 180;
 
+/** Which graph node a job row belongs to, by the attribution it carries (or null). */
+function jobNodeKey(j) {
+    let meta = {};
+    try { meta = JSON.parse((j && j.meta) || '{}') || {}; } catch (_) { meta = {}; }
+    for (const r of RUNNING_RULES) { const key = r.key(j || {}, meta); if (key) return key; }
+    return null;
+}
+
 function runningWork(db, projectId) {
     try {
         if (!db || !projectId) return [];
@@ -671,10 +679,7 @@ function runningWork(db, projectId) {
         let registry = null;
         try { registry = require('./providers'); } catch (_) { registry = null; }
         return rows.map(j => {
-            let meta = {};
-            try { meta = JSON.parse(j.meta || '{}') || {}; } catch (_) { meta = {}; }
-            let key = null;
-            for (const r of RUNNING_RULES) { key = r.key(j, meta); if (key) break; }
+            const key = jobNodeKey(j);
             const adapter = registry && registry.get(j.provider);
             return {
                 job_id: j.id, key, provider: j.provider, capability: j.capability,
@@ -699,6 +704,6 @@ function pendingWork(graph) {
 }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, pendingWork, runningWork, jobNodeKey, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

@@ -205,7 +205,11 @@ async function runChanged(projectId, opts, injected) {
         const next = (current.items || []).find(it => !attempted.has(itemId(it)));
         if (!next) { stillBehind = (current.items || []).filter(it => attempted.has(itemId(it))); break; }
         attempted.add(itemId(next));
-        recordRun(projectId, { status: 'running', current: itemId(next), completed }, runId);
+        // What is still to come, recorded while running, so the queue can show
+        // it as waiting (PGN-010).
+        const ahead = (current.items || []).filter(it => !attempted.has(itemId(it)))
+            .map(it => ({ stage: it.stage, key: it.key, shot_code: it.shot_code || null }));
+        recordRun(projectId, { status: 'running', current: itemId(next), completed, remaining: ahead }, runId);
         let result;
         try { result = await execute(next); } catch (err) { result = { ok: false, error: err && err.message || String(err) }; }
         if (result && result.ok) { completed.push({ stage: next.stage, key: next.key, shot_code: next.shot_code || null }); continue; }

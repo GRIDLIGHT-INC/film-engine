@@ -76,6 +76,7 @@ film-engine/
 │   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
+│   │   ├── generation-queue.js    # One queue read: running, waiting, done today, awaiting collection, failed — each job in exactly one bucket
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
@@ -460,6 +461,7 @@ film-engine/
 │       ├── run-changed-run.test.js    # One item at a time, re-planned after each; stops at the first refusal naming the rest; never buys twice
 │       ├── run-to-here-plan.test.js   # Every node type is a target or refused with why; frames before clips; borrowed frames traced; cycles refused
 │       ├── run-to-here-run.test.js    # Every planned stage reaches its own generate path; blockers refuse before anything runs; the menu offers it where the server plans it
+│       ├── generation-queue.test.js   # Every job state lands in exactly one bucket or is left out on purpose; a running run records what is still to come
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6269,6 +6271,7 @@ node --test backend/tests/run-changed-plan.test.js
 node --test backend/tests/run-changed-run.test.js
 node --test backend/tests/run-to-here-plan.test.js
 node --test backend/tests/run-to-here-run.test.js
+node --test backend/tests/generation-queue.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
