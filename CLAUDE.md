@@ -557,6 +557,8 @@ film-engine/
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
 │       ├── runway-parity-brief.test.js  # The Runway parity brief, every number derived from the adapter and a dated spec snapshot
 │       ├── runway-parity-epic.test.js   # The epic held to its brief, its milestones, its assumptions and the code
+│       ├── comfyui-epic.test.js         # ComfyUI as a provider: every brief idea a task, every registry an adapter must satisfy named
+│       ├── production-graph-nodes-epic.test.js # Eight editor features, every node type and pipeline stage placed, every batch entry point held
 │       ├── dialogue-builder.test.js    # Dialogue builder unit tests
 │       ├── video-prompt.test.js        # Video prompt unit tests
 │       ├── motion-prompt.test.js    # Motion, the spatial locks, and the eight techniques
@@ -6289,6 +6291,8 @@ node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js
 node --test backend/tests/runway-parity-brief.test.js
 node --test backend/tests/runway-parity-epic.test.js
+node --test backend/tests/comfyui-epic.test.js
+node --test backend/tests/production-graph-nodes-epic.test.js
 node --test backend/tests/film-engine-camera-brief.test.js
 node --test backend/tests/fcc-parity-epic.test.js
 node --test backend/tests/fcc-recording.test.js
