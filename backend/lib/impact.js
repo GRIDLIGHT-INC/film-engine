@@ -77,9 +77,11 @@ function assetsFor(db, kind, shotId) {
  * the card, then redo these five things in this order" and five unrelated
  * alarms.
  */
-function impact(projectId) {
+function walk(projectId) {
     const db = database();
     const steps = chain();
+    const stateByShot = {};
+    const assetState = {};
 
     const sceneBehind = new Set();
     let scriptTracked = true;
@@ -135,6 +137,12 @@ function impact(projectId) {
             let current = null;
             try { current = fingerprintFor(step.id, { shotId: shot.id }); } catch (_) { current = null; }
             if (current !== null) own = assets.some(a => isStale(a, current));
+            // Each stamped asset gets its own answer, so a version node on the
+            // graph can say whether IT is behind — not only its stage.
+            for (const a of assets) {
+                assetState[a.id] = upstreamBusy ? 'waiting'
+                    : (current !== null && isStale(a, current) ? 'redo' : 'current');
+            }
 
             if (upstreamBusy) {
                 state[step.id] = 'waiting';
@@ -157,6 +165,7 @@ function impact(projectId) {
             }
         }
 
+        stateByShot[shot.id] = Object.assign({}, state);
         if (rows.length) {
             out.push({
                 shot_id: shot.id,
@@ -170,6 +179,11 @@ function impact(projectId) {
         }
     }
 
+    return { db, steps, sceneBehind, scriptTracked, out, stateByShot, assetState, shots };
+}
+
+function impact(projectId) {
+    const { steps, scriptTracked, out } = walk(projectId);
     return {
         script_tracked: scriptTracked,
         chain: steps.map(s => s.id),
@@ -180,4 +194,55 @@ function impact(projectId) {
     };
 }
 
-module.exports = { impact, chain };
+/**
+ * The same walk, read per node for the Production graph (PGN-004).
+ *
+ * The report answers "what should I redo, in order"; the graph needs "what
+ * state is THIS thing in". Both come from one walk so they cannot disagree.
+ *
+ * Scene-scoped sound (music, ambient) belongs to no shot, so the per-shot walk
+ * never sees it. It is read here with the same rule: a stamped asset whose
+ * inputs moved is redo, and one under a scene whose screenplay moved is
+ * waiting, because the card it is written from is behind.
+ */
+function graphStates(projectId) {
+    const { db, sceneBehind, stateByShot, assetState, shots } = walk(projectId);
+    const { ARTEFACT_KINDS: KINDS } = require('./artefact-fingerprint');
+    const sceneKinds = Object.keys(KINDS).filter(k => KINDS[k].scope === 'scene');
+    const scenes = {};
+    let rows = [];
+    try {
+        rows = db.prepare(`SELECT sh.id AS shot_id, sh.scene_id FROM film_shots sh
+            JOIN film_scenes sc ON sc.id = sh.scene_id
+            WHERE sc.project_id = ? AND sc.status != 'removed' ORDER BY sh.sort_order, sh.shot_code`).all(projectId);
+    } catch (_) { rows = []; }
+    const shotsByScene = new Map();
+    for (const r of rows) {
+        if (!shotsByScene.has(r.scene_id)) shotsByScene.set(r.scene_id, []);
+        shotsByScene.get(r.scene_id).push(r.shot_id);
+    }
+    for (const [sceneId, ids] of shotsByScene) {
+        const behind = ids.some(id => sceneBehind.has(id));
+        scenes[sceneId] = {};
+        for (const kind of sceneKinds) {
+            let assets = [];
+            try {
+                assets = db.prepare(`SELECT id, input_fingerprint FROM film_assets
+                    WHERE artefact_kind = ? AND scene_id = ? AND shot_id IS NULL AND input_fingerprint IS NOT NULL`).all(kind, sceneId);
+            } catch (_) { assets = []; }
+            if (!assets.length) { scenes[sceneId][kind] = 'absent'; continue; }
+            let current = null;
+            try { current = fingerprintFor(kind, { shotId: ids[0] }); } catch (_) { current = null; }
+            let any = false;
+            for (const a of assets) {
+                const st = behind ? 'waiting' : (current !== null && isStale(a, current) ? 'redo' : 'current');
+                assetState[a.id] = st;
+                if (st !== 'current') any = st;
+            }
+            scenes[sceneId][kind] = any || 'current';
+        }
+    }
+    return { shots: stateByShot, scenes, assets: assetState, shot_count: shots.length };
+}
+
+module.exports = { impact, chain, graphStates };

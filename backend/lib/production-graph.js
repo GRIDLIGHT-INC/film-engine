@@ -417,7 +417,7 @@ function buildGraph(db, projectId) {
             const l = links[side];
             if (!l) continue;
             const lk = `link:${q.id}:${side}`;
-            nodes.push({ key: lk, type: 'link', sequence_id: q.id, side, ...l });
+            nodes.push({ key: lk, type: 'link', sequence_id: q.id, side, ...l, stale: !!links.stale });
             edge(lk, 'frame', n.key, side === 'start' ? 'start' : 'endlink', 'image', 'dashed');
             if (l.source_sequence_id && seqNode.has(l.source_sequence_id)) {
                 edge(`seq:${l.source_sequence_id}`, 'end', lk, 'in', 'image', 'dashed');
@@ -544,6 +544,7 @@ function buildGraph(db, projectId) {
         n.w = (NODE_SIZE[n.type] || {}).w; n.h = (NODE_SIZE[n.type] || {}).h;
     }
 
+    attachImpact(nodes, projectId);
     const framed = nodes.filter(n => n.type === 'shot' && n.frames.length).length;
     const withVideo = nodes.filter(n => n.type === 'shot'
         && (n.videos.length || (n.sequence_id && seqNode.get(n.sequence_id).videos.length))).length;
@@ -558,6 +559,76 @@ function buildGraph(db, projectId) {
             sequences: sequences.length, sounds: cues.length,
         },
     };
+}
+
+/**
+ * IS THIS NODE BEHIND? (PGN-004)
+ *
+ * One rule per node type, all reading lib/impact.js graphStates — the same
+ * walk the impact report makes, so the graph and the report cannot disagree.
+ * `untracked` is said out loud: a file made outside the workflow has no input
+ * fingerprint, and calling it current would be a guess dressed as a fact.
+ */
+const IMPACT_STATES = Object.freeze(['current', 'redo', 'waiting', 'never', 'untracked']);
+
+const IMPACT_WHY = Object.freeze({
+    card: 'The screenplay was revised after this shot\'s card was written.',
+    redo: 'What it was generated from has changed, and everything above it is current.',
+    waiting: 'Something it is built from is being redone; redo that first.',
+    never: 'Nothing has been generated yet.',
+    untracked: 'Made outside the workflow, so whether it is behind cannot be known.',
+    link: 'The frame it borrows from another sequence has changed.',
+    member: 'A shot in this sequence is behind; redo its frame first.',
+});
+const BADGE_STAGES = ['voice', 'lipsync', 'sfx', 'post'];
+const out_ = (state, why, extra) => Object.assign({ state, why: why || IMPACT_WHY[state] || '' }, extra || {});
+const stageState = s => (s === 'redo' || s === 'waiting' || s === 'current') ? s : null;
+const assetOf = (id, ctx) => (id && ctx.assets && ctx.assets[id]) || null;
+const SOUND_STAGE = { score: 'music', source: 'music', transition: 'music', ambient: 'ambient', sfx: 'sfx' };
+
+const NODE_IMPACT = Object.freeze({
+    shot(n, ctx) {
+        const st = (ctx.shots && ctx.shots[n.id]) || {};
+        const badges = BADGE_STAGES.map(stage => ({ stage, state: stageState(st[stage]) }))
+            .filter(b => b.state === 'redo' || b.state === 'waiting');
+        if (!n.frames || !n.frames.length) return out_('never', null, { badges });
+        if (st.scene_card === 'redo') return out_('redo', IMPACT_WHY.card, { badges });
+        const kf = stageState(st.keyframe);
+        return out_(kf || 'untracked', null, { badges });
+    },
+    video(n, ctx) { return out_(assetOf(n.asset_id, ctx) || 'untracked'); },
+    audio(n, ctx) { return out_(assetOf(n.asset_id, ctx) || 'untracked'); },
+    sequence(n, ctx) {
+        const links = n.links || {};
+        if (links.stale) return out_('redo', IMPACT_WHY.link);
+        const behind = (n.shot_ids || []).some(id => {
+            const st = (ctx.shots && ctx.shots[id]) || {};
+            return st.scene_card === 'redo' || st.keyframe === 'redo' || st.keyframe === 'waiting';
+        });
+        if (behind) return out_('waiting', IMPACT_WHY.member);
+        if (!n.videos || !n.videos.length) return out_('never');
+        return out_('current');
+    },
+    link(n) { return n.stale ? out_('redo', IMPACT_WHY.link) : out_('current'); },
+    sound(n, ctx) {
+        if (!n.selected_asset_id) return out_('never');
+        const own = assetOf(n.selected_asset_id, ctx);
+        if (own) return out_(own);
+        const stage = SOUND_STAGE[n.cue_type];
+        const sc = stage && ctx.scenes && ctx.scenes[n.scene_id] && stageState(ctx.scenes[n.scene_id][stage]);
+        if (sc === 'waiting' || sc === 'redo') return out_(sc);
+        return out_('untracked');
+    },
+});
+
+/** Attach `impact` to every node. Never throws: a graph with no states is still a graph. */
+function attachImpact(nodes, projectId) {
+    let ctx = { shots: {}, scenes: {}, assets: {} };
+    try { ctx = require('./impact').graphStates(projectId); } catch (_) { /* states unavailable */ }
+    for (const n of nodes) {
+        const rule = NODE_IMPACT[n.type];
+        try { n.impact = rule ? rule(n, ctx) : out_('untracked'); } catch (_) { n.impact = out_('untracked'); }
+    }
 }
 
 /**
@@ -621,6 +692,6 @@ function pendingWork(graph) {
 }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, runningWork, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

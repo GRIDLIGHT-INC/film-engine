@@ -48,7 +48,7 @@ This epic brings the eight things ComfyUI's editor does well onto the graph, bui
 | Component | Target State |
 |-----------|---------------|
 | Progress | A job record carries percent, phase and heartbeat (`backend/lib/generation-progress.js`, migration `backend/db/migrations/117_generation_progress.sql`). Every async adapter reports what it can. The graph shows it on the running node, including jobs started by Claude. |
-| Node states | Every node carries a state from the impact report (current / redo / waiting / never made), drawn on the node and its edges. The map covers all six node types: `shot`, `video`, `sequence`, `link`, `sound` and `audio`. |
+| Node states | Every node carries a state from the impact report (current / redo / waiting / never made / untracked, the last for a file made outside the workflow, which has no input fingerprint and so cannot honestly be called current), drawn on the node and its edges. The map covers all six node types: `shot`, `video`, `sequence`, `link`, `sound` and `audio`. |
 | Run what changed | A free plan of the "redo now" items in dependency order with costs, one confirmation, then sequential runs that re-read the report after each step. |
 | Run to here | A free plan per target node listing each missing step and its cost, run in order through one confirmation; stops at the first refusal and names what was not attempted. |
 | Queue strip | Running, waiting, done today, awaiting collection and failed, under the canvas. Each item pans to its node; cancel and collect act in place. |
