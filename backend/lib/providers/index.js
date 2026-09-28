@@ -707,6 +707,16 @@ function withJobRecording_(adapter, capability, projectConfig) {
     wrapped.generate = async (cap, payload, opts) => {
         const o = Object.assign({}, opts || {});
         let jobId = open(cap, o);
+        /*
+         * PROGRESS REACHES THE ROW (PGN-002). Every adapter reports through
+         * opts.onProgress({ percent, phase }); the funnel writes it to the job
+         * row the page reads, and still hands it to the caller's own painter.
+         */
+        const theirProgress = o.onProgress;
+        o.onProgress = evt => {
+            try { if (jobId && evt) progress.report(jobId, evt); } catch (_) { /* never fails a render */ }
+            if (typeof theirProgress === 'function') { try { theirProgress(evt); } catch (_) { /* the caller's painter */ } }
+        };
         if (adapter.asyncGeneration) {
             const theirs = o.onHandle;
             o.onHandle = (requestId, meta) => {
@@ -759,8 +769,19 @@ function withJobRecording_(adapter, capability, projectConfig) {
     if (innerStream) {
         wrapped.generateStream = async (cap, payload, res, callbacks) => {
             const jobId = open(cap, null);
+            const cb = Object.assign({}, callbacks || {});
+            const theirs = cb.onProgress;
+            cb.onProgress = evt => {
+                try {
+                    const e = evt || {};
+                    const pct = e.percent !== undefined ? e.percent
+                        : (Number(e.total) > 0 && Number(e.step) >= 0 ? (Number(e.step) / Number(e.total)) * 100 : undefined);
+                    if (jobId) progress.report(jobId, { percent: pct, phase: e.phase || e.event });
+                } catch (_) { /* never fails a render */ }
+                if (typeof theirs === 'function') return theirs(evt);
+            };
             let result;
-            try { result = await innerStream(cap, payload, res, callbacks); }
+            try { result = await innerStream(cap, payload, res, cb); }
             catch (err) { settle(jobId, { ok: false, error: err && err.message }); throw err; }
             settle(jobId, result);
             return result;

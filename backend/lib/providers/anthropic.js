@@ -291,6 +291,8 @@ function meteredAnswerText(result) {
 const adapter = {
     meter: meterAnthropic,
     id: 'anthropic',
+    /** Synchronous: the call returns when the work is done, with nothing to report on the way. */
+    reportsProgress: 'none',
     kind: 'generator',
     label: 'Anthropic (Claude)',
     requiresKey: true,

@@ -151,4 +151,31 @@ function flush(jobId) {
     state.delete(jobId);
 }
 
-module.exports = { start, attachHandle, report, flush, THROTTLE_MS, _setClock };
+/**
+ * A percentage out of a provider's poll body, or undefined when it sent none.
+ * Providers disagree on the scale: Runway, BFL and World Labs send 0..1,
+ * Meshy and MuAPI 0..100. A value at or below 1 is read as a fraction — the
+ * one ambiguity is exactly 1, and "1% done" is the less harmful misreading of
+ * "finished" than the reverse.
+ */
+function pollPercent(body) {
+    if (!body || typeof body !== 'object') return undefined;
+    const raw = [body.progress, body.progress_percent, body.percent,
+        body.metadata && body.metadata.progress].find(v => v !== null && v !== undefined && v !== '');
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return undefined;
+    return Math.min(100, n <= 1 ? n * 100 : n);
+}
+
+/**
+ * Tell a caller about progress. The contract every adapter follows:
+ * `opts.onProgress({ percent?, phase? })`. A callback that throws is the
+ * caller's problem, never the generation's.
+ */
+function emit(opts, evt) {
+    try {
+        if (opts && typeof opts.onProgress === 'function' && evt) opts.onProgress(evt);
+    } catch (_) { /* a progress painter must not end a paid render */ }
+}
+
+module.exports = { start, attachHandle, report, flush, pollPercent, emit, THROTTLE_MS, _setClock };

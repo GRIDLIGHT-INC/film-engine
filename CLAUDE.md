@@ -514,6 +514,7 @@ film-engine/
 │       ├── muapi-models.test.js        # MuAPI is the house provider: its models must be pickable, and reach MuAPI
 │       ├── generation-handles.test.js  # A generation the host abandons is not lost
 │       ├── generation-progress.test.js # Every generation is a row while it runs; a sync row is never offered for collect
+│       ├── adapter-progress.test.js   # Every adapter declares percent/phase/none, and every claim is proven against a stubbed poll
 │       ├── image-weight.test.js       # A 48px avatar should not cost 824 kilobytes
 │       ├── sound-library.test.js      # A scene has SOUNDS, not one score and one ambient
 │       ├── sound-library-files.test.js # EVERY sound file is a card, and one button makes a new one
@@ -6319,6 +6320,7 @@ node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/generation-progress.test.js
+node --test backend/tests/adapter-progress.test.js
 node --test backend/tests/image-weight.test.js
 node --test backend/tests/sound-library.test.js
 node --test backend/tests/sound-library-files.test.js

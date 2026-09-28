@@ -655,6 +655,8 @@ function meterElevenLabs(capability, payload, result) {
 const adapter = {
     meter: meterElevenLabs,
     id: 'elevenlabs',
+    /** Synchronous: the call returns when the work is done, with nothing to report on the way. */
+    reportsProgress: 'none',
     kind: 'generator',
     label: 'ElevenLabs',
     requiresKey: true,

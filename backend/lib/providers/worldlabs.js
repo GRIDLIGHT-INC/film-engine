@@ -214,10 +214,15 @@ async function generate(capability, payload, opts) {
             };
         }
         const waited = (Date.now() - started) / 1000;
-        await new Promise(r => setTimeout(r, waited < 30 ? 3000 : waited < 120 ? 5000 : 10000));
+        const fixed = Number(process.env.WORLDLABS_POLL_MS) || 0;
+        await new Promise(r => setTimeout(r, fixed || (waited < 30 ? 3000 : waited < 120 ? 5000 : 10000)));
         try {
             const res = await fetch(`${baseUrl()}/marble/v1/operations/${op.operation_id}`, { headers });
             op = await res.json();
+            if (!op.done) {
+                const { emit, pollPercent } = require('../generation-progress');
+                emit(opts, { percent: pollPercent(op), phase: 'building world' });
+            }
         } catch (err) {
             return { ok: false, status: 502, error: `worldlabs poll: ${err.message}` };
         }
@@ -287,6 +292,8 @@ const adapter = {
     // Polls an operation to completion, so the handle is written before polling
     // and a host teardown leaves the world collectable rather than lost.
     asyncGeneration: true,
+    /** Marble's operation reports done or not; a percentage only if its metadata carries one. */
+    reportsProgress: 'phase',
     envVar: 'WORLDLABS_API_KEY',
     docsUrl: 'https://platform.worldlabs.ai',
     connection: {

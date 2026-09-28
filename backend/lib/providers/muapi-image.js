@@ -109,7 +109,7 @@ const MAX_REFERENCES = 8;
  * either way — a frame, or a timeout that says so. Polled fast because these
  * models are fast: MuAPI documents Nano Banana 2 Lite at about four seconds.
  */
-const POLL_MS = 1500;
+const POLL_MS = Number(process.env.MUAPI_POLL_MS || 1500);
 const POLL_TRIES = 32;
 
 /**
@@ -222,7 +222,7 @@ function describeImageRequest(p) {
 }
 
 /** Poll until the frame is finished, on seedance.js's contract. */
-async function pollResult(requestId, apiKey, budgetMs) {
+async function pollResult(requestId, apiKey, budgetMs, onPoll) {
     const url = `${BASE_URL}/predictions/${encodeURIComponent(requestId)}/result`;
     // Bounded by TIME rather than by a try count: the caller's budget is in
     // milliseconds, and a fixed number of tries cannot honour it.
@@ -237,6 +237,9 @@ async function pollResult(requestId, apiKey, budgetMs) {
         }
         const data = await res.json().catch(() => ({}));
         const status = String(data.status || '').toLowerCase();
+        if (onPoll && !['completed', 'succeeded', 'failed', 'error', 'cancelled'].includes(status)) {
+            try { onPoll(data, status); } catch (_) { /* never ends the poll */ }
+        }
         if (status === 'completed' || status === 'succeeded') {
             const out = data.outputs || data.output || data.result || {};
             const src = (Array.isArray(out) && out[0])
@@ -311,7 +314,10 @@ async function generate(capability, payload, opts) {
         try { opts.onHandle(requestId, { capability }); } catch (_) { /* never blocks a paid call */ }
     }
     const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || (POLL_MS * POLL_TRIES));
-    const out = await pollResult(requestId, apiKey, budget);
+    const { emit, pollPercent } = require('../generation-progress');
+    emit(opts, { phase: 'queued' });
+    const out = await pollResult(requestId, apiKey, budget, (body, status) =>
+        emit(opts, { percent: pollPercent(body), phase: status || 'generating' }));
     if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(requestId, budget);
     if (!out.ok) return out;
     return { ok: true, data: out.data, provider: 'muapi', provider_model: req.model };
@@ -388,6 +394,8 @@ const muapiImageAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** MuAPI's poll says queued/processing; a percentage only if it sends one. */
+    reportsProgress: 'phase',
 
     sizeControl: 'snapped',
     sizeControlReason: 'MuAPI takes an aspect ratio and a 1K/2K/4K tier; the exact pixel '

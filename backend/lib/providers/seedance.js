@@ -630,7 +630,7 @@ function describeVideoRequest(payload) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function awaitResult(requestId, apiKey, deadline) {
+async function awaitResult(requestId, apiKey, deadline, onPoll) {
     const url = `${BASE_URL}/predictions/${encodeURIComponent(requestId)}/result`;
     while (Date.now() < deadline) {
         await sleep(POLL_INTERVAL_MS);
@@ -643,6 +643,9 @@ async function awaitResult(requestId, apiKey, deadline) {
         const data = await res.json().catch(() => null);
         if (!data) continue;
         const status = String(data.status || '').toLowerCase();
+        if (onPoll && !['completed', 'succeeded', 'failed', 'error', 'cancelled'].includes(status)) {
+            try { onPoll(data, status); } catch (_) { /* never ends the poll */ }
+        }
         if (status === 'completed' || status === 'succeeded') {
             /*
              * `outputs`, PLURAL, AND IT IS AN ARRAY OF STRINGS.
@@ -772,7 +775,10 @@ async function generate(capability, payload, opts) {
         try { opts.onHandle(requestId, { capability }); } catch (_) { /* never blocks a paid call */ }
     }
     const budget = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
-    const out = await awaitResult(requestId, apiKey, Date.now() + budget);
+    const { emit, pollPercent } = require('../generation-progress');
+    emit(opts, { phase: 'queued' });
+    const out = await awaitResult(requestId, apiKey, Date.now() + budget, (body, status) =>
+        emit(opts, { percent: pollPercent(body), phase: status || 'generating' }));
     if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(requestId, budget);
     if (!out.ok) return out;
     return {
@@ -881,6 +887,8 @@ const seedanceAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** Seedance through MuAPI: a phase from the poll, a percentage only if one is sent. */
+    reportsProgress: 'phase',
 
     /*
      * WHAT THIS ADAPTER WILL CARRY, in the shape lib/video-reference speaks.

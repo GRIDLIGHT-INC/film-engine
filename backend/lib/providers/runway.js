@@ -867,7 +867,7 @@ async function submitTask(request, key) {
  * still running on Runway's side — so they are retried until the deadline
  * rather than aborting a generation that will succeed.
  */
-async function pollTask(taskId, key, deadline) {
+async function pollTask(taskId, key, deadline, onPoll) {
     const url = `${baseUrl()}/tasks/${encodeURIComponent(taskId)}`;
     for (;;) {
         if (Date.now() >= deadline) {
@@ -887,6 +887,7 @@ async function pollTask(taskId, key, deadline) {
                 if (!url_) return { ok: false, status: 502, error: `runway: task ${taskId} succeeded with no output URL` };
                 return { ok: true, task: body, url: url_ };
             }
+            if (onPoll) { try { onPoll(body, state); } catch (_) { /* never ends the poll */ } }
             if (state === 'failed') {
                 const reason = (body && (body.failure || body.failureCode || body.error)) || body && body.status;
                 return { ok: false, status: 502, error: `runway: task ${taskId} ${String((body && body.status) || 'FAILED').toLowerCase()}${reason && reason !== (body && body.status) ? ` — ${reason}` : ''}` };
@@ -955,6 +956,8 @@ const adapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** Runway's task poll carries a 0..1 progress while RUNNING. */
+    reportsProgress: 'percent',
     id: 'runway',
     kind: 'generator',
     label: 'Runway',
@@ -1080,7 +1083,11 @@ const adapter = {
             if (opts && typeof opts.onHandle === 'function') {
                 try { opts.onHandle(submitted.id, { capability }); } catch (_) { /* never blocks a paid call */ }
             }
-            const done = await pollTask(submitted.id, key, deadline);
+            const { emit, pollPercent } = require('../generation-progress');
+            emit(opts, { phase: 'queued' });
+            const done = await pollTask(submitted.id, key, deadline, (body, state) => {
+                if (state !== 'failed') emit(opts, { percent: pollPercent(body), phase: state === 'running' ? 'generating' : 'queued' });
+            });
             if (!done.ok && done.status === 504 && opts && opts.onTimeout) {
                 return opts.onTimeout(submitted.id, timeout);
             }

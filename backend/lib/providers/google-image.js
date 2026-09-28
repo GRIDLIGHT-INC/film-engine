@@ -194,6 +194,8 @@ const googleImageAdapter = {
     supports: capability => (googleImageAdapter.capabilities || []).includes(capability),
     meter: meterGoogle,
     id: 'google',
+    /** Synchronous: the call returns when the work is done, with nothing to report on the way. */
+    reportsProgress: 'none',
     kind: 'generator',
     label: 'Google (Nano Banana)',
     requiresKey: true,

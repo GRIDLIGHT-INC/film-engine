@@ -32,6 +32,8 @@ function meterFluidsynth(capability, payload, result) {
 const adapter = {
     meter: meterFluidsynth,
     id: 'fluidsynth',
+    /** Synchronous: the call returns when the work is done, with nothing to report on the way. */
+    reportsProgress: 'none',
     kind: 'generator',
     label: 'FluidSynth (instruments on this machine)',
     requiresKey: false,

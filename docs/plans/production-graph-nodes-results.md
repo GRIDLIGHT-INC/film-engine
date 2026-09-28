@@ -6,7 +6,7 @@ Decisions recorded 2026-09-28: every generation gets a job row; collapse is per 
 | Task | Jira | State | Note |
 |------|------|-------|------|
 | PGN-001 | GRD-4534 | DONE | Migration 117 (`117_generation_progress.sql`): percent, phase, started_at, heartbeat_at, collectable on film_generation_jobs. `lib/generation-progress.js` (start / attachHandle / report throttled to 1 write/s/job with the latest value kept / flush). `withJobRecording_` in `lib/providers/index.js` now opens a row for EVERY generation (sync and async, generate and generateStream; llm and refusals excluded); an async row becomes the handle on onHandle; settles completed/failed, stays pending+collectable when the provider still holds it. `pending()`/`recoverable()` skip collectable=0. `tests/generation-progress.test.js` (9, set-based over every adapter x capability; reverting to async-only fails 3). Hold moved to migration 118. |
-| PGN-002 | GRD-4535 | TODO | Adapters report what they can |
+| PGN-002 | GRD-4535 | DONE | Contract `opts.onProgress({percent, phase})`; `resolve()` injects it and writes each event to the job row (generate and generateStream, caller's painter still called, a throwing painter never fails a render). `generation-progress.js` gains `pollPercent` (0..1 and 0..100 scales, invents nothing) and `emit`. Every generating adapter declares `reportsProgress`: percent (runway, bfl, meshy, gridlight video step/total), phase (muapi, seedance, worldlabs), none (openai, google, elevenlabs, fluidsynth, anthropic). Fixed: Meshy read a poll with no progress field as 0% and overwrote a real value. Poll intervals env-overridable for muapi/meshy/worldlabs. `tests/adapter-progress.test.js` (5): the fixture table must equal the claiming set, each claim proven through resolve() against a stubbed poll; unplugging Runway's report fails it. |
 | PGN-003 | GRD-4536 | TODO | Progress on the running node |
 | PGN-004 | GRD-4537 | TODO | Node states from the impact report |
 | PGN-005 | GRD-4538 | TODO | Draw states on nodes and edges |
@@ -28,3 +28,6 @@ Decisions recorded 2026-09-28: every generation gets a job row; collapse is per 
 | PGN-021 | GRD-4554 | TODO | MCP tools for every new action |
 | PGN-022 | GRD-4555 | TODO | Production graph tests and browser check |
 | PGN-023 | GRD-4556 | TODO | CLAUDE.md and the agent guide |
+
+## Noticed while working
+- `tests/repair-audio.test.js` "a joined deliverable is not digitally silent" can hit its 120 s ffmpeg timeout (`spawnSync ffmpeg ETIMEDOUT` making a 6 s tone clip) depending on how the 4-worker suite schedules files: 2 of 3 full runs failed after PGN-002 added a test file, the third passed, and it passes alone in 3 s. Not caused by PGN-002 (no ffmpeg in the changed code); a scheduling-dependent flake worth its own look.

@@ -401,6 +401,8 @@ const adapter = {
         }),
     }),
     id: 'openai',
+    /** Synchronous: the call returns when the work is done, with nothing to report on the way. */
+    reportsProgress: 'none',
     kind: 'generator',
     label: 'OpenAI',
     requiresKey: true,

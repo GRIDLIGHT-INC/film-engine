@@ -135,7 +135,7 @@ const DEFAULT_TEXT_MODEL = 'meshy-5';
 // Polling. Mesh generation is slow — minutes, not seconds — so the ceiling is
 // generous, but bounded: a task that never terminates must fail rather than
 // hold a request open forever.
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = Number(process.env.MESHY_POLL_INTERVAL_MS || 5000);
 const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 60000;
 
@@ -237,8 +237,11 @@ async function pollTask(path, taskId, apiKey, onProgress, budgetMs) {
         if (!res.ok) return res;
 
         const task = res.data || {};
-        const progress = Number(task.progress) || 0;
-        if (onProgress && progress !== lastProgress) {
+        // A poll with no progress field is "not said", not "0%": reading it
+        // as 0 overwrote a real 50% with nothing on the final poll.
+        const said = task.progress !== undefined && task.progress !== null && Number.isFinite(Number(task.progress));
+        const progress = said ? Number(task.progress) : lastProgress;
+        if (onProgress && said && progress !== lastProgress) {
             lastProgress = progress;
             try { onProgress(progress, task.status); } catch (_) { /* callback must not kill the poll */ }
         }
@@ -534,7 +537,9 @@ async function generate(capability, payload, opts) {
         return { ok: false, status: 400, error: `meshy: unsupported capability "${capability}"` };
     }
     if (capability === 'image') return runImage(payload);
-    return run(payload, undefined, opts, capability);
+    const { emit } = require('../generation-progress');
+    const onProgress = (pct, phase) => emit(opts, { percent: pct, phase: String(phase || 'generating').toLowerCase().replace(/_/g, ' ') });
+    return run(payload, onProgress, opts, capability);
 }
 
 /**
@@ -668,6 +673,8 @@ const adapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** Meshy's task poll carries 0..100 progress for a mesh. */
+    reportsProgress: 'percent',
     id: 'meshy',
     kind: 'generator',
     label: 'Meshy (3D + image)',

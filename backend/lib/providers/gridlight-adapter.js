@@ -149,6 +149,8 @@ function meterGridlight(capability, payload, result) {
 const gridlightAdapter = {
     meter: meterGridlight,
     id: 'gridlight',
+    /** Video streams step/total from the gateway; other endpoints return when done. */
+    reportsProgress: 'percent',
     kind: 'generator',
     label: 'Gridlight',
     requiresKey: false, // uses GRIDLIGHT_API_KEY from env; no per-provider key entry
@@ -253,9 +255,21 @@ const gridlightAdapter = {
         const endpoint = endpointFor(capability);
         if (!endpoint) return { ok: false, status: 400, error: `gridlight: unsupported capability '${capability}'` };
         if (capability === 'video') {
+            /*
+             * The gateway streams its own events; they reach the job row as
+             * { percent, phase } — step over total when it sends both.
+             */
+            const o = Object.assign({}, opts || {});
+            const theirs = o.onEvent;
+            o.onEvent = evt => {
+                const e = evt || {};
+                const pct = Number(e.total) > 0 && Number(e.step) >= 0 ? (Number(e.step) / Number(e.total)) * 100 : undefined;
+                require('../generation-progress').emit(o, { percent: pct, phase: e.phase || e.event });
+                if (typeof theirs === 'function') return theirs(evt);
+            };
             return (payload && payload.gridlight_production)
-                ? gridlightVideo.generateProduction(payload, opts)
-                : gridlightVideo.generateVideo(payload, opts);
+                ? gridlightVideo.generateProduction(payload, o)
+                : gridlightVideo.generateVideo(payload, o);
         }
         return callGridlight(endpoint, payload, opts);
     },

@@ -84,7 +84,7 @@ function buildImageRequest(payload) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Poll until Ready, then FETCH THE BYTES — the result URL expires in 10 minutes. */
-async function awaitResult(pollingUrl, apiKey, deadline) {
+async function awaitResult(pollingUrl, apiKey, deadline, onPoll) {
     while (Date.now() < deadline) {
         await sleep(POLL_INTERVAL_MS);
         let res;
@@ -96,6 +96,7 @@ async function awaitResult(pollingUrl, apiKey, deadline) {
         const data = await res.json().catch(() => null);
         if (!data) continue;
         const status = String(data.status || '');
+        if (onPoll && status !== 'Ready') { try { onPoll(data, status); } catch (_) { /* never ends the poll */ } }
         if (status === 'Ready') {
             const sample = data.result && (data.result.sample || data.result.url);
             if (!sample) return { ok: false, status: 502, error: 'bfl: ready with no image' };
@@ -148,7 +149,11 @@ async function generate(capability, payload, opts) {
         try { opts.onHandle(handleId, { capability, polling_url: pollingUrl }); } catch (_) { /* never blocks a paid call */ }
     }
     const timeout = require('../generation-jobs').budgetFor((opts && opts.timeout) || POLL_TIMEOUT_MS);
-    const out = await awaitResult(pollingUrl, apiKey, Date.now() + timeout);
+    const { emit, pollPercent } = require('../generation-progress');
+    emit(opts, { phase: 'queued' });
+    const out = await awaitResult(pollingUrl, apiKey, Date.now() + timeout, (body, status) => {
+        if (!/Error|Failed|Moderated|Content/i.test(status)) emit(opts, { percent: pollPercent(body), phase: status === 'Pending' ? 'generating' : String(status || 'generating').toLowerCase() });
+    });
     if (!out.ok && out.status === 504 && opts && opts.onTimeout) return opts.onTimeout(handleId, timeout);
     if (!out.ok) return out;
     return { ok: true, data: out.data, provider: 'bfl', provider_model: req.model };
@@ -207,6 +212,8 @@ const bflImageAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** BFL's poll carries a 0..1 progress while an image renders. */
+    reportsProgress: 'percent',
     id: 'bfl',
     kind: 'generator',
     label: 'Black Forest Labs (FLUX.2)',
