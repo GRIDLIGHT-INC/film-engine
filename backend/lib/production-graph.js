@@ -552,11 +552,62 @@ function buildGraph(db, projectId) {
         board_locked: !!project.board_locked_at,
         nodes, edges: graph.edges, groups: auto.groups.map((g, i) => ({ ...g, key: graph.groups[i].id })),
         running_order: shots.map(s => s.id),
+        running: runningWork(db, projectId),
         meta: {
             shots: shots.length, framed, with_video: withVideo, need_frame: shots.length - framed,
             sequences: sequences.length, sounds: cues.length,
         },
     };
+}
+
+/**
+ * WHAT IS RUNNING, AND ON WHICH NODE (PGN-003).
+ *
+ * A job row already says what it was for; these rules read that attribution
+ * into a graph key, most specific first — a sequence leg is generated FOR a
+ * shot, but the node that is running is the sequence. A job no rule places is
+ * still listed, with no key, so nothing running is hidden.
+ */
+const RUNNING_RULES = Object.freeze([
+    { id: 'music_cue', key: (j, m) => m.music_cue_id ? 'sound:' + m.music_cue_id : null },
+    { id: 'sequence', key: (j, m) => m.sequence_id ? 'seq:' + m.sequence_id : null },
+    { id: 'storyboard_frame', key: (j, m) => m.storyboard_frame && m.storyboard_frame.shot_id ? 'shot:' + m.storyboard_frame.shot_id : null },
+    { id: 'shot', key: j => j.shot_id ? 'shot:' + j.shot_id : null },
+]);
+
+/**
+ * A pending row is RUNNING only while something is still heard from it. A row
+ * silent for longer than this is a job the caller stopped waiting for — that
+ * belongs to the queue's "awaiting collection", not to a spinner that never
+ * stops.
+ */
+const RUNNING_SILENCE_SEC = 180;
+
+function runningWork(db, projectId) {
+    try {
+        if (!db || !projectId) return [];
+        const rows = db.prepare(`SELECT * FROM film_generation_jobs
+            WHERE project_id = ? AND status = 'pending'
+              AND COALESCE(heartbeat_at, started_at, created_at) >= datetime('now', ?)
+            ORDER BY COALESCE(started_at, created_at)`).all(projectId, `-${RUNNING_SILENCE_SEC} seconds`);
+        let registry = null;
+        try { registry = require('./providers'); } catch (_) { registry = null; }
+        return rows.map(j => {
+            let meta = {};
+            try { meta = JSON.parse(j.meta || '{}') || {}; } catch (_) { meta = {}; }
+            let key = null;
+            for (const r of RUNNING_RULES) { key = r.key(j, meta); if (key) break; }
+            const adapter = registry && registry.get(j.provider);
+            return {
+                job_id: j.id, key, provider: j.provider, capability: j.capability,
+                percent: j.percent === null || j.percent === undefined ? null : Number(j.percent),
+                phase: j.phase || null,
+                started_at: j.started_at || j.created_at,
+                heartbeat_at: j.heartbeat_at || null,
+                reports: (adapter && adapter.reportsProgress) || 'none',
+            };
+        });
+    } catch (_) { return []; }
 }
 
 /** Every node that has no selected output yet — what "Run pending" would make. */
@@ -570,6 +621,6 @@ function pendingWork(graph) {
 }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork,
+    buildGraph, autoLayout, readLayout, pendingWork, runningWork, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

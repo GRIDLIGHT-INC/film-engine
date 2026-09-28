@@ -110,6 +110,9 @@ function handleProductionGraph(req, res, parts) {
     if (parts[1] === 'projects' && parts[2] && parts[3] === 'production-graph') {
         if (!UUID_RE.test(parts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (!parts[4] && req.method === 'GET') return getGraph(res, parts[2]);
+        // What is running right now, and on which node — free, polled by the page
+        // while anything runs, because the live channel is silent about our own writes.
+        if (parts[4] === 'running' && req.method === 'GET') return json(res, 200, { running: pg.runningWork(db, parts[2]) });
         if (parts[4] === 'layout' && req.method === 'PUT') return putLayout(req, res, parts[2]);
         if (parts[4] === 'tidy' && req.method === 'POST') return tidy(req, res, parts[2]);
         return json(res, 405, { error: 'Method not allowed' });

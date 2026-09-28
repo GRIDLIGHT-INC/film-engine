@@ -5233,6 +5233,9 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-badge.run { color:#9fb6ff; }
 .pg-progress { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.08); overflow:hidden; }
 .pg-progress > div { height:3px; width:40%; background:#6690ff; animation:pgRun 1.2s linear infinite; }
+.pg-progress.fixed > div { animation:none; transition:width .6s ease; }
+.pg-run { display:contents; }
+.pg-note { display:block; font-size:8px; color:#8a8a96; margin-top:1px; }
 @keyframes pgRun { from { transform:translateX(-100%); } to { transform:translateX(250%); } }
 .pg-row { position:relative; height:18px; padding:0 12px; display:flex; align-items:center; justify-content:space-between;
   gap:6px; font-size:9px; color:#9a9aa6; white-space:nowrap; }
@@ -43442,6 +43445,7 @@ const PG = {
     graph: null, byKey: new Map(), sel: null, zoom: 0.9, pan: { x: 0, y: 0 }, scene: 'all',
     busy: new Map(), drawerCache: {}, play: { index: 0, playing: false, t0: 0, timer: null, stills: true, audio: true },
     fitted: false, menuFor: null,
+    running: new Map(), pollTimer: null,
 };
 
 /**
@@ -43481,6 +43485,71 @@ async function saveProductionGraphFlag() {
 
 // ── Loading ───────────────────────────────────────────────────────────────
 
+/** "1:05", or "1:02:05" past an hour, since a SQLite UTC timestamp. */
+function pgElapsed(startedAt, now) {
+    const t = Date.parse(String(startedAt || '').replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(startedAt || '')) ? '' : 'Z'));
+    if (!Number.isFinite(t)) return '';
+    const sec = Math.max(0, Math.floor(((now || Date.now()) - t) / 1000));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+    const pad = v => String(v).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(s2)}` : `${m}:${pad(s2)}`;
+}
+
+/**
+ * What a running node shows (PGN-003). A real bar and "42%" only when the
+ * provider sent a percentage; otherwise the moving bar, elapsed time and a
+ * plain "no percentage from this provider" — an invented number is worse than
+ * none. A click whose job row has not appeared yet shows the local label.
+ */
+function pgProgressHtml(live, busy, now) {
+    if (!live && !busy) return '';
+    if (!live) return `<div class="pg-progress"><div></div></div><div class="pg-badge run">${esc(busy)}</div>`;
+    const elapsed = pgElapsed(live.started_at, now);
+    const phase = live.phase || busy || 'running';
+    const pct = live.percent === null || live.percent === undefined || !Number.isFinite(Number(live.percent))
+        ? null : Math.max(0, Math.min(100, Math.round(Number(live.percent))));
+    if (pct === null) {
+        return `<div class="pg-progress"><div></div></div>
+            <div class="pg-badge run" title="${esc(live.provider || '')} sends no percentage">${esc(phase)}${elapsed ? ' · ' + elapsed : ''}<span class="pg-note">no percentage from this provider</span></div>`;
+    }
+    return `<div class="pg-progress fixed"><div style="width:${pct}%"></div></div>
+        <div class="pg-badge run" title="${esc(live.provider || '')}">${esc(phase)} · ${pct}%${elapsed ? ' · ' + elapsed : ''}</div>`;
+}
+
+/**
+ * Keep the running list fresh while anything runs. The page's live channel
+ * only fires on writes from ANOTHER connection, so progress from a generation
+ * this page started would never arrive; this polls the free running list
+ * instead, and stops itself when nothing is running.
+ */
+async function pgPollRunning() {
+    clearTimeout(PG.pollTimer);
+    PG.pollTimer = null;
+    if (!state.currentProject || state.currentPage !== 'productiongraph') return;
+    const pid = state.currentProject.id;
+    let list = null;
+    try {
+        const r = await api('/projects/' + pid + '/production-graph/running');
+        list = (r && r.running) || [];
+    } catch (_) { list = null; }
+    if (!state.currentProject || state.currentProject.id !== pid) return;
+    if (list) pgSetRunning(list);
+    if (PG.running.size || PG.busy.size) PG.pollTimer = setTimeout(pgPollRunning, 1500);
+}
+
+/** New running list: re-render when WHICH nodes run changes, else repaint the slots in place. */
+function pgSetRunning(list) {
+    const next = new Map();
+    for (const r of list || []) if (r && r.key) next.set(r.key, r);
+    const same = next.size === PG.running.size && [...next.keys()].every(k => PG.running.has(k));
+    PG.running = next;
+    if (!same) return pgRender();
+    document.querySelectorAll('#pgCanvas [data-run]').forEach(el => {
+        const k = el.getAttribute('data-run');
+        el.innerHTML = pgProgressHtml(PG.running.get(k), PG.busy.get(k));
+    });
+}
+
 async function loadProductionGraph() {
     if (!state.currentProject) return;
     // One load at a time: the side panel and the page both ask, and two renders
@@ -43502,12 +43571,14 @@ async function pgLoad() {
         }
         PG.graph = g;
         PG.byKey = new Map(g.nodes.map(n => [n.key, n]));
+        PG.running = new Map((g.running || []).filter(r => r && r.key).map(r => [r.key, r]));
         if (PG.sel && !PG.byKey.has(PG.sel)) PG.sel = null;
         pgRender();
         if (!PG.fitted) { pgFit(); PG.fitted = true; }
         pgRenderDrawer();
         pgRenderPlayback();
         pgRenderSide();
+        if (PG.running.size || PG.busy.size) pgPollRunning();
     } catch (err) {
         const c = document.getElementById('pgCanvas');
         if (c) c.querySelector('.pg-empty').textContent = 'Could not load the graph: ' + err.message;
@@ -43541,7 +43612,10 @@ function pgNodeHtml(n) {
     const sel = PG.sel === n.key ? ' sel' : '';
     const busy = PG.busy.get(n.key);
     const pos = `left:${n.x}px;top:${n.y}px;`;
-    const run = busy ? `<div class="pg-progress"><div></div></div><div class="pg-badge run">${esc(busy)}</div>` : '';
+    // One repaintable slot per node: the poller rewrites its inside every
+    // second or so without re-rendering the canvas (PGN-003).
+    const live = PG.running.get(n.key);
+    const run = (busy || live) ? `<div class="pg-run" data-run="${esc(n.key)}">${pgProgressHtml(live, busy)}</div>` : '';
     if (n.type === 'shot') {
         const f = n.selected_frame;
         const inSeq = n.sequence_id ? pgNode('seq:' + n.sequence_id) : null;
@@ -44186,6 +44260,7 @@ async function pgLinkSave() {
 async function pgBusy(key, label, work) {
     PG.busy.set(key, label);
     pgRender();
+    pgPollRunning();
     try { return await work(); }
     finally { PG.busy.delete(key); await loadProductionGraph(); }
 }

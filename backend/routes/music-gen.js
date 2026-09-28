@@ -242,7 +242,10 @@ async function runCueGeneration(res, o) {
     ).run(jobId, scene.project_id, scene.id, genType, payload.prompt, payload.model, durationMs || null);
 
     try {
-        const result = await provider.generate(genType === 'ambient' ? 'ambient' : 'music', payload, { timeout: 300000 });
+        // The cue id rides on the job so the Production graph can show which
+        // sound node is running (PGN-003).
+        const result = await provider.generate(genType === 'ambient' ? 'ambient' : 'music', payload,
+            { timeout: 300000, jobMeta: { music_cue_id: cue.id } });
         if (!result.ok) {
             db.prepare('UPDATE film_music_jobs SET status = ?, error_message = ? WHERE id = ?')
                 .run('failed', result.error, jobId);
