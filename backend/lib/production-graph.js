@@ -599,7 +599,7 @@ const NODE_IMPACT = Object.freeze({
         const badges = BADGE_STAGES.map(stage => ({ stage, state: stageState(st[stage]) }))
             .filter(b => b.state === 'redo' || b.state === 'waiting');
         if (!n.frames || !n.frames.length) return out_('never', null, { badges });
-        if (st.scene_card === 'redo') return out_('redo', IMPACT_WHY.card, { badges });
+        if (st.scene_card === 'redo') return out_('redo', IMPACT_WHY.card, { badges, cause: 'card' });
         const kf = stageState(st.keyframe);
         return out_(kf || 'untracked', null, { badges });
     },
@@ -699,6 +699,6 @@ function pendingWork(graph) {
 }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, pendingWork, runningWork, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

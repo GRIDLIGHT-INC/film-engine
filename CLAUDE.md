@@ -243,6 +243,7 @@ film-engine/
 │   │   ├── production-reports.js  # Sides + DOOD, over repaired scene presence
 │   │   ├── run-plan.js            # Strips, model-swap ordering, projected cost (above the orchestrator)
 │   │   ├── run-changed.js         # "Run what changed": the impact report's redo-now rows, priced and ordered, with every exclusion named
+│   │   ├── run-to-here.js         # "Run to here": what a clip, sequence or sound still needs, frames before clips, borrowed frames traced
 │   │   ├── repair-plan.js        # Marks in, plan out — and a floor that is named before it is met
 │   │   ├── playback-marks.js     # A mark on the film is an offset in a file, and they are not the same number
 │   │   ├── frame-handles.js      # A frame a provider can fetch: opaque, scoped, expiring
@@ -457,6 +458,7 @@ film-engine/
 │       ├── production-graph-draw-states.test.js # Every state drawn: class, pill with why and action, edge colour, legend, filter, drawer
 │       ├── run-changed-plan.test.js   # Every stage the impact chain walks is priced and runnable or excluded by name; the plan spends nothing
 │       ├── run-changed-run.test.js    # One item at a time, re-planned after each; stops at the first refusal naming the rest; never buys twice
+│       ├── run-to-here-plan.test.js   # Every node type is a target or refused with why; frames before clips; borrowed frames traced; cycles refused
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6264,6 +6266,7 @@ node --test backend/tests/production-graph-impact.test.js
 node --test backend/tests/production-graph-draw-states.test.js
 node --test backend/tests/run-changed-plan.test.js
 node --test backend/tests/run-changed-run.test.js
+node --test backend/tests/run-to-here-plan.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

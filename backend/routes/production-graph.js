@@ -121,6 +121,13 @@ function handleProductionGraph(req, res, parts) {
         }
         // Run it: one confirmation on the page, then one item at a time in the
         // background (PGN-007). Answers at once with the run id.
+        // "Run to here", planned for free: what a clip, sequence or sound still
+        // needs, frames before clips, borrowed frames traced (PGN-008).
+        if (parts[4] === 'nodes' && parts[5] && parts[6] === 'run-to-here' && parts[7] === 'plan' && req.method === 'GET') {
+            const plan = require('../lib/run-to-here').planForNode(parts[2], decodeURIComponent(parts[5]));
+            if (!plan) return json(res, 404, { error: 'Project not found' });
+            return plan.error ? json(res, 400, plan) : json(res, 200, plan);
+        }
         if (parts[4] === 'run-changed' && !parts[5] && req.method === 'POST') {
             const out = require('../lib/run-changed').startRunChanged(parts[2], { ignore_budget: !!(req.body || {}).ignore_budget });
             return json(res, out.status, out.body);
