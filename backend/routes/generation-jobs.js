@@ -48,6 +48,12 @@ async function handleGenerationJobs(req, res, parts) {
         });
     }
 
+    // /film/generation-jobs/:id/cancel — a real cancel where the provider has one,
+    // otherwise "stop waiting" with the billing warning (PGN-012).
+    if (req.method === 'POST' && parts[1] === 'generation-jobs' && parts[3] === 'cancel') {
+        const out = await require('../lib/generation-cancel').cancelJob(parts[2]);
+        return json(res, out.ok ? 200 : out.status, out);
+    }
     // /film/generation-jobs/:id/collect
     if (req.method === 'POST' && parts[1] === 'generation-jobs' && parts[3] === 'collect') {
         /*

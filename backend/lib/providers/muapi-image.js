@@ -394,6 +394,8 @@ const muapiImageAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** No cancel this adapter can perform: "stop waiting" leaves the job collectable (PGN-012). */
+    cancel: 'stop_waiting',
     /** MuAPI's poll says queued/processing; a percentage only if it sends one. */
     reportsProgress: 'phase',
 

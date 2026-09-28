@@ -675,6 +675,7 @@ function runningWork(db, projectId) {
         const rows = db.prepare(`SELECT * FROM film_generation_jobs
             WHERE project_id = ? AND status = 'pending'
               AND COALESCE(heartbeat_at, started_at, created_at) >= datetime('now', ?)
+              AND NOT (json_valid(meta) AND COALESCE(json_extract(meta, '$.stopped_waiting'), 0))
             ORDER BY COALESCE(started_at, created_at)`).all(projectId, `-${RUNNING_SILENCE_SEC} seconds`);
         let registry = null;
         try { registry = require('./providers'); } catch (_) { registry = null; }

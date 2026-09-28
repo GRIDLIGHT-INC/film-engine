@@ -887,6 +887,8 @@ const seedanceAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** No cancel this adapter can perform: "stop waiting" leaves the job collectable (PGN-012). */
+    cancel: 'stop_waiting',
     /** Seedance through MuAPI: a phase from the poll, a percentage only if one is sent. */
     reportsProgress: 'phase',
 

@@ -212,6 +212,8 @@ const bflImageAdapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** No cancel this adapter can perform: "stop waiting" leaves the job collectable (PGN-012). */
+    cancel: 'stop_waiting',
     /** BFL's poll carries a 0..1 progress while an image renders. */
     reportsProgress: 'percent',
     id: 'bfl',

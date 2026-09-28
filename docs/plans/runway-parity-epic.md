@@ -36,7 +36,7 @@ When it ships, a screenplay can travel from keyframe to finished, finished-in-en
 | Cost | `lib/provider-pricing.js` rows: `gen3a_turbo` (sunset 2026-07-30) is present, while `hailuo3`, the seedance family, `veo3.1` and the multi-shot recipe are absent. Nothing reads `task.cost` |
 | Account limits | Not read. The run plan cannot know a new org is Tier 1 (1–2 concurrent) |
 | Handles | `generate()` records a handle via `onHandle`, but `generateNativeSequence` passes none, so an abandoned multi-shot job is lost |
-| Cancel | `DELETE /v1/tasks/{id}` is not called. A cancelled pipeline run keeps billing its in-flight tasks |
+| Cancel | `DELETE /v1/tasks/{id}` is called only when a person cancels one job from the Production graph queue (`cancelJob`, added by PGN-012). A cancelled pipeline run still does not cancel its in-flight tasks, so it keeps billing them |
 | Refusals | `lib/image-fallback.js` `isRefusal` walks *past* a refusal to the next provider, and nothing caps same-provider retries |
 | `post` | Only `seedance` serves it, and only for upscale. Grade, face restore and composite are refused |
 | `lipsync` | No hosted provider. Only the Gridlight gateway declares it, and Gridlight does not implement it |
@@ -95,7 +95,7 @@ When it ships, a screenplay can travel from keyframe to finished, finished-in-en
 | RWP-011 | ProRes and HDR on finals | `outputFormat`/`proresProfile` are set on a final or finishing pass only, never on a draft, with the surcharge shown in the estimate. The NLE export picks up the ProRes file | M | RWP-009 |
 | RWP-012 | Measured cost | `task.cost.credits` on success (and `estimatedCost` while running) is recorded by the meter as measured, replacing the estimate for that event, and the spend report separates the two | M | RWP-005 |
 | RWP-013 | Read the account | `GET /v1/organization` returns the tier, per-model concurrency, daily caps and balance. It is served on the free dry-run and settings, and the run plan serialises or refuses against it (a 402-style refusal, overridable) | M | None |
-| RWP-014 | Cancel in-flight tasks | Cancelling a pipeline run or flow run calls `DELETE /v1/tasks/{id}` for every recorded pending Runway handle. The handle is marked cancelled, not lost | M | RWP-006 |
+| RWP-014 | Cancel in-flight tasks | Cancelling a pipeline run or flow run calls `DELETE /v1/tasks/{id}` for every recorded pending Runway handle, through the adapter's `cancelJob` (built for one job by PGN-012). The handle is marked cancelled, not lost | M | RWP-006 |
 | RWP-015 | Moderation cap | A `SAFETY.*` failure (and the adapter's refusal equivalents) is never re-sent to the same provider, in the image fallback and the video path. The walk continues to *other* providers, and the failure names the code | M | None |
 | RWP-016 | Frame handles reachable by Runway | A handle URL must be HTTPS on a domain name (no IP, no redirect), or the adapter uses an upload instead. This is checked before the request, so it never surfaces as `ASSET.INVALID` after it | S | RWP-008 |
 

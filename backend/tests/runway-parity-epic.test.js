@@ -118,7 +118,12 @@ test('the Current State claims are still true of the code', () => {
     assert.ok(cur.includes(`${Object.values(lf).filter(Boolean).length} of ${Object.keys(lf).length} i2v models`));
     for (const m of ['gen4.5', 'gen4_turbo', 'hailuo3']) assert.equal(lf[m], false, `${m} is claimed first-only`);
     assert.ok(/'gen3a_turbo'/.test(PRICING_SRC), 'gen3a_turbo is claimed to still be in the rate book');
-    assert.ok(!/DELETE/.test(ADAPTER_SRC.replace(/^\s*(\/\/|\*).*$/gm, '')), 'cancel is claimed unbuilt');
+    // PGN-012 built the per-job cancel (`cancelJob`); what stays unbuilt is a
+    // cancelled PIPELINE run cancelling its in-flight tasks — RWP-014's scope.
+    assert.ok(/async cancelJob\(/.test(ADAPTER_SRC) && cur.includes('`cancelJob`'), 'the per-job cancel is not recorded as built');
+    const pipeline = fs.readFileSync(path.join(__dirname, '..', 'routes', 'pipeline.js'), 'utf8');
+    const cancelFn = pipeline.slice(pipeline.indexOf('function cancelPipeline'), pipeline.indexOf('function cancelPipeline') + 2000);
+    assert.ok(!/cancelJob|generation-cancel/.test(cancelFn), 'a pipeline run now cancels its tasks — the claim is stale, update it and RWP-014');
 });
 
 test('every assumption is labelled and survives as an open question', () => {

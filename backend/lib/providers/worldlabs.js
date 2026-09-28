@@ -292,6 +292,8 @@ const adapter = {
     // Polls an operation to completion, so the handle is written before polling
     // and a host teardown leaves the world collectable rather than lost.
     asyncGeneration: true,
+    /** No cancel this adapter can perform: "stop waiting" leaves the job collectable (PGN-012). */
+    cancel: 'stop_waiting',
     /** Marble's operation reports done or not; a percentage only if its metadata carries one. */
     reportsProgress: 'phase',
     envVar: 'WORLDLABS_API_KEY',

@@ -958,6 +958,18 @@ const adapter = {
     asyncGeneration: true,
     /** Runway's task poll carries a 0..1 progress while RUNNING. */
     reportsProgress: 'percent',
+    /** Runway documents DELETE /v1/tasks/{id}: a queued or running task is cancelled for real (PGN-012). */
+    cancel: 'provider',
+    async cancelJob(taskId) {
+        const key = apiKey();
+        if (!key) return { ok: false, status: 401, error: 'runway: no API key configured' };
+        try {
+            const res = await fetch(`${baseUrl()}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE', headers: { ...jsonHeaders(), ...authHeader(key) } });
+            if (res.ok) return { ok: true };
+            const body = await readJson(res);
+            return { ok: false, status: res.status, error: formatError(res.status, body) };
+        } catch (err) { return { ok: false, status: 502, error: `runway: could not cancel — ${err.message}` }; }
+    },
     id: 'runway',
     kind: 'generator',
     label: 'Runway',

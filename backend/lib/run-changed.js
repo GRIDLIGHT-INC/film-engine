@@ -134,6 +134,13 @@ function planRunChanged(projectId) {
  * reported as still behind, never bought again in a loop.
  */
 const MAX_STEPS = 500;
+
+function isCancelled(runId) {
+    try {
+        const r = runId && require('../db/database').db.prepare('SELECT status FROM film_pipeline_runs WHERE id = ?').get(runId);
+        return !!(r && r.status === 'cancelled');
+    } catch (_) { return false; }
+}
 const itemId = it => `${it.stage}|${it.key}`;
 
 async function executeItem(item) {
@@ -169,7 +176,7 @@ function recordRun(projectId, patch, runId) {
             return id;
         }
         db.prepare(`UPDATE film_pipeline_runs SET status = ?, current_step = ?, steps_completed = ?, steps_failed = ?,
-            steps_remaining = ?, error_message = ?, completed_at = CASE WHEN ? IN ('complete','failed') THEN datetime('now') END
+            steps_remaining = ?, error_message = ?, completed_at = CASE WHEN ? IN ('complete','failed','cancelled') THEN datetime('now') END
             WHERE id = ?`).run(patch.status, patch.current || '', JSON.stringify(patch.completed || []),
             JSON.stringify(patch.failed ? [patch.failed] : []), JSON.stringify(patch.remaining || []),
             patch.error || '', patch.status, runId);
@@ -197,6 +204,8 @@ async function runChanged(projectId, opts, injected) {
     let failed = null, stopped = null, current = first, stillBehind = [];
 
     for (let step = 0; step < MAX_STEPS; step++) {
+        // Cancelled from anywhere (the page, another process): stop before the next step (PGN-012).
+        if (isCancelled(runId)) { stopped = 'cancelled by the director'; break; }
         if (step > 0) {
             current = plan();
             if (!current) break;
@@ -224,7 +233,8 @@ async function runChanged(projectId, opts, injected) {
             .map(it => ({ stage: it.stage, key: it.key, shot_code: it.shot_code || null }))
         : [];
     const ok = !failed && !stopped;
-    recordRun(projectId, { status: ok ? 'complete' : 'failed', completed, failed, remaining,
+    const cancelled = stopped === 'cancelled by the director';
+    recordRun(projectId, { status: ok ? 'complete' : (cancelled ? 'cancelled' : 'failed'), completed, failed, remaining,
         error: failed ? `${failed.stage} ${failed.shot_code || failed.key}: ${failed.error}` : (stopped || '') }, runId);
     return { ok, run_id: runId, completed, failed, stopped, not_attempted: remaining,
         still_behind: stillBehind.map(it => ({ stage: it.stage, key: it.key, shot_code: it.shot_code || null })) };

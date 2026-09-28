@@ -77,6 +77,7 @@ film-engine/
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
 │   │   ├── generation-queue.js    # One queue read: running, waiting, done today, awaiting collection, failed — each job in exactly one bucket
+│   │   ├── generation-cancel.js   # Cancel only where the provider really stops; otherwise stop waiting, collectable, with the billing warning
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
@@ -463,6 +464,7 @@ film-engine/
 │       ├── run-to-here-run.test.js    # Every planned stage reaches its own generate path; blockers refuse before anything runs; the menu offers it where the server plans it
 │       ├── generation-queue.test.js   # Every job state lands in exactly one bucket or is left out on purpose; a running run records what is still to come
 │       ├── production-graph-queue-strip.test.js # Every bucket drawn with only its own actions; collect posts; re-run goes through the node's own confirmation
+│       ├── cancel-honest.test.js      # Every async adapter declares a real cancel or stop-waiting; a batch stops before its next step once cancelled
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6274,6 +6276,7 @@ node --test backend/tests/run-to-here-plan.test.js
 node --test backend/tests/run-to-here-run.test.js
 node --test backend/tests/generation-queue.test.js
 node --test backend/tests/production-graph-queue-strip.test.js
+node --test backend/tests/cancel-honest.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

@@ -673,6 +673,8 @@ const adapter = {
      * unless the id was written down first.
      */
     asyncGeneration: true,
+    /** No cancel this adapter can perform: "stop waiting" leaves the job collectable (PGN-012). */
+    cancel: 'stop_waiting',
     /** Meshy's task poll carries 0..100 progress for a mesh. */
     reportsProgress: 'percent',
     id: 'meshy',

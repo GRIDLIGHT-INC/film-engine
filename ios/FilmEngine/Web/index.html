@@ -44245,7 +44245,11 @@ function pgQueueHtml(q, open, labelOf) {
             ? [it.phase, it.percent != null ? Math.round(it.percent) + '%' : null].filter(Boolean).join(' · ')
             : (b === 'failed' ? (it.error || 'failed') : (it.stage || it.capability || ''));
         const act = b === 'awaiting_collection' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCollect('${esc(it.job_id)}')">Collect</button>`
-            : (b === 'failed' && it.key ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueRerun('${esc(it.key)}')">Re-run</button>` : '');
+            : (b === 'failed' && it.key ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueRerun('${esc(it.key)}')">Re-run</button>`
+            // Cancel only where the provider really stops; otherwise say what "stop waiting" does (PGN-012).
+            : (b === 'running' && it.cancel === 'provider' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancel('${esc(it.job_id)}')">Cancel</button>`
+            : (b === 'running' && it.cancel === 'stop_waiting' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancel('${esc(it.job_id)}')" title="${esc((it.provider || 'This provider') + ' cannot be told to stop. It may still finish and bill; the job stays collectable.')}">Stop waiting</button>`
+            : (b === 'waiting' && it.run_id ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancelRun('${esc(it.run_id)}')" title="Stops before its next step">Cancel run</button>` : ''))));
         return `<div class="pg-qitem"${go}>${it.thumb ? `<img src="${esc(it.thumb + (String(it.thumb).includes('?') ? '&w=96' : '?w=96'))}" alt="" loading="lazy">` : '<span class="pg-qnothumb"></span>'}
             <span class="pg-qname">${esc(name(it))}</span><span class="pg-qdetail">${esc(detail)}</span>${act}</div>`;
     };
@@ -44286,6 +44290,25 @@ async function pgQueueCollect(jobId) {
         setStatus(r && r.pending ? 'Not finished yet — it stays in the queue.' : 'Collected.');
     } catch (err) { setStatus('Collect failed: ' + err.message, true); }
     await loadProductionGraph();
+}
+
+/** Cancel a running job: a real cancel, or "stop waiting" with the provider's billing warning. */
+async function pgQueueCancel(jobId) {
+    try {
+        const r = await api('/generation-jobs/' + encodeURIComponent(jobId) + '/cancel', { method: 'POST', body: '{}' });
+        setStatus((r && (r.warning || r.message)) || 'Cancelled.');
+    } catch (err) { setStatus('Cancel failed: ' + err.message, true); }
+    pgLoadQueue();
+}
+
+/** Cancel a batch run: it stops before its next step. */
+async function pgQueueCancelRun(runId) {
+    if (!state.currentProject) return;
+    try {
+        const r = await api(`/projects/${state.currentProject.id}/production-graph/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST', body: '{}' });
+        setStatus((r && r.message) || 'Cancelled.');
+    } catch (err) { setStatus('Cancel failed: ' + err.message, true); }
+    pgLoadQueue();
 }
 
 /** Re-run a failed node through its own run, so it goes through the one confirmation. */

@@ -24,6 +24,9 @@ function classifyJob(row) {
     if (!row) return null;
     const { RUNNING_SILENCE_SEC } = require('./production-graph');
     if (row.status === 'pending') {
+        // Stopped waiting (PGN-012): the provider may still finish it, so it is
+        // collectable, but nobody is waiting on it any more.
+        if (Number(row.stopped_waiting) && Number(row.collectable)) return 'awaiting_collection';
         if (Number(row.silent_s) <= RUNNING_SILENCE_SEC) return 'running';
         return Number(row.collectable) ? 'awaiting_collection' : 'failed';
     }
@@ -38,7 +41,8 @@ function projectQueue(projectId) {
     if (!projectId || !db.prepare('SELECT 1 FROM film_projects WHERE id = ?').get(projectId)) return null;
     const rows = db.prepare(`SELECT *,
             (julianday('now') - julianday(COALESCE(heartbeat_at, started_at, created_at))) * 86400 AS silent_s,
-            CASE WHEN date(settled_at) = date('now') THEN 1 ELSE 0 END AS settled_today
+            CASE WHEN date(settled_at) = date('now') THEN 1 ELSE 0 END AS settled_today,
+            CASE WHEN json_valid(meta) THEN COALESCE(json_extract(meta, '$.stopped_waiting'), 0) ELSE 0 END AS stopped_waiting
         FROM film_generation_jobs WHERE project_id = ?
           AND (status = 'pending' OR date(settled_at) = date('now'))
         ORDER BY COALESCE(settled_at, started_at, created_at) DESC`).all(projectId);
@@ -72,7 +76,11 @@ function projectQueue(projectId) {
         const bucket = classifyJob(j);
         if (!bucket) continue;
         const key = pg.jobNodeKey(j);
+        let adapter = null;
+        try { adapter = require('./providers').get(j.provider); } catch (_) { adapter = null; }
         out[bucket].push({
+            // What cancelling this would really do, said before the button is pressed.
+            cancel: bucket === 'running' && Number(j.collectable) && adapter ? (adapter.cancel || 'stop_waiting') : null,
             job_id: j.id, key, provider: j.provider, capability: j.capability,
             percent: j.percent === null || j.percent === undefined ? null : Number(j.percent),
             phase: j.phase || null, started_at: j.started_at || j.created_at, settled_at: j.settled_at || null,

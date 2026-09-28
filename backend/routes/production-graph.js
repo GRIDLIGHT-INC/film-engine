@@ -139,6 +139,10 @@ function handleProductionGraph(req, res, parts) {
                 { ignore_budget: !!(req.body || {}).ignore_budget });
             return json(res, out.status, out.body);
         }
+        if (parts[4] === 'runs' && parts[5] && parts[6] === 'cancel' && req.method === 'POST') {
+            const out = require('../lib/generation-cancel').cancelRun(parts[2], parts[5]);
+            return json(res, out.ok ? 200 : out.status, out);
+        }
         if (parts[4] === 'run-changed' && !parts[5] && req.method === 'POST') {
             const out = require('../lib/run-changed').startRunChanged(parts[2], { ignore_budget: !!(req.body || {}).ignore_budget });
             return json(res, out.status, out.body);

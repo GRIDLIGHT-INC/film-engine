@@ -137,7 +137,11 @@ test('every Runway endpoint the brief proposes exists in the spec and is not yet
     assert.deepEqual(built.filter(p => !alreadyInUse.includes(p)), [],
         `the brief proposes endpoints the adapter already calls: ${built.join(', ')}`);
     assert.ok(SPEC.operations.includes('DELETE /v1/tasks/{id}'));
-    assert.ok(!/method:\s*'DELETE'/.test(ADAPTER_SRC), 'task cancel is already built');
+    // The brief proposed task cancel. PGN-012 built it for ONE job (`cancelJob`);
+    // the DELETE must live only there until a run's cancel reaches it (RWP-014).
+    const deletes = [...ADAPTER_SRC.matchAll(/method:\s*'DELETE'/g)].length;
+    assert.ok(deletes <= 1, 'task cancel is called from more places than the per-job cancel');
+    if (deletes) assert.ok(/async cancelJob\([\s\S]{0,400}method:\s*'DELETE'/.test(ADAPTER_SRC), 'the DELETE is not the per-job cancel');
 });
 
 test('generate-native still passes no handle, as the brief says', () => {
