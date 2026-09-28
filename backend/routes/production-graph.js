@@ -106,7 +106,7 @@ function selectCueVersion(req, res, cueId) {
     return json(res, 200, { cue_id: cueId, selected_asset_id: assetId || null });
 }
 
-function handleProductionGraph(req, res, parts) {
+function handleProductionGraph(req, res, parts, query) {
     if (parts[1] === 'projects' && parts[2] && parts[3] === 'production-graph') {
         if (!UUID_RE.test(parts[2])) return json(res, 400, { error: 'Invalid project ID' });
         if (!parts[4] && req.method === 'GET') return getGraph(res, parts[2]);
@@ -138,6 +138,14 @@ function handleProductionGraph(req, res, parts) {
             const out = require('../lib/run-to-here').startRunToHere(parts[2], decodeURIComponent(parts[5]),
                 { ignore_budget: !!(req.body || {}).ignore_budget });
             return json(res, out.status, out.body);
+        }
+        // Which of this project's files is the one dropped on the canvas —
+        // by its hash, sent without the bytes (PGN-015). A GET: it writes
+        // nothing, so it must not make the page refresh over the drawer it opens.
+        if (parts[4] === 'match' && !parts[5] && req.method === 'GET') {
+            if (!db.prepare('SELECT 1 FROM film_projects WHERE id = ?').get(parts[2])) return json(res, 404, { error: 'Project not found' });
+            const out = require('../lib/asset-match').matchFile(db, parts[2], query || {});
+            return json(res, out.error ? 400 : 200, out);
         }
         if (parts[4] === 'runs' && parts[5] && parts[6] === 'cancel' && req.method === 'POST') {
             const out = require('../lib/generation-cancel').cancelRun(parts[2], parts[5]);

@@ -493,7 +493,7 @@ const server = http.createServer(async (req, res) => {
         if ((parts[1] === 'projects' && parts[3] === 'production-graph')
             || (parts[1] === 'shots' && parts[3] === 'video' && parts[4] === 'select')
             || (parts[1] === 'music-cues' && parts[3] === 'select')) {
-            const handled = require('./routes/production-graph').handleProductionGraph(req, res, parts);
+            const handled = require('./routes/production-graph').handleProductionGraph(req, res, parts, query);
             if (handled !== false) return handled;
         }
 

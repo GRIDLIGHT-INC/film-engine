@@ -295,6 +295,7 @@ film-engine/
 │   │   ├── prompt-diff.js        # Prompt/parameter diffing for A/B compare
 │   │   ├── provenance.js         # Provenance sidecar manifests
 │   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
+│   │   ├── asset-match.js        # Which of this project's files a dropped file is: by hash sent without the bytes, same-size files only, cached on mtime
 │   │   ├── timeline.js           # Timeline assembly logic
 │   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
@@ -468,6 +469,7 @@ film-engine/
 │       ├── cancel-honest.test.js      # Every async adapter declares a real cancel or stop-waiting; a batch stops before its next step once cancelled
 │       ├── asset-recipe.test.js       # Every recipe field present or named unknown, for a frame, a clip and a sound; nothing borrowed across versions
 │       ├── how-made-panel.test.js     # The recipe in the drawer, make-another pre-filled with a seed only where honoured, and an A/B wipe for frames and clips
+│       ├── drop-to-recipe.test.js     # Every drawn asset family matched by bytes to its node with its recipe; an unknown file offered only to a node that takes it
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6282,6 +6284,7 @@ node --test backend/tests/production-graph-queue-strip.test.js
 node --test backend/tests/cancel-honest.test.js
 node --test backend/tests/asset-recipe.test.js
 node --test backend/tests/how-made-panel.test.js
+node --test backend/tests/drop-to-recipe.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

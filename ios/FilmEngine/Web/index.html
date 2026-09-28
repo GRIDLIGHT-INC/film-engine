@@ -44005,8 +44005,19 @@ function pgInitCanvas() {
         pgOpenMenu(ev.clientX, ev.clientY, nodeEl ? nodeEl.dataset.key : null, group);
     });
 
-    c.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/pg-add')) ev.preventDefault(); });
+    c.addEventListener('dragover', ev => {
+        const t = ev.dataTransfer.types;
+        if (t.includes('text/pg-add') || t.includes('Files')) ev.preventDefault();
+    });
     c.addEventListener('drop', ev => {
+        // A file from the desktop: find which of this project's files it is,
+        // or offer it to the node it landed on (PGN-015).
+        const dropped = pgDroppedFile(ev.dataTransfer);
+        if (dropped) {
+            ev.preventDefault();
+            const nodeEl = ev.target.closest && ev.target.closest('.pg-node[data-key]');
+            return pgDropFile(dropped, nodeEl ? nodeEl.dataset.key : null);
+        }
         const what = ev.dataTransfer.getData('text/pg-add');
         if (!what) return;
         ev.preventDefault();
@@ -45220,7 +45231,9 @@ async function pgLoadHowMade(assetId, kind, parentKey) {
     try {
         const d = await api('/assets/' + assetId + '/provenance');
         PG.drawerCache.recipes[assetId] = d.recipe || null;
-        if (!document.getElementById('pgHowMade')) return;
+        // The latest request wins: a file dropped on a shot asks for ITS recipe
+        // while the drawer is still reading the selected frame's.
+        if (!document.getElementById('pgHowMade') || (PG.drawerCache.howMade || {}).assetId !== assetId) return;
         const plan = pgMakeAnotherPlan(d.recipe, kind, pgNode(parentKey));
         box.innerHTML = pgRecipeHtml(d.recipe) + `<div class="pg-btnrow">
             <button class="btn btn-secondary btn-sm" ${plan.refused ? `disabled title="${esc(plan.refused)}"` : ''}
@@ -45249,6 +45262,89 @@ async function pgMakeAnother(assetId) {
             await loadProductionGraph();
         },
     });
+}
+
+// ── Drop a file to find its recipe (PGN-015) ───────────────────────────────
+
+/**
+ * Where an unknown file dropped on this node would go: the node's own upload
+ * route, and only for a kind of file that node takes. Anything else is refused
+ * with the reason, so a clip dropped on a sound is never sent anywhere.
+ */
+function pgDropTarget(node, mime) {
+    const m = String(mime || '');
+    const media = m.startsWith('image/') ? 'image' : m.startsWith('video/') ? 'video' : m.startsWith('audio/') ? 'audio' : '';
+    if (!node) return { refused: 'Not on this board. Drop it on the shot, sequence or sound it belongs to, to upload it there.' };
+    if (!media) return { refused: 'That is not a picture, a clip or a sound, so no node here can take it.' };
+    if (node.type === 'shot' && media === 'image')
+        return { helper: 'image', target: 'storyboard-image', url: `/shots/${node.id}/storyboard/import`, what: 'a new frame version' };
+    if (node.type === 'shot' && media === 'video')
+        return { helper: 'media', capability: 'video', url: `/shots/${node.id}/media/video/import`, shotId: node.id, what: 'a new clip version' };
+    if (node.type === 'sequence' && media === 'video')
+        return { helper: 'media', capability: 'video', url: `/sequences/${node.id}/import`, what: 'a clip of the whole sequence' };
+    if (node.type === 'sound' && media === 'audio')
+        return { helper: 'media', capability: 'music', url: `/music-cues/${node.id}/audio`, what: 'a new version of this sound' };
+    const takes = { shot: 'a picture or a clip', sequence: 'a clip', sound: 'a sound' }[node.type];
+    return { refused: takes ? `This ${node.type} takes ${takes}, not ${media === 'image' ? 'a picture' : 'a ' + (media === 'video' ? 'clip' : 'sound')}.`
+                            : `A ${node.type} node takes no uploads; drop it on the shot, sequence or sound it belongs to.` };
+}
+
+/** The first file dragged in from the desktop, or null for a drag from inside the page. */
+function pgDroppedFile(dataTransfer) {
+    const list = dataTransfer && dataTransfer.files;
+    return list && list.length ? list.item(0) : null;
+}
+
+/**
+ * Hash the file here and ask the server which of this project's files it is —
+ * only the hash and the size travel, never the bytes. A match opens its node
+ * and its recipe; an unknown file is offered to the node it was dropped on.
+ */
+async function pgDropFile(file, dropKey) {
+    if (!file || !state.currentProject) return;
+    setStatus(`Looking for ${file.name} in this project…`, true);
+    let sha256;
+    try {
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        sha256 = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (err) { return setStatus(`${file.name} could not be read: ${err.message}`); }
+    let r;
+    try {
+        r = await api(`/projects/${state.currentProject.id}/production-graph/match?sha256=${sha256}&size=${file.size}`);
+    } catch (err) { return setStatus(`Could not look ${file.name} up: ${err.message}`); }
+    if (r.matched) {
+        const key = [r.node_key, r.parent_key].find(k => k && pgNode(k));
+        if (!key) {
+            setStatus(`${file.name} is ${r.asset.file_name} (${r.asset.asset_type}) — it is in this project but not drawn on this board.`);
+            return showModalHtml('pgDropRecipeModal', `<h3>How ${esc(r.asset.file_name)} was made</h3>${pgRecipeHtml(r.recipe)}
+                <div style="text-align:right;margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('pgDropRecipeModal')">Close</button></div>`);
+        }
+        pgSelect(key); pgPanTo(key);
+        setStatus(`${file.name} is ${r.asset.file_name} — opened where it lives.`);
+        return pgLoadHowMade(r.asset.asset_id, r.kind, r.parent_key || key);
+    }
+    const node = dropKey ? pgNode(dropKey) : null;
+    const t = pgDropTarget(node, file.type);
+    if (t.refused) return setStatus(`${file.name} is not in this project. ${t.refused}`);
+    PG.dropFile = { file, target: t, key: dropKey };
+    pgSelect(dropKey);
+    const body = document.getElementById('pgBody');
+    if (body) body.insertAdjacentHTML('afterbegin', `<div class="pg-dsec" id="pgDropOffer"><div class="pg-warn">
+        ${esc(file.name)} is not in this project. Upload it to ${esc(node.shot_code || node.name || node.title || node.type)} as ${esc(t.what)}?</div>
+        <div class="pg-btnrow"><button class="btn btn-primary btn-sm" onclick="pgDropUpload()">Upload</button>
+          <button class="btn btn-secondary btn-sm" onclick="PG.dropFile=null;document.getElementById('pgDropOffer').remove()">Not now</button></div></div>`);
+}
+
+/** Send the offered file through the node's own upload helper — the same one its Upload button uses. */
+async function pgDropUpload() {
+    const d = PG.dropFile;
+    if (!d) return;
+    PG.dropFile = null;
+    const offer = document.getElementById('pgDropOffer');
+    if (offer) offer.remove();
+    const event = { target: { files: [d.file], value: '', closest: () => null } };
+    if (d.target.helper === 'image') return uploadReferenceImage(event, d.target.target, d.target.url, {}, 'loadProductionGraph');
+    return uploadCapabilityMedia(event, d.target.capability, d.target.url, 'loadProductionGraph', d.target.shotId || '');
 }
 
 /** An A/B wipe: B underneath, A on top clipped to the slider. Frames and clips only. */
