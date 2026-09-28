@@ -273,3 +273,97 @@ test('every editor block query either excludes the title page or is exempt by na
     assert.deepStrictEqual(offenders.map(o => `line ${o.line}: ${o.text}`), [],
         'these sites treat a DOM position as a body index or a line budget while counting the title page');
 });
+
+/*
+ * ── NO PAGE MAY RUN LONG ────────────────────────────────────────────────────
+ *
+ * The keep-with-next rule above was correct and was still not what people saw
+ * on the page. The reason was one line earlier: the break was placed AFTER the
+ * element that crossed 55, so a long action paragraph could carry a page to 69
+ * lines. A print sheet is a fixed 11 inches and does not stretch — the browser
+ * reflows an overfull page and inserts its OWN break, which lands wherever it
+ * likes, and that is how a scene heading ended up alone at the foot of a page
+ * with its action overleaf. MAY_END_PAGE never got a say, because the break
+ * that stranded the heading was not one this module placed.
+ *
+ * Measured on the live Drive-In draft before the fix: page one, 69 lines.
+ */
+
+const P = require('../lib/screenplay-pagination');
+
+function pagesOf(blocks) {
+    const breaks = P.pageBreakPositions(blocks);
+    const lines = blocks.map(b => P.elementLines(b.type, b.length || 0));
+    const pages = [];
+    let start = 0;
+    for (const b of breaks.concat([blocks.length - 1])) {
+        let sum = 0;
+        for (let k = start; k <= b; k++) sum += lines[k];
+        pages.push({ from: start, to: b, lines: sum });
+        start = b + 1;
+    }
+    return pages;
+}
+
+test('no page carries more lines than fit on one', () => {
+    // A long action paragraph in the middle, which is what a product-morph
+    // script is full of and what the old rule overflowed on.
+    const blocks = [];
+    for (let i = 0; i < 20; i++) blocks.push({ type: 'action', length: 120 });   // 3 lines each
+    blocks.push({ type: 'action', length: 1000 });                                // 18 lines
+    for (let i = 0; i < 20; i++) blocks.push({ type: 'action', length: 120 });
+
+    for (const page of pagesOf(blocks)) {
+        assert.ok(page.lines <= P.LINES_PER_PAGE,
+            `a page carries ${page.lines} lines against a budget of ${P.LINES_PER_PAGE} — `
+            + 'the sheet cannot stretch, so the browser will break it somewhere the format forbids');
+    }
+});
+
+test('a scene heading is never the last thing on a page', () => {
+    // Heading + a paragraph too long to follow it on the same page: the pair
+    // must travel together, which is the case the overflow used to hide.
+    const blocks = [];
+    for (let i = 0; i < 17; i++) blocks.push({ type: 'action', length: 120 });   // 51 lines
+    blocks.push({ type: 'scene-heading', length: 30 });                          // 2
+    blocks.push({ type: 'action', length: 600 });                                // 11
+    blocks.push({ type: 'action', length: 120 });
+
+    const breaks = P.pageBreakPositions(blocks);
+    for (const at of breaks) {
+        assert.notStrictEqual(blocks[at].type, 'scene-heading',
+            'a page ends on a scene heading — its action is overleaf and the heading reads as a title');
+    }
+});
+
+test('a page still ends somewhere, even when everything wants to stay together', () => {
+    // A wall of unbreakable elements must not loop for ever or return nothing.
+    const blocks = [];
+    for (let i = 0; i < 80; i++) blocks.push({ type: 'character', length: 6 });
+    const breaks = P.pageBreakPositions(blocks);
+    assert.ok(breaks.length > 0, 'a document longer than a page produced no break at all');
+    assert.ok(breaks.every((b, i) => i === 0 || b > breaks[i - 1]),
+        'the breaks are not in ascending order — one page starts before the one before it ended');
+});
+
+test('the editor and this module place the SAME breaks', () => {
+    /*
+     * Two paginators that disagree is how a fix survives in tests and not on
+     * screen. The SPA cannot require a node module (build.target is
+     * single-html), so the rule is duplicated and this is what holds it.
+     */
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    const body = src.slice(src.indexOf('function paginateInto(container)'));
+    const fn = body.slice(0, body.indexOf('\n    }\n'));
+
+    assert.ok(/used > 0 && used \+ lineCount\[i\] > 55/.test(fn),
+        'the editor still breaks AFTER the block that overflows, so its pages run long');
+    assert.ok(/let at = i - 1;/.test(fn),
+        'the editor walks up from the wrong element');
+    assert.ok(/for \(let k = at \+ 1; k <= i; k\+\+\) used \+= lineCount\[k\]/.test(fn),
+        'the editor does not carry the walked-past blocks onto the new page, so its next page starts empty');
+    assert.ok(!/currentLine/.test(fn),
+        'the editor still keeps a running document-wide line count, which is the overflowing rule');
+});

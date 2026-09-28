@@ -423,6 +423,53 @@ function previsPromptParts(rawPrevis) {
  * It was being read as a target to shrink every field to. So: assemble whole,
  * and only carve up if the result overruns.
  */
+
+/*
+ * WHEN THE PICTURE IS ALREADY IN THE PAYLOAD.
+ *
+ * `@maya` is the right answer and only ONE adapter of eight can read a tag.
+ * Everywhere else the prompt carries an untagged array of images, so the prose
+ * is doing double duty: it is the look AND the label that says which of the
+ * six attached pictures is the colossus. Dropping it entirely would leave the
+ * model holding unlabelled photographs.
+ *
+ * But a plate shows the look far better than 1,200 characters ever will, and
+ * on a six-subject frame that redundancy cost 8,187 characters of a 16,000
+ * ceiling — for pictures the model was already looking at.
+ *
+ * So when a subject's own plate is attached, the description is reduced to
+ * what a photograph CANNOT carry:
+ *
+ *   - the opening line, which identifies the thing and labels its picture;
+ *   - every sentence the author marked as a directive — CRITICAL, DO NOT,
+ *     MUST, "it is wrong". Those exist precisely because the model keeps
+ *     getting something wrong that the plate did not fix, and cutting them
+ *     would undo the work that made them necessary.
+ *
+ * Everything else is the plate's job. A subject with NO plate is untouched
+ * and still gets its whole description, because there the prose is all there
+ * is.
+ */
+const DIRECTIVE = /\b(CRITICAL|DO NOT|MUST NOT|NEVER USE)\b|it is wrong/;
+
+function splitSentences(text) {
+    // Split only where a sentence really ends: punctuation, space, capital.
+    // Keeps "0.7m at the shoulder" and "1.73m (5 feet 8 inches)" intact.
+    return String(text || '').split(/(?<=[.!?])\s+(?=[A-Z"\u201c])/).filter(Boolean);
+}
+
+function condenseForPlate(text) {
+    const sentences = splitSentences(text);
+    if (sentences.length <= 1) return String(text || '').trim();
+    const kept = [];
+    sentences.forEach((sentence, i) => {
+        if (i === 0 || DIRECTIVE.test(sentence)) kept.push(sentence.trim());
+    });
+    const out = kept.join(' ').replace(/\s+/g, ' ').trim();
+    // Never let condensing make it longer, and never return nothing.
+    return (out && out.length < String(text).length) ? out : String(text || '').trim();
+}
+
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
     const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
@@ -539,12 +586,18 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         // run without it.
         const covered = (opts.anchorCovers || []).some(
             n => String(n).toUpperCase() === String(charName).toUpperCase());
+        // Is this subject's OWN picture attached? Then the prose only has to
+        // label it and say what it cannot show.
+        const platedHere = (opts.references || []).some(
+            r => r && r.name && String(r.name).toUpperCase() === String(charName).toUpperCase());
         if (charTag) {
             add('appearance', `@${charTag}`);
         } else if (covered && opts.directionMode === 'camera') {
             add('appearance', String(charName).toUpperCase());
         } else if (dbChar.appearance_prompt) {
-            add('appearance', dbChar.appearance_prompt);
+            add('appearance', platedHere
+                ? `${String(charName).toUpperCase()}: ${condenseForPlate(dbChar.appearance_prompt)}`
+                : dbChar.appearance_prompt);
         }
     }
 
@@ -560,9 +613,14 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
             p => p && p.name && p.name.toUpperCase() === String(propName).toUpperCase());
         if (!dbProp) continue;
         const propTag = tagFor.get(String(propName).toUpperCase());
+        const propPlated = (opts.references || []).some(
+            r => r && r.name && String(r.name).toUpperCase() === String(propName).toUpperCase());
         if (propTag) add('appearance', `@${propTag}`);
-        else add('appearance', [String(propName).toUpperCase(), dbProp.visual_prompt || dbProp.description]
-            .filter(Boolean).join(': '));
+        else {
+            const brief = dbProp.visual_prompt || dbProp.description;
+            add('appearance', [String(propName).toUpperCase(),
+                propPlated ? condenseForPlate(brief) : brief].filter(Boolean).join(': '));
+        }
     }
 
     /*
@@ -1053,7 +1111,8 @@ function rankContributions(contributions, shot) {
     });
 }
 
-module.exports = {    rankContributions,
+module.exports = {
+    condenseForPlate, splitSentences,    rankContributions,
     trimToAllowance,
     PROMPT_PRIORITY,
     DIRECTION_MODES,

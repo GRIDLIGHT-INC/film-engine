@@ -191,6 +191,30 @@ function buildRunPlan(projectId, options) {
     const blockedByCompliance = !opts.ignore_compliance && compliance.blocks;
 
     /*
+     * THE CARDS, CHECKED BEFORE THE MONEY.
+     *
+     * Every check this engine grew was free-standing: `elements_list` reports
+     * undescribed subjects, `scale_check` reports missing sizes, `prompt-lint`
+     * reports negative phrasing. A sixteen-shot board was audited by hand and
+     * found four defects that all three of them had been quietly reporting
+     * nothing about -- not because any was weak, but because nothing made
+     * anybody look. A checker nobody runs is a checker that does not exist.
+     *
+     * So the audit runs HERE, at the one place a person passes on their way to
+     * spending money, and its ERRORS refuse the run on the same terms
+     * compliance already does. An error means a subject the card names reaches
+     * the provider as neither a picture nor a description: the model invents
+     * it, and the result looks like a rendering choice rather than a missing
+     * record. That is worth stopping for; nothing else here is.
+     *
+     * Warnings and notes ride along and block nothing, for the reason the
+     * compliance gate states in its own comment -- a warning that stops a run
+     * makes the check something people switch off.
+     */
+    const audit = auditFor(projectId);
+    const blockedByAudit = !opts.ignore_audit && audit.blocks;
+
+    /*
      * WHICH VENDOR EACH STRIP WOULD SPEND AT, and whether anyone chose it.
      *
      * A plan that projects a cost and does not name the account it will be
@@ -226,6 +250,10 @@ function buildRunPlan(projectId, options) {
         order_rationale: PLAN_ORDERS[order],
         compliance: compliance.findings,
         blocked_by_compliance: blockedByCompliance,
+        // The pre-flight, inline. A director reading a plan should not have to
+        // know that a separate report exists in order to be warned by it.
+        audit: audit.summary,
+        blocked_by_audit: blockedByAudit,
         strips,
         // The whole-film steps, after every strip. Not a strip: a strip is a
         // model residency, and the conform loads no model.
@@ -255,12 +283,52 @@ function buildRunPlan(projectId, options) {
         // projecting cost rather than discovering it on the ledger.
         refused: (!opts.ignore_budget && budget.wouldExceed)
             || blockedByCompliance
+            || blockedByAudit
             || (runCeiling ? runCeiling.exceeded : false),
         // Said out loud: work skipped is money saved, and a plan that hides it
         // looks more expensive than it is.
         skipped,
         alternates: Object.keys(PLAN_ORDERS).filter(o => o !== order),
     };
+}
+
+/**
+ * The card audit for a project, gathered without ever throwing.
+ *
+ * Shaped like `complianceFor` deliberately: one `blocks` boolean and a small
+ * summary, so the plan treats a card defect and a brand defect the same way
+ * and a reader learns one idea rather than two.
+ *
+ * A failure to audit must never refuse a run. The audit exists to stop money
+ * being wasted; a crash in it that stopped a legitimate generation would be
+ * the check costing more than the bug.
+ */
+function auditFor(projectId) {
+    try {
+        const { auditShots } = require('./shot-audit');
+        const report = auditShots(projectId);
+        const errors = (report.findings || []).filter(f => f.severity === 'error');
+        return {
+            blocks: errors.length > 0,
+            summary: {
+                shots_checked: report.shots_checked,
+                counts: report.counts,
+                // Only the blocking ones inline. The rest are one free call
+                // away and listing them here would bury the plan.
+                errors: errors.map(f => ({
+                    shot_code: f.shot_code, type: f.type, subject: f.subject, why: f.why, fix: f.fix,
+                })),
+                ...(errors.length ? {
+                    refusal: `${errors.length} shot card(s) name a subject that would reach the provider as `
+                        + 'neither a reference picture nor a description. Fix those, or pass ignore_audit to '
+                        + 'generate anyway and accept that the model will invent them.',
+                } : {}),
+                note: 'Run shot_audit for the warnings and notes as well — free, and it spends nothing.',
+            },
+        };
+    } catch (err) {
+        return { blocks: false, summary: { unavailable: err.message } };
+    }
 }
 
 /**

@@ -692,18 +692,31 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
         return res.end(JSON.stringify({ error: 'Refine failed', details: result.error }));
     }
 
+    /*
+     * KEPT, NOT DELETED — and stashed BEFORE the write.
+     *
+     * A refine writes over the plate's own filename and then used to
+     * `DELETE FROM film_assets` the row it replaced, so "sharpen this one
+     * thing" was the cheapest way to destroy a plate you had already paid for.
+     * A refine is the case where going back matters most: the whole reason to
+     * refine is that the picture was nearly right, and nearly right is exactly
+     * what you want to return to when the refine overshoots.
+     */
+    const { stashPriorPlate, commitPriorPlate } = require('../lib/reference-plates');
+    const stash = stashPriorPlate(project.id, subject, spec, fileName);
+
     const { persistProviderMedia } = require('../lib/provider-media');
     const saved = await persistProviderMedia(project.id, spec.subdir, fileName, result.data,
         { serveDir: 'images' });
     const filePath = typeof saved === 'string' ? saved : (saved && saved.path) || '';
 
-    db.prepare('DELETE FROM film_assets WHERE id = ?').run(existing.id);
+    const plateVersion = commitPriorPlate(stash);
     const assetId = generateId();
     db.prepare(
         `INSERT INTO film_assets (id, project_id, ${spec.fkColumn}, asset_type, file_path, file_name,
             format, mime_type, version, metadata, provider, provider_model)
-         VALUES (?, ?, ?, ?, ?, ?, 'png', 'image/png', 1, ?, ?, ?)`)
-        .run(assetId, project.id, subject.id, spec.assetType, filePath, fileName,
+         VALUES (?, ?, ?, ?, ?, ?, 'png', 'image/png', ?, ?, ?, ?)`)
+        .run(assetId, project.id, subject.id, spec.assetType, filePath, fileName, plateVersion,
             JSON.stringify({ kind: `${kind}_plate`, refined: true, instruction,
                 ...(view ? { view } : {}) }),
             result.provider || provider.id || null, result.provider_model || null);
@@ -781,7 +794,21 @@ function deletePlateView(res, locationId, rawView) {
         .map(row => row.shot_code);
 
     for (const r of matched) {
-        try { if (r.file_path) fs.unlinkSync(r.file_path); } catch (_) { /* already gone is fine */ }
+        /*
+         * The ROW goes, the BYTES do not. Unlinking made one mis-click on a
+         * plate somebody paid for unrecoverable — and the character route has
+         * moved its deletions to `deleted/` for exactly this reason since the
+         * turnaround put three plates behind three Delete buttons. The row
+         * must still go, or the app lists a view with no picture.
+         */
+        try {
+            if (r.file_path && fs.existsSync(r.file_path)) {
+                const graveyard = path.join(path.dirname(r.file_path), 'deleted');
+                fs.mkdirSync(graveyard, { recursive: true });
+                fs.renameSync(r.file_path,
+                    path.join(graveyard, `${Date.now()}_${path.basename(r.file_path)}`));
+            }
+        } catch (_) { /* already gone, or the disk will not take it */ }
         db.prepare('DELETE FROM film_assets WHERE id = ?').run(r.id);
     }
 

@@ -72,6 +72,79 @@ const NEW_CARD_FIELDS = Object.freeze([
       sample: ['the dragon closes', 'the house is struck'], bad: 'not an array' },
 ]);
 
+/* -- what the subject is SAYING, and whether we see them say it --------- */
+
+/**
+ * OFF-SCREEN IS NOT THE SAME AS SILENT, AND NEITHER REACHED THE MODEL.
+ *
+ * A scene card carries its dialogue and no prompt builder read it. Not the
+ * storyboard builder (right: a still should not render speech), not the video
+ * builder, not this one. So a model generating a man who talks for
+ * fifty-five of a film's sixty-two seconds was never told he speaks -- and an
+ * image-to-video model handed a keyframe of a closed mouth produces a man
+ * standing silently. The lip-sync pass then fights the footage instead of
+ * building on it.
+ *
+ * The WORDS are deliberately not sent. They buy little for lip shape at this
+ * level, the lip-sync pass owns the phonemes, and a model handed a quoted
+ * sentence is liable to paint it into the frame -- which this project's own
+ * style preset forbids outright.
+ *
+ * V.O. and O.S. INVERT the instruction rather than removing it. The last two
+ * shots of this film are a voice over an empty burning street and over a
+ * logo; telling that model "he is speaking" would put a talking mouth where
+ * there is deliberately nobody. So off-screen speech says the opposite out
+ * loud. Saying nothing leaves the model to guess, and it guesses differently
+ * every take.
+ */
+const OFF_SCREEN = /^(V\.?O\.?|O\.?S\.?|O\.?C\.?|VOICEOVER|OFF)$/i;
+
+/** The extension on a cue, from either the structured field or the name. */
+function cueExtension(line) {
+    if (!line) return '';
+    const explicit = String(line.extension || '').trim();
+    if (explicit) return explicit;
+    const m = String(line.character || '').match(/\(([^)]+)\)\s*$/);
+    return m ? m[1].trim() : '';
+}
+
+function speakerName(line) {
+    return String((line && line.character) || '').replace(/\([^)]*\)\s*$/, '').trim();
+}
+
+/** Is this line heard from somebody the camera can see? */
+function isOnScreen(line) {
+    return !OFF_SCREEN.test(cueExtension(line).replace(/[\s.]+/g, ''));
+}
+
+/**
+ * The performance clause: who speaks, and whether the camera sees it.
+ *
+ * Returns '' for a shot with no dialogue, which is most of them -- a silent
+ * shot must compile byte-identically to how it did before this existed.
+ */
+function performanceClause(card) {
+    const lines = Array.isArray(card && card.dialogue) ? card.dialogue.filter(Boolean) : [];
+    if (!lines.length) return '';
+
+    const onScreen = lines.filter(isOnScreen);
+    const offScreen = lines.filter(l => !isOnScreen(l));
+
+    if (!onScreen.length) {
+        return 'Nobody in frame is speaking: the voice heard over this shot is off-screen, so no mouth '
+             + 'in frame moves and no character addresses the camera.';
+    }
+
+    const who = [...new Set(onScreen.map(speakerName).filter(Boolean))];
+    const subject = who.length ? who.join(' and ') : 'the subject';
+    let clause = `${subject} is SPEAKING ON CAMERA through this shot: lips and jaw moving naturally `
+        + 'through a continuous line, breath and small head movement with the speech, eyes engaged. '
+        + 'Not silent, not a held expression, mouth not closed.';
+    if (offScreen.length) clause += ' A further line is heard off-screen from somebody not in frame.';
+    return clause;
+}
+
+
 /* ── counting the shape of a shot (technique 2) ───────────────────────── */
 
 /** Sentence- and clause-ish splitting, good enough to count independent acts. */
@@ -176,11 +249,11 @@ function cameraClause(ctx) {
  * the safer thing to lead with when nobody has told us otherwise.
  */
 const SHAPES = Object.freeze({
-    runway:  { order: ['camera', 'subject', 'staging', 'environment', 'beats', 'end'],
+    runway:  { order: ['camera', 'subject', 'performance', 'staging', 'environment', 'beats', 'end'],
                why: "Runway documents camera motion + subject action + additional motion details" },
-    seedance:{ order: ['subject', 'staging', 'environment', 'camera', 'beats', 'end'],
+    seedance:{ order: ['subject', 'performance', 'staging', 'environment', 'camera', 'beats', 'end'],
                why: '16,000 characters of room and no documented shape; subject leads' },
-    default: { order: ['subject', 'staging', 'environment', 'camera', 'beats', 'end'],
+    default: { order: ['subject', 'performance', 'staging', 'environment', 'camera', 'beats', 'end'],
                why: 'conservative: lead with what the shot is about' },
 });
 
@@ -192,6 +265,7 @@ function parts(ctx) {
         // ONE PRIMARY ACTION leads; the rest follow and are cut first.
         subject: acts.length ? acts[0].replace(/\s+$/, '') + '.' : '',
         extra_actions: acts.slice(1),
+        performance: performanceClause(card),
         staging: stagingPhrase(ctx.previs) || '',
         environment: String(card.environment_motion || '').trim(),
         camera: cameraClause(ctx),
@@ -281,5 +355,6 @@ function compileFor(providerId, ctx) {
     return buildMotionPrompt({ ...ctx, limit }, shapeId);
 }
 
-module.exports = {    TECHNIQUES, NEW_CARD_FIELDS, SHAPES,
+module.exports = {    TECHNIQUES,
+    performanceClause, cueExtension, speakerName, isOnScreen, NEW_CARD_FIELDS, SHAPES,
     buildMotionPrompt, compileFor, shotShape, paceWords,};

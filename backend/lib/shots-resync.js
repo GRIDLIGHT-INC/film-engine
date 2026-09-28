@@ -65,10 +65,27 @@ function sceneFromScreenplay(db, scene) {
     const { parseFountain } = require('./fountain-parser');
     const dialogue = [];
     let who = '';
+    let ext = '';
     for (const el of (parseFountain(text).elements || [])) {
-        if (el.type === 'character') who = String(el.text || '').trim();
-        else if (el.type === 'dialogue') {
-            dialogue.push({ character: who, line: String(el.text || '').trim() });
+        if (el.type === 'character') {
+            who = String(el.text || '').trim();
+            /*
+             * V.O. AND O.S. TRAVEL WITH THE LINE.
+             *
+             * The parser has always captured the extension and the cards
+             * dropped it, so a voice-over read on a card as ordinary speech.
+             * That is not cosmetic: the motion prompt now tells a video model
+             * whether a mouth in frame is moving, and the last two shots of a
+             * film can be a voice over an empty street. Getting this wrong
+             * puts a talking face where the director put nobody.
+             */
+            ext = String((el.meta && el.meta.extension) || '').trim();
+        } else if (el.type === 'dialogue') {
+            dialogue.push({
+                character: who,
+                line: String(el.text || '').trim(),
+                ...(ext ? { extension: ext } : {}),
+            });
         }
     }
     return { text, dialogue };
@@ -165,7 +182,20 @@ function resyncShots(projectId, opts) {
                 for (const line of cardLines) {
                     const exact = screenplay.dialogue.find(
                         d => sameLine(d, line) && !carried.includes(d));
-                    if (exact) { carried.push(exact); updated.push(exact); continue; }
+                    if (exact) {
+                        carried.push(exact);
+                        updated.push(exact);
+                        // The words already matched; the CUE may not have. A
+                        // card that gains V.O. here is the repair path for
+                        // every card written before the extension was kept.
+                        const had = String(line.extension || '').trim();
+                        const now = String(exact.extension || '').trim();
+                        if (had !== now) {
+                            change.updates.push({ field: 'dialogue_extension',
+                                from: had || '(none)', to: now || '(none)' });
+                        }
+                        continue;
+                    }
                     /*
                      * NO FALLBACK. An exact match or nothing.
                      *
@@ -250,12 +280,33 @@ function resyncShots(projectId, opts) {
         if (sceneEntry.shots.length || sceneEntry.needs_a_person.length) plan.push(sceneEntry);
     }
 
+    /*
+     * A resync CHANGES CARDS, and the audit is how you see what it did.
+     *
+     * Only on apply: a dry run wrote nothing, so auditing it would report the
+     * board as it already is and read as a consequence of a plan that has not
+     * happened. Never throws — reconciliation that succeeded must not be
+     * reported as failed because the check afterwards could not run.
+     */
+    let audit = null;
+    if (apply) {
+        try {
+            const report = require('./shot-audit').auditShots(projectId);
+            audit = {
+                counts: report.counts,
+                blocking: !!report.blocking,
+                errors: (report.findings || []).filter(f => f.severity === 'error'),
+            };
+        } catch (_) { audit = null; }
+    }
+
     return {
         project_id: projectId,
         applied: apply,
         scenes_examined: scenes.length,
         cards_changed: changed,
         needs_a_person: plan.reduce((n, s) => n + s.needs_a_person.length, 0),
+        ...(audit ? { audit } : {}),
         plan,
         note: apply
             ? 'Cards reconciled and fingerprints restamped. Nothing was deleted and no description was '

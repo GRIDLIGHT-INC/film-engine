@@ -21202,10 +21202,23 @@ THREE.GLTFLoader = GLTFLoader;
         existing.forEach(el => el.remove());
 
         const blocks = bodyBlocks(editor);
-        let currentLine = 0;
-        let pageNum = 1;
-        let lastBreakAt = null;
 
+        /*
+         * Measure every block FIRST, then place the breaks.
+         *
+         * The old loop added a block's lines and broke the moment the running
+         * total crossed 55 — which puts the break AFTER the block that busted
+         * the budget. An action paragraph is often ten or twenty lines, so a
+         * page could carry 69 lines against a budget of 55 with nothing saying
+         * so, and the print sheet is a fixed 11 inches: an overfull page does
+         * not stretch, the browser reflows it and puts its OWN break somewhere
+         * the format forbids. That is how a scene heading ended up alone at the
+         * foot of a page with its action overleaf — MAY_END_PAGE never got a
+         * say, because the break that stranded it was not one we placed.
+         *
+         * Held in lockstep with lib/screenplay-pagination.js.
+         */
+        const lineCount = [];
         for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
             const type = block.dataset.elementType;
@@ -21238,10 +21251,17 @@ THREE.GLTFLoader = GLTFLoader;
                 default: elementLines = Math.ceil(charCount / 60) + 1;
             }
 
-            currentLine += elementLines;
+            lineCount.push(elementLines);
+        }
 
-            // Check if we crossed a page boundary
-            if (currentLine >= 55 * pageNum && i < blocks.length - 1) {
+        let pageStart = 0;
+        let used = 0;
+        let pageNum = 1;
+
+        for (let i = 0; i < blocks.length; i++) {
+            // `used > 0` so a single block longer than a whole page overflows
+            // rather than being pushed for ever onto a page it can never fit.
+            if (used > 0 && used + lineCount[i] > 55) {
                 pageNum++;
 
                 /*
@@ -21267,17 +21287,23 @@ THREE.GLTFLoader = GLTFLoader;
                  * module (build.target is single-html), and two paginators that
                  * disagree is how a fix survives in tests and not on screen.
                  */
-                let at = i;
-                while (at >= 0 && MAY_END_PAGE[blocks[at].dataset.elementType] === false) at--;
-                if (at < 0 || (lastBreakAt !== null && at <= lastBreakAt)) at = i;
-                lastBreakAt = at;
+                let at = i - 1;
+                while (at > pageStart && MAY_END_PAGE[blocks[at].dataset.elementType] === false) at--;
+                if (at < pageStart || MAY_END_PAGE[blocks[at].dataset.elementType] === false) at = i - 1;
 
                 const indicator = document.createElement('div');
                 indicator.className = 'page-break-indicator';
                 indicator.dataset.pageLabel = `Page ${pageNum}`;
                 indicator.contentEditable = 'false';
                 blocks[at].after(indicator);
+
+                // Everything from the break to here has moved onto the new page.
+                used = 0;
+                for (let k = at + 1; k <= i; k++) used += lineCount[k];
+                pageStart = at + 1;
+                continue;
             }
+            used += lineCount[i];
         }
     }
 
@@ -22874,7 +22900,35 @@ THREE.GLTFLoader = GLTFLoader;
         return headings.length;
     }
 
+    /**
+     * The revision this draft is, as it should appear in the corner of a page.
+     *
+     * Production reads the revision off the page, not off the title page — a
+     * page torn out of a folder has to say which draft it belongs to or it
+     * cannot be filed, and "Rev C" living only in the title-page Notes means
+     * every body page is anonymous. So it is stamped top-left of every page.
+     *
+     * Read from the script's own revision field when it has one, otherwise
+     * lifted out of the Notes line where this production actually writes it
+     * ("62 seconds. 16:9. Rev D."). Returns '' when the draft names no
+     * revision, and an empty mark draws nothing rather than an empty box.
+     */
+    function revisionMark(container) {
+        const block = (container || document).querySelector('.title-page-block');
+        let data = {};
+        if (block && block.dataset.titlePageData) {
+            try { data = JSON.parse(block.dataset.titlePageData) || {}; } catch (_) { data = {}; }
+        }
+        const explicit = data.Revision || data.revision;
+        if (explicit) return String(explicit).trim();
+        const hay = [data.Notes, data.notes, data.Draft, data['Draft date']]
+            .filter(Boolean).join(' ');
+        const m = /\bRev(?:ision)?\.?\s*([A-Z0-9][A-Za-z0-9.\-]*)/.exec(hay);
+        return m ? ('Rev ' + m[1]) : '';
+    }
+
     function toPrintSheets(container) {
+        const rev = revisionMark(container);
         const sheets = [];
         let cur = null;
         for (const node of [...container.childNodes]) {
@@ -22905,6 +22959,15 @@ THREE.GLTFLoader = GLTFLoader;
                     num.className = 'print-page-number';
                     num.textContent = n + '.';
                     sheet.prepend(num);
+                }
+                // Top LEFT, opposite the page number, on every body page
+                // including the first — the first page is the one most likely
+                // to be handed to somebody on its own.
+                if (rev) {
+                    const r = document.createElement('div');
+                    r.className = 'print-revision-mark';
+                    r.textContent = rev;
+                    sheet.prepend(r);
                 }
             }
             container.appendChild(sheet);
@@ -22937,6 +23000,9 @@ THREE.GLTFLoader = GLTFLoader;
         }
         .print-sheet:last-child { page-break-after: auto; break-after: auto; }
         .print-page-number { position: absolute; top: 0.5in; right: 1in; }
+        /* The revision, opposite the page number. Left margin is 1.5in, so it
+           sits under the binding edge rather than over the text block. */
+        .print-revision-mark { position: absolute; top: 0.5in; left: 1in; font-size: 10pt; }
         /* Shooting-script scene numbers, both margins; eighths under the right. */
         .shoot-heading { position: relative; }
         .shoot-num { position: absolute; top: 0; font-weight: bold; }
@@ -37497,6 +37563,29 @@ ${fountainText.slice(0, 50000)}`;
             </div>
         </div>
 
+        <!--
+          WHAT THE SHOT SAYS.
+          The card has carried its dialogue since the breakdown wrote it and no
+          surface in this app displayed it: not here, not the board, not the
+          production node, which passes a COUNT. So the one field that decides
+          the voice track, and now the performance the video model is asked
+          for, was invisible to the person directing it.
+          Read-only on purpose. The screenplay is the source of truth for what
+          is said, Resync reconciles these lines against it, and a second place
+          to edit a line is how a board and a script come to disagree about the
+          words an actor speaks.
+        -->
+        <div class="form-group" id="${p}DialogueGroup" hidden>
+            <label>What is said
+                <span class="text-muted text-sm">from the screenplay &mdash; edit it there, then Resync</span>
+            </label>
+            <div id="${p}Dialogue" style="line-height:1.6;"></div>
+            <div class="text-sm text-muted" style="line-height:1.45;">
+                Reaches the voice generation, and tells the video model whether a mouth in frame is
+                moving. A line marked V.O. or O.S. does the opposite &mdash; it says nobody in frame speaks.
+            </div>
+        </div>
+
         <div class="form-group">
             <label>Direction
                 <span class="text-muted text-sm">what you want on top of the screenplay &mdash; how it is blocked, what we see</span>
@@ -37653,11 +37742,42 @@ ${fountainText.slice(0, 50000)}`;
         };
     }
 
+    /** The cue extension on a line, from the field or from the name. */
+    function cueExtensionOf(line) {
+        if (!line) return '';
+        const explicit = String(line.extension || '').trim();
+        if (explicit) return explicit;
+        const m = String(line.character || '').match(/\(([^)]+)\)\s*$/);
+        return m ? m[1].trim() : '';
+    }
+
     function fillBlockingPanel(p, card, shot) {
         const written = document.getElementById(p + 'Written');
         if (written) written.value = (card.description || '').trim();
         const dir = document.getElementById(p + 'Direction');
         if (dir) dir.value = card.direction || '';
+
+        const group = document.getElementById(p + 'DialogueGroup');
+        const host = document.getElementById(p + 'Dialogue');
+        const lines = Array.isArray(card.dialogue) ? card.dialogue.filter(Boolean) : [];
+        if (group) group.hidden = !lines.length;
+        if (host) {
+            host.innerHTML = lines.map(l => {
+                const ext = cueExtensionOf(l);
+                const who = String(l.character || '').replace(/\([^)]*\)\s*$/, '').trim();
+                const off = /^(V\.?O\.?|O\.?S\.?|O\.?C\.?)$/i.test(ext.replace(/[\s.]+/g, ''));
+                return `<div style="margin:0 0 8px;">
+                    <div style="font-weight:600;letter-spacing:.04em;">${esc(who)}
+                        ${ext ? `<span class="tag" style="margin-left:6px;border-color:${off
+                            ? 'var(--gl-warning,#f59e0b)' : 'var(--gl-text-muted,#94a3b8)'};color:${off
+                            ? 'var(--gl-warning,#f59e0b)' : 'var(--gl-text-muted,#94a3b8)'};"
+                            title="${off ? 'Heard but not seen \u2014 no mouth in frame moves'
+                                         : 'Spoken on camera'}">${esc(ext)}</span>` : ''}
+                    </div>
+                    <div style="padding-left:12px;">${esc(String(l.line || ''))}</div>
+                </div>`;
+            }).join('');
+        }
     }
 
     /* The note is the one field nothing trims, so its length is worth seeing. */
@@ -38635,7 +38755,33 @@ ${fountainText.slice(0, 50000)}`;
                      onclick="editShotCard('${f.shot_id}')">+ ${missing} unset</span>`
             : '';
         const dur = f.duration_ms ? `<span class="tag">${(f.duration_ms / 1000).toFixed(1)}s</span>` : '';
-        return screenplayDriftTag(f) + impactTag(f) + tags + add + dur + storyboardPrevisTag(f);
+        return screenplayDriftTag(f) + impactTag(f) + dialogueTag(f) + tags + add + dur + storyboardPrevisTag(f);
+    }
+
+    /**
+     * Does this shot SPEAK, and is the speaker in frame?
+     *
+     * The board showed framing, lens, movement, lighting and duration, and
+     * said nothing about the one field that decides the voice track. A shot
+     * with a line and a shot without are different shots to direct and
+     * different shots to generate, and you could not tell them apart here.
+     *
+     * A voice-over is marked differently on purpose, because it is the
+     * opposite instruction: the line is heard and NO mouth in frame moves.
+     */
+    function dialogueTag(f) {
+        const lines = Array.isArray(f.dialogue) ? f.dialogue.filter(Boolean) : [];
+        if (!lines.length) return '';
+        const off = lines.every(l => {
+            const ext = cueExtensionOf(l).replace(/[\s.]+/g, '');
+            return /^(VO|OS|OC)$/i.test(ext);
+        });
+        const colour = off ? 'var(--gl-warning,#f59e0b)' : 'var(--gl-brand-cyan,#38bdf8)';
+        const first = String(lines[0].line || '').slice(0, 70);
+        const label = off ? `V.O. \u00d7${lines.length}` : `speaks \u00d7${lines.length}`;
+        return `<span class="tag" style="cursor:pointer;border-color:${colour};color:${colour};"
+            title="${esc(first)}${lines.length > 1 ? ' \u2026' : ''}"
+            onclick="editShotCard('${f.shot_id}')">${label}</span>`;
     }
 
     /**

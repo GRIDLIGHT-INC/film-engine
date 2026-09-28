@@ -96,8 +96,14 @@ test('the paginator still honours what may not be split', () => {
     // nothing. Third time this codebase has paid for that; non-greedy instead.
     assert.match(body, /while\s*\([\s\S]{0,140}?MAY_END_PAGE[\s\S]{0,80}?===\s*false\s*\)\s*at--/,
         'pagination no longer walks the break up past things that belong together');
-    assert.match(body, /lastBreakAt/,
-        'nothing stops the walk landing on the same block twice');
+    // The walk is bounded by the START OF THE CURRENT PAGE, which is strictly
+    // stronger than the old `lastBreakAt` guard: that only stopped the break
+    // landing on the previous break, while this stops it walking back into a
+    // page that has already been closed at all.
+    assert.match(body, /while\s*\(\s*at\s*>\s*pageStart/,
+        'the walk is no longer bounded by the start of the page, so it can run back into a closed one');
+    assert.match(body, /at\s*<\s*pageStart/,
+        'nothing catches a page whose every element refuses to end it');
 });
 
 /* ── and the defences stay, because a browser still leaves divs ──────── */

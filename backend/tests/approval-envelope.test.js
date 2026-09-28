@@ -298,15 +298,24 @@ test('a run over its own max_credits is refused before anything generates', () =
     const { projectId } = makeShot({ code: '4A' });
     const { buildRunPlan } = require('../lib/run-plan');
 
-    const free = buildRunPlan(projectId, {});
+    /*
+     * `ignore_audit` throughout, because this test is about the CEILING.
+     *
+     * The fixture card names RAY, who has no record and no plate — which is
+     * precisely the `unresolved_subject` the card audit refuses a run over, so
+     * without this every assertion here would pass for the wrong reason and
+     * the ceiling would never be exercised at all. That the audit refuses it
+     * is asserted where it belongs, in audit-gates-the-run.test.js.
+     */
+    const free = buildRunPlan(projectId, { ignore_audit: true });
     assert.strictEqual(free.run_ceiling, null,
         'a plan with no ceiling reported one — an absent ceiling must not become zero');
 
-    const generous = buildRunPlan(projectId, { max_credits: 1e9 });
+    const generous = buildRunPlan(projectId, { max_credits: 1e9, ignore_audit: true });
     assert.strictEqual(generous.run_ceiling.exceeded, false);
     assert.strictEqual(generous.refused, false);
 
-    const mean = buildRunPlan(projectId, { max_credits: 1e-9 });
+    const mean = buildRunPlan(projectId, { max_credits: 1e-9, ignore_audit: true });
     if (mean.projected_cost > 0) {
         assert.strictEqual(mean.run_ceiling.exceeded, true);
         assert.strictEqual(mean.refused, true, 'a run over its ceiling was not refused');
@@ -324,7 +333,7 @@ test('ignore_budget does not lift the per-run ceiling', () => {
     const { projectId, shotId } = makeShot({ code: '5A' });
     frame(shotId, projectId, 1, {});
     const { buildRunPlan } = require('../lib/run-plan');
-    const plan = buildRunPlan(projectId, { max_credits: 1e-9, ignore_budget: true });
+    const plan = buildRunPlan(projectId, { max_credits: 1e-9, ignore_budget: true, ignore_audit: true });
     if (plan.projected_cost > 0) {
         assert.strictEqual(plan.refused, true,
             'ignore_budget waved away the ceiling the caller set for this run');

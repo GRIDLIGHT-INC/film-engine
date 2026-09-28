@@ -389,7 +389,12 @@ film-engine/
 │       ├── version.test.js           # One version, stated in package.json, declared identically everywhere and read by the servers
 │       ├── screenplay-drift.test.js    # A rewrite flags the shots written from the old draft
 │       ├── shot-audit.test.js          # A plural in the prose still finds the subject; an unresolvable one is an ERROR
-│       ├── plate-versions.test.js      # Replacing a plate archives the old one; plates were the last paid artefact still deleted
+│       ├── plate-versions.test.js      # The archived copy is the OLD picture: stash before the write, commit the ledger after
+│       ├── audit-runs-unasked.test.js # The card audit fires on derivation, on resync and at run_plan — never only on a button
+│       ├── dialogue-reaches-generation.test.js # A shot that speaks says so to the video model; a V.O. says the opposite
+│       ├── plate-beats-paragraph.test.js # When the picture is attached the prose stops describing it, but keeps every directive
+│       ├── audit-gates-the-run.test.js   # An unresolvable subject refuses the run — the prevention, at the one place money is spent
+│       ├── plate-shown-equals-plate-sent.test.js # The card and the gatherer accept the same plate types, so a picture sent is a picture seen
 │       ├── shots-resync.test.js        # A dry run writes nothing; an apply never touches a description or a shot id
 │       ├── impact.test.js              # A changed frame warns that the footage built on it is behind
 │       ├── mcp-no-server-llm.test.js   # No MCP tool hands the reasoning back to a server-side LLM

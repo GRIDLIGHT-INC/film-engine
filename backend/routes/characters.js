@@ -179,8 +179,24 @@ function listCharacters(req, res, projectId) {
          * A demoted plate is skipped: `gallery_promote` writes plate_role, and
          * a concept is by definition the picture nobody chose.
          */
+        /*
+         * BOTH PLATE TYPES, because the GATHERER takes both.
+         *
+         * `lib/shot-references.js` selects a character's plate with
+         * `asset_type IN ('character_sheet','reference_image')`; this asked
+         * for `character_sheet` alone. So a character whose picture arrived as
+         * a `reference_image` — an upload, or a subject refiled from a prop —
+         * was conditioned on that plate in every frame it appeared in and
+         * showed NO PICTURE on its card.
+         *
+         * That is the third time this exact shape has been fixed in this
+         * function: the note above records the same split for `has_plate` and
+         * again for the view filter. Two queries answering one question is how
+         * a display comes to disagree with the generator, and the answer is
+         * always to make them ask the same thing.
+         */
         `SELECT file_name, project_id, version, created_at FROM film_assets
-           WHERE asset_type = 'character_sheet' AND character_id = ?
+           WHERE asset_type IN ('character_sheet', 'reference_image') AND character_id = ?
              AND COALESCE(json_extract(metadata, '$.plate_role'), 'reference') = 'reference'
            ORDER BY ${orderByViewSql()}, created_at DESC LIMIT 1`
     );
@@ -1205,8 +1221,11 @@ function previewOrbit(res, charId, query) {
 function frontPlateUriFor(ch) {
     try {
         const row = db.prepare(
+            // Same widening as the card query above, and for the same reason:
+            // the plate a frame is generated from must be the plate a person
+            // can see.
             `SELECT file_name FROM film_assets
-              WHERE character_id = ? AND asset_type = 'character_sheet'
+              WHERE character_id = ? AND asset_type IN ('character_sheet', 'reference_image')
                 AND json_extract(metadata, '$.view') = 'front'
               ORDER BY created_at DESC LIMIT 1`).get(ch.id);
         if (!row) return null;
@@ -1324,7 +1343,7 @@ async function generateOrbit(req, res, charId) {
          * whichever the query happens to return.
          */
         const stale = db.prepare(
-            `SELECT id FROM film_assets
+            `SELECT id, version, file_path, file_name, metadata FROM film_assets
               WHERE project_id = ? AND character_id = ?
                 AND asset_type IN ('character_sheet', 'reference_image')
                 AND json_extract(metadata, '$.view') = ?`
@@ -1339,17 +1358,33 @@ async function generateOrbit(req, res, charId) {
             try { fsx.unlinkSync(scratchPath); } catch (_) { /* the frame we just cut */ }
             continue;
         }
+        /*
+         * KEPT, NOT DELETED. This loop used to write the cut over the plate and
+         * then `DELETE FROM film_assets` the row it replaced — the one path a
+         * character plate could take where a generation somebody paid for was
+         * destroyed in both the ledger and the disk. Plates generated through
+         * reference-plates.js have been archived since the version store
+         * shipped; the turnaround was the hole, and it is the path the MANNY
+         * plates came through.
+         *
+         * The stash runs BEFORE the rename, because the rename is what
+         * destroys the outgoing picture.
+         */
+        const { stashPriorPlate, commitPriorPlate } = require('../lib/reference-plates');
+        const stash = stashPriorPlate(ch.project_id, { id: charId },
+            { fkColumn: 'character_id', assetType: 'character_sheet' }, filename, { rows: stale });
+
         // Taken: the cut becomes the plate for this view.
         try { fsx.renameSync(scratchPath, filePath); } catch (_) { continue; }
-        for (const old of stale) db.prepare('DELETE FROM film_assets WHERE id = ?').run(old.id);
+        const plateVersion = commitPriorPlate(stash);
 
         const assetId = generateId();
         db.prepare(
             `INSERT INTO film_assets (
                 id, project_id, character_id, asset_type, file_path, file_name, format, mime_type,
                 version, metadata, provider, provider_model, license_source, license_status
-             ) VALUES (?, ?, ?, 'character_sheet', ?, ?, 'png', 'image/png', 1, ?, ?, ?, 'generated', 'generated')`
-        ).run(assetId, ch.project_id, charId, filePath, filename,
+             ) VALUES (?, ?, ?, 'character_sheet', ?, ?, 'png', 'image/png', ?, ?, ?, ?, 'generated', 'generated')`
+        ).run(assetId, ch.project_id, charId, filePath, filename, plateVersion,
             JSON.stringify({ character_id: charId, view: frame.view, from: 'orbit', at_seconds: frame.atSeconds }),
             provider.id, result.provider_model || '');
         /*

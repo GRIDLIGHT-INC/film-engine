@@ -309,6 +309,8 @@ async function breakdownSync(req, res, projectId) {
         if (autoSave) {
             const saveResults = autoSaveShots(result.scenes || [{ scene_id: sceneIds[0], cards: result.cards }]);
             result.saved = saveResults;
+            const audit = auditAfterDerive(projectId);
+            if (audit) result.audit = audit;
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -381,6 +383,8 @@ async function breakdownStream(req, res, projectId) {
                 if (body.auto_save === true) {
                     const saveResults = autoSaveShots([{ scene_id: sceneIds[0], cards: parsed.cards }]);
                     sendEvent('saved', saveResults[0] || {});
+                    const audit = auditAfterDerive(projectId);
+                    if (audit) sendEvent('audit', audit);
                 }
                 sendEvent('result', parsed);
             }
@@ -812,6 +816,42 @@ function normalizeCard(card) {
         duration_ms: Math.max(1000, Math.min(15000, parseInt(card.duration_ms || card.duration_s * 1000) || 4000)),
         generation_mode: card.generation_mode || 'creative'
     };
+}
+
+/**
+ * The audit of what was just derived, attached to the response that derived it.
+ *
+ * NO FREE-STANDING CHECKER SURVIVES CONTACT WITH A DEADLINE. `elements_list`
+ * and `scale_check` both existed while the board carried three subjects that
+ * reached the model as neither picture nor description, because nothing made
+ * anyone look at them. Every defect the hand audit found was present the
+ * moment the shots were created — so the moment the shots are created is where
+ * the machine has to say so, in the same response, unasked.
+ *
+ * `run_plan` refuses on an error and is the gate that protects the money. This
+ * is the earlier, cheaper one that protects the afternoon.
+ *
+ * Never throws, and never changes what was saved. A failure to audit must not
+ * fail a derivation that already succeeded.
+ */
+function auditAfterDerive(projectId) {
+    try {
+        const { auditShots } = require('../lib/shot-audit');
+        const report = auditShots(projectId);
+        const errors = (report.findings || []).filter(f => f.severity === 'error');
+        return {
+            counts: report.counts,
+            blocking: !!report.blocking,
+            errors,
+            note: errors.length
+                ? `${errors.length} subject(s) on these cards would reach the model as neither a reference `
+                  + 'picture nor a description, so it would invent them. run_plan will refuse until they '
+                  + 'are fixed. Run shot_audit for the warnings and notes as well — free.'
+                : 'No errors. Run shot_audit for the warnings and notes as well — free.',
+        };
+    } catch (_) {
+        return null;
+    }
 }
 
 function autoSaveShots(sceneGroups) {

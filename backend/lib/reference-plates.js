@@ -780,6 +780,110 @@ function plateFileName(kind, subjectName, view) {
 }
 
 /**
+ * Copy the plate that is ABOUT TO BE OVERWRITTEN out of the way.
+ *
+ * ORDERING IS THE WHOLE POINT. The first version of this archived after the
+ * replacement had already been written to the same filename — so every
+ * `versions/{name}_v{n}.png` it produced was a second copy of the NEW picture,
+ * and the attempt a director wanted back was gone from the disk while the row
+ * that named it still claimed to point at it. A version store that keeps the
+ * ledger and loses the bytes is worse than none, because it reports success.
+ *
+ * So this runs BEFORE the write, and it touches the filesystem only. Nothing
+ * in the ledger moves until `commitPriorPlate` is told the replacement exists,
+ * because a generation can still fail after this point and a subject must not
+ * be left with every plate marked superseded and nothing standing in for them.
+ *
+ * `opts.rows` lets a caller that identifies its prior plates some other way —
+ * the orbit turnaround matches on the view in the metadata, not the filename —
+ * hand them in rather than have them looked up again.
+ *
+ * Never throws. Returns null when there is nothing to keep.
+ */
+function stashPriorPlate(projectId, subject, spec, fileName, opts) {
+    const fs_ = require('fs');
+    const path_ = require('path');
+    try {
+        const prior = (opts && Array.isArray(opts.rows) && opts.rows.length)
+            ? opts.rows
+            : db.prepare(
+                `SELECT id, version, file_path, file_name, metadata FROM film_assets
+                  WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?
+                  ORDER BY version DESC`).all(projectId, subject.id, spec.assetType, fileName);
+        if (!prior.length) return null;
+
+        const highest = prior.reduce((n, r) => Math.max(n, Number(r.version) || 1), 1);
+        const stash = { rows: prior, version: highest + 1, moved: [] };
+
+        for (const row of prior) {
+            let meta = {};
+            try { meta = JSON.parse(row.metadata || '{}'); } catch (_) { meta = {}; }
+            // An already-archived version owns its own copy and its own name.
+            if (meta.plate_role === 'superseded') continue;
+            const livePath = row.file_path || '';
+            // Only the row still pointing at the file we are about to write
+            // over needs its bytes rescued.
+            if (!livePath || path_.basename(livePath) !== fileName) continue;
+            if (!fs_.existsSync(livePath)) continue;
+            const base = path_.basename(fileName, path_.extname(fileName));
+            const ext = path_.extname(fileName) || '.png';
+            const dest = path_.join(path_.dirname(livePath), 'versions',
+                `${base}_v${Number(row.version) || 1}${ext}`);
+            fs_.mkdirSync(path_.dirname(dest), { recursive: true });
+            fs_.copyFileSync(livePath, dest);
+            stash.moved.push({ id: row.id, dest, file_name: path_.basename(dest) });
+        }
+        return stash;
+    } catch (_) {
+        // Nothing was copied, so nothing is half-done. The caller carries on
+        // and the incoming plate takes a version above whatever is there.
+        return null;
+    }
+}
+
+/**
+ * The replacement landed. Move the ledger to match the disk.
+ *
+ * Re-points every row that was stashed at its archived copy and marks it
+ * `superseded` — a role `sendableSql()` already excludes, so a kept version
+ * can never be picked up as the reference by a gather query.
+ *
+ * Never throws: failing to bookkeep an old attempt must not fail a generation
+ * that has already succeeded and been paid for. Returns the version number the
+ * INCOMING plate should carry.
+ */
+function commitPriorPlate(stash) {
+    if (!stash) return 1;
+    try {
+        const moved = new Map((stash.moved || []).map(m => [m.id, m]));
+        for (const row of stash.rows) {
+            let meta = {};
+            try { meta = JSON.parse(row.metadata || '{}'); } catch (_) { meta = {}; }
+            if (meta.plate_role === 'superseded') continue;
+            const m = moved.get(row.id);
+            if (m) {
+                db.prepare('UPDATE film_assets SET file_path = ?, file_name = ? WHERE id = ?')
+                    .run(m.dest, m.file_name, row.id);
+            }
+            meta.plate_role = 'superseded';
+            meta.superseded_at = new Date().toISOString();
+            db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
+                .run(JSON.stringify(meta), row.id);
+        }
+        return stash.version;
+    } catch (_) {
+        /*
+         * The bookkeeping failed and the generation did not. Falling back to
+         * the old destructive behaviour here would be the worst of both, so
+         * the prior rows are left exactly as they are and the incoming plate
+         * takes a version above them — a duplicate reference is visible and
+         * recoverable; a deleted one is not.
+         */
+        return (stash && stash.version) || 2;
+    }
+}
+
+/**
  * Keep the plate that is being replaced, instead of deleting it.
  *
  * Regenerating a plate used to `DELETE FROM film_assets` for that view and
@@ -805,53 +909,14 @@ function plateFileName(kind, subjectName, view) {
  * Returns the version number the INCOMING plate should carry.
  */
 function supersedePlate(projectId, subject, spec, fileName, incomingPath) {
-    const fs_ = require('fs');
-    const path_ = require('path');
-    try {
-        const prior = db.prepare(
-            `SELECT id, version, file_path, file_name, metadata FROM film_assets
-              WHERE project_id = ? AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?
-              ORDER BY version DESC`).all(projectId, subject.id, spec.assetType, fileName);
-        if (!prior.length) return 1;
-
-        const highest = prior.reduce((n, r) => Math.max(n, Number(r.version) || 1), 1);
-        const live = prior[0];
-        const livePath = live.file_path || '';
-        const incoming = typeof incomingPath === 'string' ? incomingPath : (incomingPath && incomingPath.path) || '';
-
-        // Only the row still pointing at the live file needs its picture moved
-        // aside; an already-archived version owns its own copy.
-        const sameFile = livePath && incoming && path_.resolve(livePath) === path_.resolve(incoming);
-        if (sameFile && fs_.existsSync(livePath)) {
-            const dest = path_.join(path_.dirname(livePath), 'versions',
-                `${path_.basename(fileName, '.png')}_v${live.version || 1}.png`);
-            fs_.mkdirSync(path_.dirname(dest), { recursive: true });
-            fs_.copyFileSync(livePath, dest);
-            db.prepare('UPDATE film_assets SET file_path = ?, file_name = ? WHERE id = ?')
-                .run(dest, path_.basename(dest), live.id);
-        }
-
-        // Every prior row for this view steps out of the way of the new one.
-        for (const row of prior) {
-            let meta = {};
-            try { meta = JSON.parse(row.metadata || '{}'); } catch (_) { meta = {}; }
-            if (meta.plate_role === 'superseded') continue;
-            meta.plate_role = 'superseded';
-            meta.superseded_at = new Date().toISOString();
-            db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
-                .run(JSON.stringify(meta), row.id);
-        }
-        return highest + 1;
-    } catch (_) {
-        /*
-         * The archive failed and the generation did not. Falling back to the
-         * old destructive behaviour here would be the worst of both, so the
-         * prior rows are left exactly as they are and the incoming plate takes
-         * a version above them — a duplicate reference is visible and
-         * recoverable; a deleted one is not.
-         */
-        return 2;
-    }
+    /*
+     * Kept as one call for any caller that archives after the fact. It is the
+     * WRONG ORDER — by the time it runs the replacement has already been
+     * written over the picture it is meant to keep — so the two halves are
+     * exported separately and every path inside this repo uses those instead.
+     */
+    void incomingPath;
+    return commitPriorPlate(stashPriorPlate(projectId, subject, spec, fileName));
 }
 
 /**
@@ -1072,6 +1137,13 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
         ? explorationFileName(kind, subject.name, view, exploreToken)
         : plateFileName(kind, subject.name, view);
 
+    /*
+     * Rescue the outgoing picture BEFORE the new one is written over its name.
+     * An exploration stashes nothing: it replaces nothing, which is the whole
+     * reason its filename is unique.
+     */
+    const stash = explore ? null : stashPriorPlate(projectId, subject, spec, fileName);
+
     let filePath;
     try {
         filePath = await persistProviderMedia(projectId, spec.subdir, fileName, result.data, { serveDir: 'images' });
@@ -1096,7 +1168,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
     // exploring, and the whole reason its filename is unique.
     let nextVersion = 1;
     if (!explore) {
-        nextVersion = supersedePlate(projectId, subject, spec, fileName, filePath);
+        nextVersion = commitPriorPlate(stash);
     }
 
     const assetId = generateId();
@@ -1157,6 +1229,7 @@ async function generatePlate({ projectId, kind, subject, stylePreset, provider, 
 }
 
 module.exports = {
+    stashPriorPlate, commitPriorPlate, supersedePlate,
     LOCATION_MIN_EDGE, sizeIsHonoured, canReachFloor, capableProviders, floorReason,
     viewAnchoring, conditioningProviders, viewMetadata, anchoringOf,
     locationFloorPixels, plateProviderFor,

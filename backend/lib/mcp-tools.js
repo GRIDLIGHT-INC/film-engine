@@ -2740,11 +2740,12 @@ const PRODUCTION_TOOLS = [
     {
         name: 'run_plan',
         handler: handleProductionReports, method: 'GET',
-        description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget, or a `max_credits` ceiling given for this run.',
+        description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget or a `max_credits` ceiling given for this run — and ALSO when the card audit finds a subject that would reach the provider as neither a reference picture nor a description, because that frame comes back with something invented in it and the money is gone. `audit` carries the counts either way; ignore_audit=true generates regardless.',
         path: a => {
             const q = [];
             if (a.order) q.push(`order=${encodeURIComponent(a.order)}`);
             if (a.ignore_budget) q.push('ignore_budget=true');
+            if (a.ignore_audit) q.push('ignore_audit=true');
             if (a.max_credits) q.push(`max_credits=${encodeURIComponent(a.max_credits)}`);
             return `/film/projects/${a.project_id}/run-plan${q.length ? '?' + q.join('&') : ''}`;
         },
@@ -2752,6 +2753,10 @@ const PRODUCTION_TOOLS = [
             project_id: { type: 'string' },
             order: { type: 'string', description: '"model" (default) or "shot".' },
             ignore_budget: { type: 'boolean', description: 'Plan anyway when it would exceed the budget.' },
+            ignore_audit: { type: 'boolean', description:
+                'Generate even though a card names a subject the provider will receive neither a '
+                + 'picture nor a description of. Say it deliberately: the frame comes back with that '
+                + 'subject invented, and it will look like a choice rather than a gap.' },
             max_credits: { type: 'number', description:
                 'A ceiling for THIS run. The project budget refuses the last call that would take '
                 + 'the production past its total; this bounds one run before its first generation, '

@@ -306,6 +306,10 @@ function handleProductionReports(req, res, urlParts, query) {
         const plan = buildRunPlan(urlParts[2], {
             order: q.order,
             ignore_budget: q.ignore_budget === 'true',
+            // Deliberate override, same shape as ignore_compliance: a director
+            // may know a subject is meant to be invented. It has to be said
+            // out loud rather than being the default.
+            ignore_audit: q.ignore_audit === 'true',
             // A ceiling for THIS run, bounding a loop of calls rather than the
             // last one. Deliberately not liftable by ignore_budget — see the
             // reasoning beside run_ceiling in lib/run-plan.js.

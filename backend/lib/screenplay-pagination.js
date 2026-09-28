@@ -96,34 +96,62 @@ function elementLines(type, charCount) {
  * @param {Array<{type: string, length: number}>} blocks
  * @returns {number[]} indices; a break belongs after each one
  */
+/**
+ * Where the page breaks fall, as indices to break AFTER.
+ *
+ * BREAK BEFORE THE ELEMENT THAT WOULD OVERFLOW, not after it.
+ *
+ * This used to add each element's lines and then break the moment the running
+ * total crossed 55 — which puts the break AFTER the element that busted the
+ * budget. An action paragraph is often ten or twenty lines, so a page could
+ * carry 69 lines against a budget of 55 and nothing said so. Measured on a
+ * real two-page draft: page one ran fourteen lines long.
+ *
+ * That overflow is what produced the defect people actually saw. The print
+ * sheet is a fixed 11 inches, so an overfull page does not stretch — the
+ * browser reflows it and puts its own break somewhere the format forbids, and
+ * a scene heading ends up alone at the foot of a page with its action
+ * overleaf. The keep-with-next rule below was never reached, because the break
+ * that stranded the heading was not one this function placed.
+ *
+ * So the test is now "does the NEXT element still fit", and the page ends with
+ * the last element that does. Then the keep-with-next walk runs as before.
+ */
 function pageBreakPositions(blocks) {
     const out = [];
-    let line = 0;
-    let page = 1;
+    const lines = blocks.map(b => elementLines(b.type, b.length || 0));
+    let pageStart = 0;
+    let used = 0;
 
     for (let i = 0; i < blocks.length; i++) {
-        line += elementLines(blocks[i].type, blocks[i].length || 0);
-
-        if (line >= LINES_PER_PAGE * page && i < blocks.length - 1) {
+        // `used > 0` so a single element longer than a whole page overflows
+        // rather than being pushed for ever onto a page it can never fit.
+        if (used > 0 && used + lines[i] > LINES_PER_PAGE) {
             /*
              * Walk the break UP past anything that belongs with what follows.
              *
              * Moving it up rather than down is what keeps the unit together:
-             * pushing it down would leave the cue on the old page and orphan the
-             * dialogue, which is the bug. Walking up sends the whole unit to the
-             * next page, which is what a screenplay does.
+             * pushing it down would leave the cue on the old page and orphan
+             * the dialogue. Walking up sends the whole unit to the next page,
+             * which is what a screenplay does.
              */
-            let at = i;
-            while (at >= 0 && MAY_END_PAGE[blocks[at].type] === false) at--;
+            let at = i - 1;
+            while (at > pageStart && MAY_END_PAGE[blocks[at].type] === false) at--;
 
-            // Everything back to the page start belongs with the next page — a
-            // whole page of unbreakable elements is not a thing a screenplay
-            // produces, but refusing to loop for ever is cheaper than proving it.
-            if (at < 0 || (out.length && at <= out[out.length - 1])) at = i;
+            // A whole page of unbreakable elements is not something a
+            // screenplay produces, but refusing to loop for ever is cheaper
+            // than proving it.
+            if (at < pageStart || MAY_END_PAGE[blocks[at].type] === false) at = i - 1;
 
             out.push(at);
-            page++;
+
+            // Everything from the break to here has moved onto the new page.
+            used = 0;
+            for (let k = at + 1; k <= i; k++) used += lines[k];
+            pageStart = at + 1;
+            continue;
         }
+        used += lines[i];
     }
     return out;
 }
