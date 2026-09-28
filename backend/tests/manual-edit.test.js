@@ -78,6 +78,10 @@ const NAMED_DIFFERENTLY = {
     'budget-estimate.js updateEstimate': {
         template: { control: 'budgetTemplateSelect', why: 'sent as a query param, not a body key' },
     },
+    // A hold is a toggle on the production graph — its menu item and Ctrl+B —
+    // not an input on a form (PGN-016).
+    'shots.js updateShotCard': { held: { control: 'pgToggleHold', why: 'a toggle on the production graph (menu item, Ctrl+B), not a form field' } },
+    'assets.js updateMusicCue': { held: { control: 'pgToggleHold', why: 'a toggle on the production graph (menu item, Ctrl+B), not a form field' } },
     'budget.js setBudgetLimit': {
         budget_total: { control: 'budget_limit', why: 'the control is named for the limit; saveBudgetLimit remaps it' },
     },
@@ -110,6 +114,7 @@ const NAMED_DIFFERENTLY = {
     'sequences.js updateSequence': {
         joins: { control: 'pgSetJoin',
             why: 'one join per adjacent pair of shots — a type picker and a "how they connect" box per pair, in the production graph\'s sequence drawer' },
+        held: { control: 'pgToggleHold', why: 'a toggle on the production graph (menu item, Ctrl+B), not a form field' },
     },
     'locations.js updateLocation': {
         description_sections: { control: 'saveSheetSection',

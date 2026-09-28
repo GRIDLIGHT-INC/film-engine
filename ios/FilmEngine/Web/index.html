@@ -5221,6 +5221,9 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-node.imp-redo { box-shadow:0 0 0 2px #f06a4a; }
 .pg-node.imp-waiting { box-shadow:0 0 0 2px #e3b341; }
 .pg-node.imp-untracked { box-shadow:0 0 0 1px #8f8fb0 inset; }
+.pg-node.held { opacity:.62; outline:1px dashed #9aa0b4; outline-offset:2px; }
+.pg-held { position:absolute; left:6px; top:-9px; z-index:2; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+  padding:1px 6px; border-radius:10px; background:#2a2c36; color:#c9cde0; border:1px solid #4a4e60; }
 .pg-imp { position:absolute; top:-9px; right:8px; display:flex; gap:3px; z-index:2; }
 .pg-imp span { font-size:8.5px; padding:1px 6px; border-radius:20px; background:#1b1b1f; border:1px solid currentColor; white-space:nowrap; }
 /* colour the pill, legend and drawer box only — never the node's own text */
@@ -43648,7 +43651,8 @@ function pgPort(dir, type, port, extra) {
 
 function pgNodeHtml(n, raw) {
     // Every node type is decorated with its out-of-date state in one place (PGN-005).
-    if (!raw) return pgImpactDecorate(pgNodeHtml(n, true), n);
+    // A hold is drawn the same way on every node type that can carry one (PGN-016).
+    if (!raw) return pgHoldDecorate(pgImpactDecorate(pgNodeHtml(n, true), n), n);
     const sel = PG.sel === n.key ? ' sel' : '';
     const busy = PG.busy.get(n.key);
     const pos = `left:${n.x}px;top:${n.y}px;`;
@@ -44032,6 +44036,13 @@ function pgInitCanvas() {
         pgApplyView(); pgDrawEdges();
     });
 
+    // Ctrl+B (Cmd+B) holds or releases the selected node — not while typing (PGN-016).
+    document.addEventListener('keydown', ev => {
+        if (state.currentPage !== 'productiongraph' || !(ev.ctrlKey || ev.metaKey) || String(ev.key).toLowerCase() !== 'b') return;
+        if (!PG.sel || /^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || '') || (ev.target && ev.target.isContentEditable)) return;
+        ev.preventDefault();
+        pgToggleHold(PG.sel);
+    });
     document.addEventListener('keydown', ev => {
         if (ev.key !== 'Escape' || state.currentPage !== 'productiongraph') return;
         if (document.querySelector('.modal-overlay.open')) return;
@@ -44184,6 +44195,34 @@ function pgImpactDecorate(html, n) {
     if (!pill) return marked;
     const open = marked.indexOf('>');
     return open < 0 ? marked : marked.slice(0, open + 1) + pill + marked.slice(open + 1);
+}
+
+/** A held node is dimmed and carries a "held" badge: batch runs skip it, the film keeps it (PGN-016). */
+function pgHoldDecorate(html, n) {
+    if (!n || !n.held) return html;
+    const marked = html.replace('class="pg-node', 'class="pg-node held');
+    const open = marked.indexOf('>');
+    const badge = `<div class="pg-held" title="Held${n.held_at ? ' since ' + esc(n.held_at) : ''} \u2014 batch runs skip it; it stays in the film. Ctrl+B releases it.">held</div>`;
+    return open < 0 ? marked : marked.slice(0, open + 1) + badge + marked.slice(open + 1);
+}
+
+/** The node types that can be held, and the update route each already has (lib/graph-hold.js HOLDABLE). */
+const PG_HOLD_ROUTES = Object.freeze({
+    shot: id => `/shots/${id}`,
+    sequence: id => `/sequences/${id}`,
+    sound: id => `/music-cues/${id}`,
+});
+
+/** Hold or release a node through its own update route. */
+async function pgToggleHold(key) {
+    const n = pgNode(key);
+    if (!n || !PG_HOLD_ROUTES[n.type]) return;
+    const hold = !n.held;
+    try {
+        await api(PG_HOLD_ROUTES[n.type](n.id), { method: 'PUT', body: JSON.stringify({ held: hold }) });
+        setStatus(hold ? 'Held \u2014 batch runs will skip it. It stays in the film.' : 'Released \u2014 batch runs include it again.');
+        await loadProductionGraph();
+    } catch (err) { setStatus('Could not change the hold: ' + err.message); }
 }
 
 /** An edge into a node that is behind takes that state's colour. */
@@ -44369,6 +44408,7 @@ function pgOpenMenu(x, y, key, group) {
         // Only where the server can plan it (PGN-009); the set is held equal to run-to-here TARGETS.
         if (PG_RUN_TO_HERE_TYPES.includes(n.type)) items.push(`<button onclick="pgMenuDo('to-here')" title="Make everything this still needs, in order, after one confirmation">Run to here</button>`);
         if (n.type === 'shot' || n.type === 'sequence' || n.type === 'sound') items.push(`<button onclick="pgMenuDo('dup')">Duplicate</button>`);
+        if (PG_HOLD_ROUTES[n.type]) items.push(`<button onclick="pgMenuDo('hold')" title="Batch runs skip a held node; the film keeps it (Ctrl+B)">${n.held ? 'Release hold' : 'Hold'}</button>`);
         const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || (n.type === 'shot' && n.sequence_id);
         items.push(`<button onclick="pgMenuDo('remove')" ${removable ? '' : 'disabled title="A shot leaves the film on the Scenes page, not here"'}>${
             n.type === 'shot' ? 'Remove from its sequence' : 'Remove from graph'}</button>`);
@@ -44393,6 +44433,7 @@ async function pgMenuDo(what) {
         return pgRunNode(n.key);
     }
     if (what === 'to-here') return pgRunToHere(n.key);
+    if (what === 'hold') return pgToggleHold(n.key);
     if (what === 'dup') return pgDuplicate(n);
     if (what === 'remove') return pgRemove(n);
 }

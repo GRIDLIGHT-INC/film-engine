@@ -751,6 +751,14 @@ function updateMusicCue(req, res, cueId) {
         }
     }
 
+    // Held (PGN-016): skipped by batch runs, never by the conform or the export.
+    if (body.held !== undefined) {
+        const hold = require('../lib/graph-hold');
+        const h = hold.readHeld(body.held);
+        if (h.error) return json(res, 400, { error: h.error, field: 'held' });
+        fields.push(`held_at = ${hold.heldAtSql(h.hold)}`);
+    }
+
     if (!fields.length) return json(res, 400, { error: 'Nothing to change' });
 
     db.prepare(`UPDATE film_music_cues SET ${fields.join(', ')} WHERE id = ?`).run(...values, cueId);

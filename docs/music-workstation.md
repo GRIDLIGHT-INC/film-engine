@@ -290,6 +290,7 @@ starting a server that will apply a new migration to live data.
 | `112_track_notes.sql` | `notes_json` on `film_music_tracks` | The part a lane plays, in milliseconds. NULL means a lane with no part, which is every lane that exists today. |
 | `115_production_graph.sql` | `sequence_id` on `film_music_cues` (and the production graph's version pointers and layout) | A sound node wired to a sequence scores that sequence's span; NULL is every cue that exists today, which keeps its shot or scene. Deleting the sequence sets it back to NULL and the cue keeps its scene. |
 | `114_edits.sql` | `film_edits`, `edit_id` on `film_music_sessions` | A cut made in Premiere, by version, with the cut list read from its XML or EDL. A session can be written against one; NULL is every session that exists today, which keeps its sequence or scene. Deleting an edit leaves the score with no picture rather than deleting the music. |
+| `118_graph_hold.sql` | `held_at` on `film_music_cues` (and on `film_shots`, `film_sequences`) | A held cue is skipped by batch runs and stays in the film: an approved score and the conform never read the hold. NULL is every cue that exists today, which is not held. |
 
 ## Proving it end to end
 

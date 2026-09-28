@@ -159,8 +159,14 @@ function updateShotCard(req, res, shotId) {
      * as "selecting an aspect ratio doesn't show anything on the image", which
      * is true and was never a display problem.
      */
-    const COLUMN_FIELDS = ['aspect_ratio', 'status'];
+    const COLUMN_FIELDS = ['aspect_ratio', 'status', 'held'];
     const columnEdits = COLUMN_FIELDS.filter(k => body[k] !== undefined);
+    // A hold is read before anything is written, so a refused value writes nothing (PGN-016).
+    const held = body.held !== undefined ? require('../lib/graph-hold').readHeld(body.held) : null;
+    if (held && held.error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: held.error, field: 'held' }));
+    }
     if (!changed.length && !columnEdits.length) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
@@ -228,6 +234,12 @@ function updateShotCard(req, res, shotId) {
         }
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run(want, shotId);
         changed.push('status');
+    }
+
+    // Held: skipped by every batch run, never by the conform or the export.
+    if (held) {
+        db.prepare(`UPDATE film_shots SET held_at = ${require('../lib/graph-hold').heldAtSql(held.hold)} WHERE id = ?`).run(shotId);
+        changed.push('held');
     }
 
     // Editing a card by hand is how a director answers a screenplay revision,

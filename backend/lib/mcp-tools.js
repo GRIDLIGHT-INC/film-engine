@@ -1466,11 +1466,13 @@ const PRODUCTION_TOOLS = [
             if (a.shot_ids !== undefined) out.shot_ids = a.shot_ids;
             if (a.name !== undefined) out.name = a.name;
             if (a.description !== undefined) out.description = a.description;
+            if (a.held !== undefined) out.held = a.held;
             return out;
         },
-        description: 'Change a sequence\u2019s shots, order or description. Merged, not replaced, so renaming does not drop the description. Free.',
+        description: 'Change a sequence\u2019s shots, order or description, or hold it. Merged, not replaced, so renaming does not drop the description. Free.',
         schema: {
             sequence_id: { type: 'string' },
+            held: { type: 'boolean', description: 'true HOLDS this node: every batch run skips it and says so, while the film keeps it (conform and export ignore a hold). false releases it. Free.' },
             shot_ids: { type: 'array' }, name: { type: 'string' }, description: { type: 'string' },
         },
         required: ['sequence_id'],
@@ -3115,6 +3117,7 @@ const PRODUCTION_TOOLS = [
         body: a => { const { cue_id, ...rest } = a || {}; return rest; },
         schema: {
             cue_id: { type: 'string' },
+            held: { type: 'boolean', description: 'true HOLDS this node: every batch run skips it and says so, while the film keeps it (conform and export ignore a hold). false releases it. Free.' },
             title: { type: 'string' }, description: { type: 'string' },
             mood: { type: 'string' }, genre: { type: 'string' },
             instruments: { type: 'array', items: { type: 'string' } },
@@ -3802,6 +3805,7 @@ const PRODUCTION_TOOLS = [
             beats: { type: 'array', items: { type: 'string' }, description: 'Ordered subject beats for a shot that evolves, compiled as "First X, then Y". Write these ONLY when the shot genuinely has stages \u2014 micromanaging every second makes some models less reliable, and a shot needing more than a few beats is usually one that should be split.' },
             duration_seconds: { type: 'number' },
             notes: { type: 'string' },
+            held: { type: 'boolean', description: 'true HOLDS this node: every batch run skips it and says so, while the film keeps it (conform and export ignore a hold). false releases it. Free.' },
         },
         required: ['shot_id'],
     },

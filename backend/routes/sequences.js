@@ -463,6 +463,8 @@ function updateSequence(req, res, id) {
     const row = db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id);
     if (!row) return json(res, 404, { error: 'Sequence not found' });
     const body = req.body || {};
+    const held = body.held !== undefined ? require('../lib/graph-hold').readHeld(body.held) : null;
+    if (held && held.error) return json(res, 400, { error: held.error, field: 'held' });
     // Merged, not replaced: renaming a sequence must not silently drop the
     // description someone spent time on, the rule PUT /shots/:id already sets.
     const checked = body.shot_ids !== undefined
@@ -501,6 +503,8 @@ function updateSequence(req, res, id) {
                     start_frame_ref = ?, end_frame_ref = ?, updated_at = datetime('now') WHERE id = ?`)
             .run(next.name, next.shot_ids, next.description, JSON.stringify(joins),
                 refs.start_frame_ref || null, refs.end_frame_ref || null, id);
+        // Held (PGN-016): skipped by batch runs, never by the conform or the export.
+        if (held) db.prepare(`UPDATE film_sequences SET held_at = ${require('../lib/graph-hold').heldAtSql(held.hold)} WHERE id = ?`).run(id);
     })();
     return json(res, 200, { sequence: db.prepare('SELECT * FROM film_sequences WHERE id = ?').get(id) });
 }

@@ -379,6 +379,7 @@ function buildGraph(db, projectId) {
             videos, selected_video_asset_id: sh.selected_video_asset_id || null,
             state: frames.length ? 'ok' : 'no_frame',
             previs: previs.get(sh.id) || { locked: 0, approved: false },
+            held: !!sh.held_at, held_at: sh.held_at || null,
         };
         nodes.push(n); shotNode.set(sh.id, n);
         for (const v of videos) {
@@ -405,6 +406,7 @@ function buildGraph(db, projectId) {
             selected_video_asset_id: q.selected_video_asset_id || null,
             ready: members.length > 0 && members.every(m => m.frames.length),
             status: q.status,
+            held: !!q.held_at, held_at: q.held_at || null,
         };
         nodes.push(n); seqNode.set(q.id, n);
         members.forEach((m, i) => edge(m.key, 'image', n.key, `slot:${i}`, 'image', m.frames.length ? 'solid' : 'dotted'));
@@ -445,6 +447,7 @@ function buildGraph(db, projectId) {
             negative_prompt: c.negative_prompt || '', duration_ms: Number(c.duration_ms) || 0,
             scene_id: c.scene_id, shot_id: c.shot_id, sequence_id: c.sequence_id,
             parent: parentKey, versions, selected_asset_id: c.generated_asset_id || null,
+            held: !!c.held_at, held_at: c.held_at || null,
         };
         nodes.push(n);
         if (parentKey) edge(parentKey, 'scene', n.key, 'scene', 'scene', 'dashed');

@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (114 migrations)
+│   │   └── migrations/     # SQL migration files (115 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -296,6 +296,7 @@ film-engine/
 │   │   ├── provenance.js         # Provenance sidecar manifests
 │   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
 │   │   ├── asset-match.js        # Which of this project's files a dropped file is: by hash sent without the bytes, same-size files only, cached on mtime
+│   │   ├── graph-hold.js         # Which nodes can be held, read strictly, set through each node's own update route and tool
 │   │   ├── timeline.js           # Timeline assembly logic
 │   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
@@ -470,6 +471,7 @@ film-engine/
 │       ├── asset-recipe.test.js       # Every recipe field present or named unknown, for a frame, a clip and a sound; nothing borrowed across versions
 │       ├── how-made-panel.test.js     # The recipe in the drawer, make-another pre-filled with a seed only where honoured, and an A/B wipe for frames and clips
 │       ├── drop-to-recipe.test.js     # Every drawn asset family matched by bytes to its node with its recipe; an unknown file offered only to a node that takes it
+│       ├── graph-hold.test.js         # Every holdable node held and released through its own route and MCP tool, shown on the graph, badged on the page
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6020,7 +6022,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (114 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (115 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6285,6 +6287,7 @@ node --test backend/tests/cancel-honest.test.js
 node --test backend/tests/asset-recipe.test.js
 node --test backend/tests/how-made-panel.test.js
 node --test backend/tests/drop-to-recipe.test.js
+node --test backend/tests/graph-hold.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
