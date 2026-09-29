@@ -294,6 +294,18 @@ function validateSceneCard(card) {
         }
     }
 
+    // Optional: generation — per-shot generation directives. negative_prompt is
+    // read by buildStoryboardPrompt for the frame and the clip, and editable
+    // through PUT /shots/:id, which merges this block like camera and lighting.
+    if (card.generation !== undefined && card.generation !== null) {
+        if (typeof card.generation !== 'object' || Array.isArray(card.generation)) {
+            errors.push('generation must be an object');
+        } else if (card.generation.negative_prompt !== undefined && card.generation.negative_prompt !== null
+            && typeof card.generation.negative_prompt !== 'string') {
+            errors.push('generation.negative_prompt must be a string');
+        }
+    }
+
     // Optional: style object
     if (card.style !== undefined && typeof card.style !== 'object') {
         errors.push('style must be an object');

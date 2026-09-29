@@ -38035,6 +38035,9 @@ ${fountainText.slice(0, 50000)}`;
             <div class="form-group"><label>Beats <span class="text-muted">(one per line, only if the shot has stages)</span></label>
                 <textarea id="${p}Beats" data-field="beats" rows="3"
                     placeholder="the creature closes half the distance&#10;the wall is struck&#10;the figure turns"></textarea></div>
+            <div class="form-group"><label>Must not appear <span class="text-muted">(frame and clip)</span></label>
+                <textarea id="${p}NegPrompt" data-field="generation" rows="2"
+                    placeholder="text, watermark, a second car, modern signage"></textarea></div>
             <div class="form-group"><label>Lighting</label>
                 <select id="${p}Lighting"></select>
                 <div class="text-sm text-muted" id="${p}LightingHint"></div></div>
@@ -39824,6 +39827,7 @@ ${fountainText.slice(0, 50000)}`;
                 put('shotCardEnvMotion', SHOT_CARD.card.environment_motion);
                 put('shotCardEndState', SHOT_CARD.card.end_state);
                 put('shotCardBeats', Array.isArray(SHOT_CARD.card.beats) ? SHOT_CARD.card.beats.join('\n') : '');
+                put('shotCardNegPrompt', (SHOT_CARD.card.generation || {}).negative_prompt);
             }
 
             document.getElementById('shotCardWarning').style.display = 'none';
@@ -39893,6 +39897,9 @@ ${fountainText.slice(0, 50000)}`;
             if (env !== null) body.environment_motion = env;
             if (end !== null) body.end_state = end;
             if (bts !== null) body.beats = bts.split('\n').map(x => x.trim()).filter(Boolean);
+            // generation merges on the route; null clears the negative prompt.
+            const neg = txt('shotCardNegPrompt');
+            if (neg !== null) body.generation = { negative_prompt: neg || null };
         }
         if (blocking.direction !== undefined) body.direction = blocking.direction;
         if (blocking.description) body.description = blocking.description;

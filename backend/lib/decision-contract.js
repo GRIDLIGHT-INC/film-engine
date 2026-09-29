@@ -63,6 +63,8 @@ const EXCEPTIONS = [
       why: 'Video-only and board-only by design: a still cannot show what the world does, and it is not a camera decision, so it has no previs surface and no image payload.' },
     { id: 'motion.end_state', covers: ['end_state'],
       why: 'Video-only by design: a keyframe IS the start state, so an end state is meaningless to the image payload; compiled into a closing clause for video.' },
+    { id: 'shot.negative_prompt', covers: ['generation'],
+      why: 'Board-only by design: generation.negative_prompt is a directive to the generator (what must not appear in the frame and the clip), not a blocking or camera decision, so there is nothing for the Previs stage to stage and no second place to write it.' },
     { id: 'motion.beats', covers: ['beats'],
       why: 'Video-only by design: a still has no time. Emitted only when written, because imposing beats on every shot is the micromanagement that makes some models less reliable.' },
 
