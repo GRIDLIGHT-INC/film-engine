@@ -5190,6 +5190,13 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-group { position:absolute; border:1px dashed rgba(255,255,255,.09); border-radius:12px; background:rgba(255,255,255,.015); }
 .pg-group-label { position:absolute; left:12px; top:7px; font-family:'SF Mono',ui-monospace,Menlo,monospace;
   font-size:10px; letter-spacing:.08em; color:#8e8e97; white-space:nowrap; }
+.pg-group-fold { position:absolute; right:8px; top:4px; background:none; border:0; color:#8e8e97; cursor:pointer; font-size:11px; padding:2px 6px; }
+.pg-group-fold:hover { color:#e6e6ea; }
+.pg-group.collapsed { border-style:solid; border-color:rgba(255,255,255,.18); background:#1c1c21; }
+.pg-group-card { position:absolute; left:12px; right:12px; top:30px; display:grid; grid-template-columns:1fr 1fr; gap:6px 10px;
+  font-size:11px; color:#c9c9d1; }
+.pg-group-card b { display:block; font-size:15px; color:#f0f0f4; font-weight:600; }
+.pg-group-card .warn b { color:#e3b341; }
 .pg-node { position:absolute; box-sizing:border-box; background:#232329; border:1.5px solid #3a3a44; border-radius:8px; cursor:pointer; }
 .pg-node.ver { background:#1d1d22; }
 .pg-node.sel { border-color:#f5c451; box-shadow:0 0 0 1px #f5c451, 0 0 0 5px rgba(245,196,81,.12); }
@@ -43633,7 +43640,45 @@ function pgSecs(ms) { return ms ? (Math.round(ms / 100) / 10) + 's' : '—'; }
 
 // ── Canvas ────────────────────────────────────────────────────────────────
 
+/**
+ * A group's box, or — collapsed (PGN-018) — one card: how long it runs, shots
+ * with footage out of all of them, how many of its nodes are behind, and what
+ * is running inside it. The fold button toggles it, per project.
+ */
+function pgGroupHtml(gr) {
+    const key = String(gr.key || '');
+    const fold = `<button class="pg-group-fold" title="${gr.collapsed ? 'Expand — every node returns exactly where it was' : 'Collapse into one card'}"
+        onclick="event.stopPropagation();pgToggleCollapse('${esc(key)}')">${gr.collapsed ? '▸' : '▾'}</button>`;
+    const box = `left:${gr.x}px;top:${gr.y}px;width:${gr.w}px;height:${gr.h}px;`;
+    if (!gr.collapsed) return `<div class="pg-group" data-group="${esc(key)}" style="${box}"><div class="pg-group-label">${esc(gr.label || '')}</div>${fold}</div>`;
+    const s = gr.summary || {};
+    return `<div class="pg-group collapsed" data-group="${esc(key)}" style="${box}"><div class="pg-group-label">${esc(gr.label || '')}</div>${fold}
+        <div class="pg-group-card">
+          <div><b>${pgSecs(s.length_ms)}</b>length</div>
+          <div><b>${s.shots_done || 0} / ${s.shots_total || 0}</b>shots done</div>
+          <div class="${s.behind ? 'warn' : ''}"><b>${s.behind || 0} behind</b>out of date</div>
+          <div><b>${s.running || 0} running</b>now</div>
+        </div></div>`;
+}
+
+/** Is this node inside a collapsed group? Then it is hidden, never moved. */
+function pgInCollapsed(n) {
+    return !!(PG.graph && (PG.graph.groups || []).some(g => g.collapsed && (g.members || []).includes(n.key)));
+}
+
+/** Collapse or expand a group through its route; the layout of its members is never touched. */
+async function pgToggleCollapse(key) {
+    const gr = PG.graph && (PG.graph.groups || []).find(g => g.key === key);
+    if (!gr) return;
+    try {
+        await api(`/projects/${PG.graph.project_id}/production-graph/groups/${encodeURIComponent(key)}`,
+            { method: 'PUT', body: JSON.stringify({ collapsed: !gr.collapsed }) });
+        await loadProductionGraph();
+    } catch (err) { setStatus('Could not change the group: ' + err.message); }
+}
+
 function pgVisible(n) {
+    if (pgInCollapsed(n)) return false;
     if (PG.behindOnly && PG.graph && !pgBehindKeep(n, PG.graph.nodes)) return false;
     if (PG.scene === 'all') return true;
     if (n.type === 'shot') return n.scene_id === PG.scene;
@@ -43775,8 +43820,7 @@ function pgRender() {
     if (!world || !PG.graph) return;
     const g = PG.graph;
     canvas.querySelector('.pg-empty').textContent = g.nodes.length ? '' : 'No shots yet. Break the screenplay into shots, then come back.';
-    const groups = (g.groups || []).map(gr => `<div class="pg-group" style="left:${gr.x}px;top:${gr.y}px;width:${gr.w}px;height:${gr.h}px;">
-        <div class="pg-group-label">${esc(gr.label || '')}</div></div>`).join('');
+    const groups = (g.groups || []).map(gr => pgGroupHtml(gr)).join('');
     const nodes = g.nodes.filter(pgVisible).map(pgNodeHtml).join('');
     world.innerHTML = groups + '<svg class="pg-edges" id="pgEdges" width="1" height="1"></svg>' + nodes;
     pgApplyView();

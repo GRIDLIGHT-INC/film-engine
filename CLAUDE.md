@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (115 migrations)
+│   │   └── migrations/     # SQL migration files (116 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -473,6 +473,7 @@ film-engine/
 │       ├── drop-to-recipe.test.js     # Every drawn asset family matched by bytes to its node with its recipe; an unknown file offered only to a node that takes it
 │       ├── graph-hold.test.js         # Every holdable node held and released through its own route and MCP tool, shown on the graph, badged on the page
 │       ├── hold-in-batches.test.js    # Every batch function derived from routes/ skips a held node and names it; plans leave it out of the total; conform and export never read it
+│       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6023,7 +6024,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (115 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (116 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6290,6 +6291,7 @@ node --test backend/tests/how-made-panel.test.js
 node --test backend/tests/drop-to-recipe.test.js
 node --test backend/tests/graph-hold.test.js
 node --test backend/tests/hold-in-batches.test.js
+node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

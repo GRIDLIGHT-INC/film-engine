@@ -266,7 +266,11 @@ const GAP = 24;
  * under the sequence. Unsequenced shots group by scene. Deterministic, so a
  * reload places an untouched node exactly where it was.
  */
-function autoLayout(graph) {
+/** A collapsed group is drawn as one card this size (PGN-018). */
+const COLLAPSED_GROUP = Object.freeze({ w: 240, h: 132 });
+
+function autoLayout(graph, collapsed) {
+    const shut = collapsed instanceof Set ? collapsed : new Set();
     const pos = {};
     const groups = [];
     let ox = 20;
@@ -304,10 +308,54 @@ function autoLayout(graph) {
         }
         bottom = Math.max(bottom, vy);
         const width = (nextX + widest + 20) - x0;
+        /*
+         * A collapsed group is a card, and the groups after it close up. Its
+         * members keep the positions they would have open — they are hidden,
+         * not moved — so expanding restores them exactly.
+         */
+        if (shut.has(g.id)) {
+            groups.push({ id: g.id, label: g.label, x: x0, y: 8, w: COLLAPSED_GROUP.w, h: COLLAPSED_GROUP.h });
+            ox = x0 + COLLAPSED_GROUP.w + 20;
+            continue;
+        }
         groups.push({ id: g.id, label: g.label, x: x0, y: 8, w: width, h: bottom - 8 + 12 });
         ox = x0 + width + 20;
     }
     return { positions: pos, groups };
+}
+
+/** The groups a person collapsed on this project (PGN-018). */
+function readCollapsed(db, projectId) {
+    try {
+        return new Set(db.prepare('SELECT group_key FROM production_group_layout WHERE project_id = ? AND collapsed = 1')
+            .all(projectId).map(r => r.group_key));
+    } catch (_) { return new Set(); }
+}
+
+/** Every node key a group draws: its shots, links, sequence, versions, sounds and their versions. */
+function groupMembers(g) {
+    return [...(g.links_start || []), ...(g.shots || []), ...(g.sequence ? [g.sequence] : []), ...(g.links_end || []),
+        ...(g.versions || []), ...(g.sounds || []).flatMap(x => [x.key, ...(x.versions || [])])];
+}
+
+/**
+ * What a collapsed card says about its group: how long it runs, how many of
+ * its shots have footage, how many of its nodes are behind, and what is
+ * running inside it. Computed for every group, so a card is right the moment
+ * it is collapsed.
+ */
+function groupSummary(members, byKey, running) {
+    const nodes = members.map(k => byKey.get(k)).filter(Boolean);
+    const shots = nodes.filter(n => n.type === 'shot');
+    const seqHasClip = id => { const q = id && byKey.get('seq:' + id); return !!(q && q.videos && q.videos.length); };
+    const live = new Set((running || []).map(r => r.key));
+    return {
+        length_ms: shots.reduce((t, n) => t + (n.duration_ms || 0), 0),
+        shots_total: shots.length,
+        shots_done: shots.filter(n => (n.videos && n.videos.length) || seqHasClip(n.sequence_id)).length,
+        behind: nodes.filter(n => n.impact && (n.impact.state === 'redo' || n.impact.state === 'waiting')).length,
+        running: members.filter(k => live.has(k)).length,
+    };
 }
 
 function readLayout(db, projectId) {
@@ -537,7 +585,8 @@ function buildGraph(db, projectId) {
     }
 
     const graph = { nodes, edges: edges.filter(e => e.to), groups };
-    const auto = autoLayout(graph);
+    const collapsed = readCollapsed(db, projectId);
+    const auto = autoLayout(graph, collapsed);
     const stored = readLayout(db, projectId);
     for (const n of nodes) {
         const s = stored.get(n.key);
@@ -548,15 +597,21 @@ function buildGraph(db, projectId) {
     }
 
     attachImpact(nodes, projectId);
+    const running = runningWork(db, projectId);
+    const byKey = new Map(nodes.map(n => [n.key, n]));
     const framed = nodes.filter(n => n.type === 'shot' && n.frames.length).length;
     const withVideo = nodes.filter(n => n.type === 'shot'
         && (n.videos.length || (n.sequence_id && seqNode.get(n.sequence_id).videos.length))).length;
     return {
         project_id: projectId,
         board_locked: !!project.board_locked_at,
-        nodes, edges: graph.edges, groups: auto.groups.map((g, i) => ({ ...g, key: graph.groups[i].id })),
+        nodes, edges: graph.edges, groups: auto.groups.map((g, i) => {
+            const members = groupMembers(graph.groups[i]);
+            return { ...g, key: graph.groups[i].id, collapsed: collapsed.has(graph.groups[i].id), members,
+                summary: groupSummary(members, byKey, running) };
+        }),
         running_order: shots.map(s => s.id),
-        running: runningWork(db, projectId),
+        running,
         meta: {
             shots: shots.length, framed, with_video: withVideo, need_frame: shots.length - framed,
             sequences: sequences.length, sounds: cues.length,
@@ -714,6 +769,6 @@ function pendingWork(graph) { return pendingAll(graph).filter(p => !p.held); }
 function pendingHeld(graph) { return pendingAll(graph).filter(p => p.held); }
 
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, pendingHeld, runningWork, jobNodeKey, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, readCollapsed, groupMembers, COLLAPSED_GROUP, pendingWork, pendingHeld, runningWork, jobNodeKey, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

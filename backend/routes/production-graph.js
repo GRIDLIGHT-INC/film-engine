@@ -55,15 +55,35 @@ function putLayout(req, res, projectId) {
     return json(res, 200, { saved: nodes.length });
 }
 
-/** Forget every position nobody pinned; the next read places them afresh. */
+/**
+ * Forget every position nobody pinned; the next read places them afresh.
+ * A collapsed group is left exactly as it is (PGN-018): its members are hidden,
+ * and expanding must bring back the arrangement that was collapsed.
+ */
 function tidy(req, res, projectId) {
     const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
     const all = (req.body || {}).all === true;
-    const n = all
-        ? db.prepare('DELETE FROM production_node_layout WHERE project_id = ?').run(projectId).changes
-        : db.prepare('DELETE FROM production_node_layout WHERE project_id = ? AND pinned = 0').run(projectId).changes;
-    return getGraphAfter(res, projectId, { released: n, kept_pinned: !all });
+    const graph = pg.buildGraph(db, projectId);
+    const keep = new Set((graph.groups || []).filter(g => g.collapsed).flatMap(g => g.members));
+    const rows = db.prepare('SELECT node_key, pinned FROM production_node_layout WHERE project_id = ?').all(projectId)
+        .filter(r => (all || !r.pinned) && !keep.has(r.node_key));
+    const del = db.prepare('DELETE FROM production_node_layout WHERE project_id = ? AND node_key = ?');
+    db.transaction(() => { for (const r of rows) del.run(projectId, r.node_key); })();
+    return getGraphAfter(res, projectId, { released: rows.length, kept_pinned: !all, kept_collapsed: keep.size });
+}
+
+/** Collapse or expand one group, per project (PGN-018). Moves no node. */
+function putGroup(req, res, projectId, groupKey) {
+    const graph = pg.buildGraph(db, projectId);
+    if (!graph) return json(res, 404, { error: 'Project not found' });
+    const value = (req.body || {}).collapsed;
+    if (value !== true && value !== false) return json(res, 400, { error: 'collapsed must be true (draw the group as one card) or false (expand it)', field: 'collapsed' });
+    if (!(graph.groups || []).some(g => g.key === groupKey)) return json(res, 404, { error: `No group "${groupKey}" on this graph` });
+    db.prepare(`INSERT INTO production_group_layout (project_id, group_key, collapsed, updated_at) VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(project_id, group_key) DO UPDATE SET collapsed = excluded.collapsed, updated_at = excluded.updated_at`)
+        .run(projectId, groupKey, value ? 1 : 0);
+    return json(res, 200, { group: groupKey, collapsed: value });
 }
 
 function getGraphAfter(res, projectId, extra) {
@@ -159,6 +179,7 @@ function handleProductionGraph(req, res, parts, query) {
             const run = require('../lib/run-changed').getRun(parts[2], parts[5]);
             return run ? json(res, 200, run) : json(res, 404, { error: 'No such run' });
         }
+        if (parts[4] === 'groups' && parts[5] && !parts[6] && req.method === 'PUT') return putGroup(req, res, parts[2], decodeURIComponent(parts[5]));
         if (parts[4] === 'layout' && req.method === 'PUT') return putLayout(req, res, parts[2]);
         if (parts[4] === 'tidy' && req.method === 'POST') return tidy(req, res, parts[2]);
         return json(res, 405, { error: 'Method not allowed' });
