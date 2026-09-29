@@ -348,15 +348,10 @@ function insertShotAfter(req, res, afterShotId) {
     if (at === -1) return sendJson(res, 500, { error: 'That shot is not in its own scene' });
 
     // 2A -> 2AA; a second insert after the same shot -> 2AB. The walk keeps
-    // repeated inserts in the order they were made rather than colliding.
-    const used = new Set(siblings.map(x => String(x.shot_code || '').toUpperCase()));
-    let newCode = anchor.shot_code + 'A';
-    let guard = 0;
-    while (used.has(newCode.toUpperCase()) && guard++ < 25) {
-        newCode = newCode.slice(0, -1)
-            + String.fromCharCode(newCode.charCodeAt(newCode.length - 1) + 1);
-    }
-    if (used.has(newCode.toUpperCase())) {
+    // repeated inserts in the order they were made rather than colliding. One
+    // rule, shared with the graph's add palette, which previews the code.
+    const newCode = require('../lib/shot-insert-code').nextInsertCode(anchor.shot_code, siblings.map(x => x.shot_code));
+    if (!newCode) {
         return sendJson(res, 409, {
             error: `There are already 26 inserts after ${anchor.shot_code}.`,
             hint: 'Give this shot an explicit code instead.',

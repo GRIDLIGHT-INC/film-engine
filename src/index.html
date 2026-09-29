@@ -5190,6 +5190,14 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pg-group { position:absolute; border:1px dashed rgba(255,255,255,.09); border-radius:12px; background:rgba(255,255,255,.015); }
 .pg-group-label { position:absolute; left:12px; top:7px; font-family:'SF Mono',ui-monospace,Menlo,monospace;
   font-size:10px; letter-spacing:.08em; color:#8e8e97; white-space:nowrap; }
+.pg-node.picked { outline:2px solid #6c9cff; outline-offset:3px; }
+.pg-add { position:fixed; z-index:3000; width:320px; background:#1c1c21; border:1px solid #3a3a44; border-radius:10px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5); padding:8px; }
+.pg-add input { width:100%; box-sizing:border-box; background:#111114; border:1px solid #3a3a44; border-radius:6px; color:#f0f0f4; padding:7px 9px; font-size:13px; }
+.pg-add-list { margin-top:6px; max-height:260px; overflow:auto; }
+.pg-add-item { padding:6px 9px; border-radius:6px; font-size:12px; color:#c9c9d1; }
+.pg-add-item.on { background:#2c2c36; color:#fff; }
+.pg-add-hint { font-size:11px; color:#8e8e97; padding:6px 4px 2px; }
 .pg-group-fold { position:absolute; right:8px; top:4px; background:none; border:0; color:#8e8e97; cursor:pointer; font-size:11px; padding:2px 6px; }
 .pg-group-fold:hover { color:#e6e6ea; }
 .pg-group.collapsed { border-style:solid; border-color:rgba(255,255,255,.18); background:#1c1c21; }
@@ -43491,6 +43499,7 @@ const PG = {
     busy: new Map(), drawerCache: {}, play: { index: 0, playing: false, t0: 0, timer: null, stills: true, audio: true },
     fitted: false, menuFor: null,
     running: new Map(), pollTimer: null, behindOnly: false, queue: null, queueOpen: false,
+    picked: new Set(), add: null, selBeforeClick: null,
 };
 
 /**
@@ -43823,6 +43832,7 @@ function pgRender() {
     const groups = (g.groups || []).map(gr => pgGroupHtml(gr)).join('');
     const nodes = g.nodes.filter(pgVisible).map(pgNodeHtml).join('');
     world.innerHTML = groups + '<svg class="pg-edges" id="pgEdges" width="1" height="1"></svg>' + nodes;
+    for (const k of PG.picked) { const el = world.querySelector(`.pg-node[data-key="${k}"]`); if (el) el.classList.add('picked'); }
     pgApplyView();
     pgHeader();
     requestAnimationFrame(() => { pgDrawEdges(); pgPaintWaves(); pgMinimap(); });
@@ -44015,8 +44025,12 @@ function pgInitCanvas() {
         c.classList.remove('panning');
         if (!g) return;
         if (g.kind === 'pan' && !g.moved) {
+            // Remembered for a double-click's "sequence from the selected shot".
+            if (PG.sel) PG.selBeforeClick = PG.sel;
             if (ev.target.closest && ev.target.closest('#pgCanvas') && !ev.target.closest('.pg-furniture, .pg-minimap')) pgSelect(null);
         } else if (g.kind === 'node') {
+            // Shift+click picks shots for "a sequence from the picked shots" (PGN-019).
+            if (!g.moved && ev.shiftKey && g.key.startsWith('shot:')) { pgTogglePick(g.key); return; }
             if (!g.moved) { pgSelect(g.key); return; }
             const n = pgNode(g.key);
             n.pinned = true;
@@ -44033,6 +44047,13 @@ function pgInitCanvas() {
             const nodeEl = target && target.closest('.pg-node[data-key]');
             if (port && nodeEl) await pgWire(g, nodeEl.dataset.key, port.dataset.port, port.dataset.type);
         }
+    });
+
+    // Double-click empty canvas: the add palette, at the pointer (PGN-019).
+    c.addEventListener('dblclick', ev => {
+        if (ev.target.closest('.pg-node, button, input, textarea, select, .pg-furniture, .pg-minimap')) return;
+        ev.preventDefault();
+        pgOpenAddPalette(ev.clientX, ev.clientY, pgWorldPoint(ev));
     });
 
     c.addEventListener('wheel', ev => {
@@ -44239,6 +44260,186 @@ function pgImpactDecorate(html, n) {
     if (!pill) return marked;
     const open = marked.indexOf('>');
     return open < 0 ? marked : marked.slice(0, open + 1) + pill + marked.slice(open + 1);
+}
+
+// ── Double-click to add (PGN-019) ──────────────────────────────────────────
+
+/** Every cue type the cue route accepts (routes/assets.js VALID_CUE_TYPES), as the palette names it. */
+const PG_ADD_CUE_TYPES = Object.freeze({ score: 'Score', source: 'Source music', sfx: 'Sound effect', ambient: 'Room tone', transition: 'Transition' });
+
+/**
+ * The code an inserted shot will get — a mirror of lib/shot-insert-code.js,
+ * held equal by test, so the code the palette shows is the code written.
+ */
+function pgNextInsertCode(anchorCode, usedCodes) {
+    const used = new Set((usedCodes || []).map(c => String(c || '').toUpperCase()));
+    let code = String(anchorCode || '') + 'A';
+    let guard = 0;
+    while (used.has(code.toUpperCase()) && guard++ < 25) {
+        code = code.slice(0, -1) + String.fromCharCode(code.charCodeAt(code.length - 1) + 1);
+    }
+    return used.has(code.toUpperCase()) ? null : code;
+}
+
+/** The shot whose card centre is nearest the pointer. */
+function pgNearestShot(shots, at) {
+    let best = null, d = Infinity;
+    for (const s of shots || []) {
+        const cx = s.x + (s.w || 220) / 2, cy = s.y + (s.h || 170) / 2;
+        const dd = (cx - at.x) ** 2 + (cy - at.y) ** 2;
+        if (dd < d) { d = dd; best = s; }
+    }
+    return best;
+}
+
+/**
+ * What the palette offers at this point: a shot inserted after the nearest shot
+ * (with the code it will get), a cue of every type in that shot's scene, and a
+ * sequence from the picked shots (or the selected one) in film order.
+ */
+function pgAddEntries(graph, at, picked, selKey) {
+    const shots = ((graph && graph.nodes) || []).filter(n => n.type === 'shot');
+    const out = [];
+    const near = pgNearestShot(shots, at);
+    if (near) {
+        const code = pgNextInsertCode(near.shot_code, shots.filter(s => s.scene_id === near.scene_id).map(s => s.shot_code));
+        if (code) out.push({ kind: 'shot', after: near.id, code, label: `Shot after ${near.shot_code} — becomes ${code}` });
+    }
+    for (const [t, l] of Object.entries(PG_ADD_CUE_TYPES)) {
+        out.push({ kind: 'sound', cue_type: t, scene_id: near ? near.scene_id : null,
+            label: `${l} cue · ${t}${near ? ' · scene of ' + near.shot_code : ''}` });
+    }
+    const keys = picked && picked.length ? picked : (selKey && String(selKey).startsWith('shot:') ? [selKey] : []);
+    const order = (graph && graph.running_order) || [];
+    const ids = [...new Set(keys.map(k => String(k).slice('shot:'.length)))]
+        .filter(id => shots.some(s => s.id === id))
+        .sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    if (ids.length) {
+        const codes = ids.map(id => shots.find(s => s.id === id).shot_code);
+        out.push({ kind: 'sequence', shot_ids: ids, name: codes.length > 1 ? `${codes[0]}–${codes[codes.length - 1]}` : codes[0],
+            label: `Sequence from ${codes.join(', ')}` });
+    }
+    return out;
+}
+
+/** Every word typed must appear in the label; nothing typed shows everything. */
+function pgFilterEntries(entries, query) {
+    const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+    return (entries || []).filter(e => words.every(w => String(e.label || '').toLowerCase().includes(w)));
+}
+
+/** Pick or unpick a shot for "a sequence from the picked shots". */
+function pgTogglePick(key) {
+    if (PG.picked.has(key)) PG.picked.delete(key); else PG.picked.add(key);
+    const el = document.querySelector(`#pgWorld .pg-node[data-key="${key}"]`);
+    if (el) el.classList.toggle('picked', PG.picked.has(key));
+    setStatus(PG.picked.size ? `${PG.picked.size} shot${PG.picked.size === 1 ? '' : 's'} picked — double-click the canvas to make a sequence of them.` : 'Nothing picked.');
+}
+
+function pgOpenAddPalette(clientX, clientY, at) {
+    pgCloseAddPalette();
+    if (!PG.graph) return;
+    const entries = pgAddEntries(PG.graph, at, [...PG.picked], PG.sel || PG.selBeforeClick);
+    PG.add = { at, entries, shown: entries, index: 0, step: 'pick', entry: null };
+    const el = document.createElement('div');
+    el.id = 'pgAddPalette'; el.className = 'pg-add';
+    el.style.left = Math.min(clientX, window.innerWidth - 340) + 'px';
+    el.style.top = Math.min(clientY, window.innerHeight - 320) + 'px';
+    el.innerHTML = `<input id="pgAddInput" placeholder="Add a shot, a cue or a sequence…" autocomplete="off" spellcheck="false">
+        <div class="pg-add-list" id="pgAddList"></div>`;
+    document.body.appendChild(el);
+    const input = el.querySelector('#pgAddInput');
+    input.addEventListener('input', () => {
+        if (!PG.add || PG.add.step !== 'pick') return;
+        PG.add.shown = pgFilterEntries(PG.add.entries, input.value);
+        PG.add.index = 0;
+        pgRenderAddPalette();
+    });
+    input.addEventListener('keydown', pgAddKey);
+    input.addEventListener('blur', () => setTimeout(() => { if (PG.add && document.activeElement !== input) pgCloseAddPalette(); }, 150));
+    pgRenderAddPalette();
+    input.focus();
+}
+
+function pgRenderAddPalette() {
+    const list = document.getElementById('pgAddList');
+    const a = PG.add;
+    if (!list || !a) return;
+    if (a.step === 'describe') {
+        list.innerHTML = `<div class="pg-add-hint">What happens in ${esc(a.entry.code)}? Enter adds it after ${esc(a.entry.label.replace(/^Shot after (\S+).*/, '$1'))}; Escape cancels.</div>`;
+        return;
+    }
+    list.innerHTML = (a.shown || []).map((e, i) => `<div class="pg-add-item${i === a.index ? ' on' : ''}">${esc(e.label)}</div>`).join('')
+        + `<div class="pg-add-hint">${(a.shown || []).length ? '↑↓ to choose · Enter to add · Esc to cancel' : 'Nothing matches.'}${
+            PG.picked.size ? '' : ' · Shift+click shots to add a sequence of them'}</div>`;
+}
+
+function pgCloseAddPalette() {
+    const el = document.getElementById('pgAddPalette');
+    if (el) el.remove();
+    PG.add = null;
+}
+
+/** The palette is keyboard only: arrows move, Enter picks (a shot then asks what happens in it), Escape cancels. */
+function pgAddKey(ev) {
+    const a = PG.add;
+    if (!a) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); return pgCloseAddPalette(); }
+    if (a.step === 'describe') {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            const text = ev.target.value, entry = a.entry, at = a.at;
+            pgCloseAddPalette();
+            return pgAddPick(entry, at, text);
+        }
+        return;
+    }
+    const list = a.shown || [];
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); a.index = Math.min(list.length - 1, a.index + 1); return pgRenderAddPalette(); }
+    if (ev.key === 'ArrowUp') { ev.preventDefault(); a.index = Math.max(0, a.index - 1); return pgRenderAddPalette(); }
+    if (ev.key === 'Enter') {
+        ev.preventDefault();
+        const entry = list[a.index];
+        if (!entry) return;
+        if (entry.kind === 'shot') {
+            a.step = 'describe'; a.entry = entry;
+            ev.target.value = ''; ev.target.placeholder = `What happens in ${entry.code}?`;
+            return pgRenderAddPalette();
+        }
+        const at = a.at;
+        pgCloseAddPalette();
+        return pgAddPick(entry, at);
+    }
+}
+
+/** Add it through the route that already makes it, then place it where the palette opened. */
+async function pgAddPick(entry, at, text) {
+    const pid = state.currentProject.id;
+    let key = null;
+    try {
+        if (entry.kind === 'shot') {
+            const description = String(text || '').trim();
+            if (!description) return setStatus('A shot needs a line saying what happens in it; nothing was added.');
+            const r = await api(`/shots/${entry.after}/insert-after`, { method: 'POST', body: JSON.stringify({ card: { description } }) });
+            key = 'shot:' + (r.shot_id || (r.shot && r.shot.id));
+        } else if (entry.kind === 'sound') {
+            if (!entry.scene_id) return setStatus('A cue scores a scene; there are no shots yet to find one from.');
+            const r = await api(`/projects/${pid}/music-cues`, { method: 'POST',
+                body: JSON.stringify({ cue_type: entry.cue_type, title: entry.label.split(' cue')[0], scene_id: entry.scene_id }) });
+            key = 'sound:' + r.id;
+        } else if (entry.kind === 'sequence') {
+            // A plan row, free: the same helper the graph's empty sequence uses.
+            const r = await pgCreateSequence({ name: entry.name, shot_ids: entry.shot_ids });
+            key = 'seq:' + r.sequence.id;
+            if (PG.picked) PG.picked.clear();
+        }
+        if (key) {
+            await api(`/projects/${pid}/production-graph/layout`, { method: 'PUT',
+                body: JSON.stringify({ nodes: [{ key, x: Math.round(at.x), y: Math.round(at.y) }] }) });
+            PG.sel = key;
+        }
+        await loadProductionGraph();
+    } catch (err) { setStatus('Could not add it: ' + err.message); }
 }
 
 /** A held node is dimmed and carries a "held" badge: batch runs skip it, the film keeps it (PGN-016). */
@@ -44602,8 +44803,9 @@ async function pgAddAt(what, at) {
  * shots are wired into it afterwards.
  */
 function pgCreateSequence(fields) {
+    // Empty unless shots are given (the add palette's "sequence from the picked shots").
     return api(`/projects/${state.currentProject.id}/sequences`, {
-        method: 'POST', body: JSON.stringify({ ...fields, shot_ids: [], empty: true }) });
+        method: 'POST', body: JSON.stringify({ shot_ids: [], ...fields, empty: true }) });
 }
 
 /** A linked frame joins two sequences, so it needs both named. */
