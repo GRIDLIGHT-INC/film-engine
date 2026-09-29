@@ -44326,7 +44326,7 @@ function pgNearestShot(shots, at) {
  * (with the code it will get), a cue of every type in that shot's scene, and a
  * sequence from the picked shots (or the selected one) in film order.
  */
-function pgAddEntries(graph, at, picked, selKey, patterns) {
+function pgAddEntries(graph, at, picked, selKey, patterns, templates) {
     const shots = ((graph && graph.nodes) || []).filter(n => n.type === 'shot');
     const out = [];
     const near = pgNearestShot(shots, at);
@@ -44336,6 +44336,19 @@ function pgAddEntries(graph, at, picked, selKey, patterns) {
         // Coverage patterns (PGN-020): several shots and their sequence in one step.
         for (const p of patterns || []) out.push({ kind: 'pattern', pattern: p.id, after: near.id,
             label: `Pattern: ${p.label} after ${near.shot_code}` });
+    }
+    /*
+     * The templates shelf (FOG-006): every ready-made flow, next to the
+     * patterns, applied to the picks and the selection through FOG-003's apply.
+     * Listed even with nothing to run on, saying why, so the shelf is found.
+     */
+    if ((templates || []).length) {
+        const byKey = new Map(((graph && graph.nodes) || []).map(n => [n.key, n]));
+        const targets = pgApplyTargets(picked || [], selKey, byKey);
+        const on = targets.length ? ` → ${targets.length} selected` : '';
+        for (const t of templates) out.push({ kind: 'template', template: t.id, targets,
+            label: `Template: ${t.name}${on}`,
+            ...(targets.length ? {} : { refused: 'Pick a shot or a sequence first (Shift+click): a flow runs once per shot.' }) });
     }
     for (const [t, l] of Object.entries(PG_ADD_CUE_TYPES)) {
         out.push({ kind: 'sound', cue_type: t, scene_id: near ? near.scene_id : null,
@@ -44375,7 +44388,11 @@ async function pgOpenAddPalette(clientX, clientY, at) {
         try { PG.patterns = (await api(`/projects/${PG.graph.project_id}/production-graph/patterns`)).patterns || []; }
         catch (_) { PG.patterns = []; }
     }
-    const entries = pgAddEntries(PG.graph, at, [...PG.picked], PG.sel || PG.selBeforeClick, PG.patterns);
+    if (!PG.templates) {
+        try { PG.templates = (await api('/flow-templates')).templates || []; }
+        catch (_) { PG.templates = []; }
+    }
+    const entries = pgAddEntries(PG.graph, at, [...PG.picked], PG.sel || PG.selBeforeClick, PG.patterns, PG.templates);
     PG.add = { at, entries, shown: entries, index: 0, step: 'pick', entry: null };
     const el = document.createElement('div');
     el.id = 'pgAddPalette'; el.className = 'pg-add';
@@ -44484,6 +44501,14 @@ async function pgPatternPreview(entry) {
 async function pgAddPick(entry, at, text) {
     const pid = state.currentProject.id;
     let key = null;
+    // A template is not a node to place: it is saved as a flow and applied (FOG-006 → FOG-003).
+    if (entry.kind === 'template') {
+        if (entry.refused || !(entry.targets || []).length) return setStatus(entry.refused || 'Pick a shot or a sequence first.');
+        try {
+            const f = await api(`/projects/${pid}/flows/from-template`, { method: 'POST', body: JSON.stringify({ template_id: entry.template }) });
+            return pgApplyFlow(f.id, entry.targets);
+        } catch (err) { return setStatus('Could not make a flow from that template: ' + err.message); }
+    }
     try {
         if (entry.kind === 'shot') {
             const description = String(text || '').trim();

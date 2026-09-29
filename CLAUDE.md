@@ -484,6 +484,7 @@ film-engine/
 │       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── graph-add-palette.test.js  # Double-click to add: the previewed insert code is the written one, every cue type, a sequence from picked shots, keyboard only
 │       ├── graph-apply-flow.test.js   # FOG-003: "Apply flow…" on every node type (disabled with the server's reason where it cannot go), every flow and template in the picker, the plan rendered per target kind, nothing armed until it loads, the apply sent with its fingerprint
+│       ├── graph-templates-shelf.test.js # FOG-006: every template on the add palette's shelf beside the patterns, applied to the picks and selection through the apply, refused with why when nothing can run; every template runs on a shot or says what it cannot bind
 │       ├── flow-outputs.test.js       # FOG-004: every out.asset port saved to disk as a flow candidate and drawn on its shot by kind (or named why not); nothing selected by itself, not on the board, not in playback
 │       ├── flow-pick.test.js          # FOG-005: every variation of a paused run a candidate; a pick resumes from the gate without regenerating and makes it the shot's version of every kind; a finished, cancelled or locked case refused
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
@@ -6353,6 +6354,7 @@ node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/graph-add-palette.test.js
 node --test backend/tests/graph-apply-flow.test.js
+node --test backend/tests/graph-templates-shelf.test.js
 node --test backend/tests/flow-outputs.test.js
 node --test backend/tests/flow-pick.test.js
 node --test backend/tests/graph-patterns.test.js
