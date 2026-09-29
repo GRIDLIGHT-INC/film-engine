@@ -1,5 +1,12 @@
 /**
- * THE HOUSE IMAGE STANDARD — one model, two sizes, and no setting overrides it.
+ * THE HOUSE IMAGE STANDARD — the default model, and the project's own size.
+ *
+ * A DEFAULT, NOT A LOCK. "Any image prompt should be able to be sent to flux 2
+ * dev or any of our other providers." A provider or model somebody chose (the
+ * project's pin, or a per-generation choice) runs; this standard is what runs
+ * when nobody chose. lib/providers/index.js, lib/capability-payloads.js and
+ * lib/image-fallback.js each say so where they decide. What follows is the
+ * history of why the default is what it is.
  *
  * "First default that we'll never waiver from. When we create image storyboard
  *  shots, let's create them in 4K. Plates (location, characters, props) in 2K.

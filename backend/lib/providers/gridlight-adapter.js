@@ -149,6 +149,27 @@ function meterGridlight(capability, payload, result) {
 const gridlightAdapter = {
     meter: meterGridlight,
     id: 'gridlight',
+    /*
+     * The gateway's IMAGE models are the model catalog's (lib/model-catalog.js,
+     * authored in gridlight): every catalog model whose capabilities include
+     * image — FLUX.2 [dev] today. Read on every call rather than frozen, so a
+     * catalog that gains a model offers it with nothing to edit here. Listed so
+     * the confirmation dialog can offer it; whether the gateway has a worker up
+     * to run it is the gateway's answer at generation time. Every other
+     * capability is stated as null, "no list, passed through", as before.
+     */
+    get modelsByCapability() {
+        let cat = null;
+        try { cat = require('../model-catalog').current(); } catch (_) { /* no catalog: no list */ }
+        const image = {};
+        for (const m of (cat && cat.models) || []) {
+            if (Array.isArray(m.capabilities) && m.capabilities.includes('image')) image[m.id] = { label: m.name || m.id };
+        }
+        const out = {};
+        for (const c of Object.keys(ENDPOINTS)) out[c] = null;
+        out.image = Object.keys(image).length ? image : null;
+        return out;
+    },
     /** Video streams step/total from the gateway; other endpoints return when done. */
     reportsProgress: 'percent',
     kind: 'generator',

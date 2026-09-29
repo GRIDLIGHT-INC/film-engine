@@ -140,7 +140,19 @@ function imageProviderChain(projectConfig, opts) {
      */
     const { isStandardProvider } = require('./image-standard');
     let walk = chain;
-    if (chain.some(a => isStandardProvider(a.id))) {
+    /*
+     * A PROVIDER SOMEBODY CHOSE IS NOT WALKED AWAY FROM. Nano Banana Pro is the
+     * default, not a lock, so a project or a generation may name FLUX, GPT
+     * Image or the local gateway — and a refusal from it must come back as that
+     * refusal. Walking on would hand back a frame on the house model nobody
+     * asked for this time, which is the same fault the narrowing below exists
+     * to prevent, pointed the other way.
+     */
+    const r = chain.resolution;
+    if (r && r.source === 'project' && !isStandardProvider(r.id) && chain[0] && chain[0].id === r.id) {
+        walk = [chain[0]];
+        walk.resolution = r;
+    } else if (chain.some(a => isStandardProvider(a.id))) {
         walk = chain.filter(a => isStandardProvider(a.id));
         walk.resolution = chain.resolution;
     }
@@ -246,6 +258,17 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
         }
 
         /*
+         * A CHOSEN MODEL STAYS WITH THE VENDOR IT WAS CHOSEN FOR. Walked onto
+         * another vendor it would be stripped below and replaced by the house
+         * model — a different picture from the one asked for — so that vendor
+         * is skipped, and the refusal that started the walk is what comes back.
+         */
+        if (payload && payload.__model_explicit && payload.__model_for && payload.__model_for !== adapter.id) {
+            attempts.push({ provider: adapter.id, ok: false, skipped: true,
+                error: `skipped: the model chosen for this generation belongs to ${payload.__model_for}` });
+            continue;
+        }
+        /*
          * A MODEL BELONGS TO ONE PROVIDER.
          *
          * The chain deliberately walks past a provider that declines, which
@@ -262,9 +285,10 @@ async function runImageFallbackChain(chain, payloadOrFactory, opts) {
             delete payload.model;
             delete payload.__model_for;
         }
-        // The house model, named for THIS vendor of it (lib/image-standard.js).
+        // The house model, named for THIS vendor of it (lib/image-standard.js),
+        // unless a model was chosen for it.
         const house = require('./image-standard').standardModelFor(adapter && adapter.id);
-        if (house && payload) payload.model = house;
+        if (house && payload && !payload.__model_explicit) payload.model = house;
 
         const result = await adapter.generate('image', payload, opts || {});
         attempts.push({ provider: adapter.id, ok: !!result.ok, error: result.ok ? null : result.error });

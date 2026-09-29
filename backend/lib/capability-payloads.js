@@ -950,10 +950,38 @@ function buildImagePayloadForAdapter(ctx, adapter) {
  */
 function withTierModel(payload, ctx, adapter) {
     if (!payload || typeof payload !== 'object') return payload;
+    const base = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
+    // A per-generation choice outranks the project's standing tier: the
+    // director is looking at this frame, not at the settings page.
+    const cfg = (ctx && ctx.tierOverride) ? { ...base, ...ctx.tierOverride } : base;
     /*
-     * THE HOUSE STANDARD OUTRANKS EVERYTHING BELOW IT — a stated model, a pin,
-     * a tier. Every image is Nano Banana Pro; on a vendor that sells it the
-     * model is named here, over whatever the caller or the tier wanted.
+     * A CHOSEN MODEL IS THE MODEL ASKED FOR — the project's pin, or a
+     * per-generation choice from the confirmation dialog — on every provider
+     * that offers it, the house vendors included. Nano Banana Pro is the
+     * default for when nobody named one, not a lock. Marked `__model_explicit`
+     * so the fallback walk neither renames it nor carries it to a vendor that
+     * would sell a different picture under the same request.
+     *
+     * Checked against what the provider offers HERE, not only where it is
+     * saved: a per-generation override never passes through the settings
+     * route, and an unknown name sent on falls back to the provider's own
+     * default — on Meshy its dearest model, three times what was asked for. An
+     * unknown name falls through to the tier instead; an adapter that declares
+     * no model list (the local gateway) cannot be checked, so it is passed.
+     */
+    const offered = cfg.image_model && adapter && adapter.id
+        && require('./providers').modelIdsFor(adapter, 'image');
+    if (cfg.image_model && adapter && adapter.id && (!offered || offered.includes(cfg.image_model))) {
+        payload.model = cfg.image_model;
+        for (const [k, v] of [['__model_for', adapter.id], ['__model_explicit', true]]) {
+            Object.defineProperty(payload, k, { value: v, enumerable: false, configurable: true, writable: true });
+        }
+        return payload;
+    }
+    /*
+     * THE HOUSE STANDARD OUTRANKS EVERYTHING ELSE BELOW IT — a stated model on
+     * the payload, a tier. With no model chosen every image is Nano Banana Pro;
+     * on a vendor that sells it the model is named here.
      */
     const house = require('./image-standard').standardModelFor(adapter && adapter.id);
     if (house) {
@@ -964,36 +992,6 @@ function withTierModel(payload, ctx, adapter) {
         return payload;
     }
     if (payload.model) return payload;                       // already stated
-    const base = (ctx && ctx.project && providerConfigOf(ctx.project)) || {};
-    // A per-generation choice outranks the project's standing tier: the
-    // director is looking at this frame, not at the settings page.
-    const cfg = (ctx && ctx.tierOverride) ? { ...base, ...ctx.tierOverride } : base;
-    if (cfg.image_model) {
-        /*
-         * Checked HERE too, not only where it is saved.
-         *
-         * The settings route refuses a model the provider does not offer, but
-         * a per-generation override reaches this function without passing
-         * through it — so an unknown name went straight to the provider, which
-         * falls back to its own default rather than refusing. On Meshy that
-         * default is the most expensive model it sells, so the mistake is
-         * silent and costs three times what was asked for.
-         *
-         * An adapter that declares no model list cannot be checked; its pin is
-         * passed through as before.
-         */
-        // Per capability: `image` here, through the registry's one rule.
-        const known = require('./providers').modelIdsFor(adapter, 'image');
-        if (!known || known.includes(cfg.image_model)) {
-            payload.model = cfg.image_model;
-            Object.defineProperty(payload, '__model_for', {
-                value: adapter.id, enumerable: false, configurable: true, writable: true,
-            });
-            return payload;
-        }
-        // Unknown: fall through to the tier, which names a model this provider
-        // really has, rather than letting the provider pick its dearest.
-    }
     if (!adapter || !adapter.id) return payload;
     try {
         const { resolveTier } = require('./quality-tiers');

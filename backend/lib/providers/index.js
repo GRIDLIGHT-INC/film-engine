@@ -255,17 +255,21 @@ function refreshAccountDefaults() { _accountDefaults.clear(); }
 function resolveIdWithReason(capability, projectConfig) {
     const cfg = projectConfig || {};
     /*
-     * IMAGES FOLLOW THE HOUSE STANDARD, above every pin, tier and default:
-     * Nano Banana Pro, from the first vendor of it that holds a key (MuAPI,
-     * then Google, then Meshy — the same model sold three ways). Only when none
-     * of them can run does resolution fall through to the ordinary rules, and
-     * then it says so rather than pretending the standard was met.
+     * IMAGES DEFAULT TO THE HOUSE STANDARD, and a choice beats the default.
+     *
+     * "Any image prompt should be able to be sent to flux 2 dev or any of our
+     *  other providers." So a provider somebody NAMED — the project's pin, or a
+     * per-generation choice from the confirmation dialog, which arrives here as
+     * the same `image` key — is what runs, whoever it names. Only a switched-off
+     * local gateway is not reached by naming it: the switch exists to end
+     * exactly that. With nothing named, Nano Banana Pro from the first vendor of
+     * it that holds a key (MuAPI, then Google, then Meshy); and only when none
+     * of them can run does resolution fall through to the ordinary rules.
      */
     if (capability === 'image') {
-        const { STANDARD_PROVIDERS, isStandardProvider } = require('../image-standard');
-        // A pin to ANOTHER vendor of the same model is still honoured: the
-        // model never changes, only who is paid for it.
-        if (cfg.image && isStandardProvider(cfg.image) && _registry.has(cfg.image)) {
+        const { STANDARD_PROVIDERS } = require('../image-standard');
+        if (cfg.image && _registry.has(cfg.image)
+            && (cfg.image !== DEFAULT_PROVIDER || localGatewayEnabled())) {
             return { id: cfg.image, source: 'project', explicit: true };
         }
         for (const id of STANDARD_PROVIDERS) {
