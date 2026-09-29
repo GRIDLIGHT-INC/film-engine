@@ -129,7 +129,9 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '11. Hold a node', '12. Collapse a group', '13. Search to add, and patterns (double-click)',
          '14. Wiring: what connects to what', '15. Adding, duplicating and removing', '16. The header',
          '17. The playback bar', '18. What costs money, and what is free', '19. Asking Claude to do it',
-         '20. Flows on the canvas', '21. Good to know'])
+         '20. Flows on the canvas', '21. The Score page', '22. Your own instruments',
+         '23. An edit made in Premiere', '24. The final film and its sound', '25. Sending the film to Premiere',
+         '26. Good to know'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -496,7 +498,8 @@ bullets([
     ('Transport: ', 'previous shot, play / pause, next shot, and the timecode.'),
     ('Tiles: ', 'one per shot in running order, sized by length. Click a tile to jump there and select that shot.'),
     ('Sound lanes: ', 'MUSIC, SFX and AMB, one lane per sound.'),
-    ('Stills hold for the shot\'s length / Audio / Send to Premiere.', ''),
+    ('Stills hold for the shot\'s length / Audio: ', 'switches for how the preview plays.'),
+    ('Send to Premiere: ', 'opens the Export page (section 25).'),
 ])
 
 # ── 18 ────────────────────────────────────────────────────────────────────
@@ -568,7 +571,103 @@ bullets([
 ])
 
 # ── 21 ────────────────────────────────────────────────────────────────────
-doc.add_heading('21. Good to know', level=1)
+doc.add_heading('21. The Score page', level=1)
+p('A Music node\'s "Open in Score workspace →" opens the Score page (Production → Score). A score session is written against '
+  'a picture: a sequence, a scene, or an edit brought back from Premiere (section 23). Lanes, clips, the shots, hit markers '
+  'and the emotional arc sit on one ruler with one playhead. Playing it in the page is free: nothing is generated to hear it.')
+doc.add_heading('Lanes and their details', level=3)
+bullets([
+    ('Clips: ', 'drag to move, drag an edge to trim (the file is never cut). Takes in a group are one click apart.'),
+    ('The chevron beside a lane\'s name ', 'opens its details underneath it, in six tabs: Part, Instrument, Mix, Takes, '
+     'Automation, Lane. The side panel only says which lane is selected.'),
+    ('Part is a piano roll ', 'lined up with the clips above it. Click to add a note, drag to move, drag its right edge for '
+     'length, double-click to remove. Snap is 1/4, 1/8, 1/16 or off, from the session\'s own tempo. Clicking a key plays a '
+     'plain reference tone, not your instrument.'),
+    ('Play ', '(on the lane head) plays the lane\'s notes through its instrument (section 22). It is free, and the result '
+     'lands as a new take that is auditioned at once; what was selected stays selected until you choose otherwise. '
+     'When a lane cannot play (no notes, no instrument, a plug-in that has gone), the button is greyed out and says why.'),
+    ('Import stems ', 'lays a composer\'s stems on new lanes, all starting at the playhead. The originals are stored '
+     'untouched, with an optional 48 kHz working copy, and their rights recorded as declared (or "unknown").'),
+])
+doc.add_heading('AI actions and Jobs', level=3)
+bullets([
+    ('AI actions: ', 'Emotional arc: proposals, Whole score, Score the selection, Native parts, Separate into stems, '
+     'From this as a reference, From the picture, Inpaint at the playhead, Regenerate as a new take, A/B audition, '
+     'Approve this take. Anything that spends shows its free plan first in the usual confirmation. An action the '
+     'project\'s music provider cannot do is greyed out with that provider\'s own reason.'),
+    ('The emotional arc ', 'is proposed by Claude and accepted by you, range by range. Nothing is generated from a proposal '
+     'nobody accepted.'),
+    ('Every output is a new take. ', 'Nothing replaces what you had; a take becomes the one that plays only when you approve it.'),
+    ('Jobs: ', 'each generation or separation with its parts. "Check again" on one still running, Retry (spends, through the same confirmation) on one that failed.'),
+])
+doc.add_heading('Approving the score', level=3)
+bullets([
+    ('A bounce ', 'is the session rendered to a master and stems — ask Claude ("bounce the score"); an unchanged session is '
+     'not rendered twice.'),
+    ('Approve newest bounce ', 'makes it the film\'s score. A bounce older than your last change is refused. From then on '
+     'the mix plays once at its place in Playback, the Premiere export and the final film, and the scene music under it is '
+     'dropped. Rights marked blocked stop the approval.'),
+    ('Ableton Live (optional): ', 'the DAW panel pushes lanes to Live and reads the set, through a small helper you start '
+     'yourself (docs/ableton-sidecar.md). Every DAW action has a twin that needs no DAW: Export a score package, Import a '
+     'package, Play in the workstation.'),
+])
+
+# ── 22 ────────────────────────────────────────────────────────────────────
+doc.add_heading('22. Your own instruments', level=1)
+p('Your sample libraries (Kontakt and other plug-ins) can play a lane\'s notes inside Film Engine, with no DAW open and '
+  'nothing billed. An instrument here is one sound: the plug-in plus the saved patch that recalls it, named from Kontakt\'s '
+  'own index ("Vortex Bells, Ethereal Earth") so you can always tell where a file came from.')
+bullets([
+    ('The instrument helper ', 'is a small program you start by hand on the Mac (docs/instrument-sidecar.md). It only loads '
+     'plug-ins from the folders macOS installs them in.'),
+    ('The library holds only what you used. ', 'Browsing your sounds reads Kontakt\'s index live; a sound joins the library the '
+     'first time it plays a part.'),
+    ('It renders, it does not play live. ', 'A part is rendered far faster than real time and comes back as a take you hear '
+     'on the Score page.'),
+    ('A silent render is refused ', 'rather than kept — silence is what a plug-in with no patch loaded produces.'),
+    ('Render with instruments ', '(the MIDI panel on a cue in Music & Sound) plays a cue\'s notes through a SoundFont on this '
+     'Mac instead; its licence is recorded on the file.'),
+])
+
+# ── 23 ────────────────────────────────────────────────────────────────────
+doc.add_heading('23. An edit made in Premiere', level=1)
+p('The Edit page (Post) brings a cut finished in Premiere back into Film Engine, so a score can be written against the film '
+  'that will actually play rather than the assembly.')
+bullets([
+    ('Import an edit… ', 'takes the picture you exported from Premiere (H.264 or ProRes). Each import is a new version '
+     '(edit_v1, edit_v2…) in the project\'s 05 Edit folder; nothing is overwritten.'),
+    ('Then the cut list: ', 'Final Cut Pro XML (File → Export → Final Cut Pro XML) or an EDL. Each event is matched to its shot '
+     'by the clip file, else by shot code; a title or stock shot matches nothing and is kept, named.'),
+    ('Score this edit ', 'opens a score session exactly the edit\'s length, so its stems drop onto the Premiere sequence at 00:00.'),
+    ('A newer edit ', 'is reported on the session and applied only when you ask.'),
+])
+
+# ── 24 ────────────────────────────────────────────────────────────────────
+doc.add_heading('24. The final film and its sound', level=1)
+p('Conform joins each shot\'s selected clip in running order into one master file, on this Mac, for free. It needs every '
+  'shot to have a clip: a missing one is named and nothing is built.')
+table(['Sound', 'Where it goes in the master'], [
+    ['Dialogue', 'Each shot\'s lines from the shot\'s start, with the card\'s pauses — only under a clip that has no sound of its own.'],
+    ['Scene music and room tone', 'At the cue\'s offset in its scene, with its level and fades, stopped where the scene ends.'],
+    ['Sound effects', 'From the start of the shot they belong to, at −4 dB.'],
+    ['The approved score', 'Once, at the start of its picture, in place of the scene music it covers.'],
+    ['A finished project mix', 'If one is registered, it is the soundtrack and nothing is laid over it.'],
+], widths=[Inches(1.8), Inches(4.9)])
+
+# ── 25 ────────────────────────────────────────────────────────────────────
+doc.add_heading('25. Sending the film to Premiere', level=1)
+bullets([
+    ('Send to Premiere ', '(Export page) downloads a Premiere Pro XML: one sequence in running order, each clip named by its shot '
+     'code with a "Scene N" marker, and separate audio tracks for dialogue, music, sound effects and ambience. It points at '
+     'the files where they are on this Mac. In Premiere: File → Import.'),
+    ('Shots with no clip ', 'are left out of the Premiere sequence; the export preflight names them.'),
+    ('A packaged handover ', '(ask Claude for export_package) writes the XML with a copy of every file it uses into one folder '
+     'under 07 Delivery/Exports, for another machine or an editor.'),
+    ('Not yet: ', 'bins. Premiere puts everything the XML names in one bin; there is no bin per scene.'),
+])
+
+# ── 26 ────────────────────────────────────────────────────────────────────
+doc.add_heading('26. Good to know', level=1)
 bullets([
     ('Nothing is overwritten. ', 'Every generation is a new version; you choose which one plays.'),
     ('Red means do it now; amber means not yet. ', '"waiting" work is built on something that is itself being redone.'),
@@ -580,6 +679,8 @@ bullets([
     ('The final film uses what is selected. ', 'The conform joins each shot\'s selected clip in running order with the '
      'dialogue, score and ambience where Playback plays them.'),
     ('Previs decisions are read here, changed in Previs. ', 'The Shot drawer shows them; "Open in Previs" to change them.'),
+    ('The score is written against a picture. ', 'Approve it once and it plays everywhere the film does (section 21).'),
+    ('Your instruments are free to play. ', 'A render through your own library costs nothing and lands as a take (section 22).'),
 ])
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
