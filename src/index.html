@@ -14507,6 +14507,11 @@ THREE.GLTFLoader = GLTFLoader;
             <p class="text-sm text-muted" style="margin:0 0 8px;">${escapeHtml(n.type)}</p>
             <label>Label</label>
             <input value="${escapeHtml(n.label || '')}" ${ro} oninput="flowNodeSet('label',this.value)">
+            ${['in.prompt', 'in.asset', 'in.subject'].includes(n.type) ? `<label style="display:flex;gap:6px;align-items:center;">
+              <input type="checkbox" ${ro} ${(n.config || {}).exposed ? 'checked' : ''} onchange="flowNodeSetConfig('exposed', this.checked ? true : '')">
+              Show on the flow's form</label>
+              <p class="text-sm text-muted">Applying the flow from the Production graph asks for this input first; what is written here is the default.</p>`
+              : n.type === 'in.scene' ? '<p class="text-sm text-muted">The scene input binds the shot the flow is applied to, so it is never on the form.</p>' : ''}
             ${n.type === 'in.prompt' ? `<label>Prompt text</label>
               <textarea rows="4" ${ro} oninput="flowNodeSetConfig('text',this.value)">${escapeHtml((n.config || {}).text || '')}</textarea>
               <p class="text-sm text-muted">Use {{name}} to interpolate.</p>` : ''}
@@ -44903,17 +44908,65 @@ async function pgApplyChoose(kind, id) {
             flowId = f && f.id;
         } catch (err) { setStatus('Could not make a flow from that template: ' + err.message, true); return; }
     }
-    if (flowId) return pgApplyFlow(flowId, targets);
+    if (!flowId) return;
+    // A flow with exposed inputs asks for them first (FOG-009); the values go through the plan.
+    let form = null;
+    try { form = await api(`/flows/${flowId}/form?project_id=${encodeURIComponent(state.currentProject.id)}`); } catch (_) { form = null; }
+    if (form && ((form.fields || []).length || (form.not_fillable || []).length)) {
+        PG.applyForm = { flowId, targets };
+        return showModalHtml('pgApplyModal', pgFlowFormHtml(form));
+    }
+    return pgApplyFlow(flowId, targets);
+}
+
+/** A flow's form (FOG-009): each exposed input as its control, the node's own value as the default. */
+function pgFlowFormHtml(form) {
+    const f = form || {};
+    const field = x => {
+        const id = `pgForm_${x.node_id}`;
+        if (x.control === 'text') {
+            return `<label for="${esc(id)}">${esc(x.label)}</label>
+                <textarea id="${esc(id)}" rows="3" data-form-node="${esc(x.node_id)}" style="width:100%;">${esc(x.default || '')}</textarea>`;
+        }
+        const opts = (x.options || []).map(o => {
+            const v = x.control === 'asset' ? o.id : o.name;
+            return `<option value="${esc(v)}" ${v === x.default ? 'selected' : ''}>${esc(o.name)}${o.kind ? ' · ' + esc(o.kind) : ''}${o.asset_type ? ' · ' + esc(o.asset_type) : ''}</option>`;
+        }).join('');
+        const own = x.control === 'asset' ? 'the asset set on the node' : 'the node\'s own (or each shot\'s first character)';
+        return `<label for="${esc(id)}">${esc(x.label)}</label>
+            <select id="${esc(id)}" data-form-node="${esc(x.node_id)}" style="width:100%;"><option value="">${esc(own)}</option>${opts}</select>`;
+    };
+    const fields = (f.fields || []).map(field).join('');
+    const notes = (f.not_fillable || []).map(n => `<p class="text-sm text-muted">${esc(n.label)}: ${esc(n.why)}</p>`).join('');
+    return `<h3 style="margin-top:0;">${esc(f.flow_name || 'Flow')}</h3>
+        <p class="text-sm text-muted">Fill in the flow's inputs. The next screen shows what each shot binds and what it costs; nothing runs until you confirm.</p>
+        ${fields}${notes}
+        <div style="text-align:right;margin-top:12px;">
+          <button class="pg-sbtn" onclick="closeModal('pgApplyModal')">Cancel</button>
+          <button class="pg-sbtn primary" onclick="pgFlowFormSubmit()">Plan and confirm</button></div>`;
+}
+
+/** The form's values, into the plan and the one confirmation. */
+function pgFlowFormSubmit() {
+    const f = PG.applyForm;
+    if (!f) return;
+    const values = {};
+    document.querySelectorAll('#pgApplyModal [data-form-node]').forEach(el => { if (el.value !== '') values[el.dataset.formNode] = el.value; });
+    closeModal('pgApplyModal');
+    PG.applyForm = null;
+    return pgApplyFlow(f.flowId, f.targets, values);
 }
 
 /** The free plan in the one confirmation, then the apply with that plan's fingerprint. */
-async function pgApplyFlow(flowId, targets) {
+async function pgApplyFlow(flowId, targets, inputs) {
     const pid = state.currentProject.id;
     let plan = null;
+    const form = inputs && Object.keys(inputs).length ? inputs : null;
     return confirmPaidImage({
         capability: 'image',
         title: 'Apply flow',
-        previewUrl: `/flows/${flowId}/apply-plan?project_id=${encodeURIComponent(pid)}&targets=${encodeURIComponent(targets.join(','))}`,
+        previewUrl: `/flows/${flowId}/apply-plan?project_id=${encodeURIComponent(pid)}&targets=${encodeURIComponent(targets.join(','))}`
+            + (form ? `&inputs=${encodeURIComponent(JSON.stringify(form))}` : ''),
         describe: d => { plan = d; return pgApplyPlanDescribe(d); },
         armable: pgApplyArmable,
         send: async () => {
@@ -44921,7 +44974,8 @@ async function pgApplyFlow(flowId, targets) {
             const box = document.getElementById('pgApplyIgnoreBudget');
             try {
                 const r = await api(`/flows/${flowId}/apply`, { method: 'POST', body: JSON.stringify({
-                    project_id: pid, targets, fingerprint: plan.fingerprint, ignore_budget: !!(box && box.checked) }) });
+                    project_id: pid, targets, fingerprint: plan.fingerprint, ignore_budget: !!(box && box.checked),
+                    ...(form ? { inputs: form } : {}) }) });
                 PG.picked = new Set();
                 setStatus(r && r.apply_id ? `Applying: ${(r.runs || []).length} run(s) — ${r.summary || ''}` : (r && r.error) || 'Nothing was started.');
                 pgPollRunning();

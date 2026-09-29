@@ -58,22 +58,23 @@ const INPUT_BINDINGS = Object.freeze({
         const unresolved = [...text.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)]
             .map(m => m[1]).filter(k => cfg[k] === undefined && (vars || {})[k] === undefined);
         return {
-            binds: 'the text written on the node',
+            binds: cfg.from_form ? 'the text given in the form' : 'the text written on the node',
             value: text,
             warnings: unresolved.map(k => `${nodeName(node)}: {{${k}}} has no value, and the run leaves it visible in the prompt`),
         };
     },
     'in.asset'(node, shot, vars, db) {
         const id = (node.config || {}).asset_id;
-        if (!id) return { binds: 'the asset chosen on the node', value: null, warnings: [`${nodeName(node)}: no asset chosen, so the node skips on every shot`] };
+        const where = (node.config || {}).from_form ? 'the asset chosen in the form' : 'the asset chosen on the node';
+        if (!id) return { binds: where, value: null, warnings: [`${nodeName(node)}: no asset chosen, so the node skips on every shot`] };
         const asset = db.prepare('SELECT id, file_name FROM film_assets WHERE id = ?').get(id);
-        if (!asset) return { binds: 'the asset chosen on the node', value: id, warnings: [`${nodeName(node)}: asset ${id} no longer exists, so the node skips`] };
-        return { binds: 'the asset chosen on the node', value: asset.file_name || asset.id, warnings: [] };
+        if (!asset) return { binds: where, value: id, warnings: [`${nodeName(node)}: asset ${id} no longer exists, so the node skips`] };
+        return { binds: where, value: asset.file_name || asset.id, warnings: [] };
     },
     'in.subject'(node, shot) {
         const named = String((node.config || {}).subject_name || '');
         const fromCard = cardCharacter(shot.card);
-        if (named) return { binds: 'the subject named on the node', value: named, warnings: [] };
+        if (named) return { binds: (node.config || {}).from_form ? 'the subject chosen in the form' : 'the subject named on the node', value: named, warnings: [] };
         if (fromCard) return { binds: `shot ${shot.shot_code}'s first character`, value: fromCard, warnings: [] };
         return { binds: 'the shot\'s first character', value: null, refused: `${nodeName(node)} names no subject, and shot ${shot.shot_code}'s card names no character` };
     },
@@ -97,13 +98,19 @@ const INPUT_BINDINGS = Object.freeze({
 function planApply(db, args) {
     const { flowId, projectId } = args;
     const { loadGraph } = require('../routes/flows');
-    const flow = loadGraph(flowId);
+    let flow = loadGraph(flowId);
     if (!flow) return { error: 'Flow not found', status: 404 };
     if (flow.project_id && projectId && flow.project_id !== projectId) {
         return { error: 'This flow belongs to another project; apply it from that project, or make it a library flow.', status: 400 };
     }
     const pid = projectId || flow.project_id;
     if (!pid) return { error: 'A library flow is applied within a project: name one with project_id.', status: 400 };
+
+    // The form's values (FOG-009): checked, then written into the exposed nodes for this plan only.
+    const formValues = args.inputs && typeof args.inputs === 'object' ? args.inputs : {};
+    const formCheck = require('./flow-form').checkInputs(db, flow, formValues, pid);
+    if (!formCheck.ok) return { error: formCheck.error, status: 400 };
+    flow = { ...flow, ...require('./flow-form').withInputs(flow, formValues) };
 
     const graph = args.graph || require('./production-graph').buildGraph(db, pid);
     if (!graph) return { error: 'Project not found', status: 404 };
@@ -161,7 +168,7 @@ function planApply(db, args) {
     const total = Number((per.total * runnable.length).toFixed(6));
     const budget = budgetStatus(db, pid, total);
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
-        flow: flow.id, graph: flow.fingerprint, project: pid, vars,
+        flow: flow.id, graph: flow.fingerprint, project: pid, vars, inputs: formValues,
         shots: runnable.map(s => [s.shot_id, crypto.createHash('sha256').update(cardOf.get(s.shot_id)).digest('hex')]),
     })).digest('hex').slice(0, 32);
 
@@ -180,7 +187,7 @@ function planApply(db, args) {
         targets, shots, held,
         per_run: per, runs: runnable.length,
         total_cost: total, total_calls: per.calls * runnable.length,
-        budget, fingerprint, spends: false, summary,
+        budget, fingerprint, spends: false, summary, inputs: formValues,
     };
 }
 
@@ -225,7 +232,7 @@ function startApply(db, args) {
     if (!targets.length) return refuse(400, 'TARGETS_REQUIRED', 'targets is required: the graph node keys the plan was read for');
     if (!args.fingerprint) return refuse(400, 'FINGERPRINT_REQUIRED', 'fingerprint is required: read the plan (flow_apply_plan) first and pass its fingerprint, so what runs is what you approved');
 
-    const plan = planApply(db, { flowId: args.flowId, projectId: args.projectId, targets, vars: args.vars || {} });
+    const plan = planApply(db, { flowId: args.flowId, projectId: args.projectId, targets, vars: args.vars || {}, inputs: args.inputs || {} });
     if (plan.error) return refuse(plan.status || 400, null, plan.error);
     if (plan.fingerprint !== args.fingerprint) {
         return refuse(409, 'PLAN_MOVED', 'The plan changed since it was read — the flow, the selection or a shot\'s card moved. Nothing was started; review the current plan and apply that.', { plan });
@@ -241,7 +248,8 @@ function startApply(db, args) {
     }
 
     const { loadGraph } = require('../routes/flows');
-    const graph = loadGraph(plan.flow_id);
+    // The graph the plan priced: the flow with the form's values in its exposed nodes.
+    const graph = require('./flow-form').withInputs(loadGraph(plan.flow_id), args.inputs || {});
     const applyId = require('../db/database').generateId();
     const runnable = plan.shots.filter(s => s.status === 'ok');
     const runs = runnable.map(s => ({ run_id: require('../db/database').generateId(), shot_id: s.shot_id, shot_code: s.shot_code }));

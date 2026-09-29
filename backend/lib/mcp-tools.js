@@ -3998,6 +3998,7 @@ const PRODUCTION_TOOLS = [
              */
             environment_motion: { type: 'string', description: 'What the WORLD does while the subject acts \u2014 "flames erupt from the struck house; debris falls into the street". Reaches the video prompt on every provider; it is NOT the subject\u2019s action and NOT scenery, which the keyframe already shows.' },
             end_state: { type: 'string', description: 'Where things must BE when the clip ends \u2014 "the dragon fills the near foreground; Maya is small at the far kerb". Compiled into a closing clause, never sent as a labelled section.' },
+            generation: { type: 'object', description: '{negative_prompt} \u2014 what this shot\u2019s frame and clip must avoid, added to the default negatives. MERGES; null on a key clears it. Some video providers (Runway) accept no negative prompt at all, so a rule that must hold everywhere belongs in the description too.' },
             beats: { type: 'array', items: { type: 'string' }, description: 'Ordered subject beats for a shot that evolves, compiled as "First X, then Y". Write these ONLY when the shot genuinely has stages \u2014 micromanaging every second makes some models less reliable, and a shot needing more than a few beats is usually one that should be split.' },
             duration_seconds: { type: 'number' },
             notes: { type: 'string' },
@@ -4907,6 +4908,7 @@ const ROUTE_TOOLS = [
             const q = new URLSearchParams({ targets: keys });
             if (a.project_id) q.set('project_id', a.project_id);
             if (a.vars) q.set('vars', JSON.stringify(a.vars));
+            if (a.inputs) q.set('inputs', JSON.stringify(a.inputs));
             return `/film/flows/${a.flow_id}/apply-plan?${q.toString()}`;
         },
         schema: {
@@ -4914,9 +4916,24 @@ const ROUTE_TOOLS = [
             targets: { type: 'array', items: { type: 'string' }, description: 'Graph node keys: shot:<id>, seq:<id>. Read them from production_graph_get.' },
             project_id: { type: 'string', description: 'Required for a library flow; defaults to the flow\'s own project.' },
             vars: { type: 'object', description: 'Values for {{placeholders}} in the flow\'s prompt nodes.' },
+            inputs: { type: 'object', description: 'The flow\'s form (flow_form): { input node id: value } for its EXPOSED inputs only — a prompt\'s text, an asset id, a subject name. They change what the plan binds and are part of its fingerprint.' },
         },
         required: ['flow_id', 'targets'],
         probe: { flow_id: 'probe-no-such-flow', targets: ['shot:probe'] },
+    },
+    {
+        name: 'flow_form',
+        route: 'formRoute',
+        method: 'GET',
+        description: 'FREE — spends nothing. A flow\'s form: its input nodes marked exposed, each as a field (text for a prompt, an asset picker with this project\'s assets, a subject picker with its characters, locations and props) with the node\'s own value as the default, and any exposed input that cannot be filled in with why. '
+            + 'Pass the values as inputs to flow_apply_plan and then flow_apply.',
+        path: a => `/film/flows/${a.flow_id}/form${a.project_id ? `?project_id=${encodeURIComponent(a.project_id)}` : ''}`,
+        schema: {
+            flow_id: { type: 'string' },
+            project_id: { type: 'string', description: 'Which project\'s assets and subjects to offer; defaults to the flow\'s own project.' },
+        },
+        required: ['flow_id'],
+        probe: { flow_id: 'probe-no-such-flow' },
     },
     {
         name: 'flow_apply',
@@ -4933,10 +4950,11 @@ const ROUTE_TOOLS = [
             fingerprint: { type: 'string', description: 'flow_apply_plan\'s fingerprint.' },
             project_id: { type: 'string' },
             vars: { type: 'object' },
+            inputs: { type: 'object', description: 'The same form values the plan was read with.' },
             ignore_budget: { type: 'boolean', description: 'Override the budget refusal. Say why in your message to the user.' },
         },
         required: ['flow_id', 'targets', 'fingerprint'],
-        bodyKeys: ['targets', 'fingerprint', 'project_id', 'vars', 'ignore_budget'],
+        bodyKeys: ['targets', 'fingerprint', 'project_id', 'vars', 'inputs', 'ignore_budget'],
         probe: { flow_id: 'probe-no-such-flow', targets: ['shot:probe'], fingerprint: 'probe' },
     },
     {

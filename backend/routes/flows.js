@@ -427,7 +427,9 @@ function applyPlanRoute(req, res, flowId, query) {
     if (!targets.length) return json(res, 400, { error: 'targets is required: a comma-separated list of graph node keys (shot:<id>, seq:<id>)' });
     let vars = {};
     if (q.vars) { try { vars = JSON.parse(q.vars) || {}; } catch (_) { return json(res, 400, { error: 'vars must be JSON' }); } }
-    const plan = require('../lib/flow-apply').planApply(db, { flowId, projectId: q.project_id || null, targets, vars });
+    let inputs = {};
+    if (q.inputs) { try { inputs = JSON.parse(q.inputs) || {}; } catch (_) { return json(res, 400, { error: 'inputs must be JSON: { node_id: value }' }); } }
+    const plan = require('../lib/flow-apply').planApply(db, { flowId, projectId: q.project_id || null, targets, vars, inputs });
     if (plan.error) return json(res, plan.status || 400, { error: plan.error });
     return json(res, 200, plan);
 }
@@ -442,10 +444,22 @@ function applyRoute(req, res, flowId) {
     const body = req.body || {};
     const targets = Array.isArray(body.targets) ? body.targets : String(body.targets || '').split(',');
     const out = require('../lib/flow-apply').startApply(db, {
-        flowId, projectId: body.project_id || null, targets, vars: body.vars || {},
+        flowId, projectId: body.project_id || null, targets, vars: body.vars || {}, inputs: body.inputs || {},
         fingerprint: body.fingerprint || '', ignoreBudget: !!body.ignore_budget,
     });
     return json(res, out.status, out.body);
+}
+
+/**
+ * FOG-009: the flow's form — its exposed inputs as fields (text, asset picker,
+ * subject picker) with the project's options, and the exposed ones that cannot
+ * be filled in, with why. Free.
+ */
+function formRoute(req, res, flowId, query) {
+    const flow = loadGraph(flowId);
+    if (!flow) return json(res, 404, { error: 'Flow not found' });
+    const projectId = (query && query.project_id) || flow.project_id || null;
+    return json(res, 200, { flow_id: flow.id, flow_name: flow.name, ...require('../lib/flow-form').formOf(db, flow, projectId) });
 }
 
 /** FOG-002: an apply and its runs, status derived from the runs. Free. */
@@ -500,6 +514,7 @@ function handleFlows(req, res, urlParts, query) {
         }
         if (urlParts[3] === 'estimate' && req.method === 'POST') return estimateFlow(req, res, flowId);
         if (urlParts[3] === 'apply-plan' && req.method === 'GET') return applyPlanRoute(req, res, flowId, query);
+        if (urlParts[3] === 'form' && req.method === 'GET') return formRoute(req, res, flowId, query);
         if (urlParts[3] === 'apply' && !urlParts[4] && req.method === 'POST') return applyRoute(req, res, flowId);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);

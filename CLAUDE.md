@@ -205,6 +205,7 @@ film-engine/
 │   │   ├── flow-apply.js         # Apply a flow to a selection on the Production graph: the free plan (targets, bindings, cost, budget) and the apply, one run per shot under one record (FOG-001/002)
 │   │   ├── flow-outputs.js       # What a flow makes, saved to disk and kept as a CANDIDATE version on its shot: typed other so nothing picks it by itself, the type it would be kept for the pick (FOG-004)
 │   │   ├── flow-pick.js          # A paused pick becomes pick-a-version: refused unless paused, the variation made the shot's version (frame, clip or sound), the run resumed from the gate with nothing upstream generated again (FOG-005)
+│   │   ├── flow-form.js          # A flow's form: exposed input nodes as a text box, an asset picker or a subject picker; values checked, written into the exposed nodes for one apply, part of the plan's fingerprint (FOG-009)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
 │   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
@@ -489,6 +490,7 @@ film-engine/
 │       ├── flow-pick.test.js          # FOG-005: every variation of a paused run a candidate; a pick resumes from the gate without regenerating and makes it the shot's version of every kind; a finished, cancelled or locked case refused
 │       ├── flow-queue.test.js         # FOG-007: every flow-run status from the migration in exactly one queue bucket (paused = waiting for a pick) or left out with why; each pans to its shot; a live one cancels, and a cancel stops a run that is going
 │       ├── flow-provenance.test.js    # FOG-008: a flow output's and a picked frame's recipe names the flow, version, saving and generating node, its provider and model, the run and the apply, or names each as not found; make another re-applies the flow to the shot
+│       ├── flow-form.test.js          # FOG-009: every input node type a form control or refused with why; the values change the plan, its fingerprint and the runs; unexposed, unknown, scene and foreign-asset values refused; flow_form and the drawer
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6361,6 +6363,7 @@ node --test backend/tests/flow-outputs.test.js
 node --test backend/tests/flow-pick.test.js
 node --test backend/tests/flow-queue.test.js
 node --test backend/tests/flow-provenance.test.js
+node --test backend/tests/flow-form.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
