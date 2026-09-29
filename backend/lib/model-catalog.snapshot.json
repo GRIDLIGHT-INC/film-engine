@@ -6,13 +6,13 @@
       "id": "fish-s2-pro",
       "name": "Fish Audio S2 Pro",
       "hf_repo": "fishaudio/s2-pro",
+      "aliases": [],
       "digest": "1de9996b6be38b745688de084d87a5633f714e4e",
       "capabilities": [
         "voice"
       ],
       "worker_class": "gpu",
       "placement": "aws",
-      "instance_type": null,
       "allowed_regions": [
         "*"
       ],
@@ -64,7 +64,6 @@
       },
       "unknown": {
         "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
-        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
         "prompt_limit": "not stated on the model card",
         "reference_mode": "voice reference is audio, not an image mode",
         "size_control": "not applicable: audio",
@@ -79,13 +78,13 @@
       "id": "flux2-dev",
       "name": "FLUX.2 [dev]",
       "hf_repo": "black-forest-labs/FLUX.2-dev",
+      "aliases": [],
       "digest": "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c",
       "capabilities": [
         "image"
       ],
       "worker_class": "gpu",
       "placement": "aws",
-      "instance_type": null,
       "allowed_regions": [
         "*"
       ],
@@ -151,7 +150,6 @@
       },
       "unknown": {
         "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
-        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
         "prompt_limit": "not stated on the model card",
         "max_reference_images": "not stated on the model card",
         "reference_mode": "not stated on the model card",
@@ -166,13 +164,13 @@
       "id": "latentsync-1.6",
       "name": "LatentSync 1.6",
       "hf_repo": "ByteDance/LatentSync-1.6",
+      "aliases": [],
       "digest": "c42c7e6c8e9c213626389fa7d9a3c444b8536353",
       "capabilities": [
         "lipsync"
       ],
       "worker_class": "gpu",
       "placement": "aws",
-      "instance_type": "g6.xlarge",
       "allowed_regions": [
         "*"
       ],
@@ -240,13 +238,13 @@
       "id": "minimax-h3",
       "name": "MiniMax H3",
       "hf_repo": "MiniMaxAI/MiniMax-H3",
+      "aliases": [],
       "digest": "42ed227ee7df40d41602854ae760620d6eb651fe",
       "capabilities": [
         "video"
       ],
       "worker_class": "gpu-multi",
       "placement": "aws",
-      "instance_type": "p5.48xlarge",
       "allowed_regions": [
         "ca-central-1"
       ],
@@ -344,13 +342,13 @@
       "id": "stable-audio-3-medium",
       "name": "Stable Audio 3 Medium",
       "hf_repo": "stabilityai/stable-audio-3-medium",
+      "aliases": [],
       "digest": "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
       "capabilities": [
         "music"
       ],
       "worker_class": "gpu",
       "placement": "aws",
-      "instance_type": null,
       "allowed_regions": [
         "*"
       ],
@@ -439,7 +437,6 @@
       },
       "unknown": {
         "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
-        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
         "prompt_limit": "not stated on the model card",
         "size_control": "not applicable: audio",
         "max_pixels": "not applicable: audio",
@@ -454,13 +451,15 @@
       "id": "stable-audio-3-small-sfx",
       "name": "Stable Audio 3 Small SFX",
       "hf_repo": "stabilityai/stable-audio-3-small-sfx",
+      "aliases": [
+        "stable_audio3"
+      ],
       "digest": "ae12755283df9d62ca39a9b050a39a0b607b8c20",
       "capabilities": [
         "sfx"
       ],
       "worker_class": "cpu",
       "placement": "local",
-      "instance_type": "local",
       "allowed_regions": [
         "*"
       ],

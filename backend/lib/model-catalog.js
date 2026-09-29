@@ -28,6 +28,23 @@ const MODEL_FIELDS = [
     'max_keyframes', 'size_control', 'max_pixels', 'supports_seed', 'supports_negative_prompt',
     'reports_progress', 'cancel', 'duration', 'output_formats', 'controls', 'unknown',
 ];
+/**
+ * Fields the contract allows and does not require: a display name, the
+ * repository the weights come from, the other names agents know a model by,
+ * and a music model's six workflows. Anything else on an entry is refused, so a
+ * field one side adds and the other never reads cannot pass unnoticed.
+ */
+const OPTIONAL_FIELDS = ['name', 'hf_repo', 'aliases', 'music_workflows'];
+/**
+ * Which request inputs make which consent necessary. A model whose consent is
+ * `required` asks for it only when the request carries that kind of input: a
+ * text-to-video run clones nobody, and demanding consent on every call teaches
+ * callers to send both flags always, which empties consent of meaning.
+ */
+const CONSENT_INPUTS = {
+    voice_clone: ['reference_audio', 'voice_sample'],
+    likeness: ['reference_images', 'reference_video', 'face_video'],
+};
 /** Fields that may never be unknown: without them an entry cannot be named, routed or gated. */
 const NEVER_UNKNOWN = ['id', 'capabilities', 'allowed_regions', 'consent', 'controls', 'unknown'];
 
@@ -58,6 +75,10 @@ function validateModel(m, i) {
     const unknown = m.unknown && typeof m.unknown === 'object' && !Array.isArray(m.unknown) ? m.unknown : null;
     if (!unknown) errs.push(`${id}: unknown must be an object of field → reason`);
 
+    for (const f of Object.keys(m)) {
+        if (!MODEL_FIELDS.includes(f) && !OPTIONAL_FIELDS.includes(f)) errs.push(`${id}: ${f} is not a catalog field`);
+    }
+    if ('aliases' in m && (!Array.isArray(m.aliases) || m.aliases.some(a => typeof a !== 'string' || !a))) errs.push(`${id}: aliases must be an array of names`);
     for (const f of MODEL_FIELDS) {
         if (!(f in m)) { errs.push(`${id}: ${f} is missing`); continue; }
         if (m[f] === null) {
@@ -131,6 +152,15 @@ function validateCatalog(cat) {
     if (!DATE_RX.test(String(cat.generated_on || ''))) errs.push('generated_on must be an ISO date');
     if (!Array.isArray(cat.models) || !cat.models.length) return errs.concat('models must be a non-empty array');
     cat.models.forEach((m, i) => errs.push(...validateModel(m, i)));
+    // Every name a model is found by — id, repository, alias — names one model only.
+    const owner = new Map();
+    for (const m of cat.models) {
+        if (!m || !m.id) continue;
+        for (const key of identities(m)) {
+            if (owner.has(key) && owner.get(key) !== m.id) errs.push(`models: ${key} names more than one model (${owner.get(key)}, ${m.id})`);
+            else owner.set(key, m.id);
+        }
+    }
     const ids = cat.models.map(m => m && m.id);
     for (let i = 1; i < ids.length; i++) {
         if (ids[i] === ids[i - 1]) errs.push(`models: duplicate id ${ids[i]}`);
@@ -152,8 +182,32 @@ function current() {
     }
     return cachedSnapshot;
 }
-function findModel(cat, id) {
-    return (cat && Array.isArray(cat.models) && cat.models.find(m => m && m.id === id)) || null;
+/** Every name a model answers to: its id, its repository, and its aliases — the gateway's own rule. */
+function identities(m) {
+    return [m.id, m.hf_repo, ...(Array.isArray(m.aliases) ? m.aliases : [])].filter(k => typeof k === 'string' && k);
+}
+function findModel(cat, key) {
+    if (!cat || !Array.isArray(cat.models) || !key) return null;
+    return cat.models.find(m => m && identities(m).includes(key)) || null;
+}
+
+// Validation is cached by CONTENT, never by object: a catalog changed in place
+// has a new fingerprint and is checked again.
+const validated = new Map();
+function errorsOf(cat) {
+    const fp = fingerprint(cat);
+    if (!validated.has(fp)) {
+        if (validated.size > 16) validated.clear();
+        validated.set(fp, validateCatalog(cat));
+    }
+    return validated.get(fp);
+}
+
+/** Is this grant in force for this model today? */
+function grantInForce(g, modelId, today) {
+    return g && g.model_id === modelId && !g.revoked_at
+        && (!g.granted_on || g.granted_on <= today)
+        && (!g.expires_at || g.expires_at >= today);
 }
 
 /**
@@ -163,7 +217,7 @@ function findModel(cat, id) {
 function admits(cat, modelId, ctx = {}) {
     const no = (code, reason) => ({ ok: false, code, reason, model: modelId });
     if (!cat) return no('NO_CATALOG', 'no model catalog is loaded, so nothing self-hosted may run');
-    const errs = validateCatalog(cat);
+    const errs = errorsOf(cat);
     if (errs.length) return no('CATALOG_INVALID', `the model catalog does not validate: ${errs[0]}${errs.length > 1 ? ` (and ${errs.length - 1} more)` : ''}`);
     const m = findModel(cat, modelId);
     if (!m) return no('NOT_IN_CATALOG', `${modelId} is not in the model catalog (version ${cat.catalog_version})`);
@@ -178,14 +232,19 @@ function admits(cat, modelId, ctx = {}) {
         if (!ctx.region) return no('REGION_UNKNOWN', `the execution region is unknown, and ${m.id} may run only in ${regions.join(', ')}`);
         if (!regions.includes(ctx.region)) return no('REGION_NOT_ALLOWED', `${m.id} may run only in ${regions.join(', ')}, not ${ctx.region}`);
     }
+    let grant = null;
     if (ctx.production && m.licence.commercial_use !== 'permitted') {
-        return no('NOT_COMMERCIAL', `${m.id}'s licence ${m.licence.id} is "${m.licence.commercial_use}" for commercial use, so it cannot be enabled for production`);
+        grant = (ctx.grants || []).find(g => grantInForce(g, m.id, today)) || null;
+        if (!grant) return no('NOT_COMMERCIAL', `${m.id}'s licence ${m.licence.id} is "${m.licence.commercial_use}" for commercial use and no licence grant for it is in force, so it cannot be enabled for production`);
     }
     const consents = new Set(ctx.consents || []);
-    for (const k of ['voice_clone', 'likeness']) {
-        if (m.consent[k] === 'required' && !consents.has(k)) return no('CONSENT_REQUIRED', `${m.id} processes a ${k.replace('_', ' ')}, which needs recorded consent (${k})`);
+    const inputs = new Set(ctx.inputs || []);
+    for (const [k, carriers] of Object.entries(CONSENT_INPUTS)) {
+        if (m.consent[k] !== 'required') continue;
+        const carried = carriers.filter(i => inputs.has(i));
+        if (carried.length && !consents.has(k)) return no('CONSENT_REQUIRED', `${m.id} is being sent ${carried.join(', ')}, which needs recorded consent (${k})`);
     }
-    return { ok: true, model: modelId, catalog_version: cat.catalog_version };
+    return { ok: true, model: m.id, catalog_version: cat.catalog_version, ...(grant ? { licence_grant: grant.licence_ref } : {}) };
 }
 
 // ── Auditable ──────────────────────────────────────────────────────────────
@@ -246,6 +305,59 @@ function recordCatalog(cat, { source = 'unknown' } = {}) {
     return { changed: true, catalog_version: cat.catalog_version, fingerprint: fp, changes };
 }
 
+const DATE_RX_STRICT = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/** Record an organisation's own licence for a model. Stored under the catalog id, whatever name it was given by. */
+function recordGrant(body = {}) {
+    const m = findModel(current(), body.model_id);
+    if (!m) throw refuse('NOT_IN_CATALOG', `${body.model_id} is not in the model catalog`);
+    for (const k of ['licence_ref', 'granted_by']) {
+        if (typeof body[k] !== 'string' || !body[k].trim()) throw refuse('INVALID_GRANT', `a licence grant needs ${k}`);
+    }
+    const grantedOn = body.granted_on || new Date().toISOString().slice(0, 10);
+    for (const [k, v] of [['granted_on', grantedOn], ['expires_at', body.expires_at]]) {
+        if (v != null && !DATE_RX_STRICT.test(String(v))) throw refuse('INVALID_GRANT', `${k} must be YYYY-MM-DD, not ${v}`);
+    }
+    const { db } = require('../db/database');
+    const r = db.prepare(`INSERT INTO film_model_licence_grants (model_id, licence_ref, scope, granted_by, granted_on, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(m.id, body.licence_ref.trim(), body.scope || null, body.granted_by.trim(), grantedOn, body.expires_at || null);
+    return db.prepare('SELECT * FROM film_model_licence_grants WHERE id = ?').get(r.lastInsertRowid);
+}
+
+/** Revoke a grant. The row stays: who enabled production, and on what authority, outlives the revocation. */
+function revokeGrant(id, { revoked_by } = {}) {
+    const { db } = require('../db/database');
+    const g = db.prepare('SELECT * FROM film_model_licence_grants WHERE id = ?').get(id);
+    if (!g) throw refuse('NOT_FOUND', `no licence grant ${id}`);
+    if (g.revoked_at) throw refuse('ALREADY_REVOKED', `licence grant ${id} was revoked on ${g.revoked_at}`);
+    if (!revoked_by) throw refuse('INVALID_GRANT', 'revoking a licence grant needs revoked_by');
+    db.prepare("UPDATE film_model_licence_grants SET revoked_at = datetime('now'), revoked_by = ? WHERE id = ?").run(revoked_by, id);
+    return db.prepare('SELECT * FROM film_model_licence_grants WHERE id = ?').get(id);
+}
+
+/** Every grant recorded for a model (or for all), revoked ones included. */
+function grantsFor(modelId) {
+    const { db } = require('../db/database');
+    return modelId
+        ? db.prepare('SELECT * FROM film_model_licence_grants WHERE model_id = ? ORDER BY id').all(modelId)
+        : db.prepare('SELECT * FROM film_model_licence_grants ORDER BY id').all();
+}
+
+/** `admits` with this install's own grants read from the database. */
+function admitsHere(modelId, ctx = {}) {
+    const cat = current();
+    const m = findModel(cat, modelId);
+    return admits(cat, modelId, { ...ctx, grants: ctx.grants || (m ? grantsFor(m.id) : []) });
+}
+
+/** Record the vendored catalog, called when the server starts. Never throws: a bad catalog must not stop the app. */
+function recordSnapshot() {
+    const cat = current();
+    if (!cat) return { recorded: false, reason: 'no vendored catalog' };
+    try { return { recorded: true, ...recordCatalog(cat, { source: 'snapshot' }) }; }
+    catch (e) { return { recorded: false, reason: e.message, code: e.code }; }
+}
+
 function auditLog(limit = 50) {
     const { db } = require('../db/database');
     return db.prepare('SELECT * FROM film_model_catalog_audit ORDER BY id DESC LIMIT ?').all(limit)
@@ -253,6 +365,7 @@ function auditLog(limit = 50) {
 }
 
 module.exports = {
-    SNAPSHOT_PATH, MODEL_FIELDS, NEVER_UNKNOWN, ENUMS, MUSIC_WORKFLOWS, TIMELESS,
+    SNAPSHOT_PATH, MODEL_FIELDS, OPTIONAL_FIELDS, NEVER_UNKNOWN, ENUMS, MUSIC_WORKFLOWS, TIMELESS, CONSENT_INPUTS,
+    recordGrant, revokeGrant, grantsFor, admitsHere, recordSnapshot, identities,
     validateCatalog, admits, use, current, findModel, fingerprint, diff, recordCatalog, auditLog,
 };

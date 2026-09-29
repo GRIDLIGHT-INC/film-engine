@@ -48,6 +48,9 @@ function model(id, capabilities, over = {}) {
     const music = capabilities.includes('music');
     const m = {
         id,
+        name: id.toUpperCase(),
+        hf_repo: `vendor/${id}`,
+        aliases: [id.replace(/[-.]/g, '_')],
         capabilities,
         digest: 'sha256:' + crypto.createHash('sha256').update(id).digest('hex'),
         worker_class: 'gpu-l4',
@@ -151,6 +154,36 @@ test('a still has no duration; everything that plays for a time does', () => {
     }
 });
 
+test('a model is found by its id, its repository or any alias, as the gateway finds it', () => {
+    const c = sixModels();
+    for (const m of c.models) {
+        for (const key of [m.id, m.hf_repo, ...m.aliases]) {
+            assert.equal(catalog.findModel(c, key)?.id, m.id, `${key} did not find ${m.id}`);
+            const r = catalog.admits(c, key, { region: m.allowed_regions[0], now: NOW, consents: ['voice_clone', 'likeness'] });
+            assert.equal(r.ok, true, `${key}: ${r.code}`);
+        }
+    }
+    assert.equal(catalog.admits(c, 'vendor/minimax-h3', { region: 'us-east-2', now: NOW }).code, 'REGION_NOT_ALLOWED', 'H3 escaped its region by its repository name');
+    const dup = sixModels(); dup.models[5].aliases = ['minimax_h3'];
+    assert.ok(catalog.validateCatalog(dup).some(e => /minimax_h3.*more than one model/.test(e)));
+});
+
+test('the optional fields are named, and a field outside the contract is refused', () => {
+    assert.deepEqual([...catalog.OPTIONAL_FIELDS].sort(), ['aliases', 'hf_repo', 'music_workflows', 'name'].sort());
+    const c = sixModels();
+    for (const f of ['name', 'hf_repo', 'aliases']) delete c.models[0][f];
+    assert.deepEqual(catalog.validateCatalog(c), [], 'an optional field was required');
+    const d = sixModels(); d.models[0].pricing = {};
+    assert.ok(catalog.validateCatalog(d).some(e => /pricing.*not a catalog field/.test(e)));
+});
+
+test('validation is cached by content, so a changed catalog is re-checked', () => {
+    const c = sixModels();
+    assert.equal(catalog.admits(c, 'minimax-h3', { region: 'ca-central-1', now: NOW }).ok, true);
+    delete c.models[3].licence;                                  // same object, new content
+    assert.equal(catalog.admits(c, 'minimax-h3', { region: 'ca-central-1', now: NOW }).code, 'CATALOG_INVALID');
+});
+
 test('every enum is held to its own vocabulary', () => {
     const ENUM_PATHS = Object.keys(catalog.ENUMS);
     assert.ok(ENUM_PATHS.length >= 7, `only ${ENUM_PATHS.length} enums`);
@@ -231,25 +264,64 @@ test('an unknown model, an expired licence and an unlicensed model are refused',
     assert.equal(catalog.admits(c, 'stable-audio-3-small-sfx', { region: 'us-east-2', now: NOW }).code, 'UNLICENSED');
 });
 
-test('production is impossible without commercial use permitted', () => {
+test('production needs commercial use permitted, or an unexpired licence grant for that model', () => {
     const c = sixModels();
+    const flux = c.models.find(m => m.id === 'flux2-dev');
+    const run = (grants, now = NOW) => catalog.admits(c, 'flux2-dev', { region: 'us-east-2', now, production: true, grants });
+    const grant = over => ({ model_id: 'flux2-dev', licence_ref: 'BFL-COMMERCIAL-123', granted_on: '2026-09-01', expires_at: null, revoked_at: null, ...over });
     for (const state of ['not_permitted', 'restricted', 'unverified']) {
-        c.models[1].licence.commercial_use = state;
-        const r = catalog.admits(c, 'flux2-dev', { region: 'us-east-2', now: NOW, production: true });
-        assert.equal(r.code, 'NOT_COMMERCIAL', `production allowed at ${state}`);
+        flux.licence.commercial_use = state;
+        assert.equal(run([]).code, 'NOT_COMMERCIAL', `production allowed at ${state} with no grant`);
         assert.equal(catalog.admits(c, 'flux2-dev', { region: 'us-east-2', now: NOW, production: false }).ok, true, `${state} blocked a non-production run`);
+        assert.equal(run([grant()]).ok, true, `a grant did not enable production at ${state}`);
+        assert.equal(run([grant({ expires_at: '2026-09-27' })]).code, 'NOT_COMMERCIAL', `an expired grant enabled production at ${state}`);
+        assert.equal(run([grant({ revoked_at: '2026-09-20 10:00:00' })]).code, 'NOT_COMMERCIAL', `a revoked grant enabled production at ${state}`);
+        assert.equal(run([grant({ model_id: 'minimax-h3' })]).code, 'NOT_COMMERCIAL', `another model's grant enabled production at ${state}`);
+        assert.equal(run([grant({ granted_on: '2026-10-01' })]).code, 'NOT_COMMERCIAL', `a grant that starts in the future enabled production at ${state}`);
     }
-    c.models[1].licence.commercial_use = 'permitted';
-    assert.equal(catalog.admits(c, 'flux2-dev', { region: 'us-east-2', now: NOW, production: true }).ok, true);
+    flux.licence.commercial_use = 'permitted';
+    assert.equal(run([]).ok, true, 'permitted needed a grant');
 });
 
-test('a cloned voice or a likeness needs its recorded consent', () => {
+test('a licence grant is recorded, listed, revoked, and never deleted', () => {
+    db.prepare('DELETE FROM film_model_licence_grants').run();
+    catalog.use(sixModels());
+    try {
+        assert.throws(() => catalog.recordGrant({ model_id: 'wan-9', licence_ref: 'X', granted_by: 'me' }), e => e.code === 'NOT_IN_CATALOG');
+        for (const k of ['licence_ref', 'granted_by']) {
+            const body = { model_id: 'flux2-dev', licence_ref: 'BFL-1', granted_by: 'Manny' };
+            delete body[k];
+            assert.throws(() => catalog.recordGrant(body), e => e.code === 'INVALID_GRANT', `a grant with no ${k} was recorded`);
+        }
+        assert.throws(() => catalog.recordGrant({ model_id: 'flux2-dev', licence_ref: 'BFL-1', granted_by: 'M', expires_at: 'next year' }), e => e.code === 'INVALID_GRANT');
+        const g = catalog.recordGrant({ model_id: 'hf:vendor/flux2-dev'.slice(3), licence_ref: 'BFL-1', scope: 'all projects', granted_by: 'Manny', granted_on: '2026-09-01' });
+        assert.equal(g.model_id, 'flux2-dev', 'a grant made by repo name was not stored under the catalog id');
+        assert.equal(catalog.grantsFor('flux2-dev').length, 1);
+        catalog.revokeGrant(g.id, { revoked_by: 'Manny' });
+        const rows = db.prepare('SELECT * FROM film_model_licence_grants').all();
+        assert.equal(rows.length, 1, 'revoking deleted the record');
+        assert.ok(rows[0].revoked_at);
+        assert.throws(() => catalog.revokeGrant(g.id, { revoked_by: 'Manny' }), e => e.code === 'ALREADY_REVOKED');
+    } finally { catalog.use(null); }
+});
+
+test('consent is asked for only when the request carries a voice or a face', () => {
     const c = sixModels();
-    const fish = catalog.admits(c, 'fish-s2-pro', { region: 'us-east-2', now: NOW });
-    assert.equal(fish.code, 'CONSENT_REQUIRED');
-    assert.match(fish.reason, /voice_clone/);
-    assert.equal(catalog.admits(c, 'fish-s2-pro', { region: 'us-east-2', now: NOW, consents: ['voice_clone'] }).ok, true);
-    assert.equal(catalog.admits(c, 'latentsync-1.6', { region: 'us-east-2', now: NOW, consents: ['voice_clone'] }).code, 'CONSENT_REQUIRED');
+    const h3 = c.models.find(m => m.id === 'minimax-h3');
+    h3.consent = { voice_clone: 'required', likeness: 'required' };
+    const at = (inputs, consents) => catalog.admits(c, 'minimax-h3', { region: 'ca-central-1', now: NOW, inputs, consents });
+    assert.equal(at([], []).ok, true, 'text-to-video with no reference asked for consent');
+    assert.equal(at(['prompt'], undefined).ok, true);
+    for (const [kind, inputs] of Object.entries(catalog.CONSENT_INPUTS)) {
+        for (const input of inputs) {
+            const r = at([input], []);
+            assert.equal(r.code, 'CONSENT_REQUIRED', `${input} ran without ${kind} consent`);
+            assert.match(r.reason, new RegExp(kind));
+            assert.equal(at([input], [kind]).ok, true, `${input} refused with ${kind} consent recorded`);
+        }
+    }
+    // A model whose consent is not_applicable never asks, whatever it is sent.
+    assert.equal(catalog.admits(c, 'stable-audio-3-small-sfx', { region: 'us-east-2', now: NOW, inputs: ['reference_audio'] }).ok, true);
 });
 
 test('an invalid catalog admits nothing', () => {
@@ -351,19 +423,77 @@ test('the catalog and each model\'s control schema are served; an unknown model 
     } finally { catalog.use(null); }
 });
 
+test('a licence grant is recorded and revoked over HTTP, and refused with its reason', async () => {
+    db.prepare('DELETE FROM film_model_licence_grants').run();
+    catalog.use(sixModels());
+    try {
+        const post = (url, body) => new Promise(resolve => {
+            const { handleModelCatalog } = require('../routes/model-catalog');
+            const chunks = [];
+            const res = new Writable({ write(c, _e, n) { chunks.push(c); n(); } });
+            res.statusCode = 200;
+            res.writeHead = function (code) { this.statusCode = code; return this; };
+            res.on('finish', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+            handleModelCatalog({ method: 'POST', url, headers: {}, body }, res, url.split('/').filter(Boolean));
+        });
+        const ok = await post('/film/model-catalog/grants', { model_id: 'flux2-dev', licence_ref: 'BFL-9', granted_by: 'Manny' });
+        assert.equal(ok.status, 201);
+        assert.equal((await post('/film/model-catalog/grants', { model_id: 'wan-9', licence_ref: 'X', granted_by: 'M' })).status, 404);
+        assert.equal((await post('/film/model-catalog/grants', { model_id: 'flux2-dev', granted_by: 'M' })).status, 400);
+        assert.equal((await post(`/film/model-catalog/grants/${ok.body.grant.id}/revoke`, { revoked_by: 'Manny' })).status, 200);
+        assert.equal((await post(`/film/model-catalog/grants/${ok.body.grant.id}/revoke`, { revoked_by: 'Manny' })).status, 409);
+        assert.equal(catalog.admitsHere('flux2-dev', { region: 'us-east-2', production: true }).code, 'NOT_COMMERCIAL', 'a revoked grant still enabled production');
+        await post('/film/model-catalog/grants', { model_id: 'flux2-dev', licence_ref: 'BFL-10', granted_by: 'Manny' });
+        assert.equal(catalog.admitsHere('flux2-dev', { region: 'us-east-2', production: true }).ok, true, 'a recorded grant did not enable production');
+    } finally { catalog.use(null); }
+});
+
 test('an agent can read the catalog and a model\'s controls', () => {
     const names = require('../lib/mcp-tools').listTools().map(t => t.name);
-    for (const t of ['model_catalog', 'model_controls', 'model_catalog_audit']) assert.ok(names.includes(t), `no ${t} tool`);
+    for (const t of ['model_catalog', 'model_controls', 'model_catalog_audit', 'model_licence_grants', 'model_licence_grant', 'model_licence_revoke']) assert.ok(names.includes(t), `no ${t} tool`);
 });
 
 // ── The vendored copy is gridlight's file, byte for byte ────────────────────
-test('the vendored snapshot equals gridlight\'s catalog', t => {
-    if (!fs.existsSync(GL_CATALOG)) { t.skip(`gridlight catalog ${GL_CATALOG} absent`); return; }
-    assert.ok(fs.existsSync(catalog.SNAPSHOT_PATH), 'gridlight has a catalog and Film Engine has not vendored it');
-    assert.deepEqual(JSON.parse(fs.readFileSync(catalog.SNAPSHOT_PATH, 'utf8')), JSON.parse(fs.readFileSync(GL_CATALOG, 'utf8')));
+test('the vendored snapshot validates, and registers exactly the six models', () => {
+    assert.ok(fs.existsSync(catalog.SNAPSHOT_PATH), 'no vendored catalog at lib/model-catalog.snapshot.json');
     const snap = JSON.parse(fs.readFileSync(catalog.SNAPSHOT_PATH, 'utf8'));
     assert.deepEqual(catalog.validateCatalog(snap), [], 'the vendored catalog does not validate');
-    assert.deepEqual(snap.models.map(m => m.id).sort(),
-        ['fish-s2-pro', 'flux2-dev', 'latentsync-1.6', 'minimax-h3', 'stable-audio-3-medium', 'stable-audio-3-small-sfx'].sort(),
+    assert.deepEqual(snap.models.map(m => m.id),
+        ['fish-s2-pro', 'flux2-dev', 'latentsync-1.6', 'minimax-h3', 'stable-audio-3-medium', 'stable-audio-3-small-sfx'],
         'the catalog does not register exactly the six models GRD-4565 names');
+    const h3 = catalog.admits(snap, 'minimax-h3', { region: 'us-east-2', now: NOW });
+    assert.equal(h3.code, 'REGION_NOT_ALLOWED', 'the shipped catalog lets H3 run outside ca-central-1');
+});
+
+test('the vendored snapshot is gridlight\'s catalog, byte for byte', t => {
+    if (!fs.existsSync(GL_CATALOG)) { t.skip(`gridlight catalog ${GL_CATALOG} absent`); return; }
+    assert.equal(fs.readFileSync(catalog.SNAPSHOT_PATH, 'utf8'), fs.readFileSync(GL_CATALOG, 'utf8'));
+});
+
+test('the server records the vendored catalog when it starts', async () => {
+    const { spawn } = require('child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-catalog-boot-'));
+    // A port the OS says is free, rather than a random range another test file could draw from.
+    const port = await new Promise(r => { const srv = require('net').createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => r(p)); }); });
+    const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')],
+        { env: { ...process.env, FILM_DATA_DIR: dir, PORT: String(port) }, stdio: 'ignore' });
+    try {
+        const deadline = Date.now() + 20000;
+        let up = false;
+        while (!up && Date.now() < deadline) {
+            up = await new Promise(r => require('http').get(`http://127.0.0.1:${port}/api/health`, res => { res.resume(); r(res.statusCode === 200); }).on('error', () => r(false)));
+            if (!up) await new Promise(r => setTimeout(r, 200));
+        }
+        assert.ok(up, 'the server did not start');
+        const Database = require('better-sqlite3');
+        const files = fs.readdirSync(dir).filter(f => f.endsWith('.db'));
+        assert.ok(files.length, 'no database was created');
+        const d = new Database(path.join(dir, files[0]), { readonly: true });
+        const snap = JSON.parse(fs.readFileSync(catalog.SNAPSHOT_PATH, 'utf8'));
+        const row = d.prepare('SELECT * FROM film_model_catalogs WHERE catalog_version = ?').get(snap.catalog_version);
+        const audits = d.prepare('SELECT COUNT(*) n FROM film_model_catalog_audit').get().n;
+        d.close();
+        assert.ok(row, 'starting the server did not record the vendored catalog');
+        assert.equal(audits, 1, 'starting the server did not write the first audit row');
+    } finally { child.kill(); }
 });

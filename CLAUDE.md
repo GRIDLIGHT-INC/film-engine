@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (117 migrations)
+│   │   └── migrations/     # SQL migration files (118 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -6063,7 +6063,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (117 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (118 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status

@@ -5,6 +5,9 @@
  * GET /film/model-catalog                 — the catalog in force, and whether it validates
  * GET /film/model-catalog/audit           — every recorded change, newest first
  * GET /film/model-catalog/:id/controls    — one model's control schema, for the Production client
+ * GET /film/model-catalog/grants          — every licence grant recorded, revoked ones included
+ * POST /film/model-catalog/grants         — record this organisation's own licence for a model
+ * POST /film/model-catalog/grants/:gid/revoke — revoke one; the record stays
  *
  * Not under /film/models/: that prefix is the 3D routes' (/film/models/:assetId/rig …).
  *
@@ -18,8 +21,35 @@ function json(res, status, data) {
     res.end(JSON.stringify(data));
 }
 
+async function readBody(req) {
+    if (req.body && typeof req.body === 'object') return req.body;
+    return new Promise(resolve => {
+        let raw = '';
+        req.on('data', c => { raw += c; });
+        req.on('end', () => { try { resolve(JSON.parse(raw || '{}')); } catch (_) { resolve({}); } });
+    });
+}
+
+const STATUS = { NOT_IN_CATALOG: 404, NOT_FOUND: 404, INVALID_GRANT: 400, ALREADY_REVOKED: 409 };
+
+async function handleGrants(req, res, parts) {
+    try {
+        if (!parts[3] && req.method === 'GET') return json(res, 200, { grants: catalog.grantsFor(null) });
+        if (!parts[3] && req.method === 'POST') return json(res, 201, { grant: catalog.recordGrant(await readBody(req)) });
+        if (parts[3] && parts[4] === 'revoke' && !parts[5] && req.method === 'POST') {
+            const body = await readBody(req);
+            return json(res, 200, { grant: catalog.revokeGrant(Number(parts[3]), { revoked_by: body.revoked_by }) });
+        }
+        return json(res, 405, { error: 'method not allowed' });
+    } catch (e) {
+        if (STATUS[e.code]) return json(res, STATUS[e.code], { error: e.message, code: e.code });
+        throw e;
+    }
+}
+
 async function handleModelCatalog(req, res, parts) {
     // parts: ['film', 'model-catalog', ...]
+    if (parts[2] === 'grants') return handleGrants(req, res, parts);
     if (req.method !== 'GET') return json(res, 405, { error: 'the model catalog is read-only here: it is authored in gridlight' });
     const cat = catalog.current();
 

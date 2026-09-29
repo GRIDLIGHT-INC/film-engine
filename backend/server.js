@@ -1454,6 +1454,12 @@ function start() {
 
     try {
         ensureSchema();
+        // FEM-001: record the vendored model catalog, so every change to it is
+        // audited from the first run that sees it.
+        try {
+            const r = require('./lib/model-catalog').recordSnapshot();
+            if (!r.recorded && r.code) console.warn(`[model-catalog] not recorded: ${r.reason}`);
+        } catch (e) { console.warn(`[model-catalog] ${e.message}`); }
 
         /*
          * A PROFILE THAT MOVED REPAIRS ITSELF, HERE, ONCE.

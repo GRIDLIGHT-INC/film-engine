@@ -869,6 +869,44 @@ const PRODUCTION_TOOLS = [
         schema: {}, required: [],
     },
     {
+        name: 'model_licence_grants',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'GET',
+        path: () => '/film/model-catalog/grants',
+        description: 'Every licence grant this organisation has recorded for a self-hosted model, '
+            + 'revoked ones included. FREE. A catalog model whose public licence is not "permitted" '
+            + 'for commercial use can be enabled for production only while a grant for it is in force.',
+        schema: {}, required: [],
+    },
+    {
+        name: 'model_licence_grant',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'POST',
+        path: () => '/film/model-catalog/grants',
+        description: 'Record the organisation\u2019s own licence for a catalog model (a paid FLUX licence, '
+            + 'a Fish commercial agreement, Stability Enterprise). This is a statement of fact about a '
+            + 'contract: record only a licence the user has told you they hold, with their name as '
+            + 'granted_by. It enables production for that model until it expires or is revoked. FREE.',
+        schema: {
+            model_id: { type: 'string', description: 'Catalog id, repository or alias, e.g. flux2-dev.' },
+            licence_ref: { type: 'string', description: 'The contract, order or licence number.' },
+            scope: { type: 'string', description: 'What it covers, in the licence\u2019s words.' },
+            granted_by: { type: 'string', description: 'Who is recording it — the person, not the agent.' },
+            granted_on: { type: 'string', description: 'YYYY-MM-DD; defaults to today.' },
+            expires_at: { type: 'string', description: 'YYYY-MM-DD, or omit for no expiry.' },
+        },
+        body: a => ({ model_id: a.model_id, licence_ref: a.licence_ref, scope: a.scope, granted_by: a.granted_by, granted_on: a.granted_on, expires_at: a.expires_at }),
+        required: ['model_id', 'licence_ref', 'granted_by'],
+    },
+    {
+        name: 'model_licence_revoke',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'POST',
+        path: a => `/film/model-catalog/grants/${encodeURIComponent(a.grant_id)}/revoke`,
+        description: 'Revoke a licence grant. The record stays, marked revoked; production for that model '
+            + 'stops being enabled by it. FREE.',
+        schema: { grant_id: { type: 'number' }, revoked_by: { type: 'string', description: 'Who revoked it.' } },
+        body: a => ({ revoked_by: a && a.revoked_by }),
+        required: ['grant_id', 'revoked_by'],
+    },
+    {
         name: 'agent_presence',
         handler: require('../routes/agent-presence').handleAgentPresence, method: 'GET',
         path: () => '/film/agent',
