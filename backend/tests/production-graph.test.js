@@ -366,3 +366,37 @@ test('the page exists behind the flag, and every drawer action names a route tha
         assert.ok(html.includes(route), `the page never calls ${route}`);
     }
 });
+
+// ── Every free read the graph serves reaches its handler (PGN-022) ─────────
+
+test('every GET the production-graph route declares dispatches through the real server', async () => {
+    // Derived from the route's own dispatch lines, so a read added later is in
+    // the set. A handler the server never reaches answers the server's generic
+    // 404, which reads exactly like a missing feature.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'production-graph.js'), 'utf8');
+    const reads = [...src.matchAll(/^\s*if \((.*?req\.method === 'GET'.*?)\)\s*(?:return|\{)/gm)].map(m => m[1])
+        .filter(c => !/parts\[1\] ===/.test(c));
+    assert.ok(reads.length >= 8, `found only ${reads.length} GET dispatches`);
+    const f = fixture();
+    const key = encodeURIComponent(`shot:${f.shots['1A']}`);
+    const URLS = [
+        [/!parts\[4\]/, ''],
+        [/'running'/, '/running'],
+        [/'queue'/, '/queue'],
+        [/'run-changed' && parts\[5\] === 'plan'/, '/run-changed/plan'],
+        [/'run-to-here' && parts\[7\] === 'plan'/, `/nodes/${key}/run-to-here/plan`],
+        [/'match'/, '/match?sha256=' + '0'.repeat(64) + '&size=1'],
+        [/'patterns' && !parts\[5\]/, '/patterns'],
+        [/'patterns' && parts\[5\] && parts\[6\] === 'preview'/, `/patterns/shot_reverse/preview?after=${f.shots['1A']}`],
+        [/'run-changed' && parts\[5\] && parts\[5\] !== 'plan'/, '/run-changed/' + generateId()],
+    ];
+    const unmatched = reads.filter(c => !URLS.some(([re]) => re.test(c)));
+    assert.deepStrictEqual(unmatched, [], 'a GET dispatch has no URL in this test');
+    for (const [, suffix] of URLS) {
+        const [p, q] = suffix.split('?');
+        const r = await api(`/film/projects/${f.projectId}/production-graph${p}${q ? '?' + q : ''}`);
+        assert.ok(r.status !== 404 || (r.data && r.data.error && !/^Not found$/i.test(r.data.error)),
+            `${suffix || '(graph)'} answered the server's generic 404: ${JSON.stringify(r.data)}`);
+        assert.ok(r.status < 500, `${suffix || '(graph)'} answered ${r.status}: ${JSON.stringify(r.data)}`);
+    }
+});

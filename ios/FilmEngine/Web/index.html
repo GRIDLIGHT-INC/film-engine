@@ -43830,7 +43830,9 @@ function pgRender() {
     const g = PG.graph;
     canvas.querySelector('.pg-empty').textContent = g.nodes.length ? '' : 'No shots yet. Break the screenplay into shots, then come back.';
     const groups = (g.groups || []).map(gr => pgGroupHtml(gr)).join('');
-    const nodes = g.nodes.filter(pgVisible).map(pgNodeHtml).join('');
+    // Never `.map(pgNodeHtml)`: map passes the index as `raw`, which drew every
+    // node but the first without its out-of-date state and its hold badge.
+    const nodes = g.nodes.filter(pgVisible).map(n => pgNodeHtml(n)).join('');
     world.innerHTML = groups + '<svg class="pg-edges" id="pgEdges" width="1" height="1"></svg>' + nodes;
     for (const k of PG.picked) { const el = world.querySelector(`.pg-node[data-key="${k}"]`); if (el) el.classList.add('picked'); }
     pgApplyView();
@@ -43906,8 +43908,22 @@ function pgApplyView() {
     pgMinimap();
 }
 
+/** The card a node is hidden inside, when its group is collapsed; else null. */
+function pgCollapsedOf(key) {
+    return (PG.graph && (PG.graph.groups || []).find(g => g.collapsed && (g.members || []).includes(key))) || null;
+}
+
+/** What is drawn as a box: the nodes still shown, and every collapsed card (its members are hidden). */
+function pgBoxes() {
+    const g = PG.graph;
+    if (!g) return [];
+    return g.nodes.filter(pgVisible).concat((g.groups || []).filter(x => x.collapsed));
+}
+
 function pgBounds() {
-    const ns = (PG.graph ? PG.graph.nodes : []).filter(pgVisible);
+    // A collapsed card stands in for its members, so Fit must frame it too:
+    // leaving it out puts a collapsed sequence off-screen with nothing pointing to it.
+    const ns = PG.graph ? PG.graph.nodes.filter(pgVisible).concat((PG.graph.groups || []).filter(x => x.collapsed)) : [];
     if (!ns.length) return { x: 0, y: 0, w: 1000, h: 600 };
     const xs = ns.map(n => n.x), ys = ns.map(n => n.y);
     const x2 = ns.map(n => n.x + (n.w || 200)), y2 = ns.map(n => n.y + (n.h || 180));
@@ -43944,7 +43960,8 @@ function pgMinimap() {
     if (!m || !c || !PG.graph) return;
     const b = pgBounds();
     const s = Math.min(148 / b.w, 76 / b.h);
-    const boxes = PG.graph.nodes.filter(pgVisible).map(n =>
+    // Collapsed cards are drawn too: a card that is on the canvas and missing from the map reads as lost.
+    const boxes = pgBoxes().map(n =>
         `<div style="left:${10 + (n.x - b.x) * s}px;top:${10 + (n.y - b.y) * s}px;width:${Math.max(2, (n.w || 200) * s)}px;height:${Math.max(2, (n.h || 180) * s)}px;"></div>`);
     const vx = (-PG.pan.x / PG.zoom - b.x) * s + 10, vy = (-PG.pan.y / PG.zoom - b.y) * s + 10;
     boxes.push(`<div class="vp" style="left:${vx}px;top:${vy}px;width:${c.clientWidth / PG.zoom * s}px;height:${c.clientHeight / PG.zoom * s}px;"></div>`);
@@ -45963,7 +45980,8 @@ function pgRenderSide() {
     if (list) list.innerHTML = scenes.map(sc => `<div class="pg-side-scene"><span>${esc(sc.label)}</span><span>${sc.shots.length}</span></div>`
         + sc.shots.map(s => {
             const seq = s.sequence_id ? pgNode('seq:' + s.sequence_id) : null;
-            const note = !onGraph(s) ? 'off graph' : seq ? seq.name : '';
+            const card = pgCollapsedOf(s.key);
+            const note = card ? `in ${card.label} (collapsed)` : !onGraph(s) ? 'off graph' : seq ? seq.name : '';
             return `<div class="pg-side-row${PG.sel === s.key ? ' on' : ''}" draggable="true"
                 ondragstart="event.dataTransfer.setData('text/pg-add','${s.key}')" onclick="pgSideClick('${s.key}')">
                 <i style="background:${s.frames.length ? '#4fd39c' : '#f08a8a'}"></i><span>${esc(s.shot_code)}</span><span class="note">${esc(note)}</span></div>`;
@@ -45990,6 +46008,17 @@ function pgEnsureSide() {
 
 function pgSideClick(key) {
     if (state.currentPage !== 'productiongraph') navigateTo('productiongraph');
+    // A shot inside a collapsed card has no position on screen: pan to the card that holds it.
+    const card = pgCollapsedOf(key);
+    if (card) {
+        const c = document.getElementById('pgCanvas');
+        if (c) {
+            PG.pan.x = c.clientWidth / 2 - (card.x + card.w / 2) * PG.zoom;
+            PG.pan.y = c.clientHeight / 2 - (card.y + card.h / 2) * PG.zoom;
+            pgApplyView(); pgDrawEdges();
+        }
+        return;
+    }
     const n = pgNode(key);
     if (n && !pgVisible(n)) { PG.scene = 'all'; pgRender(); }
     pgSelect(key);
