@@ -469,6 +469,67 @@ function tierModels(workflows, prefix) {
 const VIDEO_MODELS = tierModels(VIDEO_WORKFLOWS, '');
 const POST_MODELS = tierModels(POST_WORKFLOWS, '-video-edit');
 
+/*
+ * MUAPI'S DEDICATED VIDEO UPSCALERS. The Seedance video-edit finish re-renders
+ * the clip (RBF-001: it bills the source, ignores the requested length, and
+ * charges a failed job). These only enlarge it, and they are the right tool
+ * when a clip came back below the delivery size.
+ *
+ * Fields probed free against MuAPI's validation on 2026-09-29:
+ *   topaz-video-upscale    video_url, upscale_factor 1|2|4
+ *   ai-video-upscaler(-pro) video_url, resolution 720p|1080p|2k|4k
+ *   flux-3-video-upscaler  video_url, prompt, upscale_factor (a number)
+ * Prices are MuAPI's catalogue figures, which carry no unit; they are held per
+ * second of source (the direction that over-estimates) and marked inferred.
+ */
+const UPSCALE_TIERS = Object.freeze({ '720p': 1280, '1080p': 1920, '2k': 2560, '4k': 3840 });
+const UPSCALERS = Object.freeze({
+    'topaz-video-upscale': { endpoint: 'topaz-video-upscale', label: 'Topaz video upscale (2x or 4x)', control: 'factor', factors: [1, 2, 4], usdPerSecond: 0.08 },
+    'ai-video-upscaler': { endpoint: 'ai-video-upscaler', label: 'AI video upscaler (to 1080p, 2K or 4K)', control: 'resolution', usdPerSecond: 0.03 },
+    'ai-video-upscaler-pro': { endpoint: 'ai-video-upscaler-pro', label: 'AI video upscaler Pro (to 1080p, 2K or 4K)', control: 'resolution', usdPerSecond: 0.24 },
+    'flux-3-video-upscaler': { endpoint: 'flux-3-video-upscaler', label: 'FLUX.3 video upscaler (prompted)', control: 'factor', factors: [2, 3, 4], prompt: true, usdPerSecond: 1.43 },
+});
+
+/**
+ * The request for a dedicated upscaler, sized to REACH the delivery: the
+ * smallest factor or tier that brings the source's long edge to the target's,
+ * else the largest it offers (and it says so).
+ */
+function buildUpscaleRequest(p, model) {
+    const spec = UPSCALERS[model];
+    const source = p.source_video || p.video_url || p.input_url || p.input_video || p.init_video;
+    if (!source) throw new Error(`seedance: ${model} needs the clip to upscale (source_video)`);
+    const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(p.target_resolution || ''));
+    const targetLong = Number(p.target_long_edge) || (m ? Math.max(Number(m[1]), Number(m[2])) : 3840);
+    const sourceLong = Math.max(Number(p.source_width) || 0, Number(p.source_height) || 0);
+    const body = { video_url: source };
+    let reaches = null, note = null;
+    if (spec.control === 'factor') {
+        const need = sourceLong ? targetLong / sourceLong : 2;
+        const f = spec.factors.find(x => x >= need - 1e-6) || spec.factors[spec.factors.length - 1];
+        body.upscale_factor = Number(p.upscale_factor) || f;
+        if (sourceLong) {
+            reaches = Math.round(sourceLong * body.upscale_factor);
+            if (reaches < targetLong) note = `${model} goes to ${body.upscale_factor}x at most, which brings ${sourceLong}px to ${reaches}px, short of ${targetLong}px.`;
+        }
+    } else {
+        const tier = Object.keys(UPSCALE_TIERS).find(t => UPSCALE_TIERS[t] >= targetLong) || '4k';
+        body.resolution = String(p.resolution && UPSCALE_TIERS[String(p.resolution).toLowerCase()] ? p.resolution : tier).toLowerCase();
+        reaches = UPSCALE_TIERS[body.resolution];
+        if (reaches < targetLong) note = `${model} goes to 4K at most, short of ${targetLong}px.`;
+    }
+    if (spec.prompt) body.prompt = String(p.prompt || 'Upscale this clip faithfully: sharper detail, the same picture.').trim();
+    const sourceSeconds = Number(p.source_seconds !== undefined ? p.source_seconds : (p.source_duration_ms || 0) / 1000);
+    const known = Number.isFinite(sourceSeconds) && sourceSeconds > 0;
+    return {
+        url: `${BASE_URL}/${spec.endpoint}`, body, images: [], workflow: 'upscale', model, reaches, note,
+        usd_per_second: spec.usdPerSecond,
+        estimated_usd: known ? Number((spec.usdPerSecond * sourceSeconds).toFixed(2)) : null,
+        source_seconds: known ? sourceSeconds : null,
+        estimate_unknown_why: known ? null : 'The source clip has not been measured, so the price is unknown.',
+    };
+}
+
 const POST_SERVED = Object.freeze({
     upscale: true,
     face_restore: false,   // Seedance exposes no face-restoration workflow
@@ -479,6 +540,8 @@ const POST_SERVED = Object.freeze({
 function buildPostRequest(payload) {
     const p = payload || {};
     const type = String(p.type || p.job_type || 'upscale').trim();
+    const upscaler = String(p.model || p.upscaler || '');
+    if (type === 'upscale' && UPSCALERS[upscaler]) return buildUpscaleRequest(p, upscaler);
 
     if (!POST_SERVED[type]) {
         throw new Error(`seedance: ${type} is not served here -- Seedance offers a video-edit `
@@ -736,6 +799,17 @@ async function generate(capability, payload, opts) {
      * property of the vendor rather than of the endpoint, so it applies to
      * every field that carries an image.
      */
+    /*
+     * A CLIP TO FINISH IS A LOCAL FILE, and MuAPI fetches by URL. The finish
+     * used to post the path itself, which MuAPI cannot reach, so it could never
+     * have worked on a real clip. It goes up through the same free upload.
+     */
+    if (capability === 'post' && typeof req.body.video_url === 'string' && !/^https?:\/\//i.test(req.body.video_url)) {
+        const { hostFile } = require('./muapi-upload');
+        const hosted = await hostFile(req.body.video_url, apiKey);
+        if (!hosted.ok) return { ok: false, status: 422, error: `seedance: ${hosted.error}` };
+        req.body.video_url = hosted.url;
+    }
     const imageFields = ['images_list', 'image_url', 'first_frame_image', 'last_frame_image'];
     for (const field of imageFields) {
         const v = req.body[field];
@@ -818,6 +892,9 @@ function meterSeedance(capability, payload, result) {
         let built;
         try { built = buildPostRequest(payload || {}); }
         catch (err) { return null; }   // refused before anything was spent
+        if (built.workflow === 'upscale') {
+            return { unit: 'second', quantity: Math.max(1, built.source_seconds || Number(result && result.duration_s) || 1), model: built.model };
+        }
         const secs = (result && Number(result.duration_s)) || built.body.duration;
         const suffix = built.resolution === '720p' ? '' : `-${built.resolution}`;
         return {
@@ -964,7 +1041,7 @@ const seedanceAdapter = {
 
     // Per capability: this adapter serves two, and one flat list would offer
     // video tiers to the finishing pass and edit tiers to a clip.
-    modelsByCapability: { video: VIDEO_MODELS, post: POST_MODELS },
+    modelsByCapability: { video: VIDEO_MODELS, post: { ...POST_MODELS, ...UPSCALERS } },
     buildVideoRequest,
     describeVideoRequest,
     generate,
@@ -989,4 +1066,4 @@ const seedanceAdapter = {
 module.exports = { adapter: seedanceAdapter, seedanceAdapter, buildVideoRequest,
     MIN_DURATION, MAX_DURATION,
     buildPostRequest, POST_SERVED, describeVideoRequest, RESOLUTIONS, WORKFLOWS,
-    VIDEO_MODELS, POST_MODELS, generate, collect, awaitResult, resolutionDecision, predictedFrame };
+    VIDEO_MODELS, POST_MODELS, UPSCALERS, buildUpscaleRequest, generate, collect, awaitResult, resolutionDecision, predictedFrame };

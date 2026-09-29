@@ -111,4 +111,53 @@ async function hostImages(uris, apiKey) {
     return { ok: true, urls, uploaded };
 }
 
-module.exports = { hostImages, hostOne, parseDataUri, ACCEPTED, MAX_BYTES };
+/*
+ * A LOCAL VIDEO OR AUDIO FILE, by path or file:// URL. MuAPI's upload_file
+ * takes mp4 and mp3 as well as pictures (probed 2026-09-29): a clip to upscale
+ * and a recorded line of dialogue go up the same way a keyframe does. The type
+ * is read from the file's first bytes, never its name. The size ceiling is
+ * ours, not MuAPI's (it publishes none for media): past it, the refusal says so.
+ */
+const MEDIA_MAX_BYTES = 200 * 1024 * 1024;
+function sniffMedia(buf) {
+    const b = buf.subarray(0, 16);
+    if (b.length >= 12 && b.toString('latin1', 4, 8) === 'ftyp') {
+        const brand = b.toString('latin1', 8, 12);
+        if (/^M4A /.test(brand)) return { mime: 'audio/mp4', ext: 'm4a' };
+        if (/^qt  /.test(brand)) return { mime: 'video/quicktime', ext: 'mov' };
+        return { mime: 'video/mp4', ext: 'mp4' };
+    }
+    if (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WAVE') return { mime: 'audio/wav', ext: 'wav' };
+    if (b.toString('latin1', 0, 3) === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)) return { mime: 'audio/mpeg', ext: 'mp3' };
+    if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { mime: 'video/webm', ext: 'webm' };
+    return null;
+}
+
+async function hostFile(fileRef, apiKey) {
+    const key = apiKey || muapiKey();
+    if (!key) return { ok: false, error: 'muapi: no API key configured' };
+    const s = String(fileRef || '');
+    if (/^https?:\/\//i.test(s)) return { ok: true, url: s, uploaded: false };
+    const fs = require('fs');
+    const p = s.startsWith('file://') ? decodeURI(s.slice(7)) : s;
+    let st;
+    try { st = fs.statSync(p); } catch (_) { return { ok: false, error: `there is no file at ${p}` }; }
+    if (st.size > MEDIA_MAX_BYTES) return { ok: false, error: `${p} is ${Math.round(st.size / 1048576)}MB; uploads are held to ${MEDIA_MAX_BYTES / 1048576}MB here` };
+    const bytes = fs.readFileSync(p);
+    const kind = sniffMedia(bytes);
+    if (!kind) return { ok: false, error: `${p} is not an mp4, mov, webm, mp3, m4a or wav file` };
+    const form = new FormData();
+    form.append('file', new Blob([bytes], { type: kind.mime }), `upload.${kind.ext}`);
+    let res;
+    try {
+        res = await fetch(`${BASE_URL}/upload_file`, { method: 'POST', headers: { 'x-api-key': key, accept: 'application/json' }, body: form });
+    } catch (err) { return { ok: false, error: `upload failed — ${err.message}` }; }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.url) {
+        const detail = (data && (data.error || data.detail || data.message)) || `HTTP ${res.status}`;
+        return { ok: false, error: `upload rejected — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 200)}` };
+    }
+    return { ok: true, url: data.url, uploaded: true, mime: kind.mime };
+}
+
+module.exports = { hostImages, hostOne, hostFile, sniffMedia, parseDataUri, ACCEPTED, MAX_BYTES, MEDIA_MAX_BYTES };

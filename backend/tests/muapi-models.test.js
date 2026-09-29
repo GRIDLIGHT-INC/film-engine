@@ -153,6 +153,12 @@ test('every Seedance model resolves to a real endpoint for each workflow it runs
     let checked = 0;
     for (const [cap, models] of Object.entries(byCap)) {
         for (const [id, spec] of Object.entries(models || {})) {
+            // A dedicated tool (the MuAPI upscalers) names its own endpoint.
+            if (spec.endpoint) {
+                checked++;
+                if (!CATALOGUE.has(spec.endpoint)) unknown.push(`${cap}:${id} -> "${spec.endpoint}" is not in MuAPI's catalogue`);
+                continue;
+            }
             const workflows = spec.workflows || [];
             assert.ok(workflows.length, `${cap}:${id} names no workflow, so nothing can be checked`);
             for (const w of workflows) {

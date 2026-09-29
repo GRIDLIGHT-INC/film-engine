@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**407 tools, 82 families.** Everything the app can do, you can ask for in a
+**409 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -361,7 +361,16 @@ background travels with it. Free.
 `sequence_plan_inbetweens` · `sequence_inbetweens` · `sequence_station_list` ·
 `sequence_station_update` · `sequence_station_delete` · `sequence_inbetweens_approve` ·
 `sequence_generate_native` · `sequence_update` · `sequence_stitch` · `sequence_delete` · `video_preview` ·
-`video_background_preview` · `video_background_replace`
+`video_background_preview` · `video_background_replace` · `shot_upscale_preview` · `shot_upscale`
+
+**Bring a clip up to the delivery size.** `shot_upscale_preview` is free: it
+measures the shot's selected clip (or `asset_id`), and names the factor or tier
+the upscaler picks to reach the project's resolution, and the price.
+`shot_upscale` uploads the clip to MuAPI, runs the named upscaler
+(`topaz-video-upscale`, `ai-video-upscaler`, `ai-video-upscaler-pro` or
+`flux-3-video-upscaler`), and keeps the result as a new version that becomes the
+selected clip, with its sound. The original stays. On the production canvas
+the same thing is **Upscale…** in the node menu of a shot or a shot's clip.
 
 **Keep the actor, change the background.** Every other generator here makes a
 NEW picture; `video_background_replace` takes footage that already exists and

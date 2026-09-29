@@ -339,7 +339,14 @@ const RATE_BOOK = {
             'seedance-2.5-video-edit':       { usd_per_native: 0.34 },   // 720p, unsuffixed
             'seedance-2.5-video-edit-1080p': { usd_per_native: 0.85 },
             'seedance-2.5-video-edit-4k':    { usd_per_native: 1.70 },
+            // MuAPI's dedicated upscalers: its catalogue figure, which carries
+            // no unit, held per second of source (the over-estimating reading).
+            'topaz-video-upscale':   { usd_per_native: 0.08 },
+            'ai-video-upscaler':     { usd_per_native: 0.03 },
+            'ai-video-upscaler-pro': { usd_per_native: 0.24 },
+            'flux-3-video-upscaler': { usd_per_native: 1.43 },
         },
+        inferred_models: ['topaz-video-upscale', 'ai-video-upscaler', 'ai-video-upscaler-pro', 'flux-3-video-upscaler'],
         source: 'https://muapi.ai/',
         checked: '2026-08-25',
         note: 'The upscale is the video-edit workflow at a larger tier, billed per second at that '

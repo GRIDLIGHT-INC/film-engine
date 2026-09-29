@@ -768,6 +768,16 @@ function withJobRecording_(adapter, capability, projectConfig) {
         try { result = await inner(cap, payload, o); }
         catch (err) { settle(jobId, { ok: false, error: err && err.message }); throw err; }
         settle(jobId, result);
+        /*
+         * ONE RESULT SHAPE FOR THE SAVE. Every route persists `result.data`,
+         * and the async adapters (Runway, Seedance/MuAPI) answer with a
+         * top-level `url` and no `data` — so their finished, paid-for clip
+         * reached the saver as nothing and was refused as "neither media bytes
+         * nor a media URL". Filled here, once, rather than at 28 call sites.
+         */
+        if (result && result.ok && result.data === undefined && typeof result.url === 'string' && result.url) {
+            result.data = { url: result.url };
+        }
         return result;
     };
     if (innerStream) {

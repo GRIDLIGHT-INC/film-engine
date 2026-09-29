@@ -628,6 +628,7 @@ film-engine/
 │       ├── motion-prompt.test.js    # Motion, the spatial locks, and the eight techniques
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
+│       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
 │       ├── seedance-tiers.test.js      # 480p draft and 4K finish, traced to a real Seedance 2.5 URL
 │       ├── video-surfaces.test.js      # A capability with no control does not exist
 │       ├── provider-image-encoding.test.js # A bare base64 blob is not an image a provider accepts
@@ -835,7 +836,7 @@ All routes prefixed with `/film`:
 | Music | `POST /scenes/:id/music/generate[/stream]`, `POST /shots/:id/sfx/generate` |
 | Music | `POST /scenes/:id/ambient/generate`, `POST /projects/:id/music/batch[/stream]` |
 | Music | `GET /projects/:id/music/jobs`, `GET /music/:pid/:file`, `GET /projects/:id/music/capabilities` (free) |
-| Post | `POST /shots/:id/post/[upscale\|face-restore\|color-grade\|composite]` |
+| Post | `POST /shots/:id/post/[upscale\|face-restore\|color-grade\|composite]`, `GET /shots/:id/post/upscale/preview` (free) |
 | Post | `POST /projects/:id/post/batch[/stream]`, `GET /shots/:id/post`, `GET /projects/:id/post` |
 | Pipeline | `POST /shots/:id/pipeline/run[/stream]`, `POST /scenes/:id/pipeline/run` |
 | Pipeline | `POST /projects/:id/pipeline/run`, `GET /pipeline/:id` |
@@ -1249,6 +1250,15 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### Upscaling on MuAPI, From the Canvas
+*"Set up the appropriate upscale for MuAPI and a node to be able to upscale on the production canvas."*
+
+MuAPI's four dedicated video upscalers are models on the MuAPI adapter's `post` capability (`UPSCALERS` in `lib/providers/seedance.js`). Their fields were probed free on 2026-09-29: `topaz-video-upscale` takes `upscale_factor` 1, 2 or 4; `ai-video-upscaler` and `-pro` take `resolution` 720p, 1080p, 2k or 4k; `flux-3-video-upscaler` takes a prompt and a factor. `buildUpscaleRequest` sizes the request from the clip's **measured** frame to the project's delivery: the smallest factor or tier that reaches it, else the largest one offered, with the shortfall said. MuAPI's catalogue lists their prices with no unit. The rate book holds them per second of source, which errs high, and marks them inferred. The Seedance 4K video-edit finish stays the default when no upscaler is named.
+
+`POST /shots/:id/post/upscale` now upscales the shot's **selected** clip (or `asset_id`) rather than the latest raw one. A named upscaler routes that one call to MuAPI, whatever `post` resolves to. The clip is uploaded through MuAPI's free `upload_file` first (`hostFile`, which reads the type from the bytes and now takes mp4, mov, webm, mp3, m4a and wav). The result is a new version (`_upscaled_v2`, …) that keeps its sound and becomes the selected clip; the original stays. `GET …/upscale/preview` is free. **Upscale…** sits in the canvas node menu of a shot and of a shot's clip, through the one confirmation, where the upscaler is picked with its price. `shot_upscale_preview` and `shot_upscale` serve an agent.
+
+**Two defects were found on the way.** The Seedance finish posted the clip's local path to MuAPI, which cannot fetch it, so it could never have run on a real clip. And the async adapters (Runway, Seedance) answer with a top-level `url` and no `data`, while every route saves `result.data`: a finished, paid clip reached the saver as nothing. `resolve()` now fills `data: { url }` on a successful url-only result, once, for all 28 save sites.
 
 ### The Delivery Size Is Asked For, and a Shortfall Is Said
 *"We need to force this to generators and if they can't provide it downgrade to best quality after — this is on us to check and put the safeguards to get the appropriate resolution."*
@@ -6598,6 +6608,7 @@ node --test backend/tests/video-prompt.test.js
 node --test backend/tests/motion-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
+node --test backend/tests/muapi-upscale.test.js
 node --test backend/tests/seedance-tiers.test.js
 node --test backend/tests/video-surfaces.test.js
 node --test backend/tests/provider-image-encoding.test.js

@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleBackups } = require('../routes/backups');
+const { handlePostProduction } = require('../routes/post-production');
 const { handleAppSettings } = require('../routes/app-settings');
 const { handleProjectStorage } = require('../routes/project-storage');
 const { handleEdits } = require('../routes/edits');
@@ -3706,6 +3707,23 @@ const PRODUCTION_TOOLS = [
         description: 'Write the Premiere handover with ONE FOLDER PER SCENE into the project\u2019s Exports folder: Scene_NN_<heading>/Video holds each shot\u2019s SELECTED clip named by shot code, Sound holds its dialogue, effects and the scene\u2019s beds, and a Premiere XML carries the cut as a sequence plus a bin per scene. Media is COPIED, never moved. Spends nothing. Refuses when no shot has a clip yet.',
         path: a => `/film/projects/${a.project_id}/export/premiere-scenes`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'shot_upscale_preview',
+        handler: handlePostProduction, method: 'GET',
+        description: 'FREE. What upscaling a shot\'s clip would do: the clip (the SELECTED one, or asset_id), measured from the file; the project\'s delivery size; the factor or tier the upscaler picks to reach it; the request, and the price. `model` names a MuAPI upscaler: topaz-video-upscale (2x or 4x), ai-video-upscaler or ai-video-upscaler-pro (to 1080p, 2K or 4K), flux-3-video-upscaler (prompted). Read this before shot_upscale.',
+        path: a => `/film/shots/${a.shot_id}/post/upscale/preview?model=${encodeURIComponent(a.model || 'topaz-video-upscale')}${a.asset_id ? `&asset_id=${encodeURIComponent(a.asset_id)}` : ''}`,
+        schema: { shot_id: { type: 'string' }, model: { type: 'string' }, asset_id: { type: 'string', description: 'A clip version of this shot; omitted, the selected clip.' } },
+        required: ['shot_id'],
+    },
+    {
+        name: 'shot_upscale',
+        handler: handlePostProduction, method: 'POST',
+        description: 'SPENDS (MuAPI). Upscale a shot\'s clip to the project\'s delivery size: the clip is uploaded to MuAPI, enlarged by the named upscaler, and saved as a NEW version that becomes the shot\'s selected clip; the original is kept. `model` as in shot_upscale_preview; omitted, the project\'s post provider runs its default finish (on Seedance, the video-edit re-render at 4K, which bills the whole source). Read shot_upscale_preview first.',
+        path: a => `/film/shots/${a.shot_id}/post/upscale`,
+        body: a => ({ ...(a.model ? { model: a.model } : {}), ...(a.asset_id ? { asset_id: a.asset_id } : {}) }),
+        schema: { shot_id: { type: 'string' }, model: { type: 'string' }, asset_id: { type: 'string' } },
+        required: ['shot_id'],
     },
     {
         name: 'backup_folder_status',

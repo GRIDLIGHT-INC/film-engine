@@ -34914,7 +34914,54 @@ ${fountainText.slice(0, 50000)}`;
         }
     }
     function lipsyncShot(shotId, btn) { _shotAction(shotId, btn, 'Lip-sync', '/shots/' + shotId + '/lipsync/generate', 'Lip-syncing'); }
-    function postShot(shotId, btn) { _shotAction(shotId, btn, 'Upscale', '/shots/' + shotId + '/post/upscale', 'Upscaling'); }
+    function postShot(shotId, btn) {
+        return confirmUpscale(shotId, null, body => _shotAction(shotId, btn, 'Upscale', '/shots/' + shotId + '/post/upscale', 'Upscaling', null, body));
+    }
+
+    /*
+     * THE UPSCALE CONFIRMATION, shared by the Video Shots button and the
+     * production canvas. The free preview measures the clip and sizes the
+     * upscale to the delivery; the upscaler is chosen here, each with its
+     * price, and the one sent is the one selected.
+     */
+    const UPSCALE_DEFAULT_MODEL = 'topaz-video-upscale';
+    function upscalePlanHtml(d) {
+        const secs = Number((d.source || {}).seconds) || 0;
+        const rows = (d.upscalers || []).map(u => `<option value="${esc(u.id)}" data-rate="${u.usd_per_second}"
+            ${u.id === (d.model || UPSCALE_DEFAULT_MODEL) ? 'selected' : ''}>${esc(u.label)} &middot; $${Number(u.usd_per_second).toFixed(2)}/s</option>`).join('');
+        return `<div class="text-sm" style="line-height:1.6;">
+            <div><strong>${esc(d.shot_code || '')}</strong> &middot; ${esc((d.source || {}).file_name || '')}
+              &middot; measured ${esc((d.source || {}).measured || 'unmeasured')}${secs ? ` &middot; ${secs.toFixed(1)}s` : ''}</div>
+            <div>Delivery ${esc(d.target || '')}${d.reaches ? ` &middot; this reaches ${d.reaches}px on the long edge` : ''}</div>
+            <div class="form-group" style="margin-top:8px;"><label>Upscaler (MuAPI)</label>
+              <select id="upscaleModel" onchange="upscaleCostLine(${secs})">${rows}</select></div>
+            <div id="upscaleCost">${secs ? '' : esc(d.estimate_unknown_why || '')}</div>
+            <div class="text-muted">MuAPI lists these prices without a unit; they are read per second of the clip, which errs high. The result becomes this shot's selected clip; the original is kept.</div>
+            ${(d.warnings || []).map(w => `<div style="color:var(--warning,#b8860b);">${esc(w)}</div>`).join('')}
+          </div>`;
+    }
+    function upscaleCostLine(secs) {
+        const sel = document.getElementById('upscaleModel');
+        const box = document.getElementById('upscaleCost');
+        if (!sel || !box || !secs) return;
+        const rate = Number(sel.selectedOptions[0].dataset.rate) || 0;
+        box.innerHTML = `About <strong>$${(rate * secs).toFixed(2)}</strong> for ${secs.toFixed(1)}s`;
+    }
+    function confirmUpscale(shotId, assetId, send) {
+        const q = `?model=${encodeURIComponent(UPSCALE_DEFAULT_MODEL)}${assetId ? '&asset_id=' + encodeURIComponent(assetId) : ''}`;
+        return confirmPaidImage({
+            capability: 'post',
+            title: 'Upscale this clip',
+            note: 'Costs credits on MuAPI. The clip is enlarged to the project\'s delivery size; nothing is re-generated.',
+            previewUrl: `/shots/${shotId}/post/upscale/preview${q}`,
+            describe: d => { setTimeout(() => upscaleCostLine(Number((d.source || {}).seconds) || 0), 0); return upscalePlanHtml(d); },
+            armable: d => d.can_generate !== false,
+            send: async () => {
+                const model = (document.getElementById('upscaleModel') || {}).value || UPSCALE_DEFAULT_MODEL;
+                return send({ model, ...(assetId ? { asset_id: assetId } : {}) });
+            },
+        });
+    }
     function stitchShot(shotId, btn) { _shotAction(shotId, btn, 'Stitch', '/shots/' + shotId + '/video/stitch', 'Stitching'); }
 
     // ══════════════════════════════════════════════════════════════
@@ -45147,6 +45194,9 @@ function pgOpenMenu(x, y, key, group) {
         // Only where the server can plan it (PGN-009); the set is held equal to run-to-here TARGETS.
         if (PG_RUN_TO_HERE_TYPES.includes(n.type)) items.push(`<button onclick="pgMenuDo('to-here')" title="Make everything this still needs, in order, after one confirmation">Run to here</button>`);
         if (n.type === 'shot' || n.type === 'sequence' || n.type === 'sound') items.push(`<button onclick="pgMenuDo('dup')">Duplicate</button>`);
+        const upWhy = pgUpscaleWhyNot(n);
+        if (upWhy !== undefined) items.push(upWhy ? `<button disabled title="${esc(upWhy)}">Upscale…</button>`
+            : `<button onclick="pgMenuDo('upscale')" title="Enlarge this clip to the delivery size on MuAPI, after one confirmation">Upscale…</button>`);
         items.push(pgApplyMenuItem(n, PG.picked.size));
         if (PG_HOLD_ROUTES[n.type]) items.push(`<button onclick="pgMenuDo('hold')" title="Batch runs skip a held node; the film keeps it (Ctrl+B)">${n.held ? 'Release hold' : 'Hold'}</button>`);
         const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || (n.type === 'shot' && n.sequence_id);
@@ -45176,7 +45226,38 @@ async function pgMenuDo(what) {
     if (what === 'apply') return pgOpenApplyFlow(n.key);
     if (what === 'hold') return pgToggleHold(n.key);
     if (what === 'dup') return pgDuplicate(n);
+    if (what === 'upscale') return pgUpscale(n);
     if (what === 'remove') return pgRemove(n);
+}
+
+// ── Upscale a clip on the canvas ───────────────────────────────────────
+
+/*
+ * Which nodes can be upscaled: a shot (its selected clip) and a clip version of
+ * a shot. undefined means the item is not offered; a string is why it is
+ * disabled. A sequence clip is refused by name: its file belongs to the
+ * sequence's first shot, so upscale it from that shot's version.
+ */
+function pgUpscaleWhyNot(n) {
+    if (n.type === 'shot') return (n.videos && n.videos.length) || n.selected_video_asset_id ? '' : 'This shot has no clip yet.';
+    if (n.type === 'video') {
+        const parent = pgNode(n.parent);
+        return parent && parent.type === 'shot' ? '' : 'A sequence clip is upscaled from its first shot\'s clip version.';
+    }
+    return undefined;
+}
+function pgUpscale(n) {
+    const shot = n.type === 'shot' ? n : pgNode(n.parent);
+    if (!shot) return;
+    const assetId = n.type === 'video' ? n.asset_id : null;
+    return confirmUpscale(shot.id, assetId, async body => {
+        setStatus('Upscaling ' + (shot.shot_code || '') + '…', true);
+        try {
+            await api(`/shots/${shot.id}/post/upscale`, { method: 'POST', body: JSON.stringify(body) });
+            setStatus('Upscaled ' + (shot.shot_code || ''));
+        } catch (err) { setStatus('Upscale failed: ' + err.message); }
+        if (typeof pgLoad === 'function') pgLoad();
+    });
 }
 
 // ── Apply a flow to a selection (FOG-003) ──────────────────────────────

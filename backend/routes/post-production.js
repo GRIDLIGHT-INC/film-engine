@@ -1,7 +1,8 @@
 /**
  * FILM-052-058: Post-Production Pipeline
  *
- * POST /film/shots/:id/post/upscale       - Upscale video
+ * POST /film/shots/:id/post/upscale       - Upscale video (the SELECTED clip, or asset_id; model picks a MuAPI upscaler)
+ * GET  /film/shots/:id/post/upscale/preview - What that upscale would send, reach and cost (free)
  * POST /film/shots/:id/post/face-restore   - Face restoration
  * POST /film/shots/:id/post/color-grade    - Color grading
  * POST /film/shots/:id/post/composite      - Run all post steps sequentially
@@ -53,6 +54,7 @@ function handlePostProduction(req, res, urlParts, query) {
         if (!UUID_RE.test(shotId)) return json(res, 400, { error: 'Invalid shot ID' });
 
         const sub = urlParts[4];
+        if (sub === 'upscale' && urlParts[5] === 'preview' && req.method === 'GET') return previewUpscale(res, shotId, query || {});
         if (req.method === 'POST') {
             if (sub === 'upscale') return runPostStep(req, res, shotId, 'upscale');
             if (sub === 'face-restore') return runPostStep(req, res, shotId, 'face_restore');
@@ -234,6 +236,83 @@ function buildPostPayload(jobType, videoAsset, projectId, options) {
     return base;
 }
 
+// -- The upscale: the clip, measured, sized to the delivery ---------------
+
+/*
+ * WHICH CLIP, AND HOW BIG IT MUST GET.
+ *
+ * An upscale finishes the clip the director SELECTED (or the version named),
+ * never "the latest raw", and it is sized from the clip's MEASURED frame to
+ * the project's delivery size: the factor or tier that reaches it. Naming a
+ * MuAPI upscaler (lib/providers/seedance.js UPSCALERS) routes this one call to
+ * MuAPI whatever `post` resolves to for the project.
+ */
+function upscaleSource(shotId, assetId) {
+    if (assetId) {
+        return db.prepare(`SELECT * FROM film_assets WHERE id = ? AND shot_id = ?
+            AND asset_type IN ('video_final','video_synced','video_raw')`).get(assetId, shotId) || null;
+    }
+    const sel = require('../lib/conform').selectedClip(db, shotId);
+    return sel ? db.prepare('SELECT * FROM film_assets WHERE id = ?').get(sel.id) : null;
+}
+
+function planUpscale(shot, scene, body) {
+    const b = body || {};
+    const { UPSCALERS } = require('../lib/providers/seedance');
+    const project = db.prepare('SELECT id, target_resolution FROM film_projects WHERE id = ?').get(scene.project_id) || {};
+    const source = upscaleSource(shot.id, b.asset_id);
+    if (!source) return { error: b.asset_id ? 'That clip is not a clip of this shot.' : 'This shot has no clip to upscale yet.', status: b.asset_id ? 404 : 400 };
+    const model = String(b.model || '');
+    const muapi = !!UPSCALERS[model];
+    const measured = require('../lib/ffmpeg').inspectMedia(source.file_path);
+    const payload = {
+        ...buildPostPayload('upscale', source, scene.project_id, b),
+        ...(muapi ? { model } : {}),
+        source_video: source.file_path,
+        target_resolution: b.target_resolution || project.target_resolution || '1920x1080',
+        source_width: measured.ok ? measured.width : null,
+        source_height: measured.ok ? measured.height : null,
+        source_seconds: measured.ok && measured.duration_ms ? measured.duration_ms / 1000 : null,
+    };
+    const provider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene, muapi ? { post: 'seedance' } : null));
+    let request = null, why = null;
+    if (provider && provider.id === 'seedance') {
+        try { request = require('../lib/providers/seedance').buildPostRequest(payload); } catch (err) { why = err.message; }
+    }
+    const warnings = [];
+    if (!measured.ok) warnings.push(`The clip could not be measured (${measured.reason || 'unreadable'}), so the factor and the price are guesses.`);
+    if (request && request.note) warnings.push(request.note);
+    if (why) warnings.push(why);
+    return { project, source, measured, payload, provider, request, warnings, model: muapi ? model : (payload.model || null) };
+}
+
+function previewUpscale(res, shotId, query) {
+    const shot = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(shotId);
+    if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
+    if (!scene) return json(res, 404, { error: 'Scene not found' });
+    const plan = planUpscale(shot, scene, query);
+    if (plan.error) return json(res, plan.status, { error: plan.error, can_generate: false });
+    const { UPSCALERS } = require('../lib/providers/seedance');
+    const r = plan.request;
+    return json(res, 200, {
+        shot_id: shotId, shot_code: shot.shot_code, spends: false, can_generate: !!plan.provider,
+        provider: plan.provider ? plan.provider.id : 'unresolved',
+        model: plan.model,
+        source: { asset_id: plan.source.id, file_name: plan.source.file_name,
+            measured: plan.measured.ok ? `${plan.measured.width}x${plan.measured.height}` : null,
+            seconds: plan.payload.source_seconds },
+        target: plan.payload.target_resolution,
+        sends: r ? { url: r.url.replace(/^https?:\/\/[^/]+/, ''), body: { ...r.body, video_url: '(the clip, uploaded to MuAPI first)' } } : null,
+        reaches: r && r.reaches ? r.reaches : null,
+        estimated_usd: r ? r.estimated_usd : null,
+        estimate_unknown_why: r ? r.estimate_unknown_why : 'This provider does not quote its upscale here.',
+        warnings: plan.warnings,
+        upscalers: Object.entries(UPSCALERS).map(([id, u]) => ({ id, label: u.label, usd_per_second: u.usdPerSecond, inferred_price: true })),
+        prompt: '',
+    });
+}
+
 // -- Run a Single Post Step ----------------------------------------------
 
 async function runPostStep(req, res, shotId, jobType) {
@@ -242,12 +321,17 @@ async function runPostStep(req, res, shotId, jobType) {
 
     const scene = db.prepare('SELECT * FROM film_scenes WHERE id = ?').get(shot.scene_id);
     if (!scene) return json(res, 404, { error: 'Scene not found' });
-    const postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
-
-    const videoAsset = findLatestVideo(shotId);
-    if (!videoAsset) return json(res, 400, { error: 'No video asset found. Generate video first.' });
-
-    const payload = buildPostPayload(jobType, videoAsset, scene.project_id, req.body);
+    let postProvider, videoAsset, payload;
+    if (jobType === 'upscale') {
+        const plan = planUpscale(shot, scene, req.body);
+        if (plan.error) return json(res, plan.status, { error: plan.error });
+        ({ provider: postProvider, source: videoAsset, payload } = plan);
+    } else {
+        postProvider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene));
+        videoAsset = findLatestVideo(shotId);
+        if (!videoAsset) return json(res, 400, { error: 'No video asset found. Generate video first.' });
+        payload = buildPostPayload(jobType, videoAsset, scene.project_id, req.body);
+    }
 
     // Find color preset if applicable
     let colorPresetId = null;
@@ -271,22 +355,37 @@ async function runPostStep(req, res, shotId, jobType) {
         }
 
         const suffix = jobType === 'upscale' ? '_upscaled' : jobType === 'face_restore' ? '_facefix' : '_graded';
-        const filename = `${shot.shot_code}${suffix}.mp4`;
+        /*
+         * An upscale is a VERSION: a second upscale of the shot must not write
+         * over the first one's file while both rows still point at it.
+         */
+        let filename = `${shot.shot_code}${suffix}.mp4`;
+        if (jobType === 'upscale') {
+            const n = db.prepare(`SELECT COUNT(*) AS n FROM film_assets WHERE shot_id = ? AND file_name LIKE ?`)
+                .get(shotId, `${shot.shot_code}${suffix}%`).n;
+            if (n) filename = `${shot.shot_code}${suffix}_v${n + 1}.mp4`;
+        }
         ensureDir(scene.project_id, 'video');
-        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
+        // An upscale keeps the clip's own sound: the saver strips audio from a
+        // new video unless told otherwise, which would silence a finished shot.
+        const filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data,
+            { serveDir: 'videos', keepAudio: jobType === 'upscale' });
 
         const assetId = generateId();
         db.prepare(
             `INSERT INTO film_assets (
                 id, project_id, shot_id, asset_type, file_path, file_name,
                 format, mime_type, version,
-                provider, provider_model, provider_job_id, license_source, license_status
+                provider, provider_model, provider_job_id, license_source, license_status, metadata
              )
-             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated')`
+             VALUES (?, ?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1, ?, ?, ?, 'generated', 'generated', ?)`
         ).run(
             assetId, scene.project_id, shotId, filePath, filename,
-            postProvider.id, resultModel(result, payload), resultJobId(result)
+            postProvider.id, resultModel(result, payload), resultJobId(result),
+            JSON.stringify({ kind: jobType, from_asset_id: videoAsset.id, target_resolution: payload.target_resolution || null })
         );
+        // The finished clip is the one the shot plays, as a new generation is.
+        if (jobType === 'upscale') db.prepare('UPDATE film_shots SET selected_video_asset_id = ? WHERE id = ?').run(assetId, shotId);
 
         db.prepare(
             `INSERT INTO render_ledger (id, shot_id, version, step, model_id, prompt, mode)
@@ -296,7 +395,7 @@ async function runPostStep(req, res, shotId, jobType) {
         db.prepare('UPDATE film_post_jobs SET status = ?, output_path = ? WHERE id = ?').run('complete', filePath, jobId);
 
         json(res, 200, {
-            shot_id: shotId, shot_code: shot.shot_code, job_id: jobId, job_type: jobType, status: 'complete',
+            shot_id: shotId, shot_code: shot.shot_code, job_id: jobId, job_type: jobType, status: 'complete', asset_id: assetId,
             video_url: getFileUrl('video', scene.project_id, filename),
         });
     } catch (err) {
