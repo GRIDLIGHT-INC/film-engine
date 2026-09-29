@@ -486,6 +486,15 @@ answers the budget; a sequence expands to its shots.
 a form: `flow_form` (free) lists them as fields — a prompt's text, an asset,
 a subject — and their values go to both calls as `inputs`.
 
+What an applied flow makes stays a **candidate** on its shot (a flow version on
+`production_graph_get`) and replaces nothing. When a run stops at a "pick one"
+step, `flow_apply_get` shows it `paused` and `generation_queue` lists it under
+`paused`. Read its variations with `flow_run_branches`, then `flow_run_select`
+with the branch key you want: that variation becomes the shot's frame, clip or sound,
+and the run finishes from there without generating anything again.
+`flow_run_cancel` ends a run and keeps what it made. `asset_provenance` on a
+flow's output names the flow, the node, the run and the apply.
+
 ### Keeping track
 
 `project_list` · `project_get` · `project_create` · `project_update` ·

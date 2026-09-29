@@ -129,7 +129,7 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '11. Hold a node', '12. Collapse a group', '13. Search to add, and patterns (double-click)',
          '14. Wiring: what connects to what', '15. Adding, duplicating and removing', '16. The header',
          '17. The playback bar', '18. What costs money, and what is free', '19. Asking Claude to do it',
-         '20. Good to know'])
+         '20. Flows on the canvas', '21. Good to know'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -530,10 +530,45 @@ table(['Tool', 'What it does'], [
     ['pattern_list · pattern_preview · pattern_create', 'The coverage patterns, their free preview, and creating them.'],
     ['graph_hold', 'Hold or release a shot, sequence or sound.'],
     ['version_select', 'Choose which version plays.'],
+    ['flow_apply_plan · flow_form', 'Plan applying a flow to shots, and read its form — both free.'],
+    ['flow_apply · flow_apply_get', 'Apply the flow with the plan\'s fingerprint (spends), and follow the apply.'],
+    ['flow_run_select · flow_run_cancel', 'Pick a paused run\'s variation, or cancel a run.'],
 ], widths=[Inches(2.6), Inches(4.1)])
 
 # ── 20 ────────────────────────────────────────────────────────────────────
-doc.add_heading('20. Good to know', level=1)
+doc.add_heading('20. Flows on the canvas', level=1)
+p('A flow is a small graph of generations built on the Flows page: a prompt, a keyframe, three video models, "pick a take". '
+  'On the canvas you can run one on as many shots as you like, see what it made on each shot, and choose what stays.')
+doc.add_heading('Apply a flow', level=3)
+bullets([
+    ('Apply flow… ', 'is on every node\'s right-click menu. It applies to the shots you picked (Shift+click), or to the one you selected; '
+     'a sequence means its shots. On a clip or a sound it is greyed out and says where to apply instead.'),
+    ('The picker ', 'lists this film\'s flows, your library flows and the six ready-made templates. Choosing a template saves it into the film first.'),
+    ('The form. ', 'If the flow has inputs marked "exposed", you fill them in here (a prompt, a picture, a character) for this apply only.'),
+    ('The plan ', 'is free and comes before anything spends: what each shot will use, what it costs, the total against the budget, '
+     'and any shot that is held or cannot take the flow. Generate stays greyed out until the plan has loaded.'),
+    ('Templates on the shelf. ', 'Double-click the canvas: the add palette lists the templates beside the patterns, and choosing one applies it.'),
+])
+doc.add_heading('What a flow makes', level=3)
+bullets([
+    ('Made by flows. ', 'A picture a flow made sits on its shot in a "Made by flows" strip; a clip or a sound becomes a version with a flow badge. '
+     'None of it replaces anything: the board, Playback and the final film keep what they had.'),
+    ('Pick. ', 'When a flow stops at "pick one", every variation waits on the shot with a Pick button. Picking makes it the shot\'s frame, '
+     'clip or sound and finishes the run from there; nothing is generated again. Cancel run keeps the variations and ends the run.'),
+    ('Waiting for a pick ', 'is its own group in the queue strip; each entry opens its shot.'),
+    ('How was this made ', 'names the flow and its version, the node that made it, the provider and model, the run and the apply. '
+     'Make another applies the same flow to the shot again.'),
+])
+doc.add_heading('Editing the flow', level=3)
+bullets([
+    ('Edit flow ', 'opens the Flows page on that flow, from the picker, the "Made by flows" strip, a flow version, the queue or the form. '
+     'Back (the browser\'s, or the page\'s own) returns to the canvas.'),
+    ('Suggestions. ', 'On the Flows page, drag a wire from an output and let go on empty space: it lists only the nodes that can take it, '
+     'and choosing one places it there, wired.'),
+])
+
+# ── 21 ────────────────────────────────────────────────────────────────────
+doc.add_heading('21. Good to know', level=1)
 bullets([
     ('Nothing is overwritten. ', 'Every generation is a new version; you choose which one plays.'),
     ('Red means do it now; amber means not yet. ', '"waiting" work is built on something that is itself being redone.'),
