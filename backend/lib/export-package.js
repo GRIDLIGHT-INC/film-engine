@@ -81,6 +81,19 @@ function preflightExport(project, shots, assets = [], opts = {}) {
         if (opts.rights.blocked.length) blocking.push({ code: 'SCORE_RIGHTS', message: `The rights policy blocks the score: ${opts.rights.blocked.map(i => `${i.name} (${i.status})`).join('; ')}`, items: opts.rights.blocked });
         if (opts.rights.warned.length) warnings.push({ code: 'SCORE_RIGHTS', message: `Score rights to settle before delivery: ${opts.rights.warned.map(i => `${i.name} (${i.status})`).join('; ')}`, items: opts.rights.warned });
     }
+    /*
+     * CLIPS BELOW THE DELIVERY SIZE, measured from the files (the delivery
+     * check). A warning, not a block: the editor may upscale in the NLE, but
+     * handing over a 720p clip on a 4K delivery without saying so is how a
+     * soft shot reaches the grade unnoticed.
+     */
+    if (opts.deliveryCheck && Array.isArray(opts.deliveryCheck.shots)) {
+        const below = opts.deliveryCheck.shots.filter(s => s.status === 'below');
+        if (below.length) warnings.push({ code: 'SHOTS_BELOW_DELIVERY',
+            message: `${below.length} shot(s) are smaller than the ${opts.deliveryCheck.asked} delivery: `
+                + below.map(s => `${s.shot_code} (${s.measured})`).join(', ') + '. Upscale them before handing over.',
+            items: below });
+    }
     const all = shots || [];
     const { shots: shootable } = shootableShots(all, byShotId(assets));
 

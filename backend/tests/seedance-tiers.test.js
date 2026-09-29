@@ -50,7 +50,7 @@ const VIDEO_ADAPTERS = providers.list().filter(a => (a.capabilities || []).inclu
 function draftCtx(extra) {
     return {
         project: {
-            id: 'p1', aspect_ratio: '16:9', target_resolution: '3840x2160', video_draft: 1,
+            id: 'p1', aspect_ratio: '16:9', target_resolution: '3840x2160', video_draft: 1, draft_video: 1,
             provider_config: JSON.stringify({ video: 'seedance', post: 'seedance' }),
             ...(extra || {}),
         },

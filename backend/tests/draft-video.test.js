@@ -221,7 +221,7 @@ test('two projects of the same shape draft to the SAME frame', () => {
         const at = res => {
             const { payload } = buildCapabilityPayload('video', {
                 shot, sceneCard: card, scene: { id: 'sc1', project_id: 'p1' },
-                project: { aspect_ratio: aspect, target_resolution: res, target_fps: 24 },
+                project: { aspect_ratio: aspect, target_resolution: res, target_fps: 24, draft_video: 1 },
                 keyframePath: null,
             });
             return `${payload.width}x${payload.height}`;

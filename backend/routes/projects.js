@@ -202,8 +202,8 @@ function createProject(req, res) {
     db.prepare(`
         INSERT INTO film_projects (id, title, logline, genre, style_preset, status,
             target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
-            color_space, delivery_format, timecode_start, provider_config, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            color_space, delivery_format, timecode_start, provider_config, created_at, updated_at, video_draft)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(id, title, logline, genre, style_preset, status,
         target_resolution, target_fps, aspect_ratio, aspect_ratio_custom,
         color_space, delivery_format, timecode_start,
@@ -386,10 +386,31 @@ function updateProject(req, res, id) {
      * string would be truthy and drafting would stay on while the settings say
      * otherwise.
      */
+    /*
+     * The delivery codec and audio layout: set by a preset, and editable on
+     * their own. Refused when unknown, because a codec the master cannot be
+     * encoded in is a delivery that fails at the very end.
+     */
+    if (body.delivery_codec !== undefined) {
+        const dq = require('../lib/delivery-quality');
+        const c = String(body.delivery_codec || '');
+        if (c && !dq.CODECS[c]) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: `delivery_codec must be one of: ${Object.keys(dq.CODECS).join(', ')} (empty for H.264)` }));
+        }
+        fields.push('delivery_codec = ?'); values.push(c);
+    }
+    if (body.delivery_audio_channels !== undefined) {
+        const n = require('../lib/delivery-quality').channelCount(body.delivery_audio_channels);
+        fields.push('delivery_audio_channels = ?'); values.push(n);
+    }
     if (body.video_draft !== undefined) {
         const on = body.video_draft === true || body.video_draft === 1
             || body.video_draft === 'true' || body.video_draft === '1';
         fields.push('video_draft = ?');
+        values.push(on ? 1 : 0);
+        // draft_video is the column the engine reads (migration 123).
+        fields.push('draft_video = ?');
         values.push(on ? 1 : 0);
     }
 
@@ -612,11 +633,15 @@ function handleProjectSettingsPreset(req, res, parts) {
     const result = db.prepare(`
         UPDATE film_projects SET
             target_resolution = ?, target_fps = ?, aspect_ratio = ?,
-            color_space = ?, delivery_format = ?, updated_at = datetime('now')
+            color_space = ?, delivery_format = ?, delivery_codec = ?, delivery_audio_channels = ?,
+            updated_at = datetime('now')
         WHERE id = ?
     `).run(
         preset.target_resolution, preset.target_fps, preset.aspect_ratio,
-        preset.color_space, preset.id, id
+        // The codec and audio layout travel with the preset: they decide how
+        // the film master is encoded (lib/delivery-quality.js).
+        preset.color_space, preset.id, preset.codec || '',
+        require('../lib/delivery-quality').channelCount(preset.audio_channels), id
     );
 
     if (result.changes === 0) {

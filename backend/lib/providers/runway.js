@@ -285,13 +285,42 @@ function pickRatio(width, height, mode, model) {
     const h = Number(height);
     if (!w || !h || w <= 0 || h <= 0) return allowed[0];
     const target = Math.log(w / h);
-    let best = allowed[0];
     let bestDelta = Infinity;
-    for (const ratio of allowed) {
-        const delta = Math.abs(Math.log(ratioAspect(ratio)) - target);
-        if (delta < bestDelta) { bestDelta = delta; best = ratio; }
-    }
-    return best;
+    for (const ratio of allowed) bestDelta = Math.min(bestDelta, Math.abs(Math.log(ratioAspect(ratio)) - target));
+    /*
+     * THE SHAPE FIRST, THEN THE SIZE. Several ratios share a shape — 1280:720
+     * and 1920:1080 are both 16:9 — and taking the first match meant a
+     * 1080-capable model was always sent 1280:720, whatever the project asked
+     * for. Among the ratios of the right shape: the largest at or below the
+     * ask, else (asked for more than it offers) nothing is smaller, so the
+     * smallest only when the ask is below every one of them.
+     */
+    const same = allowed.filter(r => Math.abs(Math.abs(Math.log(ratioAspect(r)) - target) - bestDelta) < 1e-6);
+    const area = r => { const [a, b] = String(r).split(':').map(Number); return a * b; };
+    const fits = same.filter(r => area(r) <= w * h).sort((x, y) => area(y) - area(x));
+    if (fits.length) return fits[0];
+    return same.sort((x, y) => area(x) - area(y))[0];
+}
+
+/**
+ * What a Runway model will really deliver for this payload: the ratio IS the
+ * frame. A project asking for more than the model offers gets the model's
+ * best and is told so.
+ */
+function deliverableFrame(payload) {
+    const p = payload || {};
+    const model = pickModel(p.model, KNOWN_VIDEO_MODELS, DEFAULT_VIDEO_MODEL);
+    const asked = (() => {
+        const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(p.target_resolution || ''));
+        if (Number(p.width) > 0 && Number(p.height) > 0) return { width: Number(p.width), height: Number(p.height) };
+        return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1280, height: 720 };
+    })();
+    const ratio = pickRatio(asked.width, asked.height, 'image_to_video', model);
+    const [width, height] = String(ratio).split(':').map(Number);
+    const downgraded = Math.max(width, height) < Math.max(asked.width, asked.height);
+    const offered = ((RUNWAY_VIDEO_MODELS[model] || {}).ratios || VIDEO_RATIOS.image_to_video).join(', ');
+    return { width, height, ratio, model, downgraded,
+        why: downgraded ? `Runway ${model} renders at most ${ratio} for this shape (it offers ${offered}); asked ${asked.width}x${asked.height}.` : null };
 }
 
 /** Whole seconds inside the documented window. */
@@ -997,6 +1026,7 @@ const adapter = {
     // Named so the draft path can find this model's floor; Runway documents
     // 1280:720 as gen4.5's smallest ratio, so a Runway draft is 720p.
     defaultModel: DEFAULT_VIDEO_MODEL,
+    deliverableFrame,
     // gen4_image takes up to three { uri, tag } references and lets the prompt
     // name them, which is what makes @tags meaningful here.
     supportsReferenceImages: true,

@@ -230,5 +230,15 @@ function upscaleFactorFor(source, target) {
     };
 }
 
-module.exports = { DRAFT_FLOORS, DEFAULT_FLOOR, UPSCALE_FACTORS, floorFor, draftFrameFor,
+/**
+ * Is drafting ON for this project? Opt-in (migration 123): only a project
+ * that chose it drafts. A project that never chose it is asked at its
+ * delivery size, and a generator that cannot deliver that gives its best.
+ */
+function draftOn(project) {
+    const v = project && project.draft_video;
+    return v === 1 || v === true || v === '1' || v === 'true';
+}
+
+module.exports = { draftOn, DRAFT_FLOORS, DEFAULT_FLOOR, UPSCALE_FACTORS, floorFor, draftFrameFor,
     upscaleTargetFor, upscaleFactorFor };

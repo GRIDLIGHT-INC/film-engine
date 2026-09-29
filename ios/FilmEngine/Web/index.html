@@ -6465,6 +6465,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     <div><span id="exportShotCount">0</span> shots &middot; <span id="exportDuration">0s</span> estimated</div>
                 </div>
             </div>
+            <div id="exportDeliveryCheck" class="card mb-16"></div>
             <div class="entity-grid" id="exportGrid">
                 <div class="card" style="text-align:center;padding:30px;">
                     <div style="font-size:32px;margin-bottom:8px;">&#128196;</div>
@@ -6483,6 +6484,13 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     <h3>Premiere XML</h3>
                     <p class="text-sm text-muted mb-8">Adobe Premiere Pro / DaVinci Resolve</p>
                     <button class="btn btn-primary btn-sm" onclick="downloadExport('premiere')">Download</button>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#128193;</div>
+                    <h3>Premiere, by scene</h3>
+                    <p class="text-sm text-muted mb-8">A folder per scene with its selected clips and sound, and an XML with a bin per scene. Free.</p>
+                    <button class="btn btn-primary btn-sm" onclick="exportPremiereScenes()">Make the folders</button>
+                    <div id="premiereScenesResult" class="text-sm" style="margin-top:8px;text-align:left;"></div>
                 </div>
                 <div class="card" style="text-align:center;padding:30px;">
                     <div style="font-size:32px;margin-bottom:8px;">&#128264;</div>
@@ -7288,6 +7296,9 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <option value="streaming_4k">Streaming 4K</option>
                         <option value="social_media">Social Media</option>
                         <option value="broadcast">Broadcast</option>
+                        <option value="spot_broadcast_na">Spot — NA broadcast / CTV</option>
+                        <option value="spot_broadcast_uk">Spot — UK/AU broadcast</option>
+                        <option value="spot_social">Spot — social</option>
                     </select>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -7349,6 +7360,49 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                             <option value="ACES">ACES</option>
                         </select>
                     </div>
+                    <!--
+                        THE DELIVERY CODEC AND AUDIO LAYOUT. They decide how the
+                        film's delivery master is encoded, beside the working
+                        master (lib/delivery-quality.js). A preset sets them.
+                    -->
+                    <div class="form-group">
+                        <label>Delivery codec</label>
+                        <select id="settingsDeliveryCodec">
+                            <option value="">H.264 (the working master)</option>
+                            <option value="h264">H.264</option>
+                            <option value="h265">H.265 / HEVC</option>
+                            <option value="prores_422_proxy">ProRes 422 Proxy</option>
+                            <option value="prores_422_lt">ProRes 422 LT</option>
+                            <option value="prores_422">ProRes 422</option>
+                            <option value="prores_422_hq">ProRes 422 HQ</option>
+                            <option value="prores_4444">ProRes 4444</option>
+                            <option value="dnxhr_hq">DNxHR HQ</option>
+                            <option value="jpeg2000">JPEG 2000 (for a DCP)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Delivery audio</label>
+                        <select id="settingsDeliveryAudio">
+                            <option value="2">Stereo</option>
+                            <option value="6">5.1</option>
+                            <option value="8">7.1</option>
+                            <option value="12">12.0 (IMAX)</option>
+                        </select>
+                    </div>
+                </div>
+                <!--
+                    DRAFTING IS OPT-IN. Off, every generator is asked for the
+                    delivery size above and gives its best when it cannot reach
+                    it; the video confirmation and the delivery check say when a
+                    clip comes back smaller. On, clips are asked at the model's
+                    cheapest size and reach delivery through the upscale pass.
+                -->
+                <div class="form-group">
+                    <label style="display:flex;gap:8px;align-items:center;">
+                        <input type="checkbox" id="settingsDraftVideo">
+                        Draft video — generate clips at the model's cheapest size and upscale at the end
+                    </label>
+                    <div class="text-sm text-muted">Off (the default): every clip is asked at the delivery resolution above; a generator that cannot render it gives its best, and the Delivery check on the Export page names any clip that came back smaller.</div>
                 </div>
                 <div class="form-group">
                     <label>Timecode Start</label>
@@ -32971,7 +33025,19 @@ ${fountainText.slice(0, 50000)}`;
         broadcast: { aspect_ratio: '16:9', target_resolution: '1920x1080', target_fps: 29.97, color_space: 'Rec.709' },
     };
 
-    function applyDeliveryPreset(name) {
+    /*
+     * A preset is applied by the SERVER, which writes every field it carries —
+     * the codec and audio layout included — so the page and the API cannot
+     * disagree about what a preset is. The local table below is the fallback
+     * for a page with no project open.
+     */
+    async function applyDeliveryPreset(name) {
+        if (name && state.currentProject) {
+            try {
+                const r = await api('/projects/' + state.currentProject.id + '/settings/preset', { method: 'POST', body: JSON.stringify({ preset: name }) });
+                if (r && r.project) { state.currentProject = { ...state.currentProject, ...r.project }; loadTechnicalSettings(); return; }
+            } catch (err) { setStatus('Error: ' + err.message); }
+        }
         const preset = DELIVERY_PRESETS[name];
         if (!preset) return;
         document.getElementById('settingsAspectRatio').value = preset.aspect_ratio;
@@ -33020,6 +33086,9 @@ ${fountainText.slice(0, 50000)}`;
         if (p.color_space) document.getElementById('settingsColorSpace').value = p.color_space;
         if (p.delivery_format) document.getElementById('settingsDeliveryPreset').value = p.delivery_format;
         if (p.timecode_start) document.getElementById('settingsTimecodeStart').value = p.timecode_start;
+        document.getElementById('settingsDeliveryCodec').value = p.delivery_codec || '';
+        document.getElementById('settingsDeliveryAudio').value = String(p.delivery_audio_channels || 2);
+        document.getElementById('settingsDraftVideo').checked = Number(p.draft_video) === 1;
         onAspectRatioChange(document.getElementById('settingsAspectRatio').value);
     }
 
@@ -33034,6 +33103,9 @@ ${fountainText.slice(0, 50000)}`;
             color_space: document.getElementById('settingsColorSpace').value,
             delivery_format: document.getElementById('settingsDeliveryPreset').value,
             timecode_start: document.getElementById('settingsTimecodeStart').value.trim() || '01:00:00:00',
+            delivery_codec: document.getElementById('settingsDeliveryCodec').value,
+            delivery_audio_channels: Number(document.getElementById('settingsDeliveryAudio').value) || 2,
+            video_draft: document.getElementById('settingsDraftVideo').checked,
         };
         try {
             const p = await api('/projects/' + state.currentProject.id, { method: 'PUT', body: JSON.stringify(data) });
@@ -41024,6 +41096,7 @@ ${fountainText.slice(0, 50000)}`;
           </div>
 
           ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
+          ${deliveryLineHtml(d.delivery)}
 
           ${o.editable === false
               ? `<div class="form-group">
@@ -41758,6 +41831,70 @@ ${fountainText.slice(0, 50000)}`;
             document.getElementById('exportShotCount').textContent = shots.length;
             document.getElementById('exportDuration').textContent = (totalMs / 1000).toFixed(1) + 's';
         } catch (err) { setStatus('Error: ' + err.message); }
+        loadDeliveryCheck();
+    }
+
+    /*
+     * THE DELIVERY LINE on a video confirmation: the size the project delivers,
+     * the size this generator will render, and whether that is a downgrade.
+     * Every generator is asked for the delivery size; one that cannot reach it
+     * renders its best, and this is where that is said before anything is bought.
+     */
+    function deliveryLineHtml(dl) {
+        if (!dl || !dl.asked) return '';
+        const down = dl.downgraded && !dl.draft;
+        return `<div class="text-sm" data-delivery-line style="margin:6px 0;${down ? 'color:var(--warning,#b8860b);' : ''}">
+            Delivery ${esc(dl.asked)} &middot; this generator renders ${esc(dl.delivered || 'an unreported size')}
+            ${dl.draft ? ' &middot; a draft, on purpose' : down ? ' &middot; <strong>below delivery</strong> — its best; upscale after' : ' &middot; full size'}
+            ${dl.why ? `<div class="text-muted">${esc(dl.why)}</div>` : ''}</div>`;
+    }
+
+    /*
+     * THE DELIVERY CHECK: every shot's selected clip, measured from the file,
+     * against the project's delivery size. Free; reads files, spends nothing.
+     */
+    async function loadDeliveryCheck() {
+        const box = document.getElementById('exportDeliveryCheck');
+        if (!box || !state.currentProject) return;
+        box.innerHTML = '<div class="text-sm text-muted">Measuring the selected clips…</div>';
+        try {
+            const r = await api('/projects/' + state.currentProject.id + '/delivery-check');
+            const shots = r.shots || [];
+            const bad = shots.filter(s => s.status !== 'ok');
+            box.innerHTML = `
+                <div class="flex-between"><strong>Delivery check</strong>
+                  <button class="btn btn-sm" onclick="loadDeliveryCheck()">Measure again</button></div>
+                <div class="text-sm text-muted" style="margin:4px 0 8px;">Delivers ${esc(r.asked || 'no size set')} &middot;
+                  ${shots.length - bad.length} of ${shots.length} shot${shots.length === 1 ? '' : 's'} at full size</div>
+                ${bad.length ? `<table class="text-sm" style="width:100%;">${bad.map(s => `<tr>
+                    <td><strong>${esc(s.shot_code)}</strong></td>
+                    <td>${esc(s.status === 'below' ? 'below delivery' : s.status === 'no_clip' ? 'no clip' : 'unreadable')}</td>
+                    <td>${esc(s.measured || '')}</td>
+                    <td class="text-muted">${esc(s.fix || '')}</td></tr>`).join('')}</table>`
+                  : '<div class="text-sm">Every selected clip is at the delivery size.</div>'}`;
+        } catch (err) { box.innerHTML = `<div class="text-sm" style="color:var(--danger,#c00);">Could not measure: ${esc(err.message)}</div>`; }
+    }
+
+    /*
+     * PREMIERE, ONE FOLDER PER SCENE. The plan is read first (free) so the
+     * question names what will be copied and what is missing; then it writes
+     * into the project's Exports folder and says where.
+     */
+    async function exportPremiereScenes() {
+        if (!state.currentProject) return;
+        const box = document.getElementById('premiereScenesResult');
+        const url = '/projects/' + state.currentProject.id + '/export/premiere-scenes';
+        try {
+            const plan = await api(url);
+            const clips = (plan.scenes || []).reduce((n, s) => n + s.shots.filter(x => x.asset_id).length, 0);
+            const miss = (plan.missing || []).length;
+            if (!confirm(`Copy ${plan.file_count} file${plan.file_count === 1 ? '' : 's'} (${clips} clip${clips === 1 ? '' : 's'}) into ${(plan.scenes || []).length} scene folder${(plan.scenes || []).length === 1 ? '' : 's'}?`
+                + (miss ? `\n${miss} item${miss === 1 ? ' is' : 's are'} missing and will be named in the READ ME.` : ''))) return;
+            box.textContent = 'Copying…';
+            const r = await api(url, { method: 'POST', body: '{}' });
+            box.innerHTML = `Written to <code>${esc(r.dest)}</code><br>${r.copied} files, ${esc(r.xml)}`
+                + (r.missing && r.missing.length ? `<br><span class="text-muted">${r.missing.length} missing, listed in READ ME.txt</span>` : '');
+        } catch (err) { box.textContent = 'Could not make the folders: ' + err.message; }
     }
 
     function downloadExport(format) {

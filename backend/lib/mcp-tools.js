@@ -2936,6 +2936,14 @@ const PRODUCTION_TOOLS = [
         required: ['project_id'],
     },
     {
+        name: 'delivery_check',
+        handler: handleProductionReports, method: 'GET',
+        description: 'FREE. Every shot\'s SELECTED clip measured from its file against the project\'s delivery size (target_resolution): ok, below (with the measured size and the fix — upscale it), no_clip or unreadable. Run it before a conform or a Premiere handover; a generator that cannot render the delivery size gives its best, and this is where that shortfall is caught.',
+        path: a => `/film/projects/${a.project_id}/delivery-check`,
+        schema: { project_id: { type: 'string' } },
+        required: ['project_id'],
+    },
+    {
         name: 'run_plan',
         handler: handleProductionReports, method: 'GET',
         description: 'What a generation run would do, in what order, and what it would cost \u2014 BEFORE spending anything. Skips work that is already current, so re-running after a small edit costs a small amount. order=model loads each model once (cheapest, nothing finished until the end); order=shot walks one shot through every step (a finished shot early, at the cost of reloading models per shot). Returns HTTP 402 and refused:true when the projected cost would exceed the project budget or a `max_credits` ceiling given for this run — and ALSO when the card audit finds a subject that would reach the provider as neither a reference picture nor a description, because that frame comes back with something invented in it and the money is gone. `audit` carries the counts either way; ignore_audit=true generates regardless.',
@@ -3679,6 +3687,20 @@ const PRODUCTION_TOOLS = [
             target: { type: 'string', description: 'premiere (default), fcpxml or edl.' },
         },
         required: ['project_id'],
+    },
+    {
+        name: 'export_premiere_scenes_plan',
+        handler: handleNLEExport, method: 'GET',
+        description: 'FREE. What the Premiere handover with one folder per scene would hold: each scene\u2019s folder name, the SELECTED clip of every shot (named by shot code) and the scene\u2019s sound, and anything missing. Nothing is written. Read it before export_premiere_scenes.',
+        path: a => `/film/projects/${a.project_id}/export/premiere-scenes`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'export_premiere_scenes',
+        handler: handleNLEExport, method: 'POST',
+        description: 'Write the Premiere handover with ONE FOLDER PER SCENE into the project\u2019s Exports folder: Scene_NN_<heading>/Video holds each shot\u2019s SELECTED clip named by shot code, Sound holds its dialogue, effects and the scene\u2019s beds, and a Premiere XML carries the cut as a sequence plus a bin per scene. Media is COPIED, never moved. Spends nothing. Refuses when no shot has a clip yet.',
+        path: a => `/film/projects/${a.project_id}/export/premiere-scenes`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
         name: 'run_report',

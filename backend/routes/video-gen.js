@@ -176,6 +176,7 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
     const estimate = estimateVideoCost({
         model: chosen.model || payload.model,
         resolution: chosen.resolution,
+        frame: payload.delivery && payload.delivery.delivered,
         durationSeconds: chosen.durationSeconds || payload.duration_s,
         imageReferences: refs.filter(r => (r.sourceType || 'image') === 'image').length,
         videoReferenceSeconds: refs.filter(r => r.sourceType === 'video')
@@ -218,6 +219,13 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
      * reads is how the original lie went unnoticed.
      */
     for (const note of (sent && sent.notes) || []) warnings.push(note);
+    // A clip that will come back smaller than the project delivers is said
+    // BEFORE it is bought: the best this generator does, and the fix.
+    const delivery = payload.delivery || null;
+    if (delivery && delivery.downgraded && !delivery.draft) {
+        warnings.push(`This generator cannot deliver ${delivery.asked}; it will render its best, ${delivery.delivered}. `
+            + 'The upscale pass (post) brings it to the delivery size, or pick a generator that reaches it.');
+    }
     if (unverified) {
         warnings.push('This provider cannot report what it will actually send, so the model and '
             + 'length below are what is being ASKED for rather than what will run — unverified.');
@@ -253,6 +261,8 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
          */
         estimate,
         tier: tierChoice ? tierChoice.tierId : null,
+        // Asked, what it will deliver, and whether that is a downgrade.
+        delivery,
         references: {
             sending: refs.length,
             roles: refs.map(r => r.role),
@@ -397,6 +407,7 @@ async function generateVideo(req, res, shotId) {
     const estimate = require('../lib/video-cost').estimateVideoCost({
         model: chosen.model || payload.model,
         resolution: chosen.resolution,
+        frame: payload.delivery && payload.delivery.delivered,
         durationSeconds: chosen.durationSeconds || payload.duration_s,
         imageReferences: videoRefs.filter(r => (r.sourceType || 'image') === 'image').length,
     });

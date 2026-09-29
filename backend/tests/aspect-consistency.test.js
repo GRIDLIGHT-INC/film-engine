@@ -152,10 +152,10 @@ test('a DRAFT keeps the shape the delivery would have had', () => {
             shot: { id: 's1', shot_code: '1A', duration_ms: 5000 },
             sceneCard: { shot_code: '1A', description: 'x', camera: {} },
             scene: { id: 'sc1', project_id: 'p1' },
-            project: { aspect_ratio: aspect, target_resolution: resolution, target_fps: 24 },
+            project: { aspect_ratio: aspect, target_resolution: resolution, target_fps: 24, draft_video: 1 },
             keyframePath: null,
         };
-        const delivered = build('video', { ...ctx, project: { ...ctx.project, video_draft: 0 } }).payload;
+        const delivered = build('video', { ...ctx, project: { ...ctx.project, draft_video: 0 } }).payload;
         const drafted = build('video', ctx).payload;
 
         assert.ok(drafted.draft && drafted.draft.active, `${aspect}: draft mode did not engage`);

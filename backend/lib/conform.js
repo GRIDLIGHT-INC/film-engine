@@ -105,15 +105,7 @@ function planConform(projectId) {
 
     const clips = [], missing = [];
     for (const shot of folded.shots) {
-        const asset = db.prepare(
-            `SELECT id, asset_type, file_path, file_name FROM film_assets
-              WHERE shot_id = ? AND asset_type IN (${VIDEO_PRECEDENCE.map(() => '?').join(',')})
-           -- The clip a person SELECTED leads, so the master is the cut playback
-           -- shows; the precedence decides only when nothing was chosen.
-           ORDER BY (id = COALESCE((SELECT selected_video_asset_id FROM film_shots WHERE id = ?), '')) DESC,
-                    CASE asset_type ${VIDEO_PRECEDENCE.map((t, i) => `WHEN '${t}' THEN ${i}`).join(' ')} END,
-                    version DESC, created_at DESC
-              LIMIT 1`).get(shot.id, ...VIDEO_PRECEDENCE, shot.id);
+        const asset = selectedClip(db, shot.id);
 
         if (!asset) { missing.push({ shot_id: shot.id, shot_code: shot.shot_code }); continue; }
         clips.push({
@@ -549,13 +541,54 @@ async function runConform(projectId, options) {
     });
     write();
 
+    /*
+     * THE DELIVERY MASTER, when the project's delivery is not H.264 stereo:
+     * the preset's codec and audio layout, encoded from the finished master
+     * and registered beside it (kind: delivery_master). A failed delivery
+     * encode is reported and the master stands.
+     */
+    const proj = db.prepare('SELECT delivery_codec, delivery_audio_channels FROM film_projects WHERE id = ?').get(projectId) || {};
+    const delivery = await require('./delivery-quality').encodeDeliveryMaster(outputPath, proj, { timeoutMs: opts.timeoutMs });
+    if (delivery.ok && !delivery.skipped) {
+        const dname = path.basename(delivery.path);
+        const dprior = db.prepare(`SELECT id FROM film_assets WHERE project_id = ? AND file_path = ?`).all(projectId, delivery.path);
+        const dId = generateId();
+        db.transaction(() => {
+            for (const r of dprior) db.prepare('DELETE FROM film_assets WHERE id = ?').run(r.id);
+            db.prepare(`INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, size_bytes, duration_ms, width, height, version, metadata)
+                VALUES (?, ?, 'video_final', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                .run(dId, projectId, delivery.path, dname, path.extname(dname).slice(1), fs.statSync(delivery.path).size,
+                    delivery.duration_ms, delivery.width, delivery.height, version,
+                    JSON.stringify({ kind: 'delivery_master', of: assetId, codec: delivery.codec, audio_channels: delivery.channels, fallback: delivery.fallback || null }));
+        })();
+        delivery.asset_id = dId;
+        delivery.url = getFileUrl('video', projectId, dname, version);
+    }
+
     return {
-        ok: true, state: 'produced', plan, asset_id: assetId, output: outputPath,
+        ok: true, state: 'produced', plan, asset_id: assetId, output: outputPath, delivery,
         url: getFileUrl('video', projectId, filename, version),
         version, replaced, duration_ms: durationMs, size_bytes: sizeBytes,
         executor: executor.id,
     };
 }
 
-module.exports = {    planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE,
+/**
+ * THE clip a shot plays: the one a person SELECTED, else the precedence
+ * (final, synced, raw), newest version first. One rule for the master, the
+ * delivery check and every NLE export, so the cut an editor receives is the
+ * cut playback shows.
+ */
+function selectedClip(db, shotId) {
+    return db.prepare(
+        `SELECT id, shot_id, asset_type, file_path, file_name, format, duration_ms, width, height, created_at
+           FROM film_assets
+          WHERE shot_id = ? AND asset_type IN (${VIDEO_PRECEDENCE.map(() => '?').join(',')})
+       ORDER BY (id = COALESCE((SELECT selected_video_asset_id FROM film_shots WHERE id = ?), '')) DESC,
+                CASE asset_type ${VIDEO_PRECEDENCE.map((t, i) => `WHEN '${t}' THEN ${i}`).join(' ')} END,
+                version DESC, created_at DESC
+          LIMIT 1`).get(shotId, ...VIDEO_PRECEDENCE, shotId) || null;
+}
+
+module.exports = {    selectedClip, planConform, buildFfmpegArgs, availableExecutors, runConform, VIDEO_PRECEDENCE,
     findProjectMaster, findProjectMix,};

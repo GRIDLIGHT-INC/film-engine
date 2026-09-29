@@ -146,7 +146,19 @@ function meterGridlight(capability, payload, result) {
     return { unit: 'call', quantity: 1, model: (result && result.provider_model) || (payload && payload.model) || '' };
 }
 
+/** What the gateway's video models will render: inside 3840x2160, at multiples of 32. */
+function deliverableFrame(payload) {
+    const p = payload || {};
+    const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(p.target_resolution || ''));
+    const w = Number(p.width) || (m ? Number(m[1]) : 1280);
+    const h = Number(p.height) || (m ? Number(m[2]) : 720);
+    const s = require('../gridlight-video').snapSize(w, h);
+    const downgraded = Math.max(s.width, s.height) < Math.max(w, h);
+    return { width: s.width, height: s.height, downgraded, why: downgraded ? (s.note || `the gateway renders ${s.width}x${s.height}`) : null };
+}
+
 const gridlightAdapter = {
+    deliverableFrame,
     meter: meterGridlight,
     id: 'gridlight',
     /*

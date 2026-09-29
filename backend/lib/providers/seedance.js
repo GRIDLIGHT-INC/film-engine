@@ -850,7 +850,27 @@ async function collect(requestId, opts) {
     return awaitResult(String(requestId), apiKey, Date.now() + budget);
 }
 
+/**
+ * What Seedance will really deliver: its tier, never rounded up, reshaped to
+ * the working aspect. An ask above 4K gets 4K; an ask between two tiers gets
+ * the lower one and is told so; a model chosen at a fixed tier is that tier.
+ */
+function deliverableFrame(payload) {
+    const p = payload || {};
+    const frame = predictedFrame(p);
+    const m = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(p.target_resolution || ''));
+    const askedLong = Math.max(Number(p.width) || 0, Number(p.height) || 0) || (m ? Math.max(Number(m[1]), Number(m[2])) : 0);
+    const deliveredLong = Math.max(frame.width, frame.height);
+    const downgraded = !!(askedLong && deliveredLong < askedLong);
+    const chosen = String(p.resolution || p.quality || '') || (VIDEO_MODELS[p.model] ? `${frame.tier} (the model chosen)` : '');
+    return { width: frame.width, height: frame.height, tier: frame.tier, downgraded,
+        why: downgraded ? (chosen
+            ? `Seedance renders the ${frame.tier} tier because ${chosen.includes('model') ? 'the model chosen is that tier' : `${chosen} was asked explicitly`}; the project asks ${askedLong} wide.`
+            : `Seedance offers 480p, 720p, 1080p and 4K and never rounds up; ${frame.tier} is its best at or below ${askedLong} wide.`) : null };
+}
+
 const seedanceAdapter = {
+    deliverableFrame,
     // Asked directly by the readiness checks as well as by resolve(): an
     // adapter that cannot answer "do you serve this?" is treated as not
     // serving it, and is quietly skipped as a preference.

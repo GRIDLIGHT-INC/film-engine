@@ -1161,9 +1161,8 @@ function sequenceFrame(project, provider) {
      * must never be able to reach a provider default by omission.
      */
     const stated = wxh => `${wxh.width}x${wxh.height}`;
-    // Drafting is the default, exactly as it is for a single shot; an explicit
-    // false is the only thing that turns it off.
-    if (project && project.video_draft !== undefined && !project.video_draft) {
+    // Drafting is opt-in (migration 123), exactly as it is for a single shot.
+    if (!require('../lib/draft-video').draftOn(project)) {
         return { ...delivery, target_resolution: stated(delivery) };
     }
     try {

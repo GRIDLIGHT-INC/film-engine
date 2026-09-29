@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**401 tools, 82 families.** Everything the app can do, you can ask for in a
+**404 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -413,11 +413,25 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_out_assembly` · `node_out_timeline` · `node_out_asset` · `node_tf_mix` ·
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
-`run_plan` · `run_report` · `conform_plan` · `conform_run` · `export_preflight` · `export_package` ·
+`run_plan` · `run_report` · `conform_plan` · `conform_run` · `delivery_check` · `export_preflight` · `export_package` ·
+`export_premiere_scenes_plan` · `export_premiere_scenes` ·
 `deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
 `deliverable_delete` · `deliverable_check` · `brand_list` · `brand_get` ·
 `brand_create` · `brand_update` · `brand_delete` · `claim_list` · `claim_create` ·
 `claim_update` · `claim_delete` · `compliance_check`
+
+`delivery_check` is free: it measures every shot's SELECTED clip, from the
+file, against the project's delivery size, and names each one below it with
+its fix (the upscale). Every generator is asked for the delivery size; one that
+cannot reach it renders its best, and the video preview's `delivery` block says
+so before anything is bought.
+
+`export_premiere_scenes` writes the Premiere handover with one folder per
+scene: `Scene_NN_<heading>/Video` holds each shot's selected clip named by shot
+code, `Sound` its dialogue, effects and the scene's beds, and the XML carries
+the cut plus a bin per scene. `export_premiere_scenes_plan` says what it would
+copy and what is missing, for free. Every NLE export now plays the selected
+clip, the same rule as the master.
 
 **Before you spend on a spot, read `compliance_check`.** It is free, and it is
 where an automated pipeline gets a client sued: it catches a phrase the brand

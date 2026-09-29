@@ -67,6 +67,19 @@ function withApprovedScore(projectId, shots, assets) {
 }
 
 /**
+ * Each shot's SELECTED clip, and no other clip of that shot. Every generator
+ * takes the first video asset it finds for a shot, which was the OLDEST row —
+ * so an export handed the editor a take nobody chose while playback and the
+ * master showed the selected one. The rule is the conform's own.
+ */
+function withSelectedClips(shots, assets) {
+    const { selectedClip, VIDEO_PRECEDENCE } = require('../lib/conform');
+    const keep = new Map(shots.map(sh => [sh.id, (selectedClip(db, sh.id) || {}).id || null]));
+    return assets.filter(a => !(a.shot_id && keep.has(a.shot_id) && VIDEO_PRECEDENCE.includes(a.asset_type)
+        && a.id !== keep.get(a.shot_id)));
+}
+
+/**
  * Register an export file as an asset in the registry.
  */
 function registerExportAsset(projectId, assetType, fileName, content) {
@@ -97,7 +110,8 @@ function handleNLEExport(req, res, urlParts, query) {
         return;
     }
 
-    if (req.method !== 'GET') {
+    // Writing the per-scene handover is the one POST here; its plan is a GET.
+    if (req.method !== 'GET' && !(req.method === 'POST' && format === 'premiere-scenes')) {
         res.writeHead(405, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
@@ -117,6 +131,7 @@ function handleNLEExport(req, res, urlParts, query) {
                 { id: 'premiere', name: 'Premiere Pro XML', extension: '.xml', content_type: 'application/xml' },
                 { id: 'preflight', name: 'Export preflight (free — nothing is written)', extension: '', content_type: 'application/json' },
                 { id: 'package', name: 'Packaged handover (XML + copied media)', extension: '/', content_type: 'application/json' },
+                { id: 'premiere-scenes', name: 'Premiere, one folder per scene (GET plans free, POST writes)', extension: '/', content_type: 'application/json' },
                 { id: 'fdx', name: 'Final Draft XML', extension: '.fdx', content_type: 'application/xml' },
             ],
         }));
@@ -138,7 +153,7 @@ function handleNLEExport(req, res, urlParts, query) {
     const { coverageFor, foldShots, measuredDurations } = require('../lib/clip-coverage');
     const shots = foldShots(getProjectShots(projectId), coverageFor(db, projectId),
         measuredDurations(db, projectId)).shots;
-    const assets = withApprovedScore(projectId, shots, getProjectAssets(projectId));
+    const assets = withSelectedClips(shots, withApprovedScore(projectId, shots, getProjectAssets(projectId)));
     const safeTitle = (project.title || 'timeline').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     // Build settings object from project row
@@ -159,7 +174,8 @@ function handleNLEExport(req, res, urlParts, query) {
      */
     if (format === 'preflight') {
         const { preflightExport } = require('../lib/export-package');
-        const out = preflightExport(project, shots, assets, { settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export') });
+        const out = preflightExport(project, shots, assets, { settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export'),
+            deliveryCheck: require('../lib/delivery-quality').deliveryCheck(db, projectId) });
         res.writeHead(out.ready ? 200 : 409, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ project_id: projectId, ...out }));
         return;
@@ -190,6 +206,29 @@ function handleNLEExport(req, res, urlParts, query) {
                     ...(err.preflight ? { preflight: err.preflight } : {}) }));
             });
         return;
+    }
+
+    /*
+     * PREMIERE, ONE FOLDER PER SCENE: each scene's selected clips and sound
+     * copied into its own folder, and an XML whose bins match. GET is the free
+     * plan; POST writes it under the project's Exports folder.
+     */
+    if (format === 'premiere-scenes') {
+        const ps = require('../lib/premiere-scenes');
+        const send = (code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+        if (req.method === 'GET') {
+            const { _files, ...plan } = ps.planPremiereScenes(db, project, shots, assets);
+            return send(200, { ...plan, spends: false });
+        }
+        try {
+            const { ensureDir } = require('../lib/file-storage');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const dest = path.join(ensureDir(projectId, 'exports'), `${safeTitle}_Premiere_${stamp}`);
+            return send(200, ps.writePremiereScenes(db, project, shots, assets, { dest, settings }));
+        } catch (err) {
+            const { _files, ...plan } = err.plan || {};
+            return send(err.code ? 409 : 500, { error: err.code || 'PREMIERE_SCENES_FAILED', message: err.message, ...(err.plan ? { plan } : {}) });
+        }
     }
 
     /*

@@ -397,6 +397,13 @@ function handleProductionReports(req, res, urlParts, query) {
         if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
         return projectStaleness(req, res, urlParts[2]);
     }
+    // Every shot's selected clip, measured against the project's delivery size (free).
+    if (urlParts[1] === 'projects' && urlParts[2] && urlParts[3] === 'delivery-check') {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid project ID' });
+        if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+        const out = require('../lib/delivery-quality').deliveryCheck(db, urlParts[2]);
+        return out ? json(res, 200, out) : json(res, 404, { error: 'Project not found' });
+    }
     return json(res, 404, { error: 'Not found' });
 }
 

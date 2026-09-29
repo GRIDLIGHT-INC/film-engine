@@ -25,6 +25,31 @@ const { RUNWAY_VIDEO_MODELS } = require('./providers/runway');
 
 const USD_PER_CREDIT = 0.01;
 
+/**
+ * The billing tier a delivered frame falls in. A model with resolution tiers
+ * (Seedance 2.5 480p/720p/1080p, Hailuo 3 768P/2K) bills the tier its ratio
+ * renders at, and now that a 1080p project is sent 1920:1080 the estimate has
+ * to follow the frame or it quotes 720p for a 1080p clip. The smallest tier
+ * whose short edge covers the frame; above them all, the highest — so an
+ * estimate never under-counts.
+ */
+function tierForFrame(model, frame) {
+    const m = RUNWAY_VIDEO_MODELS[String(model || '').trim()];
+    if (!m || !m.resolutions) return null;
+    const f = /^(\d+)\s*[x:]\s*(\d+)$/i.exec(String(frame || ''));
+    if (!f) return null;
+    const short = Math.min(Number(f[1]), Number(f[2]));
+    const edge = label => {
+        const k = /^(\d+(?:\.\d+)?)\s*k$/i.exec(label);
+        if (k) return Math.round(Number(k[1]) * 1024 * 9 / 16);
+        const p = /^(\d+)\s*p$/i.exec(label);
+        return p ? Number(p[1]) : 0;
+    };
+    const tiers = Object.keys(m.resolutions).map(l => ({ l, e: edge(l) })).sort((a, b) => a.e - b.e);
+    const fit = tiers.find(t => t.e >= short);
+    return (fit || tiers[tiers.length - 1]).l;
+}
+
 /** The rate card for a model at a resolution, falling back to its base rate. */
 function ratesFor(model, resolution) {
     const m = RUNWAY_VIDEO_MODELS[String(model || '').trim()];
@@ -53,7 +78,7 @@ function ratesFor(model, resolution) {
  */
 function estimateVideoCost(opts) {
     const o = opts || {};
-    const r = ratesFor(o.model, o.resolution);
+    const r = ratesFor(o.model, o.resolution || tierForFrame(o.model, o.frame));
     if (!r) {
         return { model: o.model || null, credits: 0, usd: 0, lines: [],
             unknownModel: true,
@@ -120,4 +145,4 @@ function compareVideoModels(opts) {
         .sort((a, b) => a.credits - b.credits);
 }
 
-module.exports = { estimateVideoCost, compareVideoModels, ratesFor, USD_PER_CREDIT };
+module.exports = { tierForFrame, estimateVideoCost, compareVideoModels, ratesFor, USD_PER_CREDIT };

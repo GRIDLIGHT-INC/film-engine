@@ -261,8 +261,8 @@ function createDemoProject() {
         db.prepare(`
             INSERT INTO film_projects (id, title, logline, genre, style_preset, status,
                 target_resolution, target_fps, aspect_ratio, color_space,
-                delivery_format, timecode_start, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                delivery_format, timecode_start, created_at, updated_at, video_draft)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run(
             projectId,
             'Neon Requiem',

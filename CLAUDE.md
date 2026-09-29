@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (119 migrations)
+│   │   └── migrations/     # SQL migration files (120 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -261,9 +261,11 @@ film-engine/
 │   │   ├── board-grouping.js      # Board groups for reading, setups for working
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
 │   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
+│   │   ├── premiere-scenes.js    # Premiere, one folder per scene: each shot's selected clip and sound copied in, an XML with a bin per scene
 │   │   ├── deliverables.js       # A commercial is a fan-out: one row per file that leaves the job
 │   │   ├── brand-kit.js         # A brand outlives a project; every field says what it reaches
 │   │   ├── draft-video.js       # Draft while working, finish at the end — and what 480p actually costs
+│   │   ├── delivery-quality.js  # Every generator asked for the delivery size, its best when it cannot; codec and audio reach the master; each selected clip measured
 │   │   ├── compliance.js        # Checks that must run BEFORE spend, never after
 │   │   ├── spot-package.js      # The Premiere handoff, planned but not written
 │   │   ├── consistency-apply.js  # Pure consistency application (no DB import)
@@ -507,6 +509,7 @@ film-engine/
 │       ├── model-catalog.test.js     # FEM-001: every field and enum of the catalog contract, fail-closed admits (H3 outside ca-central-1 refused), six models through the registry, audited changes, controls served
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
+│       ├── premiere-scenes.test.js     # A folder per scene holding the SELECTED clip of every shot, an XML with a bin per scene, and every NLE export naming the selected clip
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
 │       ├── deliverables.test.js        # Fourteen to twenty-two files, planned before anything is boarded
 │       ├── shot-aspect.test.js         # A vertical hero shot is generated vertical, or it is lost
@@ -515,6 +518,7 @@ film-engine/
 │       ├── spot-package.test.js        # A handoff whose every path stays inside it
 │       ├── staleness-cost.test.js      # A report nobody waits six seconds for
 │       ├── draft-video.test.js        # The smallest raster a model will actually accept
+│       ├── delivery-quality.test.js   # Every video adapter's deliverable frame, drafting opt-in, every preset's codec and audio saved and encoded, each selected clip measured
 │       ├── prompt-visibility.test.js   # Every prompt, before every spend
 │       ├── paid-preview.test.js         # Nothing spends without showing what it will send
 │       ├── generation-controls.test.js # Provider, model, tier and size, on the dialog that spends
@@ -790,6 +794,7 @@ All routes prefixed with `/film`:
 | Props | `GET/POST /projects/:id/props`, `GET/PUT/DELETE /props/:id` |
 | Notes | `GET/POST /shots/:id/notes`, `PUT/DELETE /notes/:id`, `POST /shots/:id/review` |
 | Assets | `GET/POST /projects/:id/assets`, `GET/DELETE /assets/:id` |
+| Delivery | `GET /projects/:id/delivery-check` (free: each selected clip measured against the delivery size) |
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
 | Production graph | `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST\|DELETE /shots/:id/video/select`, `POST\|DELETE /sequences/:id/video/select`, `POST\|DELETE /music-cues/:id/select` |
@@ -812,7 +817,7 @@ All routes prefixed with `/film`:
 | Breakdown | `POST /projects/:id/breakdown[/stream]` (SSE) |
 | Screenplay AI | `POST /projects/:id/screenplay-ai[/stream]` |
 | Text Convert | `POST /projects/:id/text-to-screenplay[/preview]` |
-| Export | `GET /projects/:id/export[/fcpxml\|edl\|premiere\|fdx]` |
+| Export | `GET /projects/:id/export[/fcpxml\|edl\|premiere\|fdx]`, `GET\|POST /projects/:id/export/premiere-scenes` (GET is the free plan) |
 | Bundle | `GET /projects/:id/bundle`, `POST /projects/import` |
 | Comments | `GET/POST /scripts/:id/comments`, `PUT/DELETE /comments/:id` |
 | Storyboard | `POST /projects/:id/storyboard/generate[/stream]`, `GET /projects/:id/storyboard` |
@@ -1241,6 +1246,17 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### The Delivery Size Is Asked For, and a Shortfall Is Said
+*"We need to force this to generators and if they can't provide it downgrade to best quality after — this is on us to check and put the safeguards to get the appropriate resolution."*
+
+**Drafting is now opt-in** (migration 123, `draft_video`, default 0, read through `draftOn()`). It had defaulted ON with no control on the page, so every clip was asked at a model's cheapest size whatever the project said. The old `video_draft` column is kept and written in step.
+
+**Every video adapter answers `deliverableFrame(payload)`**: asked for a size, it names the frame it will really deliver: the largest it offers at or below the ask, or its best when the ask is above everything it offers, flagged `downgraded` with why. Runway's `pickRatio` took the closest aspect and then the smallest ratio, so a 1080-capable model was always sent `1280:720`; it takes the largest of that shape at or below the ask now. `deliveryDecision` puts the answer on every video payload as `delivery`, the free video preview returns it with a warning when it is a downgrade, and the confirmation draws it as one line. The Runway estimate is priced at the tier of the frame actually sent (`tierForFrame`).
+
+**A preset's codec and audio channels are saved** (`delivery_codec`, `delivery_audio_channels`) and reach something: the conform encodes a **delivery master** beside the working H.264 master when the codec is not H.264 or the audio is not stereo (`encodeDeliveryMaster`, registered as a `video_final` of kind `delivery_master`). A codec this machine's ffmpeg cannot encode falls back to H.264 and says so. The Settings page sets both and the drafting switch, and applies a preset through the server route so the page and the API cannot disagree about what a preset is.
+
+**The delivery check measures, never assumes.** `GET /projects/:id/delivery-check` (`delivery_check`, free) reads each shot's **selected** clip from the file and names every one below the delivery size with its fix, the upscale. The export preflight warns `SHOTS_BELOW_DELIVERY`, and the Export page shows the check. `tests/delivery-quality.test.js` is set-based over every video adapter and model, every delivery preset and every codec, and measures real clips and a real ProRes encode.
 
 ### A Modal Opened On Top of Another Must Paint On Top of It
 
@@ -2263,6 +2279,13 @@ who has the footage elsewhere.
 Served at `GET /film/projects/:id/export/{preflight,package}`, listed among the
 export formats so they are discoverable, and as `export_preflight` /
 `export_package` (**214 tools**).
+
+### Premiere, One Folder Per Scene
+*"A function on Film Engine that creates the folders per scene for Premiere and drops the video in, to make it easy for the editing part."*
+
+`POST /projects/:id/export/premiere-scenes` (`export_premiere_scenes`, and **Premiere, by scene** on the Export page) writes into `07 Delivery/Exports`: a `Scene_NN_<heading>` folder per scene, with `Video/<shot code>.<ext>` holding each shot's **selected** clip and `Sound/` its dialogue, effects and the scene's beds; an approved score in `Score/`; a READ ME naming anything missing; and a Premiere XML (xmeml v5) with the cut as a sequence **and a bin per scene**. The sequence defines each file and the bins reference it by id, so a clip is one master clip in its bin and on the timeline, never two. The file URLs point at the copies, so the project opens online. Media is copied, never moved. The GET is the free plan, and a project with no clip is refused `NO_CLIPS`.
+
+**Every NLE export was handing over the wrong take.** The generators take the first video asset they find for a shot, which was the oldest row, while playback and the master play the one the director selected. `conform.selectedClip` is now the one rule: the master, the delivery check and all three exports read it. `tests/premiere-scenes.test.js` gives one shot three takes and selects the middle one, so neither "first" nor "newest" can pass.
 
 ### The Register That Was Removed, and the Station Nobody Could Correct
 
@@ -6111,7 +6134,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (119 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (120 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6406,6 +6429,7 @@ node --test backend/tests/flow-apply-plan.test.js
 node --test backend/tests/flow-apply.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
+node --test backend/tests/premiere-scenes.test.js
 node --test backend/tests/spot-duration.test.js
 node --test backend/tests/deliverables.test.js
 node --test backend/tests/shot-aspect.test.js
@@ -6414,6 +6438,7 @@ node --test backend/tests/compliance.test.js
 node --test backend/tests/spot-package.test.js
 node --test backend/tests/staleness-cost.test.js
 node --test backend/tests/draft-video.test.js
+node --test backend/tests/delivery-quality.test.js
 node --test backend/tests/prompt-visibility.test.js
 node --test backend/tests/paid-preview.test.js
 node --test backend/tests/generation-controls.test.js

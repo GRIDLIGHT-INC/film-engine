@@ -382,6 +382,19 @@ function filmOpticsFor(project) {
  * undefined on failure, because a draft floor that cannot be resolved must
  * never take down a generation.
  */
+function videoAdapterFor(project, overrides) {
+    try {
+        const { resolveGenerator } = require('./providers');
+        let config = {};
+        try { config = JSON.parse((project && project.provider_config) || '{}'); } catch (_) { config = {}; }
+        const o = overrides || {};
+        if (o.provider) config = { ...config, video: o.provider };
+        return resolveGenerator('video', config);
+    } catch (_) {
+        return null;
+    }
+}
+
 function videoDraftModel(project) {
     try {
         const { resolveGenerator } = require('./providers');
@@ -733,7 +746,7 @@ const CAPABILITY_BUILDERS = {
          * The shot keeps the SHAPE it will be finished in. A vertical shot
          * drafted landscape is a different shot, not a cheap one.
          */
-        if (ctx.project.video_draft === undefined || ctx.project.video_draft) {
+        if (require('./draft-video').draftOn(ctx.project)) {
             const { draftFrameFor } = require('./draft-video');
             // The stated aspect, so two projects with the same shape and
             // different delivery rasters draft to the SAME frame.
@@ -758,6 +771,14 @@ const CAPABILITY_BUILDERS = {
             // 480p because somebody set it are different facts.
             built.draft = { active: true, note: draft.note, why: draft.why };
         }
+        /*
+         * WHAT WILL ACTUALLY BE DELIVERED. The project's size is what is asked;
+         * the resolved generator says what it will render for that ask — its
+         * best at or below it — and a shortfall is said here, on the payload
+         * every preview and confirmation reads, before anything is bought.
+         */
+        built.delivery = require('./delivery-quality').deliveryDecision(
+            videoAdapterFor(ctx.project, overrides), { ...built, target_resolution: built.target_resolution || ctx.project.target_resolution });
         return built;
     },
 
