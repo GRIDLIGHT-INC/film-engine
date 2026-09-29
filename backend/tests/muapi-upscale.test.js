@@ -110,6 +110,8 @@ test('the preview is free, measures the SELECTED clip and sizes the upscale to t
         assert.equal(r.json.spends, false);
         assert.equal(r.json.source.asset_id, selId, 'the selected clip, not the newest');
         assert.equal(r.json.source.measured, '640x360');
+        assert.ok(Math.abs(r.json.source.seconds - 1) < 0.2, `the clip's length is measured (got ${r.json.source.seconds})`);
+        assert.ok(r.json.estimated_usd > 0, 'so the price is known');
         assert.equal(r.json.sends.body.upscale_factor, 4, '640 needs 4x to pass 3840... and 4x is the most, so it is named');
         assert.ok(r.json.warnings.some(w => /short of 3840/.test(w)), 'a shortfall is said');
         assert.ok(r.json.upscalers.length === Object.keys(UPSCALERS).length);

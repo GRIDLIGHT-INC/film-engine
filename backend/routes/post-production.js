@@ -272,7 +272,7 @@ function planUpscale(shot, scene, body) {
         target_resolution: b.target_resolution || project.target_resolution || '1920x1080',
         source_width: measured.ok ? measured.width : null,
         source_height: measured.ok ? measured.height : null,
-        source_seconds: measured.ok && measured.duration_ms ? measured.duration_ms / 1000 : null,
+        source_seconds: measured.ok && Number(measured.durationSeconds) > 0 ? Number(measured.durationSeconds) : null,
     };
     const provider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene, muapi ? { post: 'seedance' } : null));
     let request = null, why = null;

@@ -107,8 +107,13 @@ const dims = s => {
 function deliveryDecision(adapter, payload) {
     const p = payload || {};
     const asked = dims(p.target_resolution) || (p.width && p.height ? { width: p.width, height: p.height } : null);
+    // The model only when it is this adapter's own: a tier can carry another
+    // provider's model id, which this adapter substitutes and never runs.
+    let own = [];
+    try { own = (adapter && require('./providers').modelIdsFor(adapter, 'video')) || []; } catch (_) { own = []; }
     const out = { asked: asked ? `${asked.width}x${asked.height}` : null, delivered: null, downgraded: null, why: null,
-        provider: adapter && adapter.id || null, model: p.model || (adapter && adapter.defaultModel) || null };
+        provider: adapter && adapter.id || null,
+        model: (p.model && own.includes(p.model) ? p.model : null) || (adapter && adapter.defaultModel) || null };
     if (!adapter || typeof adapter.deliverableFrame !== 'function') {
         out.why = 'this provider does not say what size it delivers; the delivery check measures the clip when it arrives';
         return out;
