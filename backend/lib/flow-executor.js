@@ -420,4 +420,5 @@ function getFlowRun(runId) {
 
 module.exports = {
     runFlow, runFlowStream, executeNode, resolveNodeInputs, cancelFlowRun, getFlowRun,
+    startNodeRun, finishNodeRun, setRunStatus,
 };

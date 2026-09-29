@@ -649,6 +649,8 @@ function registerStoryboardAsset(projectId, shotId, filePath, fileName, options)
     if (opts.anchor_shot_code) metadata.anchor_shot_code = opts.anchor_shot_code;
     // Which angle of which exploration this version was picked from.
     if (opts.angle_from) metadata.angle_from = opts.angle_from;
+    // Which flow run and variation a picked frame came from (FOG-005).
+    if (opts.flow_from) metadata.flow_from = opts.flow_from;
     if (opts.provider) metadata.provider = opts.provider;
     if (opts.provider_model) metadata.provider_model = opts.provider_model;
 
@@ -3807,6 +3809,8 @@ module.exports = {
     // The shared refine request, so a strip station and the refine button
     // cannot come to ask for different things.
     generateRefinedFrame, registerStoryboardAsset, ensureStoryboardDir, storyboardImagePath,
+    // A flow variation picked onto the board archives what it replaces, as a pick of an angle does.
+    archiveExistingFrame,
     // A frame collected after its call was abandoned is filed by the same rule.
     fileCollectedFrame, frameJobMeta,
     // The board's own shot query, so its order is checkable.

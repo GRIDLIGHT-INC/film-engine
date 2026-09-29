@@ -100,9 +100,28 @@ const handlers = {
                 return { ok: true, outputs: { any: PORT(incoming.type || 'any', incoming.value) } };
             }
 
+            /*
+             * The variation this gate is waiting on is kept as a candidate on
+             * the shot (FOG-005), so a person can see it and pick it. Only a
+             * picture, a clip or a sound can be looked at; anything else waits
+             * as it always did. Never fails the gate: the choice is still the
+             * run's to make.
+             */
+            let candidate = null;
+            try {
+                const { FLOW_OUTPUT_KINDS, saveFlowOutput } = require('../flow-outputs');
+                const kind = FLOW_OUTPUT_KINDS[incoming.type];
+                if (kind && kind.version && ctx.shot && ctx.shot.id) {
+                    const { db } = require('../../db/database');
+                    const s = await saveFlowOutput(db, { port: incoming.type, value: incoming.value, node, ctx, extra: { awaiting_pick: node.id } });
+                    if (s.ok) candidate = s.assetId;
+                }
+            } catch (_) { /* a candidate that cannot be kept leaves the gate as it was */ }
+
             return {
                 ok: true,
                 awaitSelection: true,
+                candidate,
                 branch,
                 message: `waiting for a branch to be selected (${branch})`,
                 outputs: { any: PORT(incoming.type || 'any', incoming.value) },

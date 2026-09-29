@@ -45260,10 +45260,44 @@ function pgFlowFramesHtml(n) {
     if (!list.length) return '';
     const tiles = list.map(x => `<figure style="margin:0;width:96px;">
         <img src="${esc(pgSrc(x.url) + (String(x.url).includes('?') ? '&w=200' : '?w=200'))}" alt="" loading="lazy" style="width:96px;height:54px;object-fit:cover;border-radius:4px;">
-        <figcaption class="text-muted" style="font-size:11px;line-height:1.3;">${esc(x.branch && x.branch !== 'root' ? x.branch : 'flow')}${x.run_id ? ' · run ' + esc(String(x.run_id).slice(0, 6)) : ''}</figcaption></figure>`).join('');
+        <figcaption class="text-muted" style="font-size:11px;line-height:1.3;">${esc(x.branch && x.branch !== 'root' ? x.branch : 'flow')}${x.run_id ? ' · run ' + esc(String(x.run_id).slice(0, 6)) : ''}</figcaption>
+        ${pgFlowPickControls({ source: 'flow', awaiting_pick: x.awaiting_pick, run_id: x.run_id, branch: x.branch }, true)}</figure>`).join('');
+    // One Cancel per paused run, not per variation: cancelling ends the run for all of them.
+    const pausedRuns = [...new Set(list.filter(x => x.awaiting_pick && x.run_id).map(x => x.run_id))];
+    const cancels = pausedRuns.map(r => `<button class="btn btn-secondary btn-sm" onclick="pgFlowCancelRun('${esc(r)}')"
+        title="Stop this run without picking. Its variations stay on the shot as candidates.">Cancel run ${esc(String(r).slice(0, 6))}</button>`).join(' ');
     return `<div class="pg-dsec"><div class="pg-kicker"><span>Made by flows (${list.length})</span><em>not on the board</em></div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">${tiles}</div>
+        ${pausedRuns.length ? `<div class="pg-note">A flow is paused, waiting for you to pick one. Picking puts it on the board and finishes the run; nothing is generated again.</div><div class="pg-btnrow">${cancels}</div>` : ''}
         <div class="pg-note">A flow's output is a candidate: the board keeps the frame it has until one of these is picked.</div></div>`;
+}
+
+/** Pick controls for a variation a paused flow is waiting on (FOG-005); nothing for anything else. */
+function pgFlowPickControls(n, compact) {
+    if (!n || n.source !== 'flow' || !n.awaiting_pick || !n.run_id || !n.branch) return '';
+    const btn = `<button class="${compact ? 'pg-sbtn primary' : 'btn btn-primary btn-sm'}" onclick="pgFlowPick('${esc(n.run_id)}','${esc(n.branch)}')"
+        title="Make this the shot's version and finish the paused run from here — nothing is generated again">Pick${compact ? '' : ' this one'}</button>`;
+    return compact ? btn : `<div class="pg-btnrow" style="margin-top:6px;">${btn}
+        <button class="btn btn-secondary btn-sm" onclick="pgFlowCancelRun('${esc(n.run_id)}')">Cancel run</button></div>`;
+}
+
+/** Pick a paused run's variation through the existing select route; it resumes the run. */
+async function pgFlowPick(runId, branch) {
+    try {
+        const r = await api(`/flow-runs/${runId}/select`, { method: 'POST', body: JSON.stringify({ branch_key: branch }) });
+        setStatus(r && r.status === 'complete' ? `Picked ${branch}: it is the shot's version now, and the run finished.`
+            : `Picked ${branch}; the run ended ${r && r.status}${r && r.failed && r.failed.length ? ' — ' + r.failed.map(f => f.error).join('; ') : ''}.`, r && r.status !== 'complete');
+        if (typeof loadProductionGraph === 'function') loadProductionGraph();
+    } catch (err) { setStatus('Pick failed: ' + err.message, true); }
+}
+
+/** Cancel a paused run without picking; its variations stay on the shot as candidates. */
+async function pgFlowCancelRun(runId) {
+    try {
+        await api(`/flow-runs/${runId}/cancel`, { method: 'POST', body: '{}' });
+        setStatus('Run cancelled. Its variations stay on the shot as candidates.');
+        if (typeof loadProductionGraph === 'function') loadProductionGraph();
+    } catch (err) { setStatus('Cancel failed: ' + err.message, true); }
 }
 
 function pgDrawerShot(n, body, foot, close) {
@@ -45662,13 +45696,15 @@ function pgGenerateSound(n) {
 
 function pgDrawerVersion(n, body, foot, close) {
     const parent = pgNode(n.parent);
-    const siblings = parent ? (n.type === 'audio' ? parent.versions : parent.videos) : [];
+    // A flow's sound hangs off a SHOT, which has no cue versions (FOG-004).
+    const siblings = (parent ? (n.type === 'audio' ? parent.versions : parent.videos) : null) || [];
     const media = n.url ? (n.type === 'audio'
         ? `<audio src="${esc(pgSrc(n.url))}" controls style="width:100%;"></audio>`
         : `<video src="${esc(pgSrc(n.url))}" controls playsinline style="width:100%;border-radius:8px;background:#08080a;"></video>`) : '<div class="pg-warn">The file is missing.</div>';
     body.innerHTML = `
-      <div class="pg-dhead">${close}<h3 class="pg-dtitle">Version ${n.version}</h3>
+      <div class="pg-dhead">${close}<h3 class="pg-dtitle">${n.source === 'flow' ? 'Made by a flow' : `Version ${n.version}`}</h3>
         <div class="pg-dsub">${n.type} · ${esc(n.parent_label || '')} · ${pgSecs(n.duration_ms)}</div>
+        ${pgFlowPickControls(n)}
         <div class="${n.selected ? 'pg-okline' : 'pg-note'}" style="margin-top:6px;">${n.selected ? 'Selected — playback uses this version' : 'Not selected — playback uses another'}</div></div>
       <div class="pg-dsec">${media}</div>
       <div class="pg-dsec"><div class="pg-list">

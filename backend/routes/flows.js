@@ -386,7 +386,7 @@ function getBranches(req, res, runId) {
  * actually carries it downstream, so the decision is data rather than a
  * transient bit of executor state.
  */
-function selectBranch(req, res, runId) {
+async function selectBranch(req, res, runId) {
     const body = req.body || {};
     const key = String(body.branch_key || '');
     if (!key) return json(res, 400, { error: 'branch_key is required' });
@@ -394,10 +394,13 @@ function selectBranch(req, res, runId) {
     const branch = db.prepare('SELECT * FROM film_flow_branches WHERE run_id = ? AND branch_key = ?').get(runId, key);
     if (!branch) return json(res, 404, { error: 'Branch not found for this run' });
 
-    db.prepare('UPDATE film_flow_branches SET selected = 0 WHERE run_id = ?').run(runId);
-    db.prepare('UPDATE film_flow_branches SET selected = 1 WHERE id = ?').run(branch.id);
-
-    return json(res, 200, { run_id: runId, selected: key });
+    /*
+     * FOG-005: a pick is the gate's answer, so it makes the chosen variation
+     * the shot's version and RESUMES the run from the gate — nothing upstream
+     * is generated again. A run that is not paused has no gate waiting.
+     */
+    const out = await require('../lib/flow-pick').pickBranch(db, runId, key, { ignoreLock: !!body.ignore_lock });
+    return json(res, out.status, out.body);
 }
 
 /** What a run would cost, and whether the budget allows it. Checked before running. */

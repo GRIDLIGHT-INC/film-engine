@@ -190,7 +190,7 @@ test('the page draws every drawn kind off its shot: the real node renderer, the 
         pgNode: k => byKey.get(k), pgSrc: u => u, pgPort: () => '', pgSecs: () => '0s', pgPrevisTag: () => '',
         pgBorrowedBy: () => '', pgProgressHtml: () => '', pgHoldDecorate: h => h, pgImpactDecorate: h => h, String, Number, Math,
     });
-    const names = ['pgNodeHtml', 'pgVersionTitle', 'pgFlowBadge', 'pgFlowFramesHtml'];
+    const names = ['pgNodeHtml', 'pgVersionTitle', 'pgFlowBadge', 'pgFlowFramesHtml', 'pgFlowPickControls'];
     vm.runInContext(names.map(n => { const s = fnSource(n); assert.ok(s, `no ${n} on the page`); return s; }).join('\n')
         + names.map(n => `;this.${n} = ${n};`).join(''), ctx);
     const kinds = Object.entries(outputs.FLOW_OUTPUT_KINDS).filter(([, k]) => k.version && k.version !== 'frame');

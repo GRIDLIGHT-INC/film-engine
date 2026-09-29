@@ -62,10 +62,19 @@ function runOrigin(db, runId) {
  * Save one output and register it as a candidate.
  * @returns {Promise<{ok:true, assetId:string, path:string}|{ok:false, error:string}>}
  */
-async function saveFlowOutput(db, { port, value, node, ctx }) {
+async function saveFlowOutput(db, { port, value, node, ctx, extra }) {
     const kind = FLOW_OUTPUT_KINDS[port];
     if (!kind) return { ok: false, error: `out.asset has no rule for a ${port} output` };
     const c = ctx || {};
+    /*
+     * A value that IS a flow candidate already — the variation a paused run
+     * kept, handed on by the gate when the run resumes (FOG-005) — is that
+     * candidate. Saving it again would put the same picture on the shot twice.
+     */
+    if (value && typeof value === 'object' && !Buffer.isBuffer(value) && value.asset_id) {
+        const row = db.prepare("SELECT id, file_path FROM film_assets WHERE id = ? AND json_valid(metadata) AND json_extract(metadata, '$.kind') = 'flow_output'").get(value.asset_id);
+        if (row) return { ok: true, assetId: row.id, path: row.file_path, reused: true };
+    }
     const projectId = (c.scene && c.scene.project_id) || (c.project && c.project.id) || null;
     if (!projectId) return { ok: false, error: 'cannot register an asset without a project' };
 
@@ -101,6 +110,7 @@ async function saveFlowOutput(db, { port, value, node, ctx }) {
             as_type: cfg.asset_type || kind.as_type,
             flow_id: origin.flow_id, apply_id: origin.apply_id, run_id: c.runId || null,
             node: (node && node.id) || null, branch: c.branch || 'root', variant: c.variant != null ? c.variant : null,
+            ...(extra || {}),
         })
     );
     return { ok: true, assetId, path: filePath };
@@ -111,10 +121,11 @@ function flowOutputsOf(db, shotId) {
     let rows = [];
     try {
         rows = db.prepare(
-            `SELECT id, file_path, provider, provider_model, created_at, metadata FROM film_assets
-              WHERE shot_id = ? AND asset_type = 'other' AND json_valid(metadata)
-                AND json_extract(metadata, '$.kind') = 'flow_output'
-              ORDER BY created_at ASC, rowid ASC`).all(shotId);
+            `SELECT a.id, a.file_path, a.provider, a.provider_model, a.created_at, a.metadata, r.status AS run_status
+               FROM film_assets a LEFT JOIN film_flow_runs r ON r.id = json_extract(a.metadata, '$.run_id')
+              WHERE a.shot_id = ? AND a.asset_type = 'other' AND json_valid(a.metadata)
+                AND json_extract(a.metadata, '$.kind') = 'flow_output'
+              ORDER BY a.created_at ASC, a.rowid ASC`).all(shotId);
     } catch (_) { return []; }
     return rows.map(r => {
         let m = {};
@@ -125,6 +136,10 @@ function flowOutputsOf(db, shotId) {
             path: r.file_path, provider: r.provider || null, model: r.provider_model || null, created_at: r.created_at,
             as_type: m.as_type || null, flow_id: m.flow_id || null, apply_id: m.apply_id || null,
             run_id: m.run_id || null, node: m.node || null, branch: m.branch || null, variant: m.variant != null ? m.variant : null,
+            // A variation a paused gate is waiting on (FOG-005): pickable only
+            // while its run is still paused — finished or cancelled, it is not.
+            awaiting_pick: !!(m.awaiting_pick && r.run_status === 'paused'),
+            run_status: r.run_status || null,
         };
     });
 }

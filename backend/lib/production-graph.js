@@ -455,7 +455,7 @@ function buildGraph(db, projectId) {
                 nodes.push({ key: vk, type, kind: type, parent: n.key, parent_label: sh.shot_code, source: 'flow',
                     asset_id: o.asset_id, as_type: o.as_type, url, path: o.path,
                     provider: o.provider, model: o.model, created_at: o.created_at,
-                    flow_id: o.flow_id, apply_id: o.apply_id, run_id: o.run_id, flow_node: o.node, branch: o.branch,
+                    flow_id: o.flow_id, apply_id: o.apply_id, run_id: o.run_id, flow_node: o.node, branch: o.branch, awaiting_pick: o.awaiting_pick,
                     version: null, selected });
                 edge(n.key, type, vk, 'in', type, 'solid');
                 n.flow_versions.push(vk);
