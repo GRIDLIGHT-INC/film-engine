@@ -24,6 +24,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
     || path.join(os.tmpdir(), 'film-engine-conform-sound-' + crypto.randomUUID().slice(0, 8));
+const { lavfiSource } = require('./helpers');
 
 const { db, generateId } = require('../db/database');
 require('../db/schema').ensureSchema();
@@ -39,8 +40,7 @@ test.before(() => { TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-csound-')); 
 
 function clip(name, secs, withSound) {
     const p = path.join(TMP, name);
-    sh(['-f', 'lavfi', '-i', `color=c=blue:s=320x240:d=${secs}`,
-        ...(withSound ? ['-f', 'lavfi', '-i', `sine=frequency=200:duration=${secs}`] : []),
+    sh([...lavfiSource(`color=c=blue:s=320x240:d=${secs}`, withSound && `sine=frequency=200:duration=${secs}`),
         '-c:v', 'libx264', '-r', '24', '-t', String(secs), '-pix_fmt', 'yuv420p',
         ...(withSound ? ['-c:a', 'aac', '-shortest'] : []), p]);
     return p;

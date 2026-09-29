@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { lavfiSource } = require('./helpers');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
@@ -221,8 +222,7 @@ test('a join keeps the clips\' own audio instead of replacing it with silence', 
      * was invisible.
      */
     const { stitchClips } = require('../lib/ffmpeg');
-    const tone = (n) => make(n, ['-f', 'lavfi', '-i', 'color=c=red:s=32x32:d=1',
-        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
+    const tone = (n) => make(n, [...lavfiSource('color=c=red:s=32x32:d=1', 'sine=frequency=440:duration=1'),
         '-c:v', 'mpeg4', '-c:a', 'aac', '-shortest']);
 
     const meanVolume = (f) => {

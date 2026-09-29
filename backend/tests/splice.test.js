@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { lavfiSource } = require('./helpers');
 const os = require('os');
 const { execFileSync } = require('child_process');
 
@@ -245,8 +246,7 @@ test('the source\'s own sound runs under the repair, unbroken', async () => {
      */
     const src = path.join(TMP, 'snd-src.mp4');
     execFileSync(ff().bin, ['-nostdin', '-y', '-loglevel', 'error',
-        '-f', 'lavfi', '-i', 'color=c=red:s=32x32:d=7',
-        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6',
+        ...lavfiSource('color=c=red:s=32x32:d=7', 'sine=frequency=440:duration=6'),
         '-c:v', 'mpeg4', '-r', '24', '-c:a', 'aac', '-shortest', src],
         { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     const rep = makeClip('snd-rep.mp4', 'blue', 2);          // silent, like a real generation

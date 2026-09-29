@@ -32,6 +32,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
     || path.join(os.tmpdir(), 'film-engine-master-' + crypto.randomUUID().slice(0, 8));
+const { lavfiSource } = require('./helpers');
 
 const { db, generateId } = require('../db/database');
 require('../db/schema').ensureSchema();
@@ -52,8 +53,7 @@ function sh(args) {
 /** A clip that makes a sound, so silence in the master means something. */
 function toneClip(name, secs, colour = 'red') {
     const p = path.join(TMP, name);
-    sh(['-f', 'lavfi', '-i', `color=c=${colour}:s=320x240:d=${secs}`,
-        '-f', 'lavfi', '-i', `sine=frequency=440:duration=${secs}`,
+    sh([...lavfiSource(`color=c=${colour}:s=320x240:d=${secs}`, `sine=frequency=440:duration=${secs}`),
         '-c:v', 'libx264', '-c:a', 'aac', '-r', '24', '-t', String(secs), '-pix_fmt', 'yuv420p', p]);
     return p;
 }

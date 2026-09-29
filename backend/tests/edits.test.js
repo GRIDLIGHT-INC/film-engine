@@ -27,6 +27,7 @@ const { execFileSync } = require('child_process');
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
     || path.join(os.tmpdir(), 'film-engine-edits-' + crypto.randomUUID().slice(0, 8));
+const { lavfiSource } = require('./helpers');
 delete process.env.FILM_PROJECTS_DIR;
 
 const { db, generateId } = require('../db/database');
@@ -47,8 +48,8 @@ const bin = () => resolveFfmpeg().bin;
 function movie(name, secs, opts) {
     const o = opts || {};
     const p = path.join(TMP, name);
-    const args = ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `color=c=blue:s=160x90:d=${secs}:r=24`];
-    if (o.audio !== false) args.push('-f', 'lavfi', '-i', `sine=frequency=330:duration=${secs}:sample_rate=48000`);
+    const args = ['-y', '-loglevel', 'error', ...lavfiSource(`color=c=blue:s=160x90:d=${secs}:r=24`,
+        o.audio !== false && `sine=frequency=330:duration=${secs}:sample_rate=48000`)];
     args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-t', String(secs));
     if (o.audio !== false) args.push('-c:a', 'aac', '-shortest');
     args.push(p);

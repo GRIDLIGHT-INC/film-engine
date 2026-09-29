@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { lavfiSource } = require('./helpers');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 
@@ -54,8 +55,7 @@ function sh(args) {
 /** A clip that genuinely makes a sound, so silence in the output means something. */
 function clipWithTone(name, secs = 2) {
     const p = path.join(TMP, name);
-    sh(['-f', 'lavfi', '-i', `color=c=red:s=320x240:d=${secs}`,
-        '-f', 'lavfi', '-i', `sine=frequency=440:duration=${secs}`,
+    sh([...lavfiSource(`color=c=red:s=320x240:d=${secs}`, `sine=frequency=440:duration=${secs}`),
         '-c:v', 'libx264', '-c:a', 'aac', '-r', '24', '-t', String(secs), '-pix_fmt', 'yuv420p', p]);
     return p;
 }

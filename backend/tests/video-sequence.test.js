@@ -28,6 +28,7 @@ const crypto = require('crypto');
 
 process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
     || path.join(os.tmpdir(), 'film-engine-seq-' + crypto.randomUUID().slice(0, 8));
+const { lavfiSource } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const { db, generateId } = require('../db/database');
@@ -371,8 +372,7 @@ test('clips are joined into one real, playable file', async () => {
     for (const [i, seconds] of [1, 2].entries()) {
         const file = path.join(dir, `part${i}.mp4`);
         await probe(found.bin, [
-            '-f', 'lavfi', '-i', `testsrc=size=320x240:rate=24:duration=${seconds}`,
-            '-f', 'lavfi', '-i', `sine=frequency=${400 + i * 200}:duration=${seconds}`,
+            ...lavfiSource(`testsrc=size=320x240:rate=24:duration=${seconds}`, `sine=frequency=${400 + i * 200}:duration=${seconds}`),
             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', file,
         ]);
         assert.ok(fs.existsSync(file), `could not build test input ${i}`);
@@ -493,8 +493,7 @@ test('a sequence joins its own clips into one file, and refuses a short one', as
     // One clip of the two this sequence needs. Joining what is there would make
     // a short film that plays fine, which is the failure nobody notices.
     const clipA = path.join(vidDir, 'seg_a.mp4');
-    await probe(found.bin, ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=24:duration=1',
-        '-f', 'lavfi', '-i', 'sine=frequency=400:duration=1',
+    await probe(found.bin, [...lavfiSource('testsrc=size=160x120:rate=24:duration=1', 'sine=frequency=400:duration=1'),
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', clipA]);
     db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata)
                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?)`)
@@ -508,8 +507,7 @@ test('a sequence joins its own clips into one file, and refuses a short one', as
 
     // Now the second one, and it must produce a real file.
     const clipB = path.join(vidDir, 'seg_b.mp4');
-    await probe(found.bin, ['-f', 'lavfi', '-i', 'testsrc=size=160x120:rate=24:duration=2',
-        '-f', 'lavfi', '-i', 'sine=frequency=600:duration=2',
+    await probe(found.bin, [...lavfiSource('testsrc=size=160x120:rate=24:duration=2', 'sine=frequency=600:duration=2'),
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', clipB]);
     db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, version, metadata)
                 VALUES (?, ?, ?, 'video_raw', ?, ?, 'mp4', 1, ?)`)

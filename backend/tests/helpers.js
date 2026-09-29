@@ -101,4 +101,25 @@ Beautiful night.
     return { project, script, scenes };
 }
 
-module.exports = { createTestDir, testApi, createTestProject };
+/**
+ * A lavfi test source as ffmpeg input arguments: a picture and, optionally, a
+ * sound from ONE lavfi graph.
+ *
+ * Two lavfi inputs in one ffmpeg process (`-f lavfi -i color=… -f lavfi -i
+ * sine=…`) deadlock ffmpeg 9.0.2 intermittently when several encodes run at
+ * once: the process sleeps at 0% CPU with its decoder, filter and aac encoder
+ * threads waiting on each other until the spawn times out. Measured with the
+ * exact fixture command twelve at a time on a quiet machine: 3 to 4 of 12 hung,
+ * every round; as one graph, 36 of 36 finished in a second. That is the
+ * repair-audio "hang" GRD-4580 blamed on stdin, and it only showed in the full
+ * suite because only the full suite runs encodes side by side.
+ *
+ * The streams come out in the same order as two inputs gave them — the picture
+ * first, the sound second — so nothing that reads the file changes.
+ * tests/ffmpeg-lavfi.test.js holds every ffmpeg call to one lavfi input.
+ */
+function lavfiSource(video, audio) {
+    return ['-f', 'lavfi', '-i', audio ? `${video}[out0];${audio}[out1]` : video];
+}
+
+module.exports = { createTestDir, testApi, createTestProject, lavfiSource };

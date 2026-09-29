@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { lavfiSource } = require('./helpers');
 const { execFileSync } = require('child_process');
 
 const rp = require('../lib/review-proxy');
@@ -17,8 +18,7 @@ function makeClip(name, seconds, size) {
     const out = path.join(TMP, name);
     execFileSync(FF.bin, ['-nostdin', 
         '-y', '-loglevel', 'error',
-        '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=24:duration=${seconds}`,
-        '-f', 'lavfi', '-i', `sine=frequency=440:duration=${seconds}`,
+        ...lavfiSource(`testsrc=size=${size}:rate=24:duration=${seconds}`, `sine=frequency=440:duration=${seconds}`),
         '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-shortest', out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
