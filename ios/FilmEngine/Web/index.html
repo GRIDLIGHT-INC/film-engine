@@ -18874,7 +18874,9 @@ THREE.GLTFLoader = GLTFLoader;
         patterns: {
             sceneHeading: /^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i,
             transition: /^[A-Z][A-Z\s]+:$/,
-            forcedSceneHeading: /^\./,
+            // A single leading period forces a heading; an ellipsis does not
+            // ("..same price." is dialogue). Same rule as the backend parser.
+            forcedSceneHeading: /^\.(?!\.)\S/,
             forcedCharacter: /^@/,
             forcedTransition: /^>/,
             forcedAction: /^!/,
@@ -19409,8 +19411,8 @@ THREE.GLTFLoader = GLTFLoader;
             }
 
             // Scene heading
-            if (/^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
-                let headingText = stripEmphasisMarkers(trimmed.startsWith('.') ? trimmed.slice(1) : trimmed);
+            if (/^[^\w\s.]*(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(trimmed)) {
+                let headingText = stripEmphasisMarkers(AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(trimmed) ? trimmed.slice(1) : trimmed);
                 // FILM-107: Extract scene number from #N# format
                 let sceneNum = '';
                 const sceneNumMatch = headingText.match(/\s+#([^#]+)#\s*$/);
@@ -22964,6 +22966,7 @@ THREE.GLTFLoader = GLTFLoader;
 
         // Wait for content to load, then print
         printWindow.onload = () => {
+            try { fitPrintSheets(printWindow.document); } catch (_) { /* print what we have */ }
             printWindow.focus();
             printWindow.print();
         };
@@ -23094,6 +23097,77 @@ THREE.GLTFLoader = GLTFLoader;
         return sheets.length;
     }
 
+    /*
+     * MEASURED, NOT ESTIMATED: make every sheet actually fit.
+     *
+     * paginateInto places breaks from a line ESTIMATE (characters per line,
+     * a fixed count per element), and the estimate runs short — word wrap
+     * wastes characters, and the print sheet's own spacing (a blank line after
+     * every dialogue block, two before every heading) is not all counted. A
+     * sheet is a fixed 11 inches, so an overfull one did not stretch: it spilled
+     * onto the next physical page and pushed every page after it down, which is
+     * the text "bleeding" past the top and bottom of the paper.
+     *
+     * So, in the print window, with the print stylesheet laid out: while a
+     * sheet's content is taller than the sheet, move its last block to the top
+     * of the next sheet — and keep moving while the new last block is one a
+     * page may not end on (MAY_END_PAGE), so a cue or heading goes over with
+     * what it introduces. Overflow cascades forward; page numbers are redrawn.
+     */
+    function fitPrintSheets(doc) {
+        const isFurniture = el => el.classList.contains('print-page-number') || el.classList.contains('print-revision-mark');
+        const content = sheet => [...sheet.children].filter(el => !isFurniture(el));
+        const overfull = sheet => sheet.scrollHeight > sheet.clientHeight;
+        const revText = (doc.querySelector('.print-revision-mark') || {}).textContent || '';
+        let sheets = [...doc.querySelectorAll('.print-sheet:not(.print-title-sheet)')];
+        let moved = 0;
+        for (let s = 0; s < sheets.length; s++) {
+            const sheet = sheets[s];
+            let guard = 0;
+            while (overfull(sheet) && content(sheet).length > 1 && guard++ < 500) {
+                let next = sheets[s + 1];
+                if (!next) {
+                    next = doc.createElement('div');
+                    next.className = 'print-sheet';
+                    sheet.after(next);
+                    sheets.splice(s + 1, 0, next);
+                }
+                const moveLast = () => {
+                    const blocks = content(sheet);
+                    const last = blocks[blocks.length - 1];
+                    const first = content(next)[0] || null;
+                    next.insertBefore(last, first);
+                    moved++;
+                };
+                moveLast();
+                let keep = 0;
+                while (content(sheet).length > 1 && keep++ < 20) {
+                    const blocks = content(sheet);
+                    const t = blocks[blocks.length - 1].dataset && blocks[blocks.length - 1].dataset.elementType;
+                    if (MAY_END_PAGE[t] === false) moveLast(); else break;
+                }
+            }
+        }
+        // Redraw the furniture: numbers from page 2, the revision on every body page.
+        doc.querySelectorAll('.print-page-number, .print-revision-mark').forEach(el => el.remove());
+        sheets = [...doc.querySelectorAll('.print-sheet:not(.print-title-sheet)')];
+        sheets.forEach((sheet, i) => {
+            if (i > 0) {
+                const num = doc.createElement('div');
+                num.className = 'print-page-number';
+                num.textContent = (i + 1) + '.';
+                sheet.prepend(num);
+            }
+            if (revText) {
+                const r = doc.createElement('div');
+                r.className = 'print-revision-mark';
+                r.textContent = revText;
+                sheet.prepend(r);
+            }
+        });
+        return moved;
+    }
+
     function generatePrintHTML(editorContent, title) {
         return `<!DOCTYPE html>
 <html>
@@ -23108,16 +23182,29 @@ THREE.GLTFLoader = GLTFLoader;
             size: letter;
             margin: 0;
         }
+        /* A hair under 11in and clipped: a sheet exactly as tall as the paper,
+           with even a pixel of rounded line-height past its edge, spills that
+           pixel onto the next physical page and shifts every page after it —
+           text "bleeding" off the top and bottom. fitPrintSheets moves real
+           overflow to the next sheet first, so the clip only ever removes
+           sub-line rounding. */
         .print-sheet {
             position: relative;
             width: 8.5in;
-            height: 11in;
+            height: 10.96in;
+            overflow: hidden;
             padding: 1in 1in 0.5in 1.5in;
             box-sizing: border-box;
             page-break-after: always;
             break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
         .print-sheet:last-child { page-break-after: auto; break-after: auto; }
+        /* The first line of a page starts at the margin, not a heading's 24pt below it. */
+        .print-sheet > [data-element-type]:first-of-type,
+        .print-sheet > .print-revision-mark + [data-element-type],
+        .print-sheet > .print-page-number + [data-element-type] { margin-top: 0; }
         .print-page-number { position: absolute; top: 0.5in; right: 1in; }
         /* The revision, opposite the page number. Left margin is 1.5in, so it
            sits under the binding edge rather than over the text block. */
@@ -24834,7 +24921,7 @@ THREE.GLTFLoader = GLTFLoader;
             totalWords += words;
 
             // Scene heading detection
-            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || trimmed.startsWith('.')) {
+            if (/^(INT|EXT|EST|INT\.?\/?EXT|I\/E)[\.\s]/i.test(trimmed) || AUTO_FORMAT_RULES.patterns.forcedSceneHeading.test(trimmed)) {
                 if (currentSceneLength > 0) {
                     sceneLengths.push({ scene_number: String(sceneCount), length: currentSceneLength });
                 }

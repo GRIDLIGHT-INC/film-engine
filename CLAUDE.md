@@ -335,6 +335,8 @@ film-engine/
 │       ├── decision-parity.test.js     # Every director decision, held to five links across both surfaces
 │       ├── previs-decisions.test.js    # Each decision tried, applied, locked or stale — and the one-screen console
 │       ├── previs-views.test.js        # Look / 360° / Depth / Plan, the splats endpoint, and From Previs in Production
+│       ├── shot-negative-prompt.test.js # A shot's own generation.negative_prompt can be written and reaches the prompt
+│       ├── screenplay-ellipsis-and-print-fit.test.js # An ellipsis line stays dialogue; printed sheets are measured and refitted
 │       ├── previs-boundary.test.js     # Paid routes share one payload path and honor the Apply boundary
 │       ├── screenplay-to-entities.test.js # A screenplay creates the entities generation reads
 │       ├── storyboard-prerequisites.test.js # Plate medium, panel captions, previs over MCP
@@ -6286,6 +6288,8 @@ node --test backend/tests/console-regions.test.js
 node --test backend/tests/console-layout.test.js
 node --test backend/tests/adr-spark.test.js
 node --test backend/tests/previs-views.test.js
+node --test backend/tests/shot-negative-prompt.test.js
+node --test backend/tests/screenplay-ellipsis-and-print-fit.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
 node --test backend/tests/repair-bridge.test.js
 node --test backend/tests/editor-transport.test.js

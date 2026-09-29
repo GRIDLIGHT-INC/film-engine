@@ -63,7 +63,7 @@ function deleteShot(req, res, shotId) {
  * so removing a character from a shot would become unsayable — the same class
  * of silent failure, pointing the other way.
  */
-const MERGED_BLOCKS = new Set(['camera', 'lighting']);
+const MERGED_BLOCKS = new Set(['camera', 'lighting', 'generation']);
 
 /**
  * Merge one nested block, with `null` as the way to clear a single facet.
@@ -137,7 +137,19 @@ function updateShotCard(req, res, shotId) {
     const EDITABLE = ['description', 'direction', 'action', 'camera', 'lighting', 'characters', 'props',
         'dialogue', 'sfx_cues', 'duration_seconds', 'notes', 'location_view',
         // Motion fields: read by the video compiler, so a person must be able to type them.
-        'environment_motion', 'end_state', 'beats'];
+        'environment_motion', 'end_state', 'beats',
+        // generation.negative_prompt is read by buildStoryboardPrompt for the
+        // frame AND the clip; until it was editable nothing could set it.
+        'generation'];
+    if (body.generation !== undefined && body.generation !== null) {
+        const g = body.generation;
+        const bad = typeof g !== 'object' || Array.isArray(g)
+            || (g.negative_prompt !== undefined && g.negative_prompt !== null && typeof g.negative_prompt !== 'string');
+        if (bad) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'generation must be an object; generation.negative_prompt must be a string (null clears it)' }));
+        }
+    }
     const changed = [];
     for (const key of EDITABLE) {
         if (body[key] === undefined) continue;
