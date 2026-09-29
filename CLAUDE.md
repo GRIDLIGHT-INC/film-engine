@@ -202,6 +202,7 @@ film-engine/
 │   │   ├── plate-delivery.js # Filing a plate from either road, and adopting the ones made before this
 │   │   ├── sequence-delivery.js# Where a leg's finished clip goes, said once for both roads it arrives by
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
+│   │   ├── flow-apply.js         # Apply a flow to a selection on the Production graph: targets resolved from the graph, inputs bound per shot, priced and budgeted for free (FOG-001)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
 │   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
@@ -646,6 +647,7 @@ film-engine/
 │       ├── flow-executor.test.js         # Typed-port execution, all 23 handlers (Phase 2)
 │       ├── flow-graph.test.js            # Graph algebra + PIPELINE_STEPS lockstep (Phase 1)
 │       ├── flows-routes.test.js          # Flow CRUD against a real database (Phase 1)
+│       ├── flow-apply-plan.test.js       # FOG-001: every graph node type a target or refused with why, every flow input type bound or refused per shot, priced with fan-out, budgeted, nothing spent
 │       ├── phase0-payload-parity.test.js  # One payload path per capability (60 tests)
 │       ├── phase0-spec-coverage.test.js   # Phase 0 test-matrix completeness
 │       ├── flows-node-taxonomy.test.js    # Flows canvas node palette coverage
@@ -6346,6 +6348,7 @@ node --test backend/tests/production-graph-docs.test.js
 node --test backend/tests/canvas-guide.test.js
 node --test backend/tests/self-hosted-models-plan.test.js
 node --test backend/tests/model-catalog.test.js
+node --test backend/tests/flow-apply-plan.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

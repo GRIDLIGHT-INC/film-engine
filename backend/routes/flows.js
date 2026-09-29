@@ -412,6 +412,23 @@ function estimateFlow(req, res, flowId) {
     return json(res, 200, { ...cost, budget });
 }
 
+/**
+ * FOG-001: applying this flow to a selection on the Production graph, planned
+ * for free — what each shot binds, what it costs, the total and the budget
+ * answer. `targets` is a comma-separated list of graph node keys.
+ */
+function applyPlanRoute(req, res, flowId, query) {
+    const q = query || {};
+    const raw = Array.isArray(q.targets) ? q.targets.join(',') : String(q.targets || '');
+    const targets = [...new Set(raw.split(',').map(s => s.trim()).filter(Boolean))];
+    if (!targets.length) return json(res, 400, { error: 'targets is required: a comma-separated list of graph node keys (shot:<id>, seq:<id>)' });
+    let vars = {};
+    if (q.vars) { try { vars = JSON.parse(q.vars) || {}; } catch (_) { return json(res, 400, { error: 'vars must be JSON' }); } }
+    const plan = require('../lib/flow-apply').planApply(db, { flowId, projectId: q.project_id || null, targets, vars });
+    if (plan.error) return json(res, plan.status || 400, { error: plan.error });
+    return json(res, 200, plan);
+}
+
 function cancelRun(req, res, runId) {
     const run = getFlowRun(runId);
     if (!run) return json(res, 404, { error: 'Run not found' });
@@ -456,6 +473,7 @@ function handleFlows(req, res, urlParts, query) {
             return runFlowRoute(req, res, flowId);
         }
         if (urlParts[3] === 'estimate' && req.method === 'POST') return estimateFlow(req, res, flowId);
+        if (urlParts[3] === 'apply-plan' && req.method === 'GET') return applyPlanRoute(req, res, flowId, query);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'DELETE') return deleteFlow(req, res, flowId);

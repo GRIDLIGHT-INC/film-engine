@@ -4895,6 +4895,30 @@ const ROUTE_TOOLS = [
         probe: { flow_id: 'probe-no-such-flow' },
     },
     {
+        name: 'flow_apply_plan',
+        route: 'applyPlanRoute',
+        method: 'GET',
+        description: 'FREE — spends nothing. Plan applying a flow to a selection of Production-graph nodes: pass their keys (shot:<id>, seq:<id>; a sequence expands to its shots). '
+            + 'Returns, per shot, what each of the flow\'s input nodes binds to (in.scene the shot\'s card, in.subject its first character unless the node names one) or why the shot is refused; '
+            + 'clips, sounds, sound versions and borrowed-frame links are refused with where to apply instead; held shots are named and left out. '
+            + 'Prices every run from the flow\'s own projection (fan-out multiplied), totals the selection, answers the project budget, and returns a fingerprint the apply will require.',
+        path: a => {
+            const keys = Array.isArray(a.targets) ? a.targets.join(',') : String(a.targets || '');
+            const q = new URLSearchParams({ targets: keys });
+            if (a.project_id) q.set('project_id', a.project_id);
+            if (a.vars) q.set('vars', JSON.stringify(a.vars));
+            return `/film/flows/${a.flow_id}/apply-plan?${q.toString()}`;
+        },
+        schema: {
+            flow_id: { type: 'string' },
+            targets: { type: 'array', items: { type: 'string' }, description: 'Graph node keys: shot:<id>, seq:<id>. Read them from production_graph_get.' },
+            project_id: { type: 'string', description: 'Required for a library flow; defaults to the flow\'s own project.' },
+            vars: { type: 'object', description: 'Values for {{placeholders}} in the flow\'s prompt nodes.' },
+        },
+        required: ['flow_id', 'targets'],
+        probe: { flow_id: 'probe-no-such-flow', targets: ['shot:probe'] },
+    },
+    {
         name: 'flow_run',
         route: 'runFlowRoute',
         method: 'POST',

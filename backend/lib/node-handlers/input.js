@@ -79,8 +79,13 @@ const handlers = {
             const config = node.config || {};
             const consistency = ctx.consistency || null;
 
+            // With no subject named, the run takes the shot card's first
+            // character — the binding lib/flow-apply.js plans for, so a plan
+            // never describes a run that does not happen.
+            const card = ctx.sceneCard || {};
+            const fromCard = Array.isArray(card.characters) && card.characters.length ? String(card.characters[0]) : '';
             const subject = {
-                name: config.subject_name || '',
+                name: config.subject_name || fromCard,
                 type: config.subject_type || 'character',
                 consistency,
             };
