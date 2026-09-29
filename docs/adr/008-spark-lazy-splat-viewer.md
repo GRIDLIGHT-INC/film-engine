@@ -35,8 +35,13 @@ loaded only when a Look, 360° or Explore thumbnail is shown.**
 - The page loads the module with `import('./vendor/splat-viewer.js')`. If that
   fails, it loads `GET /film/vendor/splat-viewer.js` from the API. The page's
   own **r149** is not touched, and the two copies of three never interact.
-- `world_splats` **still defaults false**. When it is off, nothing is fetched
-  and the modes that need splats are disabled with a reason. When it is on,
+- `world_splats` and `previs_console` are **on by default** for every
+  project: a director should see the set, not a grey mesh, without finding a
+  switch. Previs opens on **Look** when the world version has splats, so
+  opening a shot with a world downloads its full splat once (the browser
+  caches it). A project or version with no splats downloads nothing and opens
+  on Geometry. Turning `world_splats` off fetches nothing and disables the
+  splat modes with a reason.
   `GET /film/world-versions/:vid/splats` lists the tiers, preferring a local
   copy over the CDN.
 - Look uses exactly the painter's pose: staged position × scale factor, aim,
@@ -49,9 +54,10 @@ loaded only when a Look, 360° or Explore thumbnail is shown.**
 ## Rationale
 - **The trigger ADR-006 named has happened.** A deferral that ignores its own
   condition for revisiting has become a rejection.
-- **The single-html page does not grow by the renderer.** The 3.2 MB is paid
-  only by someone who opens a view that uses it. A project with no world never
-  downloads it, which removes ADR-006's main cost objection.
+- **The single-html page does not grow by the renderer.** The 3.2 MB module
+  and the splat are paid only by someone who opens Previs on a world that has
+  splats. A project with no world never downloads either, which removes
+  ADR-006's main cost objection.
 - **No hand conversion.** ADR-006 feared hand-converting ESM libraries into a
   classic script with nothing to catch mistakes. esbuild does the bundling, and
   the page imports the result as a module. The r149 conversion that the GLB
@@ -66,7 +72,8 @@ loaded only when a Look, 360° or Explore thumbnail is shown.**
   `cdn.marble.worldlabs.ai` still serving them. The endpoint prefers a local
   copy for this reason.
 - A splat is a lot to download: the full tier is about 25 MB per world. Look
-  uses the first tier listed, and thumbnails reuse it.
+  and 360° load the full tier, because that is where a director judges the set;
+  Explore thumbnails use the smallest tier.
 - The page now includes code that references `SparkRenderer` and `SplatMesh`.
   The classes themselves live only in the module.
 - ADR-006's Spatial World readout remains the console's view when
@@ -81,5 +88,6 @@ loaded only when a Look, 360° or Explore thumbnail is shown.**
   renderer has nothing to draw.
 - The generation plate starts using the splat render instead of geometry. That
   would be a change to what gets generated, and it needs its own ADR.
-- The `world_splats` flag defaults to true, because then every world downloads
-  splats and the cost statements above need to be redone.
+- Splats start downloading for projects or versions that have none to show,
+  or anywhere outside Previs. On-by-default is cheap only because the cost is
+  limited to a director opening a world.

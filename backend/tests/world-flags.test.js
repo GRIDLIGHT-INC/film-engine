@@ -230,9 +230,13 @@ test('a boolean survives being switched off — the pin the gates rest on', () =
     const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'app-settings.js'), 'utf8');
     assert.match(src, /function castLike/, 'the type cast on read is gone');
     assert.match(src, /function serialiseLike/, 'the type cast on write is gone');
+    // On by decision, not by accident: ADR-008 turned these on for every
+    // project. Every other gate still ships off.
+    const ON_BY_DECISION = new Set(['world_splats', 'previs_console']);
     for (const f of booleanFlags()) {
-        assert.strictEqual(SETTINGS[f].default, false,
-            `${f} defaults to true, so the feature is on for every existing install`);
+        assert.strictEqual(SETTINGS[f].default, ON_BY_DECISION.has(f),
+            ON_BY_DECISION.has(f) ? `${f} is on by ADR-008 and now defaults off`
+                : `${f} defaults to true, so the feature is on for every existing install`);
     }
     // The page's own reader must treat the string "false" as off too, for rows
     // written before the store was fixed.

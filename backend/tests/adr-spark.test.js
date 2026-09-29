@@ -139,13 +139,30 @@ const CLAIMS = [
         },
     },
     {
-        id: 'flag-exists-and-is-off',
-        why: 'the default is what keeps a 25 MB-per-world download opt-in; the record rests on it',
+        id: 'flags-exist-and-are-on',
+        why: 'the record says a director sees the set without finding a switch; both defaults must stay on',
         holds() {
             const { SETTINGS } = require('../routes/app-settings');
-            if (!SETTINGS.world_splats) return 'world_splats has left app-settings';
-            if (SETTINGS.world_splats.default !== false) return 'world_splats no longer defaults false';
-            return /world_splats/.test(doc()) || 'the record does not name the flag';
+            for (const k of ['world_splats', 'previs_console']) {
+                if (!SETTINGS[k]) return `${k} has left app-settings`;
+                if (SETTINGS[k].default !== true) return `${k} no longer defaults on`;
+                if (!doc().includes(k)) return `the record does not name ${k}`;
+            }
+            return /on by default/.test(doc()) || 'the record does not say the flags are on by default';
+        },
+    },
+    {
+        id: 'only-a-world-with-splats-downloads',
+        why: 'on-by-default is cheap only because a version with no splats, or a non-splat view, fetches nothing',
+        holds() {
+            const ui = read(PAGE);
+            const at = ui.indexOf('async function worldSplatSync(');
+            if (at < 0) return 'worldSplatSync is gone';
+            const body = ui.slice(at, at + 900);
+            if (!/vm !== 'look' && vm !== 'pano'\)\) return worldSplatStop\(\)/.test(body)) return 'the sync no longer stops outside Look and 360°';
+            if (!/!info\.splats\.length/.test(body)) return 'the sync no longer stops when the version has no splats';
+            const mode = ui.slice(ui.indexOf('function worldViewMode('), ui.indexOf('function worldModeButtonsHtml('));
+            return /!info\.splats\.length\)\)\) return 'geo'/.test(mode) || 'a version with no splats no longer opens on Geometry';
         },
     },
     {

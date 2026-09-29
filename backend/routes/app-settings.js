@@ -172,12 +172,12 @@ const SETTINGS = {
      * the console is the handoff's layout exactly as before.
      */
     previs_console: {
-        description: 'Lay the Previs console out as one screen: the camera view as large as the window allows, the move under it, tabs for the rest, and a Decisions strip.',
-        default: false,
+        description: 'Lay the Previs console out as one screen: the camera view as large as the window allows, the move under it, tabs for the rest, and a Decisions strip. On by default; off restores the two-column handoff layout.',
+        default: true,
     },
     world_splats: {
-        description: 'Download and render Gaussian splats. Off records the splat URLs and fetches nothing — full_res is 25 MB per world.',
-        default: false,
+        description: 'Render the world\'s Gaussian splats in Previs (Look, 360°, Explore thumbnails). Fetched only when a splat view opens — full_res is about 25 MB per world. Off records the splat URLs and fetches nothing.',
+        default: true,
     },
 };
 

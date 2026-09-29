@@ -16358,7 +16358,11 @@ THREE.GLTFLoader = GLTFLoader;
 
     function worldViewMode() {
         if (!worldFlagOn('previs_console')) return 'geo';
-        return WORLD.viewMode || 'geo';
+        if (WORLD.viewMode) return WORLD.viewMode;
+        // Open on the set itself when this version has splats; geometry otherwise.
+        const info = SPLAT.info;
+        if (!worldFlagOn('world_splats') || (info && (!info.enabled || !info.splats.length))) return 'geo';
+        return 'look';
     }
 
     function worldModeButtonsHtml() {
@@ -16503,7 +16507,9 @@ THREE.GLTFLoader = GLTFLoader;
         // the provider's panorama (taken from the world's own centre) is the
         // fallback for a version that recorded no splat.
         const panoFromSplat = vm === 'pano' && info.splats.length > 0;
-        const want = (vm === 'look' || panoFromSplat) ? (info.splats[info.splats.length > 1 ? 1 : 0] || info.splats[0]) : null;
+        // Look is where a director judges the set, so it gets the full tier (the
+        // last listed); thumbnails keep the smallest.
+        const want = (vm === 'look' || panoFromSplat) ? info.splats[info.splats.length - 1] : null;
         if (want && SPLAT.meshUrl !== want.url) {
             if (SPLAT.mesh) { SPLAT.scene.remove(SPLAT.mesh); if (SPLAT.mesh.dispose) SPLAT.mesh.dispose(); }
             if (note) note.textContent = `Loading the ${want.kind.replace('splat_', '')} splat…`;

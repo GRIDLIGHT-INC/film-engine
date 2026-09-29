@@ -568,16 +568,20 @@ test('WE-1.19 every phase-1 MCP tool dispatches, and only world_generate spends'
 
 // ══ WE-D9.1 · the flags ═════════════════════════════════════════════════════
 
-test('WE-D9.1 all six flags exist, default off, and a typo is refused', () => {
+test('WE-D9.1 all six flags exist, default off (world_splats on, per ADR-008), and a typo is refused', () => {
     const src = fs.readFileSync(path.join(REPO, 'backend', 'routes', 'app-settings.js'), 'utf8');
     const FLAGS = ['world_engine', 'marble_generation', 'cinematography_ai',
                    'reference_match', 'camera_explore', 'world_splats'];
     const missing = FLAGS.filter(f => !new RegExp(`\\b${f}\\b`).test(src));
     assert.deepStrictEqual(missing, [], `flags missing from SETTINGS: ${missing.join(', ')}`);
-    // Each must default to false — a feature that ships on is not shipped incrementally.
+    // Each must default to false — a feature that ships on is not shipped
+    // incrementally. world_splats is the one deliberate exception: ADR-008
+    // turned it on for every project once the director asked to see the set.
+    const ON_BY_DECISION = new Set(['world_splats']);
     for (const f of FLAGS) {
-        const seg = src.slice(src.indexOf(f), src.indexOf(f) + 400);
-        assert.match(seg, /default:\s*false/, `${f} does not default to false`);
+        const seg = src.slice(src.indexOf(f + ':'), src.indexOf(f + ':') + 400);
+        assert.match(seg, ON_BY_DECISION.has(f) ? /default:\s*true/ : /default:\s*false/,
+            `${f} does not default to ${ON_BY_DECISION.has(f) ? 'true' : 'false'}`);
     }
 });
 
