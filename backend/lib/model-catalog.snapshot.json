@@ -1,0 +1,544 @@
+{
+  "catalog_version": 1,
+  "generated_on": "2026-09-28",
+  "models": [
+    {
+      "id": "fish-s2-pro",
+      "name": "Fish Audio S2 Pro",
+      "hf_repo": "fishaudio/s2-pro",
+      "digest": "1de9996b6be38b745688de084d87a5633f714e4e",
+      "capabilities": [
+        "voice"
+      ],
+      "worker_class": "gpu",
+      "placement": "aws",
+      "instance_type": null,
+      "allowed_regions": [
+        "*"
+      ],
+      "licence": {
+        "id": "fish-audio-research",
+        "name": "Fish Audio Research License",
+        "commercial_use": "not_permitted",
+        "expires_at": null,
+        "source_url": "https://huggingface.co/fishaudio/s2-pro",
+        "verified_on": "2026-09-28",
+        "note": "Commercial use requires a separate licence from Fish Audio (business@fish.audio)."
+      },
+      "consent": {
+        "voice_clone": "required",
+        "likeness": "not_applicable"
+      },
+      "cost": null,
+      "prompt_limit": null,
+      "max_reference_images": 0,
+      "reference_mode": null,
+      "max_keyframes": 0,
+      "size_control": null,
+      "max_pixels": null,
+      "supports_seed": null,
+      "supports_negative_prompt": false,
+      "reports_progress": null,
+      "cancel": "stop_waiting",
+      "duration": null,
+      "output_formats": null,
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reference_audio": {
+            "type": "string",
+            "description": "voice to clone; requires recorded consent"
+          },
+          "language": {
+            "type": "string"
+          }
+        }
+      },
+      "unknown": {
+        "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "prompt_limit": "not stated on the model card",
+        "reference_mode": "voice reference is audio, not an image mode",
+        "size_control": "not applicable: audio",
+        "max_pixels": "not applicable: audio",
+        "supports_seed": "not stated on the model card; worker not built (FEM-009)",
+        "reports_progress": "worker not built (FEM-009)",
+        "duration": "not stated on the model card",
+        "output_formats": "worker not built (FEM-009)"
+      }
+    },
+    {
+      "id": "flux2-dev",
+      "name": "FLUX.2 [dev]",
+      "hf_repo": "black-forest-labs/FLUX.2-dev",
+      "digest": "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c",
+      "capabilities": [
+        "image"
+      ],
+      "worker_class": "gpu",
+      "placement": "aws",
+      "instance_type": null,
+      "allowed_regions": [
+        "*"
+      ],
+      "licence": {
+        "id": "flux-non-commercial",
+        "name": "FLUX Non-Commercial License",
+        "commercial_use": "not_permitted",
+        "expires_at": null,
+        "source_url": "https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.md",
+        "verified_on": "2026-09-28",
+        "note": "Gated. The MODEL may not be used commercially; generated outputs may be used commercially under the licence's conditions. Production needs a commercial licence or the licensed API fallback."
+      },
+      "consent": {
+        "voice_clone": "not_applicable",
+        "likeness": "required"
+      },
+      "cost": null,
+      "prompt_limit": null,
+      "max_reference_images": null,
+      "reference_mode": null,
+      "max_keyframes": 0,
+      "size_control": null,
+      "max_pixels": null,
+      "supports_seed": null,
+      "supports_negative_prompt": null,
+      "reports_progress": null,
+      "cancel": "stop_waiting",
+      "duration": {},
+      "output_formats": {
+        "image": [
+          "png"
+        ]
+      },
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 64
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 64
+          },
+          "steps": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "the card calls 28 a good trade-off"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "unknown": {
+        "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "prompt_limit": "not stated on the model card",
+        "max_reference_images": "not stated on the model card",
+        "reference_mode": "not stated on the model card",
+        "size_control": "not stated on the model card",
+        "max_pixels": "not stated on the model card",
+        "supports_seed": "worker not built (FEM-011)",
+        "supports_negative_prompt": "not stated on the model card",
+        "reports_progress": "worker not built (FEM-011)"
+      }
+    },
+    {
+      "id": "latentsync-1.6",
+      "name": "LatentSync 1.6",
+      "hf_repo": "ByteDance/LatentSync-1.6",
+      "digest": "c42c7e6c8e9c213626389fa7d9a3c444b8536353",
+      "capabilities": [
+        "lipsync"
+      ],
+      "worker_class": "gpu",
+      "placement": "aws",
+      "instance_type": "g6.xlarge",
+      "allowed_regions": [
+        "*"
+      ],
+      "licence": {
+        "id": "openrail++",
+        "name": "OpenRAIL++",
+        "commercial_use": "unverified",
+        "expires_at": null,
+        "source_url": "https://huggingface.co/ByteDance/LatentSync-1.6",
+        "verified_on": "2026-09-28",
+        "note": "The card names openrail++ and states nothing about commercial use; the licence text has not been reviewed, so production fails closed until it is."
+      },
+      "consent": {
+        "voice_clone": "not_applicable",
+        "likeness": "required"
+      },
+      "cost": {
+        "unit": "gpu_second",
+        "usd_per_unit": 0.00024822,
+        "basis": "whole instance",
+        "instance_type": "g6.xlarge",
+        "region": "ca-central-1",
+        "source": "AWS Pricing API, AmazonEC2 on-demand Linux shared, ca-central-1, $0.8936/hr effective 2026-09-01",
+        "checked_on": "2026-09-28"
+      },
+      "prompt_limit": 0,
+      "max_reference_images": 0,
+      "reference_mode": null,
+      "max_keyframes": 0,
+      "size_control": "exact",
+      "max_pixels": 262144,
+      "supports_seed": null,
+      "supports_negative_prompt": false,
+      "reports_progress": null,
+      "cancel": "stop_waiting",
+      "duration": null,
+      "output_formats": null,
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "video",
+          "audio"
+        ],
+        "properties": {
+          "video": {
+            "type": "string",
+            "description": "face video, processed at 512x512"
+          },
+          "audio": {
+            "type": "string",
+            "description": "dialogue to sync"
+          }
+        }
+      },
+      "unknown": {
+        "reference_mode": "inputs are a face video and an audio track, not reference images",
+        "supports_seed": "worker not built (FEM-010)",
+        "reports_progress": "worker not built (FEM-010)",
+        "duration": "not stated on the model card",
+        "output_formats": "worker not built (FEM-010)"
+      }
+    },
+    {
+      "id": "minimax-h3",
+      "name": "MiniMax H3",
+      "hf_repo": "MiniMaxAI/MiniMax-H3",
+      "digest": "42ed227ee7df40d41602854ae760620d6eb651fe",
+      "capabilities": [
+        "video"
+      ],
+      "worker_class": "gpu-multi",
+      "placement": "aws",
+      "instance_type": "p5.48xlarge",
+      "allowed_regions": [
+        "ca-central-1"
+      ],
+      "licence": {
+        "id": "minimax-h3-community",
+        "name": "MiniMax H3 Community License",
+        "commercial_use": "restricted",
+        "expires_at": null,
+        "source_url": "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
+        "verified_on": "2026-09-28",
+        "note": "The EU, UK, Republic of Korea and USA are Excluded Territories for the weights and their outputs; revenue over $20M/yr needs prior written authorization; outputs must be disclosed as AI-made and may not train other models. ca-central-1 is the epic's approved H3 region."
+      },
+      "consent": {
+        "voice_clone": "required",
+        "likeness": "required"
+      },
+      "cost": {
+        "unit": "gpu_second",
+        "usd_per_unit": 0.01758222,
+        "basis": "whole instance (8x H100)",
+        "instance_type": "p5.48xlarge",
+        "region": "ca-central-1",
+        "source": "AWS Pricing API, AmazonEC2 on-demand Linux shared, ca-central-1, $63.296/hr effective 2026-09-01",
+        "checked_on": "2026-09-28"
+      },
+      "prompt_limit": null,
+      "max_reference_images": 9,
+      "reference_mode": "condition",
+      "max_keyframes": 2,
+      "size_control": "ratio-only",
+      "max_pixels": null,
+      "supports_seed": true,
+      "supports_negative_prompt": false,
+      "reports_progress": "percent",
+      "cancel": "stop_waiting",
+      "duration": {
+        "video": {
+          "min_s": 5,
+          "max_s": 15
+        }
+      },
+      "output_formats": {
+        "video": [
+          "mp4"
+        ]
+      },
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "duration_s": {
+            "type": "number",
+            "minimum": 5,
+            "maximum": 15
+          },
+          "aspect_ratio": {
+            "enum": [
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          "first_frame": {
+            "type": "string"
+          },
+          "last_frame": {
+            "type": "string"
+          },
+          "references": {
+            "type": "array",
+            "maxItems": 12
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "unknown": {
+        "prompt_limit": "not stated on the model card",
+        "max_pixels": "768 px short edge (multiple of 32) with the aspect ratio kept; the card gives no pixel cap"
+      }
+    },
+    {
+      "id": "stable-audio-3-medium",
+      "name": "Stable Audio 3 Medium",
+      "hf_repo": "stabilityai/stable-audio-3-medium",
+      "digest": "27b5a21b791b1b033d193a9e1e3ce78493f102f9",
+      "capabilities": [
+        "music"
+      ],
+      "worker_class": "gpu",
+      "placement": "aws",
+      "instance_type": null,
+      "allowed_regions": [
+        "*"
+      ],
+      "licence": {
+        "id": "stability-community",
+        "name": "Stability AI Community License",
+        "commercial_use": "restricted",
+        "expires_at": null,
+        "source_url": "https://stability.ai/license",
+        "verified_on": "2026-09-28",
+        "note": "Gated (licence, privacy policy and Gemma terms). Free for organisations under $1M annual revenue; above that an Enterprise licence is required. 'ambient' is not listed: the card does not state loop or long-bed support."
+      },
+      "consent": {
+        "voice_clone": "not_applicable",
+        "likeness": "not_applicable"
+      },
+      "cost": null,
+      "prompt_limit": null,
+      "max_reference_images": 0,
+      "reference_mode": null,
+      "max_keyframes": 0,
+      "size_control": null,
+      "max_pixels": null,
+      "supports_seed": null,
+      "supports_negative_prompt": null,
+      "reports_progress": null,
+      "cancel": "stop_waiting",
+      "duration": {
+        "music": {
+          "min_s": null,
+          "max_s": 380
+        }
+      },
+      "output_formats": {
+        "music": [
+          "wav"
+        ]
+      },
+      "music_workflows": {
+        "compose": {
+          "status": "planned",
+          "reason": "text-to-music; worker not built (FEM-009)"
+        },
+        "parts": {
+          "status": "planned",
+          "reason": "multi-section songs via the gateway's /music/compose sections"
+        },
+        "separate": {
+          "status": "unsupported",
+          "reason": "stem separation is the stemsplit agent's job, not this model's"
+        },
+        "reference": {
+          "status": "planned",
+          "reason": "the card supports continuation of short recordings"
+        },
+        "picture": {
+          "status": "unsupported",
+          "reason": "text/audio-conditioned only; no video input on the card"
+        },
+        "inpaint": {
+          "status": "planned",
+          "reason": "the card supports targeted audio editing (inpainting)"
+        }
+      },
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "duration_s": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 380
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "unknown": {
+        "cost": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "instance_type": "placement pending the user's region-per-worker decision (GRD-4453 plan: ca-central-1 has no g6e/L40S; H100 there is only p5.48xlarge), recorded in FEM-005",
+        "prompt_limit": "not stated on the model card",
+        "size_control": "not applicable: audio",
+        "max_pixels": "not applicable: audio",
+        "supports_seed": "worker not built (FEM-009)",
+        "supports_negative_prompt": "not stated on the model card",
+        "reports_progress": "worker not built (FEM-009)",
+        "duration.music.min_s": "not stated on the model card",
+        "reference_mode": "not applicable: audio generation takes no reference images"
+      }
+    },
+    {
+      "id": "stable-audio-3-small-sfx",
+      "name": "Stable Audio 3 Small SFX",
+      "hf_repo": "stabilityai/stable-audio-3-small-sfx",
+      "digest": "ae12755283df9d62ca39a9b050a39a0b607b8c20",
+      "capabilities": [
+        "sfx"
+      ],
+      "worker_class": "cpu",
+      "placement": "local",
+      "instance_type": "local",
+      "allowed_regions": [
+        "*"
+      ],
+      "licence": {
+        "id": "stability-community",
+        "name": "Stability AI Community License",
+        "commercial_use": "restricted",
+        "expires_at": null,
+        "source_url": "https://stability.ai/license",
+        "verified_on": "2026-09-28",
+        "note": "Gated (licence, privacy policy and Gemma terms). Free for organisations under $1M annual revenue; above that an Enterprise licence is required."
+      },
+      "consent": {
+        "voice_clone": "not_applicable",
+        "likeness": "not_applicable"
+      },
+      "cost": {
+        "unit": "clip_second",
+        "usd_per_unit": 0,
+        "basis": "local host",
+        "instance_type": "local",
+        "region": null,
+        "source": "runs on the local Gridlight host (CPU); no metered cloud cost",
+        "checked_on": "2026-09-28"
+      },
+      "prompt_limit": null,
+      "max_reference_images": 0,
+      "reference_mode": null,
+      "max_keyframes": 0,
+      "size_control": null,
+      "max_pixels": null,
+      "supports_seed": null,
+      "supports_negative_prompt": null,
+      "reports_progress": "none",
+      "cancel": "stop_waiting",
+      "duration": {
+        "sfx": {
+          "min_s": null,
+          "max_s": 120
+        }
+      },
+      "output_formats": {
+        "sfx": [
+          "wav"
+        ]
+      },
+      "controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "duration_s": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 120
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "unknown": {
+        "prompt_limit": "not stated on the model card",
+        "size_control": "not applicable: audio",
+        "max_pixels": "not applicable: audio",
+        "supports_seed": "not verified in the agent (agents/audio_agent/stable_audio3.py)",
+        "supports_negative_prompt": "not stated on the model card",
+        "duration.sfx.min_s": "not stated on the model card",
+        "cost.region": "local host, not an AWS region",
+        "reference_mode": "not applicable: audio generation takes no reference images"
+      }
+    }
+  ]
+}

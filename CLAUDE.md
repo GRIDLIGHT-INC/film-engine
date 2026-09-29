@@ -32,7 +32,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (116 migrations)
+│   │   └── migrations/     # SQL migration files (117 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -102,6 +102,7 @@ film-engine/
 │   │   ├── repair.js          # Run a repair — the half that spends, kept apart from the free plan
 │   │   ├── frame-handles.js    # One frame, to whoever holds the id — the id IS the credential
 │   │   ├── instruments.js      # The instrument library: capture a patch, scan NKS presets, keep what plays a part
+│   │   ├── model-catalog.js    # The self-hosted model catalog (FEM-001): the catalog, its audit, one model's controls — read-only, authored in gridlight
 │   │   └── demo-project.js     # Seeded demo project for first-run
 │   ├── lib/
 │   │   ├── fountain-parser.js     # Fountain markup parser (AST)
@@ -296,6 +297,7 @@ film-engine/
 │   │   ├── provenance.js         # Provenance sidecar manifests
 │   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
 │   │   ├── asset-match.js        # Which of this project's files a dropped file is: by hash sent without the bytes, same-size files only, cached on mtime
+│   │   ├── model-catalog.js      # Gridlight's self-hosted model catalog read here: validated, fail-closed on licence, region, commercial use and consent, every change audited
 │   │   ├── graph-hold.js         # Which nodes can be held, read strictly; every batch entry point that honours it, and what never reads it
 │   │   ├── shot-insert-code.js   # The one insert: codes 2A → 2AA → 2AB, order after the anchor — for the route, the add palette and the patterns
 │   │   ├── graph-patterns.js     # Coverage patterns: shot/reverse, insert/reaction, wide/medium/close — a free preview, then shots and a sequence, nothing generated
@@ -484,6 +486,7 @@ film-engine/
 │       ├── production-graph-docs.test.js # The epic recorded: every module in its real directory, every route in the table, all eight features, progress and cancel per adapter, every tool in the guide
 │       ├── canvas-guide.test.js       # The Word guide to the canvas, built from scripts/make-canvas-guide.py: every feature, menu item, header control, queue bucket, state and tool, every picture present
 │       ├── self-hosted-models-plan.test.js # How GRD-4453 is worked: FEM-001..014 once each, a repo and its test command, prerequisites that cannot loop, the AWS gate, and no status (Jira holds it)
+│       ├── model-catalog.test.js     # FEM-001: every field and enum of the catalog contract, fail-closed admits (H3 outside ca-central-1 refused), six models through the registry, audited changes, controls served
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6060,7 +6063,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (116 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (117 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6336,6 +6339,7 @@ node --test backend/tests/production-graph-nodes.test.js
 node --test backend/tests/production-graph-docs.test.js
 node --test backend/tests/canvas-guide.test.js
 node --test backend/tests/self-hosted-models-plan.test.js
+node --test backend/tests/model-catalog.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

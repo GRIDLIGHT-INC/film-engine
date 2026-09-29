@@ -838,6 +838,37 @@ const PRODUCTION_TOOLS = [
         required: ['project_id', 'milestone_id'],
     },
     {
+        name: 'model_catalog',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'GET',
+        path: () => '/film/model-catalog',
+        description:
+            'The self-hosted model catalog (FEM-001): every model gridlight can run, with its '
+            + 'capabilities, licence and commercial-use state, allowed AWS regions, consent '
+            + 'requirements, cost and limits. FREE. It is authored in gridlight and vendored here; '
+            + 'a field is null only when `unknown` says why. Whether a model may actually run is '
+            + 'decided fail-closed: a region its licence excludes (MiniMax H3 runs only in '
+            + 'ca-central-1), an expired licence, a production run on a model not permitted '
+            + 'commercially, or a cloned voice or likeness without consent is refused.',
+        schema: {}, required: [],
+    },
+    {
+        name: 'model_controls',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'GET',
+        path: a => `/film/model-catalog/${encodeURIComponent(a.model_id)}/controls`,
+        description: 'One catalog model\u2019s control schema (JSON schema), durations and output formats, '
+            + 'as the Production client reads them. FREE.',
+        schema: { model_id: { type: 'string', description: 'The catalog id, e.g. minimax-h3.' } },
+        required: ['model_id'],
+    },
+    {
+        name: 'model_catalog_audit',
+        handler: require('../routes/model-catalog').handleModelCatalog, method: 'GET',
+        path: () => '/film/model-catalog/audit',
+        description: 'Every recorded change to the model catalog, newest first: the version it moved '
+            + 'from and to, and each model field that changed. FREE.',
+        schema: {}, required: [],
+    },
+    {
         name: 'agent_presence',
         handler: require('../routes/agent-presence').handleAgentPresence, method: 'GET',
         path: () => '/film/agent',

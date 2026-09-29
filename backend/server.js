@@ -78,6 +78,7 @@ const { handleAgentPresence } = require('./routes/agent-presence');
 const { handleScenes } = require('./routes/scenes');
 const { handleShots } = require('./routes/shots');
 const { handleAppSettings } = require('./routes/app-settings');
+const { handleModelCatalog } = require('./routes/model-catalog');
 const { handleProjectStorage } = require('./routes/project-storage');
 const { handleEdits } = require('./routes/edits');
 const { handleEvents } = require('./routes/events');
@@ -1132,6 +1133,11 @@ const server = http.createServer(async (req, res) => {
         // Route: /film/3d/:projectId/:filename — serve 3D model files
         if (parts[1] === '3d' && parts[2] && parts[3]) {
             return await handleThreeD(req, res, parts, query);
+        }
+
+        // Route: /film/model-catalog[/audit|/:id/controls] — the self-hosted model catalog (FEM-001)
+        if (parts[1] === 'model-catalog') {
+            return await handleModelCatalog(req, res, parts);
         }
 
         // Route: /film/models/:assetId/{rig|retexture|animate|animations} and /film/models/job/:jobId

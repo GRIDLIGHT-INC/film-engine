@@ -854,6 +854,27 @@ function metered(adapter, projectConfig) {
 register(gridlightAdapter);
 _autoload();
 
+/**
+ * FEM-001: the self-hosted models in gridlight's catalog, resolved through this
+ * registry under Film Engine's own capability names. They sit BESIDE the
+ * adapters rather than inside any adapter's model list, so no existing
+ * provider's models change; the adapter that dispatches them arrives with
+ * FEM-003 and reads this. Whether a model may actually run is
+ * `model-catalog.admits`, which fails closed.
+ */
+function catalogModelIds(capability) {
+    const cat = require('../model-catalog').current();
+    if (!cat || !Array.isArray(cat.models)) return [];
+    return cat.models.filter(m => Array.isArray(m.capabilities) && m.capabilities.includes(capability)).map(m => m.id);
+}
+function resolveCatalogModel(capability, modelId) {
+    const mc = require('../model-catalog');
+    const cat = mc.current();
+    const m = mc.findModel(cat, modelId);
+    if (!m || !Array.isArray(m.capabilities) || !m.capabilities.includes(capability)) return null;
+    return { capability, model: m, catalog_version: cat.catalog_version, source: 'gridlight-catalog' };
+}
+
 module.exports = {
-    modelsFor, modelIdsFor,
+    modelsFor, modelIdsFor, catalogModelIds, resolveCatalogModel,
     firstConfigured, resolveIdWithReason, resolutionOf, resolutionReport, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, withJobRecording: withJobRecording_, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };
