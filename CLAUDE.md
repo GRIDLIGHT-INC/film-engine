@@ -296,7 +296,7 @@ film-engine/
 │   │   ├── provenance.js         # Provenance sidecar manifests
 │   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
 │   │   ├── asset-match.js        # Which of this project's files a dropped file is: by hash sent without the bytes, same-size files only, cached on mtime
-│   │   ├── graph-hold.js         # Which nodes can be held, read strictly, set through each node's own update route and tool
+│   │   ├── graph-hold.js         # Which nodes can be held, read strictly; every batch entry point that honours it, and what never reads it
 │   │   ├── timeline.js           # Timeline assembly logic
 │   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
@@ -472,6 +472,7 @@ film-engine/
 │       ├── how-made-panel.test.js     # The recipe in the drawer, make-another pre-filled with a seed only where honoured, and an A/B wipe for frames and clips
 │       ├── drop-to-recipe.test.js     # Every drawn asset family matched by bytes to its node with its recipe; an unknown file offered only to a node that takes it
 │       ├── graph-hold.test.js         # Every holdable node held and released through its own route and MCP tool, shown on the graph, badged on the page
+│       ├── hold-in-batches.test.js    # Every batch function derived from routes/ skips a held node and names it; plans leave it out of the total; conform and export never read it
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6288,6 +6289,7 @@ node --test backend/tests/asset-recipe.test.js
 node --test backend/tests/how-made-panel.test.js
 node --test backend/tests/drop-to-recipe.test.js
 node --test backend/tests/graph-hold.test.js
+node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

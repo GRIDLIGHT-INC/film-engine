@@ -36,11 +36,26 @@ function planRunToHere(graph, key, opts) {
     const items = [];
     const blockers = [];
     const seen = new Set();
+    // Held nodes (PGN-017): left out of the steps and the total, listed apart.
+    const { HELD_REASON } = require('./graph-hold');
+    const heldOut = new Map();
+    const noteHeld = n => { if (!heldOut.has(n.key)) heldOut.set(n.key, { key: n.key, kind: n.type, id: n.id,
+        label: n.shot_code || n.name || n.title || n.type, reason: HELD_REASON }); };
     const add = it => { const id = `${it.stage}@${it.key}`; if (!seen.has(id)) { seen.add(id); items.push(it); } };
     const cardBehind = n => n.impact && (n.impact.cause === 'card' || n.impact.why === pg.IMPACT_WHY.card);
 
     /** Does this shot need its frame made? Pushes it (or a blocker). Returns false if blocked. */
     function needFrame(s) {
+        if (s.held) {
+            // A held shot's frame is used as it stands; with no frame at all,
+            // nothing built on it can be made, and that is said.
+            if (!s.frames || !s.frames.length) {
+                blockers.push({ key: s.key, reason: `${s.shot_code} is held and has no frame yet — release it, or give it a frame, before anything built on it can be made.` });
+                return false;
+            }
+            noteHeld(s);
+            return true;
+        }
         if (cardBehind(s)) { blockers.push({ key: s.key, reason: `${s.shot_code}: ${pg.IMPACT_WHY.card} A person must edit the card first.` }); return false; }
         const missing = !s.frames || !s.frames.length;
         if (!missing && !behind(s)) return true;
@@ -51,6 +66,7 @@ function planRunToHere(graph, key, opts) {
     }
 
     function planShot(s, clipBehind) {
+        if (s.held) { if (!s.frames || !s.frames.length) needFrame(s); else noteHeld(s); return; }
         const hadFrame = s.frames && s.frames.length && !behind(s);
         if (!needFrame(s)) return;
         const sel = (s.videos || []).find(v => v.selected) || (s.videos || [])[0];
@@ -63,6 +79,7 @@ function planRunToHere(graph, key, opts) {
     function planSequence(q, visiting) {
         if (visiting.has(q.key)) { blockers.push({ key: q.key, reason: `${q.name}: borrowed frames form a cycle — these sequences borrow from each other.` }); return false; }
         visiting.add(q.key);
+        if (q.held) { noteHeld(q); visiting.delete(q.key); return true; }
         const before = items.length;
         let ok = true;
         for (const id of q.shot_ids || []) { const s = byKey.get('shot:' + id); if (s && !needFrame(s)) ok = false; }
@@ -102,7 +119,8 @@ function planRunToHere(graph, key, opts) {
     } else if (root.type === 'sequence') planSequence(root, new Set());
     else if (root.type === 'sound') {
         const cap = pg.SOUND_KIND[root.cue_type] || 'music';
-        if (!root.selected_asset_id || behind(root)) {
+        if (root.held) noteHeld(root);
+        else if (!root.selected_asset_id || behind(root)) {
             add({ stage: cap, key: root.key, cue_id: root.id, capability: cap, cost: COST_PER_CALL[cap] || 0,
                 why: !root.selected_asset_id ? 'no sound yet' : 'what it was made from changed' });
         }
@@ -112,7 +130,7 @@ function planRunToHere(graph, key, opts) {
     const planned = blockers.length ? [] : items;
     const total = Number(planned.reduce((n, i) => n + i.cost, 0).toFixed(6));
     return {
-        target: key, items: planned, blockers, total_cost: total,
+        target: key, items: planned, blockers, total_cost: total, held: [...heldOut.values()],
         summary: blockers.length ? `Blocked: ${blockers[0].reason}`
             : planned.length ? `${planned.length} step${planned.length === 1 ? '' : 's'}, about $${total.toFixed(2)}`
             : 'Nothing to do: everything this needs is already made and current.',

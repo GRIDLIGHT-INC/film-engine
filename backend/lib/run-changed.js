@@ -40,6 +40,9 @@ function buildRunChangedPlan(input) {
     const held = i.held instanceof Set ? i.held : new Set();
     const items = [];
     const skipped = [];
+    // Held work is also listed APART (decision 4): out of the total, beside it.
+    const heldOut = [];
+    const holdIt = entry => { skipped.push(entry); heldOut.push(entry); };
 
     (i.report && i.report.shots || []).forEach((sh, shotIndex) => {
         for (const r of sh.stages || []) {
@@ -52,7 +55,7 @@ function buildRunChangedPlan(input) {
             if (PERSON_STAGES[r.stage]) { skipped.push({ ...base, reason: PERSON_STAGES[r.stage] }); continue; }
             const capability = STEP_CAPABILITY[r.stage];
             if (!capability) { skipped.push({ ...base, reason: `${r.stage} is not a step Film Engine generates` }); continue; }
-            if (held.has(sh.shot_id)) { skipped.push({ ...base, reason: 'held: batch runs skip this shot until it is released' }); continue; }
+            if (held.has(sh.shot_id)) { holdIt({ ...base, reason: 'held: batch runs skip this shot until it is released; it stays in the film' }); continue; }
             if (i.boardLocked && r.stage === 'keyframe') {
                 skipped.push({ ...base, reason: 'the board is locked: frames are not replaced until it is unlocked' });
                 continue;
@@ -66,7 +69,8 @@ function buildRunChangedPlan(input) {
             const base = { stage, scene_id: sceneId, key: 'scene:' + sceneId };
             if (state === 'waiting') { skipped.push({ ...base, reason: "waiting: the scene's screenplay changed; fix its cards first" }); continue; }
             if (state !== 'redo') continue;
-            if (held.has(sceneId)) { skipped.push({ ...base, reason: 'held: batch runs skip this until it is released' }); continue; }
+            // The cue this scene step generates from is held (PGN-017).
+            if (held.has(`${sceneId}:${stage}`) || held.has(sceneId)) { holdIt({ ...base, reason: 'held: batch runs skip this cue until it is released; it stays in the film' }); continue; }
             const capability = STEP_CAPABILITY[stage];
             if (!capability) { skipped.push({ ...base, reason: `${stage} is not a step Film Engine generates` }); continue; }
             items.push({ ...base, capability, cost: COST_PER_CALL[capability] || 0,
@@ -82,6 +86,7 @@ function buildRunChangedPlan(input) {
     return {
         items,
         skipped,
+        held: heldOut,
         total_cost: total,
         summary: items.length
             ? `${items.length} thing${items.length === 1 ? '' : 's'} to redo, about $${total.toFixed(2)}`
@@ -90,16 +95,21 @@ function buildRunChangedPlan(input) {
     };
 }
 
-/** Shots and scenes marked held, once the hold exists (PGN-016); none before. */
+/**
+ * What is held: shot ids, and `<scene id>:<step>` for a scene step whose cue
+ * is held — the cue that step would generate from, asked of music-gen's own
+ * selector (lib/graph-hold cueHeldFor), so a scene with a held score still
+ * gets its ambient bed.
+ */
 function heldIds(db, projectId) {
+    const hold = require('./graph-hold');
     const out = new Set();
-    try {
-        const cols = new Set(db.prepare('PRAGMA table_info(film_shots)').all().map(c => c.name));
-        if (cols.has('held_at')) {
-            for (const r of db.prepare(`SELECT sh.id FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
-                WHERE sc.project_id = ? AND sh.held_at IS NOT NULL`).all(projectId)) out.add(r.id);
-        }
-    } catch (_) { /* no hold yet */ }
+    for (const r of db.prepare(`SELECT sh.id FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
+        WHERE sc.project_id = ? AND sh.held_at IS NOT NULL`).all(projectId)) out.add(r.id);
+    const scenes = new Set(hold.heldCues(db, projectId).map(c => c.scene_id).filter(Boolean));
+    for (const sceneId of scenes) {
+        for (const step of ['music', 'ambient', 'sfx']) if (hold.cueHeldFor(db, sceneId, step)) out.add(`${sceneId}:${step}`);
+    }
     return out;
 }
 
@@ -277,5 +287,5 @@ function getRun(projectId, runId) {
         error: r.error_message || null, started_at: r.started_at, completed_at: r.completed_at };
 }
 
-module.exports = { buildRunChangedPlan, planRunChanged, runChanged, startRunChanged, getRun, executeItem,
+module.exports = { heldIds, buildRunChangedPlan, planRunChanged, runChanged, startRunChanged, getRun, executeItem,
     PERSON_STAGES, _setDeps, _lastRun, _recordRun: recordRun, projectExists };

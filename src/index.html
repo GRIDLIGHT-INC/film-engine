@@ -44618,8 +44618,14 @@ async function pgRunNode(key) {
  */
 async function pgRunPending() {
     pgCloseMenu();
-    const pending = (PG.graph.pending || []).filter(p => { const n = pgNode(p.key); return n && pgVisible(n); });
-    if (!pending.length) return setStatus('Nothing is pending: every shot has a frame and every sound a version.');
+    // A held node is left alone and named (PGN-017): the server leaves it out
+    // of `pending` and lists it in `pending_held`; a node held since the graph
+    // was read is caught here too.
+    const all = (PG.graph.pending || []).filter(p => { const n = pgNode(p.key); return n && pgVisible(n); });
+    const held = (PG.graph.pending_held || []).concat(all.filter(p => (pgNode(p.key) || {}).held));
+    const pending = all.filter(p => !(pgNode(p.key) || {}).held);
+    const heldNote = held.length ? ` ${held.length} held and left alone: ${held.map(h => h.label).join(', ')}.` : '';
+    if (!pending.length) return setStatus('Nothing is pending that is not held.' + heldNote);
     const frames = pending.filter(p => p.action === 'frame'), sounds = pending.filter(p => p.action === 'sound');
     const first = pgNode((frames[0] || sounds[0]).key);
     /*
@@ -44631,7 +44637,7 @@ async function pgRunPending() {
         capability: frames.length ? 'image' : 'music',
         title: `Run pending — ${pending.length} item${pending.length === 1 ? '' : 's'}`,
         previewUrl: frames.length ? `/shots/${first.id}/prompt` : `/music-cues/${first.id}/generate`,
-        note: 'Costs credits. Each item is generated on its own, in running order.',
+        note: 'Costs credits. Each item is generated on its own, in running order.' + heldNote,
         describe: d => {
             const each = frames.length && d && d.estimated_cost && d.estimated_cost.usd != null ? Number(d.estimated_cost.usd) : null;
             return `<div class="text-sm" style="line-height:1.6;">

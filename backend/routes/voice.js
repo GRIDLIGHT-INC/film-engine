@@ -566,11 +566,12 @@ async function batchVoiceStream(req, res, projectId) {
 
     const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
-    const shots = db.prepare(
+    // A held shot is left alone and named (PGN-017).
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, db.prepare(
         `SELECT s.id AS shot_id, s.shot_code, s.scene_card_yaml, s.scene_id, sc.project_id
          FROM film_shots s JOIN film_scenes sc ON s.scene_id = sc.id
          WHERE sc.project_id = ? ORDER BY sc.scene_number, s.shot_code`
-    ).all(projectId);
+    ).all(projectId));
 
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(projectId);
     const voiceProfiles = db.prepare(
@@ -581,6 +582,7 @@ async function batchVoiceStream(req, res, projectId) {
 
     let totalCompleted = 0, totalFailed = 0;
     sendEvent({ type: 'status', phase: 'starting', total_shots: shots.length, project_id: projectId });
+    if (held.length) sendEvent({ type: 'held', held });
 
     for (const shot of shots) {
         if (clientGone || res.writableEnded) break; // client disconnected — stop remaining shots
@@ -643,7 +645,7 @@ async function batchVoiceStream(req, res, projectId) {
         }
     }
 
-    sendEvent({ type: 'result', project_id: projectId, lines_completed: totalCompleted, lines_failed: totalFailed });
+    sendEvent({ type: 'result', project_id: projectId, lines_completed: totalCompleted, lines_failed: totalFailed, held });
     sendEvent({ type: 'done' });
     res.end();
 }
@@ -652,11 +654,11 @@ async function batchVoice(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
-    const shots = db.prepare(
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, db.prepare(
         `SELECT s.id AS shot_id, s.shot_code, s.scene_card_yaml, sc.project_id
          FROM film_shots s JOIN film_scenes sc ON s.scene_id = sc.id
          WHERE sc.project_id = ? ORDER BY sc.scene_number, s.shot_code`
-    ).all(projectId);
+    ).all(projectId));
 
     const withDialogue = [];
     for (const shot of shots) {
@@ -683,7 +685,7 @@ async function batchVoice(req, res, projectId) {
      */
     if (req.body && req.body.plan_only === true) {
         return json(res, 200, {
-            project_id: projectId, plan_only: true,
+            project_id: projectId, plan_only: true, held,
             shots_with_dialogue: withDialogue.length,
             shots: withDialogue.map(s => ({ shot_id: s.shot_id, shot_code: s.shot_code,
                 dialogue_lines: s.dialogue_lines })),
@@ -713,6 +715,7 @@ async function batchVoice(req, res, projectId) {
     json(res, 200, {
         project_id: projectId,
         shots_with_dialogue: withDialogue.length,
+        held,
         shots_done: done.length,
         generated,
         shots: done,

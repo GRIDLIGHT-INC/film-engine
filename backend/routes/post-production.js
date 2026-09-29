@@ -391,13 +391,15 @@ async function batchPostStream(req, res, projectId) {
 
     const sendEvent = (data) => { if (res.writableEnded) return; res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
-    const shots = db.prepare(
+    // A held shot is left alone and named (PGN-017).
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, db.prepare(
         `SELECT s.id AS shot_id, s.shot_code FROM film_shots s
          JOIN film_scenes sc ON s.scene_id = sc.id
          WHERE sc.project_id = ? ORDER BY sc.scene_number, s.shot_code`
-    ).all(projectId);
+    ).all(projectId));
 
     sendEvent({ type: 'status', phase: 'starting', total_shots: shots.length, project_id: projectId });
+    if (held.length) sendEvent({ type: 'held', held });
     let completed = 0, failed = 0;
 
     for (const shot of shots) {
@@ -437,7 +439,7 @@ async function batchPostStream(req, res, projectId) {
         }
     }
 
-    sendEvent({ type: 'result', project_id: projectId, shots_completed: completed, shots_failed: failed });
+    sendEvent({ type: 'result', project_id: projectId, shots_completed: completed, shots_failed: failed, held });
     sendEvent({ type: 'done' });
     res.end();
 }
@@ -446,11 +448,11 @@ async function batchPost(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
-    const shots = db.prepare(
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, db.prepare(
         `SELECT s.id AS shot_id, s.shot_code FROM film_shots s
          JOIN film_scenes sc ON s.scene_id = sc.id
          WHERE sc.project_id = ? ORDER BY sc.scene_number, s.shot_code`
-    ).all(projectId);
+    ).all(projectId));
 
     const eligible = [];
     for (const shot of shots) {
@@ -459,7 +461,7 @@ async function batchPost(req, res, projectId) {
         }
     }
 
-    json(res, 200, { project_id: projectId, eligible_shots: eligible.length, shots: eligible });
+    json(res, 200, { project_id: projectId, eligible_shots: eligible.length, shots: eligible, held });
 }
 
 // -- Status & Listing ----------------------------------------------------

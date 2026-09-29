@@ -555,6 +555,16 @@ async function runShotPlan(plan, { shot, scene, project, done, opts, hooks }) {
             continue;
         }
 
+        // The cue a scene step would generate from is held: left alone (PGN-017).
+        const heldCue = SCENE_SCOPED.has(step.id) && scene
+            ? require('../lib/graph-hold').cueHeldFor(db, scene.id, step.id) : null;
+        if (heldCue) {
+            const reason = `${require('../lib/graph-hold').HELD_REASON} (cue "${heldCue.title || heldCue.cue_type}")`;
+            skipped.push({ step_id: step.id, reason });
+            if (h.onSkip) h.onSkip(step, reason, i);
+            continue;
+        }
+
         const gate = sceneScopeGate(step.id, scene, done, opts);
         if (!gate.run) {
             skipped.push({ step_id: step.id, reason: gate.reason });
@@ -888,7 +898,14 @@ async function executeShots({ runId, shots, project, body, runType }) {
         activePipelines.delete(runId);
     };
 
-    for (const shot of shots) {
+    // A held shot is left alone and recorded as skipped with why (PGN-017);
+    // the film still carries it, because the conform never reads the hold.
+    const hold = require('../lib/graph-hold');
+    const split = hold.splitShots(db, shots);
+    for (const h of split.held) skippedSteps.push({ step_id: `${h.label}:*`, reason: h.reason });
+    record();
+
+    for (const shot of split.run) {
         const stop = shouldStop();
         if (stop) return halt(stop);
 

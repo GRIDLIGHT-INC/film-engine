@@ -28,7 +28,7 @@ function json(res, status, data) {
 function getGraph(res, projectId) {
     const graph = pg.buildGraph(db, projectId);
     if (!graph) return json(res, 404, { error: 'Project not found' });
-    return json(res, 200, { ...graph, pending: pg.pendingWork(graph) });
+    return json(res, 200, { ...graph, pending: pg.pendingWork(graph), pending_held: pg.pendingHeld(graph) });
 }
 
 /**
@@ -68,7 +68,7 @@ function tidy(req, res, projectId) {
 
 function getGraphAfter(res, projectId, extra) {
     const graph = pg.buildGraph(db, projectId);
-    return json(res, 200, { ...graph, pending: pg.pendingWork(graph), ...extra });
+    return json(res, 200, { ...graph, pending: pg.pendingWork(graph), pending_held: pg.pendingHeld(graph), ...extra });
 }
 
 /**

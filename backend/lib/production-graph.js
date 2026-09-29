@@ -697,17 +697,23 @@ function runningWork(db, projectId) {
     } catch (_) { return []; }
 }
 
-/** Every node that has no selected output yet — what "Run pending" would make. */
-function pendingWork(graph) {
+/** Every node with no selected output yet, held or not. */
+function pendingAll(graph) {
     const out = [];
     for (const n of graph.nodes) {
-        if (n.type === 'shot' && !n.frames.length) out.push({ key: n.key, action: 'frame', label: n.shot_code });
-        if (n.type === 'sound' && !n.selected_asset_id) out.push({ key: n.key, action: 'sound', label: n.title || n.kind });
+        if (n.type === 'shot' && !n.frames.length) out.push({ key: n.key, action: 'frame', label: n.shot_code, held: !!n.held });
+        if (n.type === 'sound' && !n.selected_asset_id) out.push({ key: n.key, action: 'sound', label: n.title || n.kind, held: !!n.held });
     }
     return out;
 }
 
+/** What "Run pending" would make: nothing held (PGN-017). */
+function pendingWork(graph) { return pendingAll(graph).filter(p => !p.held); }
+
+/** What "Run pending" leaves alone because it is held, named on the confirmation. */
+function pendingHeld(graph) { return pendingAll(graph).filter(p => p.held); }
+
 module.exports = {    NODE_SIZE, LINK_MODES, SOUND_KIND,
-    buildGraph, autoLayout, readLayout, pendingWork, runningWork, jobNodeKey, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
+    buildGraph, autoLayout, readLayout, pendingWork, pendingHeld, runningWork, jobNodeKey, IMPACT_STATES, IMPACT_WHY, IMPACT_ACTION, NODE_IMPACT, attachImpact, RUNNING_RULES, RUNNING_SILENCE_SEC,
     shotFrames, shotVideos, sequenceVideos, cueVersions,
     resolveLinkedFrame, linkState, linkFingerprintOf, checkFrameRef,};

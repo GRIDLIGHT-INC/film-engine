@@ -254,11 +254,12 @@ async function batchLipsync(req, res, projectId) {
     const project = db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
     if (!project) return json(res, 404, { error: 'Project not found' });
 
-    const shots = db.prepare(
+    // A held shot is left alone and named (PGN-017).
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, db.prepare(
         `SELECT s.id AS shot_id, s.shot_code FROM film_shots s
          JOIN film_scenes sc ON s.scene_id = sc.id
          WHERE sc.project_id = ? ORDER BY sc.scene_number, s.shot_code`
-    ).all(projectId);
+    ).all(projectId));
 
     const eligible = [];
     for (const shot of shots) {
@@ -269,7 +270,7 @@ async function batchLipsync(req, res, projectId) {
     }
 
     json(res, 200, {
-        project_id: projectId, eligible_shots: eligible.length, shots: eligible,
+        project_id: projectId, eligible_shots: eligible.length, shots: eligible, held,
         hint: 'Each eligible shot has both video and dialogue audio assets ready for lip-sync.',
     });
 }

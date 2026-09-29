@@ -1059,10 +1059,12 @@ async function generateStoryboard(req, res, projectId, query) {
         return json(res, 404, { error: 'Project not found' });
     }
 
-    const shots = loadProjectShots(projectId);
-    if (shots.length === 0) {
+    const allShots = loadProjectShots(projectId);
+    if (allShots.length === 0) {
         return json(res, 400, { error: 'No shots found for this project. Run screenplay breakdown first.' });
     }
+    // A held shot is left alone and named, never silently dropped (PGN-017).
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, allShots);
 
     // Consistency readiness gate.
     //
@@ -1307,6 +1309,7 @@ async function generateStoryboard(req, res, projectId, query) {
         shots_completed: shotsCompleted,
         shots_failed: shotsFailed,
         frames: results,
+        held,
         // Null when everything in frame is locked. Present means the batch ran
         // with unlocked subjects and those shots may not match each other.
         consistency_warning: consistencyWarning,
@@ -1328,10 +1331,12 @@ async function generateStoryboardStream(req, res, projectId, query) {
         return json(res, 404, { error: 'Project not found' });
     }
 
-    const shots = loadProjectShots(projectId);
-    if (shots.length === 0) {
+    const allShots = loadProjectShots(projectId);
+    if (allShots.length === 0) {
         return json(res, 400, { error: 'No shots found for this project. Run screenplay breakdown first.' });
     }
+    // A held shot is left alone and named, never silently dropped (PGN-017).
+    const { run: shots, held } = require('../lib/graph-hold').splitShots(db, allShots);
 
     const characters = db.prepare('SELECT * FROM film_characters WHERE project_id = ?').all(projectId);
     const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(projectId);
@@ -1363,6 +1368,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
     };
 
     sendEvent({ type: 'status', phase: 'starting', total_shots: shots.length, project_id: projectId });
+    if (held.length) sendEvent({ type: 'held', held });
 
     /*
      * A GET stream has no body, so the per-run model choice arrives in the
@@ -1607,6 +1613,7 @@ async function generateStoryboardStream(req, res, projectId, query) {
         project_id: projectId,
         shots_completed: shotsCompleted,
         shots_failed: shotsFailed,
+        held,
     });
 
     sendEvent({ type: 'done' });

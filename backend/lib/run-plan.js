@@ -94,6 +94,15 @@ function buildRunPlan(projectId, options) {
            FROM film_shots sh JOIN film_scenes sc ON sc.id = sh.scene_id
           WHERE sc.project_id = ? ORDER BY sh.shot_code`).all(projectId);
 
+    /*
+     * HELD, LISTED APART (PGN-017, decision 4). A held shot is left out of the
+     * work AND out of the projected total, and listed beside it with what it
+     * would have cost — a plan that hid it would read cheaper than the film.
+     */
+    const split = require('./graph-hold').splitShots(db, shots);
+    const heldShots = new Set(split.held.map(h => h.id));
+    const held = split.held.map(h => ({ ...h, steps: [], projected_cost: 0 }));
+
     const skipped = [];
     const wanted = [];   // { step, shotId, shotCode }
     for (const step of GENERATIVE_STEPS) {
@@ -102,6 +111,12 @@ function buildRunPlan(projectId, options) {
             if (reason) { skipped.push({ step: step.id, shot_code: shot.shot_code, reason }); continue; }
             if (alreadyFresh(step.id, shot.id)) {
                 skipped.push({ step: step.id, shot_code: shot.shot_code, reason: 'already current' });
+                continue;
+            }
+            if (heldShots.has(shot.id)) {
+                const h = held.find(x => x.id === shot.id);
+                h.steps.push(step.id);
+                h.projected_cost = Number((h.projected_cost + (COST_PER_CALL[STEP_CAPABILITY[step.id]] || 0)).toFixed(6));
                 continue;
             }
             wanted.push({ step: step.id, shotId: shot.id, shotCode: shot.shot_code });
@@ -260,6 +275,9 @@ function buildRunPlan(projectId, options) {
         film,
         total_items: wanted.length,
         projected_cost: projected,
+        // Left out of `projected_cost`, never out of the film.
+        held,
+        held_cost: Number(held.reduce((n, h) => n + h.projected_cost, 0).toFixed(6)),
         model_switches: switches,
         budget,
         /*

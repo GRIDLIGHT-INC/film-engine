@@ -1145,57 +1145,70 @@ async function batchMusicStream(req, res, projectId) {
     sendEvent({ type: 'status', phase: 'starting', total_scenes: scenes.length, project_id: projectId });
 
     let completed = 0, failed = 0;
+    // A held cue is left alone and named, per scene and per kind (PGN-017):
+    // holding the score does not stop the ambient bed, and the other way round.
+    const hold = require('../lib/graph-hold');
+    const held = [];
+    const heldEntry = (cue, scene) => ({ kind: 'sound', id: cue.id, label: cue.title || cue.cue_type,
+        scene_id: scene.id, scene_number: scene.scene_number, reason: hold.HELD_REASON });
 
     for (const scene of scenes) {
         if (clientGone || res.writableEnded) break; // client disconnected — stop remaining scenes
-        // Music score
-        sendEvent({ type: 'scene_start', scene_id: scene.id, scene_number: scene.scene_number, phase: 'music' });
-        // Through cueForScene like every other path. This read the row
-        // directly, so a scene generated from the batch got a thirty-second
-        // default where the same scene generated from the Music page got its
-        // measured length — and would have silently skipped the sections too.
-        const musicScored = cueForScene(scene, project, null);
-        const musicCue = musicScored.cue;
-        const musicBuilt = musicPayloadFor(musicScored, scene, project);
-        const musicPayload = musicBuilt.payload;
-        if (musicBuilt.errors.length) {
-            sendEvent({ type: 'scene_error', scene_id: scene.id, phase: 'music',
-                error: `sections: ${musicBuilt.errors.join('; ')}` });
-            failed++;
-            continue;
-        }
+        const heldScore = hold.cueHeldFor(db, scene.id, 'music');
+        const heldAmbient = hold.cueHeldFor(db, scene.id, 'ambient');
+        if (heldScore) { held.push(heldEntry(heldScore, scene)); sendEvent({ type: 'held', held: [heldEntry(heldScore, scene)] }); }
+        if (heldAmbient) { held.push(heldEntry(heldAmbient, scene)); sendEvent({ type: 'held', held: [heldEntry(heldAmbient, scene)] }); }
+        if (!heldScore) {
+            // Music score
+            sendEvent({ type: 'scene_start', scene_id: scene.id, scene_number: scene.scene_number, phase: 'music' });
+            // Through cueForScene like every other path. This read the row
+            // directly, so a scene generated from the batch got a thirty-second
+            // default where the same scene generated from the Music page got its
+            // measured length — and would have silently skipped the sections too.
+            const musicScored = cueForScene(scene, project, null);
+            const musicCue = musicScored.cue;
+            const musicBuilt = musicPayloadFor(musicScored, scene, project);
+            const musicPayload = musicBuilt.payload;
+            if (musicBuilt.errors.length) {
+                sendEvent({ type: 'scene_error', scene_id: scene.id, phase: 'music',
+                    error: `sections: ${musicBuilt.errors.join('; ')}` });
+                failed++;
+                continue;
+            }
 
-        try {
-            const result = await musicProvider.generate('music', musicPayload, { timeout: 300000 });
-            if (!result.ok) throw new Error(result.error);
+            try {
+                const result = await musicProvider.generate('music', musicPayload, { timeout: 300000 });
+                if (!result.ok) throw new Error(result.error);
 
-            const filename = filenameForResult(`${scene.scene_number || scene.id}_score.wav`, result);
-            ensureDir(projectId, 'music');
-            const filePath = await persistProviderMedia(projectId, 'music', filename, result.data, { serveDir: 'music' });
+                const filename = filenameForResult(`${scene.scene_number || scene.id}_score.wav`, result);
+                ensureDir(projectId, 'music');
+                const filePath = await persistProviderMedia(projectId, 'music', filename, result.data, { serveDir: 'music' });
 
-            const assetId = generateId();
-            db.prepare(
-                `INSERT INTO film_assets (
-                    id, project_id, scene_id, asset_type, file_path, file_name,
-                    format, mime_type, version,
-                    provider, provider_model, provider_job_id, license_source, license_status
-                 )
-                 VALUES (?, ?, ?, 'audio_music', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
-            ).run(
-                assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
-                musicProvider.id, resultModel(result, musicPayload), resultJobId(result)
-            );
-            linkCueAsset(musicScored.derived ? null : musicCue.id, assetId);
+                const assetId = generateId();
+                db.prepare(
+                    `INSERT INTO film_assets (
+                        id, project_id, scene_id, asset_type, file_path, file_name,
+                        format, mime_type, version,
+                        provider, provider_model, provider_job_id, license_source, license_status
+                     )
+                     VALUES (?, ?, ?, 'audio_music', ?, ?, ?, ?, 1, ?, ?, ?, 'generated', 'generated')`
+                ).run(
+                    assetId, projectId, scene.id, filePath, filename, formatForResult(result), mimeForResult(result),
+                    musicProvider.id, resultModel(result, musicPayload), resultJobId(result)
+                );
+                linkCueAsset(musicScored.derived ? null : musicCue.id, assetId);
 
-            sendEvent({ type: 'music_complete', scene_number: scene.scene_number, music_url: getFileUrl('music', projectId, filename) });
-            completed++;
-        } catch (err) {
-            sendEvent({ type: 'music_failed', scene_number: scene.scene_number, error: err.message });
-            failed++;
+                sendEvent({ type: 'music_complete', scene_number: scene.scene_number, music_url: getFileUrl('music', projectId, filename) });
+                completed++;
+            } catch (err) {
+                sendEvent({ type: 'music_failed', scene_number: scene.scene_number, error: err.message });
+                failed++;
+            }
         }
 
         // Ambient
         if (clientGone || res.writableEnded) break; // client left mid-scene — skip ambient
+        if (heldAmbient) continue;
         const location = scene.location_id ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id) : null;
         // Through the same reading as the single route: a bed generated from
         // the batch used to ignore the location's sound notes, the scene's own
@@ -1233,7 +1246,7 @@ async function batchMusicStream(req, res, projectId) {
         }
     }
 
-    sendEvent({ type: 'result', project_id: projectId, items_completed: completed, items_failed: failed });
+    sendEvent({ type: 'result', project_id: projectId, items_completed: completed, items_failed: failed, held });
     sendEvent({ type: 'done' });
     res.end();
 }
@@ -1247,6 +1260,8 @@ async function batchMusic(req, res, projectId) {
     json(res, 200, {
         project_id: projectId, total_scenes: scenes.length,
         scenes: scenes.map(s => ({ scene_id: s.id, scene_number: s.scene_number, location: s.location })),
+        // The held cues these scenes would otherwise generate, named (PGN-017).
+        held: require('../lib/graph-hold').heldCues(db, projectId),
         hint: 'Use POST /film/projects/:id/music/batch/stream for actual generation with progress',
     });
 }
