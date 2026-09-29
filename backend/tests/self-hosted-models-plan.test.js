@@ -151,6 +151,14 @@ test('every task that provisions or starts an AWS resource is gated, and nothing
     assert.match(t, /Region per worker/, 'the region decision the ca-central-1 offerings force is not recorded');
 });
 
+test('a suite that is red at baseline is named, with the rule that a task must not add to it', () => {
+    const t = text();
+    assert.match(t, /own environment/i, 'the agent suites do not say they run in their own venv');
+    assert.match(t, /not green at baseline/i, 'the red baseline is not named, so the loop would blame the next task for it');
+    assert.match(t, /must not ADD failures/, 'the no-new-failures rule is not stated');
+    for (const a of ['audio', 'voice', 'image']) assert.match(t, new RegExp(`${a} (has )?\\d+`), `the ${a} baseline count is not recorded`);
+});
+
 test('every path the note names exists in its own repository', t => {
     const extendsPaths = [];
     for (const [id, [row]] of Object.entries(rows())) {
