@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**398 tools, 82 families.** Everything the app can do, you can ask for in a
+**400 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -474,12 +474,15 @@ refuses exactly what the preflight blocks.
 `flow_validate` · `flow_estimate` · `flow_run` · `flow_run_get` ·
 `flow_run_cancel` · `flow_run_branches` · `flow_run_select` ·
 `flow_create_from_template` · `flow_templates` · `flow_node_types` ·
-`flow_apply_plan`
+`flow_apply_plan` · `flow_apply` · `flow_apply_get`
 
 Validate before running, estimate before any fan-out. **`flow_run` costs money.**
 To apply one flow to several shots, `flow_apply_plan` (free) takes the
 Production graph's node keys, binds each shot's inputs, prices every run and
 answers the budget; a sequence expands to its shots.
+`flow_apply` takes that plan's fingerprint and starts one run per shot —
+**it costs money** — and is refused if the plan moved since you read it;
+`flow_apply_get` shows its runs.
 
 ### Keeping track
 

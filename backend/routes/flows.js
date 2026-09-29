@@ -429,6 +429,29 @@ function applyPlanRoute(req, res, flowId, query) {
     return json(res, 200, plan);
 }
 
+/**
+ * FOG-002: apply this flow to the selection the plan was read for. SPENDS.
+ * Requires the plan's fingerprint; refuses a moved plan, an over-budget one
+ * (unless ignore_budget) and one with nothing to run, starting nothing. Then
+ * one run per runnable shot through the executor, tied by one apply record.
+ */
+function applyRoute(req, res, flowId) {
+    const body = req.body || {};
+    const targets = Array.isArray(body.targets) ? body.targets : String(body.targets || '').split(',');
+    const out = require('../lib/flow-apply').startApply(db, {
+        flowId, projectId: body.project_id || null, targets, vars: body.vars || {},
+        fingerprint: body.fingerprint || '', ignoreBudget: !!body.ignore_budget,
+    });
+    return json(res, out.status, out.body);
+}
+
+/** FOG-002: an apply and its runs, status derived from the runs. Free. */
+function getApplyRoute(req, res, applyId) {
+    const a = require('../lib/flow-apply').readApply(db, applyId);
+    if (!a) return json(res, 404, { error: 'Apply not found' });
+    return json(res, 200, a);
+}
+
 function cancelRun(req, res, runId) {
     const run = getFlowRun(runId);
     if (!run) return json(res, 404, { error: 'Run not found' });
@@ -474,9 +497,17 @@ function handleFlows(req, res, urlParts, query) {
         }
         if (urlParts[3] === 'estimate' && req.method === 'POST') return estimateFlow(req, res, flowId);
         if (urlParts[3] === 'apply-plan' && req.method === 'GET') return applyPlanRoute(req, res, flowId, query);
+        if (urlParts[3] === 'apply' && !urlParts[4] && req.method === 'POST') return applyRoute(req, res, flowId);
         if (!urlParts[3] && req.method === 'GET') return getFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'PUT') return updateFlow(req, res, flowId);
         if (!urlParts[3] && req.method === 'DELETE') return deleteFlow(req, res, flowId);
+        return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    // /film/flow-applies/:id — one apply of a flow to a selection (FOG-002).
+    if (urlParts[1] === 'flow-applies' && urlParts[2]) {
+        if (!UUID_RE.test(urlParts[2])) return json(res, 400, { error: 'Invalid apply ID' });
+        if (!urlParts[3] && req.method === 'GET') return getApplyRoute(req, res, urlParts[2]);
         return json(res, 405, { error: 'Method not allowed' });
     }
 

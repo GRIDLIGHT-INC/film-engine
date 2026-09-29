@@ -184,4 +184,132 @@ function planApply(db, args) {
     };
 }
 
-module.exports = { APPLY_TARGETS, APPLY_REFUSED, INPUT_BINDINGS, planApply };
+// ── Applying: one run per runnable shot (FOG-002, GRD-4583) ─────────────
+
+/**
+ * The apply's status, derived from its runs so it cannot disagree with them.
+ * A paused run is waiting for a pick; it is not finished and not failed.
+ */
+function deriveApplyStatus(states) {
+    const s = states || [];
+    if (!s.length) return 'failed';
+    if (s.some(x => x === 'pending' || x === 'running')) return 'running';
+    if (s.some(x => x === 'paused')) return 'paused';
+    if (s.every(x => x === 'complete')) return 'complete';
+    if (s.every(x => x === 'failed')) return 'failed';
+    if (s.every(x => x === 'cancelled')) return 'cancelled';
+    return 'completed_with_errors';
+}
+
+/** Applies whose runner is alive in THIS process. A pending run of any other apply was abandoned. */
+const live = new Set();
+
+let holdGate = null;
+/** Test hook: the runner waits before its first run until released. */
+function _testHold() {
+    let release;
+    holdGate = new Promise(r => { release = r; });
+    return { release() { if (release) { release(); release = null; holdGate = null; } } };
+}
+
+const refuse = (status, code, error, extra) => ({ status, body: Object.assign({ error, code }, extra || {}) });
+
+/**
+ * Start an apply. Everything that can refuse is checked BEFORE anything is
+ * written, so a refusal starts nothing: no apply record, no run row.
+ *
+ * @returns {{status:number, body:object}}
+ */
+function startApply(db, args) {
+    const targets = [...new Set((args.targets || []).map(String).map(s => s.trim()).filter(Boolean))];
+    if (!targets.length) return refuse(400, 'TARGETS_REQUIRED', 'targets is required: the graph node keys the plan was read for');
+    if (!args.fingerprint) return refuse(400, 'FINGERPRINT_REQUIRED', 'fingerprint is required: read the plan (flow_apply_plan) first and pass its fingerprint, so what runs is what you approved');
+
+    const plan = planApply(db, { flowId: args.flowId, projectId: args.projectId, targets, vars: args.vars || {} });
+    if (plan.error) return refuse(plan.status || 400, null, plan.error);
+    if (plan.fingerprint !== args.fingerprint) {
+        return refuse(409, 'PLAN_MOVED', 'The plan changed since it was read — the flow, the selection or a shot\'s card moved. Nothing was started; review the current plan and apply that.', { plan });
+    }
+    const running = db.prepare("SELECT id FROM film_flow_applies WHERE fingerprint = ? AND status = 'running' ORDER BY created_at DESC").all(plan.fingerprint)
+        .find(r => live.has(r.id));
+    if (running) return refuse(409, 'APPLY_IN_PROGRESS', 'This exact plan is already being applied. Nothing new was started.', { apply_id: running.id });
+    if (!plan.runs) return refuse(422, 'NOTHING_TO_RUN', `Nothing in the selection can run: ${plan.summary}.`, { plan });
+    if (plan.budget.wouldExceed && !args.ignoreBudget) {
+        return refuse(402, 'BUDGET_EXCEEDED',
+            `This apply projects $${plan.total_cost.toFixed(2)} across ${plan.runs} run(s); $${plan.budget.spent.toFixed(2)} of the $${plan.budget.limit.toFixed(2)} budget is already spent. Nothing was started; pass ignore_budget to go ahead deliberately.`,
+            { plan, budget: plan.budget });
+    }
+
+    const { loadGraph } = require('../routes/flows');
+    const graph = loadGraph(plan.flow_id);
+    const applyId = require('../db/database').generateId();
+    const runnable = plan.shots.filter(s => s.status === 'ok');
+    const runs = runnable.map(s => ({ run_id: require('../db/database').generateId(), shot_id: s.shot_id, shot_code: s.shot_code }));
+
+    db.transaction(() => {
+        db.prepare(`INSERT INTO film_flow_applies (id, flow_id, project_id, fingerprint, targets_json, vars_json, status, total_cost, ignore_budget)
+                    VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)`)
+            .run(applyId, plan.flow_id, plan.project_id, plan.fingerprint, JSON.stringify(targets), JSON.stringify(args.vars || {}), plan.total_cost, args.ignoreBudget ? 1 : 0);
+        const ins = db.prepare(`INSERT INTO film_flow_runs (id, flow_id, project_id, shot_id, status, params, apply_id)
+                                VALUES (?, ?, ?, ?, 'pending', ?, ?)`);
+        for (const r of runs) ins.run(r.run_id, plan.flow_id, plan.project_id, r.shot_id, JSON.stringify({ apply_id: applyId, shot_id: r.shot_id }), applyId);
+    })();
+
+    live.add(applyId);
+    // One at a time: concurrent generations against one provider is how a
+    // queue earns a 429, and the retry costs more than the wait.
+    (async () => {
+        try {
+            if (holdGate) await holdGate;
+            const { runFlow } = require('./flow-executor');
+            const { runContext } = require('../routes/flows');
+            for (const r of runs) {
+                try {
+                    const resolved = runContext({ shot_id: r.shot_id, vars: args.vars || {} });
+                    if (resolved.error) {
+                        db.prepare("UPDATE film_flow_runs SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ?").run(resolved.error, r.run_id);
+                        continue;
+                    }
+                    await runFlow({ nodes: graph.nodes, edges: graph.edges }, resolved.ctx, {
+                        runId: r.run_id, applyId, flowId: plan.flow_id,
+                        params: { apply_id: applyId, shot_id: r.shot_id, vars: args.vars || {} },
+                        ignoreBudget: !!args.ignoreBudget,
+                    });
+                } catch (err) {
+                    db.prepare("UPDATE film_flow_runs SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ?").run(String(err.message || err), r.run_id);
+                }
+            }
+        } finally {
+            const states = db.prepare('SELECT status FROM film_flow_runs WHERE apply_id = ?').all(applyId).map(x => x.status);
+            db.prepare("UPDATE film_flow_applies SET status = ?, completed_at = datetime('now') WHERE id = ?").run(deriveApplyStatus(states), applyId);
+            live.delete(applyId);
+        }
+    })();
+
+    return { status: 202, body: { apply_id: applyId, flow_id: plan.flow_id, project_id: plan.project_id, fingerprint: plan.fingerprint,
+        runs, total_cost: plan.total_cost, ignore_budget: !!args.ignoreBudget, summary: plan.summary, spends: true } };
+}
+
+/**
+ * An apply and its runs, with the status derived from the runs. A run still
+ * pending or running whose apply has no live runner here was abandoned by a
+ * process that died: it is reported interrupted, never "running" for ever.
+ */
+function readApply(db, applyId) {
+    const a = db.prepare('SELECT * FROM film_flow_applies WHERE id = ?').get(applyId);
+    if (!a) return null;
+    const alive = live.has(a.id);
+    const runs = db.prepare(`SELECT r.id AS run_id, r.shot_id, sh.shot_code, r.status, r.error_message, r.started_at, r.completed_at
+                               FROM film_flow_runs r LEFT JOIN film_shots sh ON sh.id = r.shot_id
+                              WHERE r.apply_id = ? ORDER BY r.rowid`).all(a.id)
+        .map(r => (!alive && (r.status === 'pending' || r.status === 'running')) ? { ...r, status: 'interrupted' } : r);
+    const status = runs.some(r => r.status === 'interrupted') ? 'interrupted' : deriveApplyStatus(runs.map(r => r.status));
+    return {
+        apply_id: a.id, flow_id: a.flow_id, project_id: a.project_id, fingerprint: a.fingerprint,
+        targets: parseJson(a.targets_json, []), vars: parseJson(a.vars_json, {}),
+        status, total_cost: a.total_cost, ignore_budget: !!a.ignore_budget,
+        created_at: a.created_at, completed_at: a.completed_at, runs,
+    };
+}
+
+module.exports = { APPLY_TARGETS, APPLY_REFUSED, INPUT_BINDINGS, planApply, deriveApplyStatus, startApply, readApply, _testHold };

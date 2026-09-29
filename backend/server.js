@@ -797,6 +797,9 @@ const server = http.createServer(async (req, res) => {
         if (parts[1] === 'flow-runs' && parts[2]) {
             return await handleFlows(req, res, parts, query);
         }
+        if (parts[1] === 'flow-applies' && parts[2]) {
+            return await handleFlows(req, res, parts, query);
+        }
         if (parts[1] === 'flow-templates') {
             return await handleFlows(req, res, parts, query);
         }

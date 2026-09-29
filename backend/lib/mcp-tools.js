@@ -4919,6 +4919,37 @@ const ROUTE_TOOLS = [
         probe: { flow_id: 'probe-no-such-flow', targets: ['shot:probe'] },
     },
     {
+        name: 'flow_apply',
+        route: 'applyRoute',
+        method: 'POST',
+        description: 'Apply a flow to a selection of Production-graph nodes: one run per runnable shot, through the flow executor, tied by one apply record. GENERATES MEDIA AND SPENDS MONEY. '
+            + 'Read flow_apply_plan first and pass its fingerprint with the SAME targets: a plan that moved since (flow, selection, a shot\'s card) is refused 409 PLAN_MOVED with the current plan, and nothing starts. '
+            + 'Refused 402 over the project budget unless ignore_budget (say why to the user); refused 422 when nothing in the selection can run; refused 409 APPLY_IN_PROGRESS while the same plan is already running. '
+            + 'Answers 202 at once with the apply id and its runs; read progress with flow_apply_get.',
+        path: a => `/film/flows/${a.flow_id}/apply`,
+        schema: {
+            flow_id: { type: 'string' },
+            targets: { type: 'array', items: { type: 'string' }, description: 'The same graph node keys the plan was read for.' },
+            fingerprint: { type: 'string', description: 'flow_apply_plan\'s fingerprint.' },
+            project_id: { type: 'string' },
+            vars: { type: 'object' },
+            ignore_budget: { type: 'boolean', description: 'Override the budget refusal. Say why in your message to the user.' },
+        },
+        required: ['flow_id', 'targets', 'fingerprint'],
+        bodyKeys: ['targets', 'fingerprint', 'project_id', 'vars', 'ignore_budget'],
+        probe: { flow_id: 'probe-no-such-flow', targets: ['shot:probe'], fingerprint: 'probe' },
+    },
+    {
+        name: 'flow_apply_get',
+        route: 'getApplyRoute',
+        method: 'GET',
+        description: 'FREE. One apply of a flow to a selection: its runs, one per shot, each with its status, and the apply\'s status derived from them (running, paused waiting for a pick, complete, completed_with_errors, failed, cancelled; interrupted when the process running it died).',
+        path: a => `/film/flow-applies/${a.apply_id}`,
+        schema: { apply_id: { type: 'string' } },
+        required: ['apply_id'],
+        probe: { apply_id: '00000000-0000-0000-0000-000000000000' },
+    },
+    {
         name: 'flow_run',
         route: 'runFlowRoute',
         method: 'POST',

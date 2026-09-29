@@ -347,8 +347,8 @@ function dependsOnAny(graph, nodeId, ids) {
 function recordRun(runId, graph, ctx, opts, status, error) {
     db.prepare(
         `INSERT OR REPLACE INTO film_flow_runs
-         (id, flow_id, project_id, scene_id, shot_id, graph_snapshot, graph_fingerprint, status, error_message, params, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+         (id, flow_id, project_id, scene_id, shot_id, graph_snapshot, graph_fingerprint, status, error_message, params, apply_id, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     ).run(
         runId,
         opts.flowId || '',
@@ -359,7 +359,10 @@ function recordRun(runId, graph, ctx, opts, status, error) {
         graphFingerprint(graph || {}),
         status,
         error || '',
-        JSON.stringify(opts.params || {})
+        JSON.stringify(opts.params || {}),
+        // FOG-002: a run started by an apply keeps its link; INSERT OR REPLACE
+        // over the pending row the apply wrote would otherwise drop it.
+        opts.applyId || null
     );
 }
 
