@@ -37,10 +37,10 @@ let TMP, PROJECT_ID, SHOT_ID;
 const BASE = 'https://example.test';
 
 function clip(p, { colour = 'red', secs = 12, w = 854, h = 480, fps = 24 } = {}) {
-    execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error',
+    execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', `color=c=${colour}:s=${w}x${h}:d=${secs + 1}`,
         '-frames:v', String(Math.round(secs * fps)), '-c:v', 'mpeg4', '-r', String(fps), p],
-        { stdio: 'pipe', timeout: 60000 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 }
 

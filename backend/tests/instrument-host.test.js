@@ -42,7 +42,7 @@ const KONTAKT = ['/Library/Audio/Plug-Ins/VST3/Kontakt 8.vst3', '/Library/Audio/
 /** A real WAV: a tone, or silence, whichever the case under test needs. */
 function wav(file, { seconds = 5, tone = true } = {}) {
     const source = tone ? `sine=frequency=440:duration=${seconds}` : `anullsrc=r=48000:cl=stereo:d=${seconds}`;
-    execFileSync(FF.bin, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', source, '-ac', '2', '-ar', '48000', file], { stdio: 'pipe' });
+    execFileSync(FF.bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', source, '-ac', '2', '-ar', '48000', file], { stdio: ['ignore', 'pipe', 'pipe'] });
     return fs.readFileSync(file);
 }
 

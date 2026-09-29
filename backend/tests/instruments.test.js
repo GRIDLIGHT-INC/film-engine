@@ -236,7 +236,7 @@ test('capture needs the sidecar, and says how to get one', async () => {
 
 function tone(file, seconds, silent = false) {
     const source = silent ? `anullsrc=r=48000:cl=stereo:d=${seconds}` : `sine=frequency=330:duration=${seconds}`;
-    execFileSync(FF.bin, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', source, '-ac', '2', '-ar', '48000', file], { stdio: 'pipe' });
+    execFileSync(FF.bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', source, '-ac', '2', '-ar', '48000', file], { stdio: ['ignore', 'pipe', 'pipe'] });
     return fs.readFileSync(file);
 }
 

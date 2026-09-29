@@ -143,7 +143,7 @@ function buildSheet(inputs, output, tile) {
     const ff = resolveFfmpeg();
     if (!ff || !ff.available) return { ok: false, reason: (ff && ff.reason) || 'no encoder' };
     try {
-        require('child_process').execFileSync(ff.bin, sheetArgs(inputs, output, tile), { stdio: 'ignore', timeout: 60000 });
+        require('child_process').execFileSync(ff.bin, ['-nostdin', ...sheetArgs(inputs, output, tile)], { stdio: 'ignore', timeout: 60000 });
         return { ok: true, path: output };
     } catch (err) {
         return { ok: false, reason: `the sheet could not be joined: ${err.message}` };

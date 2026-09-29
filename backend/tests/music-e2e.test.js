@@ -58,7 +58,7 @@ const SCORE = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'thirty-second.scor
 const SCREENPLAY = fs.readFileSync(path.join(FIXTURES, SCORE.screenplay), 'utf8');
 
 const bin = () => resolveFfmpeg().bin;
-const sh = args => execFileSync(bin(), ['-y', '-loglevel', 'error', ...args], { stdio: 'pipe', timeout: 180000 });
+const sh = args => execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 180000 });
 let TMP;
 test.before(() => { TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-e2e-')); });
 
@@ -74,13 +74,13 @@ function clipMp4(ms, color) {
 }
 const dataUri = (mime, buf) => `data:${mime};base64,${buf.toString('base64')}`;
 function probeSeconds(file) {
-    const r = spawnSync(bin(), ['-i', file], { encoding: 'utf8' });
+    const r = spawnSync(bin(), ['-nostdin', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
     const m = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(String(r.stderr || ''));
     return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
 }
 /** Mean level of one frequency band over a span: is that tone in the mix. */
 function bandDb(file, hz, fromS, durS) {
-    const r = spawnSync(bin(), ['-ss', String(fromS), '-t', String(durS), '-i', file, '-af', `bandpass=f=${hz}:width_type=h:w=30,volumedetect`, '-f', 'null', '-'], { encoding: 'utf8', timeout: 180000 });
+    const r = spawnSync(bin(), ['-nostdin', '-ss', String(fromS), '-t', String(durS), '-i', file, '-af', `bandpass=f=${hz}:width_type=h:w=30,volumedetect`, '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 180000 });
     const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(r.stderr || ''));
     return m ? Number(m[1]) : null;
 }

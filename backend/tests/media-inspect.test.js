@@ -34,7 +34,7 @@ const bin = () => resolveFfmpeg().bin;
 
 function make(name, args) {
     const p = path.join(TMP, name);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', ...args, p], { stdio: 'pipe', timeout: 60000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args, p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 }
 /** A clip whose parameters are known because they were asked for. */
@@ -141,9 +141,9 @@ test('cover art is not read as the clip\'s picture', () => {
     const png = make('cover.png', ['-f', 'lavfi', '-i', 'color=c=blue:s=300x300:d=1', '-frames:v', '1']);
     const aud = make('bare.m4a', ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-t', '1', '-c:a', 'aac']);
     const withCover = path.join(TMP, 'cover.m4a');
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-i', aud, '-i', png,
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-i', aud, '-i', png,
         '-map', '0:a', '-map', '1:v', '-c:a', 'copy', '-c:v', 'mjpeg',
-        '-disposition:v', 'attached_pic', withCover], { stdio: 'pipe', timeout: 60000 });
+        '-disposition:v', 'attached_pic', withCover], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
 
     const r = inspectMedia(withCover);
     assert.strictEqual(r.ok, true, r.reason);
@@ -227,8 +227,8 @@ test('a join keeps the clips\' own audio instead of replacing it with silence', 
 
     const meanVolume = (f) => {
         const r = require('child_process').spawnSync(bin(),
-            ['-hide_banner', '-i', f, '-af', 'volumedetect', '-f', 'null', '-'],
-            { encoding: 'utf8', timeout: 60000 });
+            ['-nostdin', '-hide_banner', '-i', f, '-af', 'volumedetect', '-f', 'null', '-'],
+            { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60000 });
         const m = /mean_volume:\s*(-?[\d.]+)/.exec(String(r.stderr || ''));
         return m ? Number(m[1]) : null;
     };

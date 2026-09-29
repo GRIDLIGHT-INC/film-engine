@@ -47,7 +47,7 @@ test.before(() => { TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-master-clips
 test.after(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) { /* temp */ } });
 
 function sh(args) {
-    execFileSync(bin(), ['-y', '-loglevel', 'error', ...args], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
 }
 /** A clip that makes a sound, so silence in the master means something. */
 function toneClip(name, secs, colour = 'red') {
@@ -71,8 +71,8 @@ function toneAudio(name, secs) {
 }
 /** -91 dB is digital silence; a 440Hz tone lands around -25 to -35. */
 function meanVolumeDb(file) {
-    const r = spawnSync(bin(), ['-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
-        { encoding: 'utf8', timeout: 120000 });
+    const r = spawnSync(bin(), ['-nostdin', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
+        { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 120000 });
     const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(r.stderr || '') + String(r.stdout || ''));
     return m ? Number(m[1]) : null;
 }
@@ -195,8 +195,8 @@ test('the master plays in the running order, however the rows were inserted', as
     // The first second is 1A (red), the last is 2A (green): sample a frame
     // from each end and read its dominant channel.
     const rgb = (t) => {
-        const r2 = spawnSync(bin(), ['-ss', String(t), '-i', r.output, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', '2x2', '-'],
-            { timeout: 60000, maxBuffer: 1 << 20 });
+        const r2 = spawnSync(bin(), ['-nostdin', '-ss', String(t), '-i', r.output, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', '2x2', '-'],
+            { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, maxBuffer: 1 << 20 });
         const b = r2.stdout; return [b[0], b[1], b[2]];
     };
     const first = rgb(0.4), last = rgb(5.6);

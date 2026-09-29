@@ -52,14 +52,14 @@ function movie(name, secs, opts) {
     args.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-t', String(secs));
     if (o.audio !== false) args.push('-c:a', 'aac', '-shortest');
     args.push(p);
-    execFileSync(bin(), args, { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     return p;
 }
 
 function wav(name, secs) {
     const p = path.join(TMP, name);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=440:duration=${secs}:sample_rate=48000`,
-        '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=440:duration=${secs}:sample_rate=48000`,
+        '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     return p;
 }
 

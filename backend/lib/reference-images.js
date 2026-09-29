@@ -103,7 +103,7 @@ function shrinkToFit(filePath, stat) {
 
         const tmp = `${out}.${process.pid}.tmp.jpg`;
         try {
-            execFileSync(ffmpeg.bin, [
+            execFileSync(ffmpeg.bin, ['-nostdin', 
                 '-y', '-loglevel', 'error', '-i', filePath,
                 // Only ever downscale: min() leaves a source already narrower
                 // than the target alone, and -2 keeps the aspect even.

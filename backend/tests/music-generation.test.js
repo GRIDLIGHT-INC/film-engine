@@ -56,12 +56,12 @@ const tmp = ext => path.join(os.tmpdir(), `gen_${generateId().slice(0, 8)}.${ext
 
 function toneBytes(hz, seconds) {
     const p = tmp('wav');
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=44100`, '-ac', '2', '-c:a', 'pcm_s16le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=44100`, '-ac', '2', '-c:a', 'pcm_s16le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 function clipBytes() {
     const p = tmp('mp4');
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90:rate=24:duration=1', '-pix_fmt', 'yuv420p', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90:rate=24:duration=1', '-pix_fmt', 'yuv420p', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 

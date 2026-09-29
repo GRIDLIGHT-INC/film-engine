@@ -237,7 +237,7 @@ function inspectStem(filePath, spec) {
     if (!enc.ok) return enc;
     let text = '';
     try {
-        execFileSync(enc.bin, ['-hide_banner', '-i', filePath], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
+        execFileSync(enc.bin, ['-nostdin', '-hide_banner', '-i', filePath], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     } catch (e) {
         text = String((e && e.stderr) || '');
     }
@@ -365,7 +365,7 @@ async function importStems(db, sessionId, input) {
                     const wName = `${base}_${wid.slice(0, 8)}_48k.wav`;
                     const wPath = path.join(path.dirname(filePath), wName);
                     try {
-                        execFileSync(enc.bin, ['-y', '-loglevel', 'error', '-i', filePath, '-ar', String(NORMALIZE_RATE), '-c:a', 'pcm_s24le', wPath],
+                        execFileSync(enc.bin, ['-nostdin', '-y', '-loglevel', 'error', '-i', filePath, '-ar', String(NORMALIZE_RATE), '-c:a', 'pcm_s24le', wPath],
                             { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10 * 60 * 1000 });
                     } catch (e) {
                         dropFiles(written);

@@ -198,8 +198,8 @@ function measureLevels(file, ffmpeg) {
     const ff = ffmpeg || require('./ffmpeg').resolveFfmpeg();
     let text = '';
     try {
-        const r = spawnSync(ff.bin, ['-hide_banner', '-nostats', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
-            { stdio: 'pipe', timeout: 120000 });
+        const r = spawnSync(ff.bin, ['-nostdin', '-hide_banner', '-nostats', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
+            { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
         text = `${r.stderr || ''}${r.stdout || ''}`;
     } catch (_) { text = ''; }
     const num = re => { const m = re.exec(text); return m ? Number(m[1]) : null; };
@@ -228,9 +228,9 @@ function finishRender({ rawPath, outPath, lengthMs, frameMs = 1000 / 24, sampleR
 
     // A release tail runs past the last note and a quiet end is shorter: pad, then cut.
     try {
-        execFileSync(ff.bin, ['-y', '-loglevel', 'error', '-i', rawPath, '-af', 'apad',
+        execFileSync(ff.bin, ['-nostdin', '-y', '-loglevel', 'error', '-i', rawPath, '-af', 'apad',
             '-t', (Number(lengthMs) / 1000).toFixed(3), '-ar', String(sampleRate), '-ac', '2', '-c:a', 'pcm_s24le', outPath],
-        { stdio: 'pipe', timeout: 600000 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 600000 });
     } catch (err) {
         return fail('encoder', `the render could not be trimmed to length: ${String(err.stderr || err.message).trim().slice(0, 200)}`);
     }

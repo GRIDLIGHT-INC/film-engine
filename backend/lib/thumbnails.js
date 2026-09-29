@@ -87,7 +87,7 @@ async function thumbnailFor(sourcePath, requestedWidth) {
             '-q:v', '4', tmp,
         ];
         const ok = await new Promise(resolve => {
-            execFile(bin.bin, args, { timeout: 20000 }, err => resolve(!err));
+            execFile(bin.bin, ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }, err => resolve(!err));
         });
         if (!ok) { try { fs.unlinkSync(tmp); } catch (e) { console.error('[thumbnails] could not remove a temporary file:', e.message); } return null; }
         try {
@@ -130,7 +130,7 @@ function videoKeyframeFor(sourcePath, longEdge) {
     try { fs.mkdirSync(path.dirname(out), { recursive: true }); } catch (_) { return null; }
     const tmp = `${out}.${process.pid}.tmp.jpg`;
     try {
-        require('child_process').execFileSync(bin.bin, [
+        require('child_process').execFileSync(bin.bin, ['-nostdin', 
             '-y', '-loglevel', 'error', '-i', sourcePath,
             // Long edge to `edge`, only ever down, aspect kept, even dimensions.
             '-vf', `scale='if(gte(iw,ih),min(${edge},iw),-2)':'if(gte(iw,ih),-2,min(${edge},ih))':flags=lanczos`,

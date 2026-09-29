@@ -65,9 +65,9 @@ async function waveformFor(sourcePath) {
     if (!bin) return null;
 
     const pcm = await new Promise(resolve => {
-        execFile(bin, ['-v', 'quiet', '-i', sourcePath,
+        execFile(bin, ['-nostdin', '-v', 'quiet', '-i', sourcePath,
             '-ac', '1', '-ar', '8000', '-f', 's16le', '-'],
-        { maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' },
+        { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' },
         (err, stdout) => resolve(err ? null : stdout));
     });
     if (!pcm || pcm.length < 2) return null;

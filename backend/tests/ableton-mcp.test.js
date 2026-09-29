@@ -56,7 +56,7 @@ function film() {
     const dir = path.join(DATA_DIR, 'music', projectId); fs.mkdirSync(dir, { recursive: true });
     for (const [i, name] of ['pads', 'bass'].entries()) {
         const p = path.join(dir, `m_${name}_${generateId().slice(0, 6)}.wav`);
-        execFileSync(bin, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${200 + i * 150}:duration=2:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+        execFileSync(bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${200 + i * 150}:duration=2:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
         const a = generateId();
         db.prepare("INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, duration_ms, metadata) VALUES (?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', 2000, '{}')").run(a, projectId, p, path.basename(p));
         const t = generateId();

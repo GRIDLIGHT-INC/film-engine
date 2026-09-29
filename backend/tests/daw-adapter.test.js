@@ -49,7 +49,7 @@ const { DATA_DIR } = require('../lib/file-storage');
 const bin = () => resolveFfmpeg().bin;
 function toneBytes(hz, seconds) {
     const p = path.join(os.tmpdir(), `daw_${generateId().slice(0, 8)}.wav`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 function film() {

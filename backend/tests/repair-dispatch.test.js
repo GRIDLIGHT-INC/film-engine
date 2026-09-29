@@ -158,10 +158,10 @@ test('a bridge produces its own footage and two trim points, never a spliced sho
     const { resolveFfmpeg, inspectMedia } = require('../lib/ffmpeg');
     const mk = (n, secs, colour) => {
         const p = path.join(tmp, n);
-        execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error',
+        execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error',
             '-f', 'lavfi', '-i', `color=c=${colour}:s=320x240:d=${secs + 1}`,
             '-frames:v', String(Math.round(secs * 24)), '-c:v', 'mpeg4', '-r', '24', p],
-            { stdio: 'pipe', timeout: 60000 });
+            { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
         return p;
     };
     const a = mk('a.mp4', 10, 'red');
@@ -240,10 +240,10 @@ test('a THROWN error names the stage it happened in, not the first one', async (
     const { resolveFfmpeg } = require('../lib/ffmpeg');
     const mk = (n, secs) => {
         const p2 = path.join(tmp, n);
-        execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error',
+        execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error',
             '-f', 'lavfi', '-i', `color=c=red:s=320x240:d=${secs + 1}`,
             '-frames:v', String(Math.round(secs * 24)), '-c:v', 'mpeg4', '-r', '24', p2],
-            { stdio: 'pipe', timeout: 60000 });
+            { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
         return p2;
     };
     const r = await runBridge({

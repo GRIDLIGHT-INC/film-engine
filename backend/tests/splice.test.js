@@ -41,10 +41,10 @@ function makeClip(name, colour, seconds) {
      * range was a genuine 0.08s mismatch, and the splice refused it correctly.
      * The implementation was right and the fixture was lying about its length.
      */
-    execFileSync(ff().bin, ['-y', '-loglevel', 'error',
+    execFileSync(ff().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', `color=c=${colour}:s=32x32:d=${seconds + 1}`,
         '-frames:v', String(Math.round(seconds * 24)),
-        '-c:v', 'mpeg4', '-r', '24', p], { stdio: 'pipe', timeout: 60000 });
+        '-c:v', 'mpeg4', '-r', '24', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 }
 
@@ -52,7 +52,7 @@ function makeClip(name, colour, seconds) {
 function durationOf(clip) {
     let err = '';
     try {
-        execFileSync(ff().bin, ['-i', clip], { stdio: 'pipe', timeout: 30000 });
+        execFileSync(ff().bin, ['-nostdin', '-i', clip], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
     } catch (e) { err = String((e.stderr || '')); }
     const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
     return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null;
@@ -66,9 +66,9 @@ function durationOf(clip) {
  * needed to tell a red segment from a blue one.
  */
 function colourAt(clip, seconds) {
-    const out = execFileSync(ff().bin, ['-loglevel', 'error', '-ss', String(seconds), '-i', clip,
+    const out = execFileSync(ff().bin, ['-nostdin', '-loglevel', 'error', '-ss', String(seconds), '-i', clip,
         '-frames:v', '1', '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-        { timeout: 30000, maxBuffer: 1024 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000, maxBuffer: 1024 });
     return [out[0], out[1], out[2]];
 }
 const isRed = (c) => c[0] > 120 && c[1] < 90 && c[2] < 90;
@@ -210,9 +210,9 @@ test('a replacement at a different raster than the source still splices', async 
      */
     const src = makeClip('ras-src.mp4', 'red', 6);          // 32x32 by default
     const rep = path.join(TMP, 'ras-rep.mp4');
-    execFileSync(ff().bin, ['-y', '-loglevel', 'error',
+    execFileSync(ff().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', 'color=c=blue:s=64x48:d=3',    // deliberately a different shape
-        '-frames:v', '48', '-c:v', 'mpeg4', '-r', '24', rep], { stdio: 'pipe', timeout: 60000 });
+        '-frames:v', '48', '-c:v', 'mpeg4', '-r', '24', rep], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
 
     const out = path.join(TMP, 'ras-out.mp4');
     const r = await spliceClip({ sourcePath: src, replacementPath: rep,
@@ -244,11 +244,11 @@ test('the source\'s own sound runs under the repair, unbroken', async () => {
      * the source's audio has to be carried: nothing else is going to supply it.
      */
     const src = path.join(TMP, 'snd-src.mp4');
-    execFileSync(ff().bin, ['-y', '-loglevel', 'error',
+    execFileSync(ff().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', 'color=c=red:s=32x32:d=7',
         '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6',
         '-c:v', 'mpeg4', '-r', '24', '-c:a', 'aac', '-shortest', src],
-        { stdio: 'pipe', timeout: 60000 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     const rep = makeClip('snd-rep.mp4', 'blue', 2);          // silent, like a real generation
 
     const out = path.join(TMP, 'snd-out.mp4');
@@ -258,8 +258,8 @@ test('the source\'s own sound runs under the repair, unbroken', async () => {
 
     const meanVolume = (f, at, dur) => {
         const p2 = require('child_process').spawnSync(ff().bin,
-            ['-hide_banner', '-ss', String(at), '-t', String(dur), '-i', f,
-             '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8', timeout: 60000 });
+            ['-nostdin', '-hide_banner', '-ss', String(at), '-t', String(dur), '-i', f,
+             '-af', 'volumedetect', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60000 });
         const m = /mean_volume:\s*(-?[\d.]+)/.exec(String(p2.stderr || ''));
         return m ? Number(m[1]) : null;
     };

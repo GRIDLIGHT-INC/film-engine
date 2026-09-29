@@ -171,8 +171,8 @@ function stripAudioTrack(filePath) {
         const path = require('path');
         const { execFileSync } = require('child_process');
         const tmp = path.join(path.dirname(filePath), `.silent.${path.basename(filePath)}`);
-        execFileSync(ff.bin, ['-hide_banner', '-loglevel', 'error', '-y',
-            '-i', filePath, '-map', '0:v', '-c', 'copy', '-an', tmp], { timeout: 120000 });
+        execFileSync(ff.bin, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+            '-i', filePath, '-map', '0:v', '-c', 'copy', '-an', tmp], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
         // Only replace once the new file plausibly exists: a truncated remux
         // over a good clip would destroy footage that was just paid for.
         const st = fs.statSync(tmp);

@@ -32,10 +32,10 @@ const { RESOLUTIONS } = require('../lib/providers/seedance');
 let TMP;
 const clip = (name, { w = 854, h = 480, fps = 24, secs = 12 } = {}) => {
     const p = path.join(TMP, name);
-    execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error',
+    execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', `color=c=red:s=${w}x${h}:d=${secs + 1}`,
         '-frames:v', String(Math.round(secs * fps)), '-c:v', 'mpeg4', '-r', String(fps), p],
-        { stdio: 'pipe', timeout: 60000 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 };
 

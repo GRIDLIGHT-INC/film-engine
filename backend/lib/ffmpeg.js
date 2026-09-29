@@ -101,7 +101,7 @@ function resolveFfmpegUncached() {
  */
 function runs(bin) {
     for (const timeout of [8000, 30000]) {
-        try { execFileSync(bin, ['-version'], { stdio: 'ignore', timeout }); return true; }
+        try { execFileSync(bin, ['-nostdin', '-version'], { stdio: 'ignore', timeout }); return true; }
         catch (e) { if (e && e.code === 'ENOENT') return false; }
     }
     return false;
@@ -110,7 +110,7 @@ function runs(bin) {
 /** Run the encoder and hand back what it said. Never throws. */
 function probe(bin, args, opts) {
     return new Promise(resolve => {
-        execFile(bin, args, { timeout: (opts && opts.timeoutMs) || 30 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 },
+        execFile(bin, ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: (opts && opts.timeoutMs) || 30 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 },
             (err, stdout, stderr) => resolve({
                 code: err ? (err.code === undefined ? 1 : err.code) : 0,
                 stdout: String(stdout || ''), stderr: String(stderr || (err && err.message) || ''),
@@ -188,7 +188,7 @@ function extractFrame(clipPath, opts) {
 
     const run = (args) => {
         try {
-            execFileSync(ff.bin, args, { stdio: 'pipe', timeout });
+            execFileSync(ff.bin, ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout });
         } catch (_) { /* the presence check below is the real test */ }
         try { return fs.existsSync(out) && fs.statSync(out).size > 0; } catch (_) { return false; }
     };
@@ -379,8 +379,8 @@ function inspectMedia(filePath, opts) {
     // records having made once, where the success path was never read.
     let text = '';
     try {
-        const out = execFileSync(ff.bin, ['-i', filePath],
-            { stdio: 'pipe', timeout: Number(o.timeoutMs) > 0 ? Number(o.timeoutMs) : 30000 });
+        const out = execFileSync(ff.bin, ['-nostdin', '-i', filePath],
+            { stdio: ['ignore', 'pipe', 'pipe'], timeout: Number(o.timeoutMs) > 0 ? Number(o.timeoutMs) : 30000 });
         text = String(out || '');
     } catch (err) {
         text = `${(err && err.stderr) || ''}${(err && err.stdout) || ''}`;

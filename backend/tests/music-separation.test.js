@@ -58,7 +58,7 @@ const bin = () => resolveFfmpeg().bin;
 /** A stereo tone as WAV bytes at 44.1 kHz. */
 function toneBytes(hz, seconds) {
     const p = path.join(os.tmpdir(), `sep_tone_${hz}_${generateId().slice(0, 6)}.wav`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=44100`, '-ac', '2', '-c:a', 'pcm_s16le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=44100`, '-ac', '2', '-c:a', 'pcm_s16le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 

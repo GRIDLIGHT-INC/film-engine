@@ -98,7 +98,7 @@ async function featuresFor(file) {
     const features = await new Promise((resolve) => {
         // `-i` with no output makes ffmpeg describe the input and exit non-zero,
         // which is the documented way to probe without a separate ffprobe.
-        execFile(bin, ['-hide_banner', '-i', file], { timeout: 15000 },
+        execFile(bin, ['-nostdin', '-hide_banner', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 },
             (err, stdout, stderr) => {
                 const text = String(stderr || '') + String(stdout || '');
                 try { resolve(parseProbe(text)); } catch (_) { resolve({}); }

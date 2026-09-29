@@ -75,7 +75,7 @@ function ff() { return require('../lib/ffmpeg').resolveFfmpeg(); }
 
 function makeClip(name, args) {
     const p = path.join(TMP, name);
-    execFileSync(ff().bin, ['-y', '-loglevel', 'error', ...args, p], { stdio: 'pipe', timeout: 60000 });
+    execFileSync(ff().bin, ['-nostdin', '-y', '-loglevel', 'error', ...args, p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 }
 

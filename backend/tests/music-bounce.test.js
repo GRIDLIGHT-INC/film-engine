@@ -55,8 +55,8 @@ function tone(projectId, hz, seconds, opts) {
     fs.mkdirSync(dir, { recursive: true });
     const name = `tone_${hz}_${generateId().slice(0, 6)}.wav`;
     const p = path.join(dir, name);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=${o.rate || 48000}`,
-        '-ac', '2', '-af', 'volume=0.5', '-c:a', 'pcm_s16le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=${o.rate || 48000}`,
+        '-ac', '2', '-af', 'volume=0.5', '-c:a', 'pcm_s16le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const id = generateId();
     db.prepare(`INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, duration_ms, metadata)
                 VALUES (?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', ?, '{}')`).run(id, projectId, p, name, Math.round(seconds * 1000));
@@ -66,12 +66,12 @@ function tone(projectId, hz, seconds, opts) {
 /** Mean level of one region, in dB, from the rendered file itself. */
 function levelDb(file, fromMs, toMs, channel) {
     const af = [`atrim=start=${fromMs / 1000}:end=${toMs / 1000}`, channel === 'left' ? 'pan=mono|c0=c0' : channel === 'right' ? 'pan=mono|c0=c1' : null, 'volumedetect'].filter(Boolean).join(',');
-    const r = spawnSync(bin(), ['-hide_banner', '-i', file, '-af', af, '-f', 'null', '-'], { encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync(bin(), ['-nostdin', '-hide_banner', '-i', file, '-af', af, '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60000 });
     const m = /mean_volume:\s*(-?[\d.]+|-inf)\s*dB/.exec(r.stderr || '');
     if (!m) throw new Error(`no level for ${file}: ${(r.stderr || '').slice(-300)}`);
     return m[1] === '-inf' ? -120 : Number(m[1]);
 }
-const probe = file => parseProbe(String(spawnSync(bin(), ['-hide_banner', '-i', file], { encoding: 'utf8' }).stderr || ''));
+const probe = file => parseProbe(String(spawnSync(bin(), ['-nostdin', '-hide_banner', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' }).stderr || ''));
 // ffmpeg's sine source is quiet (about -24 dB before the fixture's volume=0.5),
 // so a heard tone measures around -30 dB and silence around -91: HEARD sits
 // between them, and every level assertion is relative to what the fixture

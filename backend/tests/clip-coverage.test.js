@@ -377,10 +377,10 @@ test('a real media file reports its real length', () => {
          * real duration and costs almost nothing, so the thing under test is
          * the measurement rather than the machine's spare capacity.
          */
-        const built = require('child_process').spawnSync(found.bin, [
+        const built = require('child_process').spawnSync(found.bin, ['-nostdin', 
             '-f', 'lavfi', '-i', `color=c=black:size=16x16:rate=5:duration=${seconds}`,
             '-c:v', 'mpeg4', '-y', file,
-        ], { timeout: 120000, encoding: 'utf8' });
+        ], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000, encoding: 'utf8' });
         assert.strictEqual(built.status, 0,
             `could not build a ${seconds}s file: ${String(built.stderr || built.error).slice(-300)}`);
         assert.ok(fs.existsSync(file) && fs.statSync(file).size > 0,

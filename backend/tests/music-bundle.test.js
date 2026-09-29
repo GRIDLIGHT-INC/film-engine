@@ -40,7 +40,7 @@ const { DATA_DIR } = require('../lib/file-storage');
 const { PATH_COLUMNS, resolveStored } = require('../lib/data-paths');
 
 const bin = () => resolveFfmpeg().bin;
-const sh = args => execFileSync(bin(), ['-y', '-loglevel', 'error', ...args], { stdio: 'pipe', timeout: 120000 });
+const sh = args => execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
 const sha = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -55,7 +55,7 @@ function scoreTables() {
 }
 const fkOf = table => db.prepare(`PRAGMA foreign_key_list(${table})`).all();
 function meanDb(file, fromS, durS) {
-    const r = spawnSync(bin(), ['-ss', String(fromS), '-t', String(durS), '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8', timeout: 120000 });
+    const r = spawnSync(bin(), ['-nostdin', '-ss', String(fromS), '-t', String(durS), '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 120000 });
     const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(r.stderr || ''));
     return m ? Number(m[1]) : null;
 }

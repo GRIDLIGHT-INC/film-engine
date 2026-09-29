@@ -37,8 +37,8 @@ function makePng(name, w, h) {
     // NOISE, not testsrc: a flat test pattern compresses to a few kilobytes —
     // smaller than its own JPEG thumbnail on a current ffmpeg — so it could
     // not carry the weight comparison below. Grain behaves like a photograph.
-    execFileSync(bin.bin, ['-y', '-loglevel', 'error', '-f', 'lavfi',
-        '-i', `testsrc=size=${w}x${h}:rate=1`, '-vf', 'noise=alls=60:allf=t', '-frames:v', '1', out]);
+    execFileSync(bin.bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi',
+        '-i', `testsrc=size=${w}x${h}:rate=1`, '-vf', 'noise=alls=60:allf=t', '-frames:v', '1', out], { stdio: ['ignore', 'pipe', 'pipe'] });
     return out;
 }
 
@@ -95,7 +95,7 @@ test('a large frame comes back at the width asked for, and still decodes', async
 
     // Decodable, not merely present.
     const bin = resolveFfmpeg();
-    execFileSync(bin.bin, ['-v', 'error', '-i', thumb, '-frames:v', '1', '-f', 'null', '-']);
+    execFileSync(bin.bin, ['-nostdin', '-v', 'error', '-i', thumb, '-frames:v', '1', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
 });
 
 test('a regenerated frame does not serve the old thumbnail', async (t) => {
@@ -131,7 +131,7 @@ test('a source smaller than the target is never blown up', async (t) => {
     // Either it declines, or it produces something no wider than the source.
     if (thumb) {
         const bin = resolveFfmpeg();
-        execFileSync(bin.bin, ['-v', 'error', '-i', thumb, '-frames:v', '1', '-f', 'null', '-']);
+        execFileSync(bin.bin, ['-nostdin', '-v', 'error', '-i', thumb, '-frames:v', '1', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
     }
     assert.ok(true);
 });

@@ -31,10 +31,10 @@ const { MIN_DURATION, MAX_DURATION, RESOLUTIONS } = require('../lib/providers/se
 let TMP;
 const clip = (name, secs, colour) => {
     const p = path.join(TMP, name);
-    execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error',
+    execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', `color=c=${colour || 'red'}:s=854x480:d=${secs + 1}`,
         '-frames:v', String(Math.round(secs * 24)), '-c:v', 'mpeg4', '-r', '24', p],
-        { stdio: 'pipe', timeout: 60000 });
+        { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
     return p;
 };
 

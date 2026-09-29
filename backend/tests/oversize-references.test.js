@@ -46,7 +46,7 @@ function makeOversizePng(dir, variant = 0) {
     const file = path.join(dir, 'location_BIG.png');
     const f = resolveFfmpeg();
     execFileSync(f.bin, [
-        '-y', '-loglevel', 'error',
+        '-nostdin', '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', 'nullsrc=s=3168x1344',
         // The expression, not a seed: ffmpeg's random() takes a plane index, so
         // "different seeds" produce byte-identical frames. Changing the maths
@@ -112,7 +112,7 @@ test('a picture already under the ceiling is inlined untouched, not re-encoded',
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refimg-'));
         const file = path.join(dir, 'THE_MAN_front.png');
         const f = resolveFfmpeg();
-        execFileSync(f.bin, ['-y', '-loglevel', 'error', '-f', 'lavfi',
+        execFileSync(f.bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi',
             '-i', 'color=c=gray:s=256x256', '-frames:v', '1', file],
         { timeout: 30000, stdio: 'ignore' });
         assert.ok(fs.statSync(file).size < ri.MAX_INLINE_BYTES);

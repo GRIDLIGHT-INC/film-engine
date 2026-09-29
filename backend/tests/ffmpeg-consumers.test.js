@@ -89,7 +89,7 @@ test('the encoder actually spawns from what the resolver hands back', (t) => {
     // Skipped visibly instead, so the suite total cannot hide a check that
     // never executed.
     if (!r.available) return t.skip('no encoder on this install, so nothing here was verified');
-    const out = require('child_process').execFileSync(r.bin, ['-hide_banner', '-version'],
-        { encoding: 'utf8', timeout: 15000 });
+    const out = require('child_process').execFileSync(r.bin, ['-nostdin', '-hide_banner', '-version'],
+        { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 15000 });
     assert.match(out, /ffmpeg version/i, 'the resolver pointed at something that is not ffmpeg');
 });

@@ -69,7 +69,7 @@ const idOf = x => (x && (x.session || x.project || x.track || x.clip || x.row) |
 function toneAsset(projectId, hz) {
     const dir = path.join(DATA_DIR, 'music', projectId); fs.mkdirSync(dir, { recursive: true });
     const p = path.join(dir, `r_${hz}_${generateId().slice(0, 6)}.wav`);
-    execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=2:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=2:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const id = generateId();
     db.prepare("INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, duration_ms, metadata) VALUES (?, ?, 'audio_music', ?, ?, 'wav', 'audio/wav', 2000, '{}')")
         .run(id, projectId, p, path.basename(p));

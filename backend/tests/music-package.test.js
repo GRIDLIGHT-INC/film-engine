@@ -49,7 +49,7 @@ const bin = () => resolveFfmpeg().bin;
 const sha = b => crypto.createHash('sha256').update(b).digest('hex');
 function toneBytes(hz, seconds, rate) {
     const p = path.join(os.tmpdir(), `pkg_${generateId().slice(0, 8)}.wav`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=${rate || 48000}`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${seconds}:sample_rate=${rate || 48000}`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 
@@ -79,7 +79,7 @@ function film(opts) {
     db.prepare("INSERT INTO film_music_emotion_ranges (id, session_id, start_ms, end_ms, label, valence, arousal, intensity, source, status) VALUES (?, ?, 0, 3500, 'unease', -0.3, 0.5, 0.5, 'director', 'accepted')").run(generateId(), sessionId);
     if (o.picture) {
         const p = path.join(dir, `master_${generateId().slice(0, 6)}.mp4`);
-        execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90:rate=24:duration=1', '-pix_fmt', 'yuv420p', p], { stdio: 'pipe', timeout: 120000 });
+        execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90:rate=24:duration=1', '-pix_fmt', 'yuv420p', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
         db.prepare("INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name, format, mime_type, duration_ms, metadata, version) VALUES (?, ?, 'video_final', ?, ?, 'mp4', 'video/mp4', 1000, ?, 1)")
             .run(generateId(), projectId, p, path.basename(p), JSON.stringify({ kind: 'project_master' }));
     }

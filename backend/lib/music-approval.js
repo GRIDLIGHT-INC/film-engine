@@ -267,7 +267,7 @@ function mixScoreIntoFilm(filmPath, placements, opts) {
     const tmp = `${filmPath}.score-${crypto.randomUUID().slice(0, 8)}.mp4`;
     const seen = require('./ffmpeg').inspectMedia(filmPath);
     const silentBaseSeconds = seen.ok && !seen.hasAudio ? Math.max(0.1, seen.durationSeconds) : null;
-    const r = require('child_process').spawnSync(found.bin, scoreMixArgs(filmPath, placements, tmp, { silentBaseSeconds }), { encoding: 'utf8', timeout: o.timeoutMs || 600000 });
+    const r = require('child_process').spawnSync(found.bin, ['-nostdin', ...scoreMixArgs(filmPath, placements, tmp, { silentBaseSeconds })], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: o.timeoutMs || 600000 });
     if (r.status !== 0 || !fs.existsSync(tmp)) {
         try { fs.unlinkSync(tmp); } catch (_) { /* nothing written */ }
         return { ok: false, error: `mixing the film's sound into the master failed: ${String(r.stderr || r.error || '').trim().split('\n').slice(-2).join(' ')}` };

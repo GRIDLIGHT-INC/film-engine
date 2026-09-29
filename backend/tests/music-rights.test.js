@@ -43,7 +43,7 @@ const mcp = require('../lib/mcp-tools');
 const bin = () => resolveFfmpeg().bin;
 function tone(hz, secs) {
     const p = path.join(os.tmpdir(), `rt_${crypto.randomUUID().slice(0, 8)}.wav`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${secs}:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=${hz}:duration=${secs}:sample_rate=48000`, '-ac', '2', '-c:a', 'pcm_s24le', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     const b = fs.readFileSync(p); fs.unlinkSync(p); return b;
 }
 
@@ -215,7 +215,7 @@ test('approval and final export act on the policy: block refuses with the items,
     db.prepare("INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms) VALUES (?, ?, '1A', '{}', 2000)").run(shotId, shotScene);
     const clipDir = path.join(process.env.FILM_DATA_DIR, 'video', s.projectId); fs.mkdirSync(clipDir, { recursive: true });
     const clip = path.join(clipDir, '1A.mp4');
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x120:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', clip], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x120:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', clip], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     db.prepare("INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, duration_ms) VALUES (?, ?, ?, 'video_raw', ?, '1A.mp4', 'mp4', 2000)").run(generateId(), s.projectId, shotId, clip);
     const out = await conform.runConform(s.projectId, { filename: 'rights_master' });
     assert.strictEqual(out.ok, false); assert.strictEqual(out.state, 'rights_blocked'); assert.match(out.error, /blocked/);

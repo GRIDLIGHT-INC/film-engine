@@ -571,6 +571,7 @@ film-engine/
 │       ├── plate-views.test.js         # A turnaround is three pictures, and the app used the wrong one
 │       ├── plate-medium.test.js        # A character plate takes the film's medium, not a hardcoded photograph
 │       ├── ffmpeg-consumers.test.js    # Everything that spawns the encoder reads the field it returns
+│       ├── ffmpeg-stdin.test.js        # No ffmpeg process may read stdin: -nostdin and a closed stdin at every spawn, derived from the source
 │       ├── character-orbit.test.js     # Frames of one motion cannot disagree with each other
 │       ├── character-orbit-surfaces.test.js # ...and it is reachable everywhere a plate is
 │       ├── character-sheet-guide.test.js # Five views, and an orbit is a bootstrap not an anchor
@@ -3043,6 +3044,11 @@ Two corrections came out of review, both about honesty rather than mechanism. Th
 Runway's image-to-video request has no `camera_control` field. The approved Previs path remains the canonical reproducibility record, but the provider receives a concise motion prompt: subject action, environmental motion, and camera choreography derived from the path. The free video preview is built from the adapter's actual request builder and shows the sanitized outbound body, final model/ratio/duration, whether first/last images travel, and the exact credit estimate. Image bytes and credentials are never displayed.
 
 `RUNWAY_VIDEO_MODELS` is the dated provider contract: every currently documented image-to-video id declares its operation, duration, ratios, credit rate, status and source. Unknown or removed ids fall back visibly to Gen-4.5 instead of becoming a provider 400. The ordinary safe path remains one approved board per independently edited shot. A continuous sequence uses adjacent first/last pairs with durations derived from the source shots and can buy one unfinished leg at a time. The separate `generate-native` route invokes Runway's `2026-06` multi-shot recipe for 3–5 real editorial cuts; it is clearly labelled less deterministic than per-shot rendering.
+
+### No Encoder Reads Stdin
+repair-audio passed alone and timed out at 120 seconds in the full suite, depending on which files ran beside it (GRD-4580). ffmpeg reads its standard input for interactive commands (`q`, `?`, `+`) unless told not to, and of the 84 places that spawn it (21 in `lib/`, 63 in `tests/`), only one, in `lib/music-renderer.js`, passed `-nostdin`. Every spawn of the encoder now does both. `-nostdin` comes first in the arguments and stdin is `ignore`. These are two guarantees: the first is ffmpeg's promise not to read, the second is ours that there is nothing to read. The one exception is by rule: a site that feeds ffmpeg its input through stdin (`input:` beside `-i pipe:0`, the board conform) keeps the pipe, and Node closes it once the buffer is written.
+
+`tests/ffmpeg-stdin.test.js` derives the set from the source: every `spawnSync` / `execFileSync` / `execFile` / `spawn` in a file that mentions ffmpeg. Calls that run something else (FluidSynth, the Python sidecar, tar, zip) are exempted by site with a reason, and an exemption that names no call fails. Its scanner skips comments: an apostrophe in `// ffmpeg's random()` inside an argument list once hid a site from it.
 
 ### An Encoder Probe Is a Subprocess
 `resolveFfmpeg()` probed on **every call**, and each probe is a spawn: `FFMPEG_PATH`, then five `PATH` candidates that mostly do not exist, then the bundled binary — up to six subprocesses to answer a question whose answer cannot change while the process runs. Under load one of those probes fails, the resolver reports **no encoder**, and the caller silently falls back.
@@ -6428,6 +6434,7 @@ node --test backend/tests/credentials-global.test.js
 node --test backend/tests/plate-views.test.js
 node --test backend/tests/plate-medium.test.js
 node --test backend/tests/ffmpeg-consumers.test.js
+node --test backend/tests/ffmpeg-stdin.test.js
 node --test backend/tests/character-orbit.test.js
 node --test backend/tests/character-orbit-surfaces.test.js
 node --test backend/tests/character-sheet-guide.test.js

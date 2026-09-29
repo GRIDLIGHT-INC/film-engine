@@ -15,13 +15,13 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'review-proxy-'));
  *  whether the file that comes out is playable or the right size. */
 function makeClip(name, seconds, size) {
     const out = path.join(TMP, name);
-    execFileSync(FF.bin, [
+    execFileSync(FF.bin, ['-nostdin', 
         '-y', '-loglevel', 'error',
         '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=24:duration=${seconds}`,
         '-f', 'lavfi', '-i', `sine=frequency=440:duration=${seconds}`,
         '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-shortest', out,
-    ], { stdio: 'pipe' });
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
     return out;
 }
 

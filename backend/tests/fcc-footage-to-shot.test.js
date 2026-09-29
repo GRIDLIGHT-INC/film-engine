@@ -89,10 +89,10 @@ function realClip(file, seconds = 2) {
     const { resolveFfmpeg } = require('../lib/ffmpeg');
     const found = resolveFfmpeg();
     assert.ok(found.available, `no encoder: ${found.reason}`);
-    const built = require('child_process').spawnSync(found.bin, [
+    const built = require('child_process').spawnSync(found.bin, ['-nostdin', 
         '-f', 'lavfi', '-i', `color=c=black:size=16x16:rate=5:duration=${seconds}`,
         '-c:v', 'mpeg4', '-y', file,
-    ], { timeout: 120000, encoding: 'utf8' });
+    ], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000, encoding: 'utf8' });
     /*
      * The ENCODER's status, never `existsSync`. ffmpeg creates the output
      * before it writes the header, so under the parallel load of the full suite

@@ -93,7 +93,7 @@ function conformBoardBuffer(buffer, want) {
         const ff = resolveFfmpeg();
         if (!ff || !ff.available) return { buffer, conformed: false, got, reason: 'ffmpeg is not available here' };
         const { execFileSync } = require('child_process');
-        const out = execFileSync(ff.bin, ['-hide_banner', '-loglevel', 'error', '-y',
+        const out = execFileSync(ff.bin, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
             '-i', 'pipe:0', '-vf', vf, '-frames:v', '1',
             '-f', 'image2', '-vcodec', 'png', 'pipe:1'],
         { input: buffer, timeout: 120000, maxBuffer: 512 * 1024 * 1024 });

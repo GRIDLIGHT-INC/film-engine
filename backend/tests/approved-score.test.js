@@ -39,7 +39,7 @@ const { DATA_DIR } = require('../lib/file-storage');
 const mcp = require('../lib/mcp-tools');
 
 const bin = () => resolveFfmpeg().bin;
-const sh = args => execFileSync(bin(), ['-y', '-loglevel', 'error', ...args], { stdio: 'pipe', timeout: 120000 });
+const sh = args => execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
 let TMP;
 test.before(() => { TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-score-')); });
 
@@ -55,7 +55,7 @@ function tone(dir, name, hz, secs) {
     return p;
 }
 function meanDb(file, fromS, durS) {
-    const r = spawnSync(bin(), ['-ss', String(fromS), '-t', String(durS), '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8', timeout: 120000 });
+    const r = spawnSync(bin(), ['-nostdin', '-ss', String(fromS), '-t', String(durS), '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 120000 });
     const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(r.stderr || ''));
     return m ? Number(m[1]) : null;
 }

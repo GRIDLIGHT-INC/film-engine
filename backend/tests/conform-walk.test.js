@@ -48,8 +48,8 @@ test.after(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } cat
 
 function clip(name) {
     const p = path.join(TMP, name);
-    execFileSync(resolveFfmpeg().bin, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x120:d=1',
-        '-c:v', 'libx264', '-r', '24', '-t', '1', '-pix_fmt', 'yuv420p', p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(resolveFfmpeg().bin, ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x120:d=1',
+        '-c:v', 'libx264', '-r', '24', '-t', '1', '-pix_fmt', 'yuv420p', p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     return p;
 }
 

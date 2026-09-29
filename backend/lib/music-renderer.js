@@ -299,7 +299,7 @@ function buildBounceArgs(plan, dir, baseName) {
 
 function runEncoder(bin, args) {
     return new Promise(resolve => {
-        execFile(bin, args, { timeout: 30 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => resolve({
+        execFile(bin, ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 30 * 60 * 1000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => resolve({
             code: err ? (err.code === undefined ? 1 : err.code) : 0,
             stderr: String(stderr || (err && err.message) || ''),
         }));
@@ -308,7 +308,7 @@ function runEncoder(bin, args) {
 
 function probeFile(bin, file) {
     const { spawnSync } = require('child_process');
-    const r = spawnSync(bin, ['-hide_banner', '-i', file], { encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync(bin, ['-nostdin', '-hide_banner', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60000 });
     return parseProbe(String(r.stderr || ''));
 }
 

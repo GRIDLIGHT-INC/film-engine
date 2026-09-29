@@ -48,7 +48,7 @@ test.before(() => { TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-rep-audio-')
 test.after(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) { /* temp */ } });
 
 function sh(args) {
-    execFileSync(bin(), ['-y', '-loglevel', 'error', ...args], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
 }
 
 /** A clip that genuinely makes a sound, so silence in the output means something. */
@@ -81,8 +81,8 @@ function meanVolumeDb(file, window) {
      * same failure this whole guard exists to catch, one level out.
      */
     const seek = window ? ['-ss', String(window[0]), '-to', String(window[1])] : [];
-    const r = spawnSync(bin(), [...seek, '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
-        { encoding: 'utf8', timeout: 120000 });
+    const r = spawnSync(bin(), ['-nostdin', ...seek, '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
+        { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 120000 });
     const text = String(r.stderr || '') + String(r.stdout || '');
     const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(text);
     return m ? Number(m[1]) : null;

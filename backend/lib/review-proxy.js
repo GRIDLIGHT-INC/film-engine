@@ -149,7 +149,7 @@ function proxyFor(videoPath, opts) {
 
     ensureDir(out);
     try {
-        execFileSync(ff.bin, [
+        execFileSync(ff.bin, ['-nostdin', 
             '-y', '-loglevel', 'error',
             '-i', videoPath,
             '-t', String(seconds),
@@ -160,7 +160,7 @@ function proxyFor(videoPath, opts) {
             '-c:a', 'aac', '-b:a', `${audioKbps}k`,
             '-movflags', '+faststart',
             out,
-        ], { stdio: 'pipe' });
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (err) {
         return unavailable('the encoder could not produce a proxy from this file');
     }
@@ -180,7 +180,7 @@ function proxyFor(videoPath, opts) {
 /** How long the source runs, so the bitrate can be aimed. Null if unreadable. */
 function durationOf(file, ff) {
     try {
-        const out = execFileSync(ff.bin, ['-i', file], { stdio: ['pipe', 'pipe', 'pipe'] });
+        const out = execFileSync(ff.bin, ['-nostdin', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'] });
         return parseDuration(String(out));
     } catch (err) {
         // ffmpeg with no output file exits non-zero and prints the metadata to

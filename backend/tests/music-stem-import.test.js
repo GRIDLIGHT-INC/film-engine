@@ -48,13 +48,13 @@ function fixture(formatId) {
     const enc = { wav: ['-c:a', 'pcm_s16le'], aiff: ['-c:a', 'pcm_s16be'], flac: ['-c:a', 'flac'], mp3: ['-c:a', 'libmp3lame', '-b:a', '128k'], m4a: ['-c:a', 'aac'] }[formatId];
     assert.ok(enc, `this suite cannot build a ${formatId} fixture`);
     const p = path.join(TMP, `${formatId}_${generateId().slice(0, 6)}.${formatId}`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1:sample_rate=44100',
-        '-af', 'adelay=250|250', '-ac', '2', '-ar', '44100', ...enc, p], { stdio: 'pipe', timeout: 120000 });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1:sample_rate=44100',
+        '-af', 'adelay=250|250', '-ac', '2', '-ar', '44100', ...enc, p], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 });
     return fs.readFileSync(p);
 }
 const sha = b => crypto.createHash('sha256').update(b).digest('hex');
 const probe = file => {
-    const r = require('child_process').spawnSync(bin(), ['-hide_banner', '-i', file], { encoding: 'utf8' });
+    const r = require('child_process').spawnSync(bin(), ['-nostdin', '-hide_banner', '-i', file], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
     return parseProbe(String(r.stderr || ''));
 };
 
@@ -181,7 +181,7 @@ test('a 48 kHz working derivative is optional, recorded, and the original stays;
 
     // Already 48 kHz and lossless: nothing to normalise, and it says so.
     const p48 = path.join(TMP, `at48_${generateId().slice(0, 6)}.wav`);
-    execFileSync(bin(), ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1:sample_rate=48000', '-ac', '2', '-c:a', 'pcm_s24le', p48], { stdio: 'pipe' });
+    execFileSync(bin(), ['-nostdin', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1:sample_rate=48000', '-ac', '2', '-c:a', 'pcm_s24le', p48], { stdio: ['ignore', 'pipe', 'pipe'] });
     const same = await stems.importStems(db, s.sessionId, { files: [{ name: 'at48.wav', bytes: fs.readFileSync(p48) }], normalize_48k: true });
     assert.strictEqual(same.ok, true);
     assert.strictEqual(same.imported[0].working_asset_id, null, 'a 48 kHz lossless file was resampled to itself');
