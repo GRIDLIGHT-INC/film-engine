@@ -1,7 +1,7 @@
 /**
  * FEM-001 (GRD-4565) — the self-hosted model catalog, as Film Engine reads it.
  *
- * The catalog is AUTHORED ONCE, in gridlight (gateway/assets/model-catalog.json,
+ * The catalog is AUTHORED ONCE, in gridlight (gateway/src/model-catalog.json,
  * served at GET /media/catalog). Film Engine vendors it as
  * lib/model-catalog.snapshot.json and never re-declares a licence or a region:
  * a second copy typed here would drift from the one the gateway dispatches on.
@@ -40,7 +40,7 @@ const catalog = require('../lib/model-catalog');
 const providers = require('../lib/providers');
 const { CAPABILITIES } = require('../lib/providers/base');
 
-const GL_CATALOG = '/Users/mannyhenri/code/gl-dev-media/gateway/assets/model-catalog.json';
+const GL_CATALOG = '/Users/mannyhenri/code/gl-dev-media/gateway/src/model-catalog.json';
 
 // ── A catalog in the agreed shape. Six models, as GRD-4565 names them. ──────
 const MUSIC_WORKFLOWS = ['compose', 'parts', 'separate', 'reference', 'picture', 'inpaint'];

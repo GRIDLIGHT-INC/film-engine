@@ -2,7 +2,7 @@
  * FEM-001 (GRD-4565) — the self-hosted model catalog, as Film Engine reads it.
  *
  * AUTHORED ONCE, IN GRIDLIGHT. The catalog lives at
- * gl-dev-media/gateway/assets/model-catalog.json and is served by the gateway
+ * gl-dev-media/gateway/src/model-catalog.json and is served by the gateway
  * at GET /media/catalog; the gateway's dispatch gate reads the same file before
  * a job is queued. Film Engine vendors it as model-catalog.snapshot.json beside
  * this module and never re-declares a licence or a region: a second copy typed

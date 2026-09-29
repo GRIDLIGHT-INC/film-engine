@@ -1,6 +1,6 @@
 -- FEM-001 (GRD-4565): the self-hosted model catalog, as Film Engine last read it,
 -- and every change to it. The catalog is authored in gridlight
--- (gateway/assets/model-catalog.json); these tables record what this install
+-- (gateway/src/model-catalog.json); these tables record what this install
 -- saw, when, and what moved, so a licence or region change is never silent.
 CREATE TABLE IF NOT EXISTS film_model_catalogs (
     catalog_version INTEGER PRIMARY KEY,
