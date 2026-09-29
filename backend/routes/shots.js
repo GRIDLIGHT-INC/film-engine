@@ -120,12 +120,8 @@ const SHOT_STATUSES = Object.freeze(['pending', 'generating', 'complete', 'faile
  * played at the timeline's four-second default, and a score for a scene with no
  * footage yet had nothing to measure but its dialogue.
  */
-function cardDurationMs(card) {
-    const c = card || {};
-    if (Number(c.duration_ms) > 0) return Math.round(Number(c.duration_ms));
-    if (Number(c.duration_seconds) > 0) return Math.round(Number(c.duration_seconds) * 1000);
-    return 0;
-}
+// A card's own length — the shared rule, so an insert and an edit agree.
+const { cardDurationMs } = require('../lib/shot-insert-code');
 
 function updateShotCard(req, res, shotId) {
     const shot = db.prepare('SELECT id, scene_card_yaml FROM film_shots WHERE id = ?').get(shotId);
@@ -329,71 +325,21 @@ function sendJson(res, status, payload) {
  */
 function insertShotAfter(req, res, afterShotId) {
     const body = req.body || {};
-    const anchor = db.prepare('SELECT * FROM film_shots WHERE id = ?').get(afterShotId);
-    if (!anchor) return sendJson(res, 404, { error: 'Shot not found' });
-    const scene = db.prepare('SELECT id, project_id FROM film_scenes WHERE id = ?').get(anchor.scene_id);
-    if (!scene) return sendJson(res, 404, { error: 'Scene not found' });
-
     const card = Object.assign({}, body.card || {});
-    if (!card.description || !String(card.description).trim()) {
-        return sendJson(res, 400, {
-            error: 'A shot with no description generates from nothing. Say what is in frame.',
-        });
+    // The one insert, shared with the graph's coverage patterns.
+    const out = require('../lib/shot-insert-code').insertShotsAfter(db, afterShotId, [card]);
+    if (out.error) {
+        const { status, ...rest } = out;
+        return sendJson(res, status, rest);
     }
-
-    const siblings = db.prepare(
-        'SELECT id, shot_code FROM film_shots WHERE scene_id = ? ORDER BY sort_order, shot_code')
-        .all(scene.id);
-    const at = siblings.findIndex(x => x.id === afterShotId);
-    if (at === -1) return sendJson(res, 500, { error: 'That shot is not in its own scene' });
-
-    // 2A -> 2AA; a second insert after the same shot -> 2AB. The walk keeps
-    // repeated inserts in the order they were made rather than colliding. One
-    // rule, shared with the graph's add palette, which previews the code.
-    const newCode = require('../lib/shot-insert-code').nextInsertCode(anchor.shot_code, siblings.map(x => x.shot_code));
-    if (!newCode) {
-        return sendJson(res, 409, {
-            error: `There are already 26 inserts after ${anchor.shot_code}.`,
-            hint: 'Give this shot an explicit code instead.',
-        });
-    }
-
-    card.shot_code = newCode;
-    const validation = validateSceneCards([card]);
-    if (!validation.valid) {
-        return sendJson(res, 400, {
-            error: 'That would make an invalid scene card',
-            details: validation.errors,
-        });
-    }
-
-    const newId = generateId();
-    const following = siblings.slice(at + 1);
-    try {
-        db.transaction(() => {
-            db.prepare(`INSERT INTO film_shots (id, scene_id, shot_code, scene_card_yaml, duration_ms, sort_order, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-                .run(newId, scene.id, newCode, JSON.stringify(card),
-                    cardDurationMs(card), at + 1, new Date().toISOString());
-            // The new shot takes the next position; everything after it moves
-            // down one. Order is what changed — the CODES deliberately did not.
-            following.forEach((sib, i) => {
-                db.prepare('UPDATE film_shots SET sort_order = ? WHERE id = ?').run(at + 2 + i, sib.id);
-            });
-        })();
-    } catch (err) {
-        return sendJson(res, 500, { error: 'Could not insert the shot: ' + err.message });
-    }
-
-    try { stampShot(newId); } catch (_) { /* drift stamping must not fail an insert */ }
-
+    const newCode = out.codes[0];
     return sendJson(res, 201, {
-        shot_id: newId,
+        shot_id: out.ids[0],
         shot_code: newCode,
-        scene_id: scene.id,
-        after: anchor.shot_code,
+        scene_id: out.scene_id,
+        after: out.anchor_code,
         renamed: [],
-        note: `${newCode} added after ${anchor.shot_code}. Nothing else was renamed — every code `
+        note: `${newCode} added after ${out.anchor_code}. Nothing else was renamed — every code `
             + 'already written down still points at the same picture, which is how a script '
             + 'supervisor numbers an insert.',
     });

@@ -44297,13 +44297,16 @@ function pgNearestShot(shots, at) {
  * (with the code it will get), a cue of every type in that shot's scene, and a
  * sequence from the picked shots (or the selected one) in film order.
  */
-function pgAddEntries(graph, at, picked, selKey) {
+function pgAddEntries(graph, at, picked, selKey, patterns) {
     const shots = ((graph && graph.nodes) || []).filter(n => n.type === 'shot');
     const out = [];
     const near = pgNearestShot(shots, at);
     if (near) {
         const code = pgNextInsertCode(near.shot_code, shots.filter(s => s.scene_id === near.scene_id).map(s => s.shot_code));
         if (code) out.push({ kind: 'shot', after: near.id, code, label: `Shot after ${near.shot_code} — becomes ${code}` });
+        // Coverage patterns (PGN-020): several shots and their sequence in one step.
+        for (const p of patterns || []) out.push({ kind: 'pattern', pattern: p.id, after: near.id,
+            label: `Pattern: ${p.label} after ${near.shot_code}` });
     }
     for (const [t, l] of Object.entries(PG_ADD_CUE_TYPES)) {
         out.push({ kind: 'sound', cue_type: t, scene_id: near ? near.scene_id : null,
@@ -44336,10 +44339,14 @@ function pgTogglePick(key) {
     setStatus(PG.picked.size ? `${PG.picked.size} shot${PG.picked.size === 1 ? '' : 's'} picked — double-click the canvas to make a sequence of them.` : 'Nothing picked.');
 }
 
-function pgOpenAddPalette(clientX, clientY, at) {
+async function pgOpenAddPalette(clientX, clientY, at) {
     pgCloseAddPalette();
     if (!PG.graph) return;
-    const entries = pgAddEntries(PG.graph, at, [...PG.picked], PG.sel || PG.selBeforeClick);
+    if (!PG.patterns) {
+        try { PG.patterns = (await api(`/projects/${PG.graph.project_id}/production-graph/patterns`)).patterns || []; }
+        catch (_) { PG.patterns = []; }
+    }
+    const entries = pgAddEntries(PG.graph, at, [...PG.picked], PG.sel || PG.selBeforeClick, PG.patterns);
     PG.add = { at, entries, shown: entries, index: 0, step: 'pick', entry: null };
     const el = document.createElement('div');
     el.id = 'pgAddPalette'; el.className = 'pg-add';
@@ -44365,6 +44372,14 @@ function pgRenderAddPalette() {
     const list = document.getElementById('pgAddList');
     const a = PG.add;
     if (!list || !a) return;
+    if (a.step === 'pattern') {
+        const p = a.preview;
+        list.innerHTML = !p ? '<div class="pg-add-hint">Reading what it would make…</div>'
+            : p.error ? `<div class="pg-add-hint">${esc(p.error)}</div>`
+            : p.shots.map(s => `<div class="pg-add-item">${esc(s.code)} · ${esc(s.shot_type)} — ${esc(s.role)}</div>`).join('')
+                + `<div class="pg-add-hint">One sequence, joins: ${esc(p.joins.map(j => j.type).join(', '))}. Free — nothing is generated. Enter creates · Esc cancels.</div>`;
+        return;
+    }
     if (a.step === 'describe') {
         list.innerHTML = `<div class="pg-add-hint">What happens in ${esc(a.entry.code)}? Enter adds it after ${esc(a.entry.label.replace(/^Shot after (\S+).*/, '$1'))}; Escape cancels.</div>`;
         return;
@@ -44385,6 +44400,15 @@ function pgAddKey(ev) {
     const a = PG.add;
     if (!a) return;
     if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); return pgCloseAddPalette(); }
+    if (a.step === 'pattern') {
+        if (ev.key === 'Enter' && a.preview && !a.preview.error) {
+            ev.preventDefault();
+            const entry = a.entry, at = a.at;
+            pgCloseAddPalette();
+            return pgAddPick(entry, at);
+        }
+        return;
+    }
     if (a.step === 'describe') {
         if (ev.key === 'Enter') {
             ev.preventDefault();
@@ -44406,10 +44430,25 @@ function pgAddKey(ev) {
             ev.target.value = ''; ev.target.placeholder = `What happens in ${entry.code}?`;
             return pgRenderAddPalette();
         }
+        // A pattern shows what it would make first, for free; a second Enter makes it.
+        if (entry.kind === 'pattern') {
+            a.step = 'pattern'; a.entry = entry; a.preview = null;
+            pgRenderAddPalette();
+            return pgPatternPreview(entry);
+        }
         const at = a.at;
         pgCloseAddPalette();
         return pgAddPick(entry, at);
     }
+}
+
+/** The pattern's free preview: the shots, codes and joins it would make. */
+async function pgPatternPreview(entry) {
+    let preview;
+    try {
+        preview = await api(`/projects/${state.currentProject.id}/production-graph/patterns/${encodeURIComponent(entry.pattern)}/preview?after=${encodeURIComponent(entry.after)}`);
+    } catch (err) { preview = { error: err.message }; }
+    if (PG.add && PG.add.entry === entry) { PG.add.preview = preview; pgRenderAddPalette(); }
 }
 
 /** Add it through the route that already makes it, then place it where the palette opened. */
@@ -44427,6 +44466,11 @@ async function pgAddPick(entry, at, text) {
             const r = await api(`/projects/${pid}/music-cues`, { method: 'POST',
                 body: JSON.stringify({ cue_type: entry.cue_type, title: entry.label.split(' cue')[0], scene_id: entry.scene_id }) });
             key = 'sound:' + r.id;
+        } else if (entry.kind === 'pattern') {
+            const r = await api(`/projects/${pid}/production-graph/patterns/${encodeURIComponent(entry.pattern)}`,
+                { method: 'POST', body: JSON.stringify({ after_shot_id: entry.after }) });
+            key = 'seq:' + r.sequence_id;
+            setStatus(`Added ${(r.shot_ids || []).length} shots and their sequence. Nothing was generated.`);
         } else if (entry.kind === 'sequence') {
             // A plan row, free: the same helper the graph's empty sequence uses.
             const r = await pgCreateSequence({ name: entry.name, shot_ids: entry.shot_ids });

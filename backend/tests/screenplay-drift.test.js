@@ -141,6 +141,8 @@ const CREATION_PATHS = [
     { id: 'breakdown auto-save', file: 'routes/breakdown.js' },
     { id: 'shot_create', file: 'routes/shots.js' },
     { id: 'shot tagger', file: 'routes/scripts.js' },
+    // The one insert: the insert-after route and the graph's coverage patterns (PGN-020).
+    { id: 'insert after / coverage pattern', file: 'lib/shot-insert-code.js' },
 ];
 
 test('every path that creates a shot records the draft it was written from', () => {

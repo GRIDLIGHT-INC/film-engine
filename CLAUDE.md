@@ -297,7 +297,8 @@ film-engine/
 │   │   ├── asset-recipe.js       # How one version was made: provider, model, prompt, references, seed, cost — unknowns named, time matches marked
 │   │   ├── asset-match.js        # Which of this project's files a dropped file is: by hash sent without the bytes, same-size files only, cached on mtime
 │   │   ├── graph-hold.js         # Which nodes can be held, read strictly; every batch entry point that honours it, and what never reads it
-│   │   ├── shot-insert-code.js   # The code an inserted shot gets (2A → 2AA → 2AB), said once for the route and the graph's add palette
+│   │   ├── shot-insert-code.js   # The one insert: codes 2A → 2AA → 2AB, order after the anchor — for the route, the add palette and the patterns
+│   │   ├── graph-patterns.js     # Coverage patterns: shot/reverse, insert/reaction, wide/medium/close — a free preview, then shots and a sequence, nothing generated
 │   │   ├── timeline.js           # Timeline assembly logic
 │   │   ├── docx-text.js          # DOCX → plain text extraction
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
@@ -476,6 +477,7 @@ film-engine/
 │       ├── hold-in-batches.test.js    # Every batch function derived from routes/ skips a held node and names it; plans leave it out of the total; conform and export never read it
 │       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── graph-add-palette.test.js  # Double-click to add: the previewed insert code is the written one, every cue type, a sequence from picked shots, keyboard only
+│       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6295,6 +6297,7 @@ node --test backend/tests/graph-hold.test.js
 node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/graph-add-palette.test.js
+node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

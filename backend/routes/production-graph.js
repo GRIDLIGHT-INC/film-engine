@@ -167,6 +167,26 @@ function handleProductionGraph(req, res, parts, query) {
             const out = require('../lib/asset-match').matchFile(db, parts[2], query || {});
             return json(res, out.error ? 400 : 200, out);
         }
+        // Coverage patterns (PGN-020): list and preview are free; creating adds
+        // shots and a sequence and generates nothing.
+        if (parts[4] === 'patterns' && !parts[5] && req.method === 'GET') {
+            if (!db.prepare('SELECT 1 FROM film_projects WHERE id = ?').get(parts[2])) return json(res, 404, { error: 'Project not found' });
+            const { PATTERNS } = require('../lib/graph-patterns');
+            return json(res, 200, { patterns: PATTERNS.map(p => ({ id: p.id, label: p.label, why: p.why,
+                shots: p.shots.map(x => ({ role: x.role, shot_type: x.shot_type })), joins: p.joins })) });
+        }
+        if (parts[4] === 'patterns' && parts[5] && parts[6] === 'preview' && req.method === 'GET') {
+            const after = (query || {}).after;
+            if (!after) return json(res, 400, { error: 'Say which shot the pattern goes after: ?after=<shot id>' });
+            const plan = require('../lib/graph-patterns').planPattern(db, parts[2], decodeURIComponent(parts[5]), after);
+            return json(res, plan.error ? plan.status : 200, plan);
+        }
+        if (parts[4] === 'patterns' && parts[5] && !parts[6] && req.method === 'POST') {
+            const after = (req.body || {}).after_shot_id;
+            if (!after) return json(res, 400, { error: 'after_shot_id is required: the shot the pattern goes after' });
+            const out = require('../lib/graph-patterns').createPattern(db, parts[2], decodeURIComponent(parts[5]), after);
+            return json(res, out.error ? out.status : 201, out);
+        }
         if (parts[4] === 'runs' && parts[5] && parts[6] === 'cancel' && req.method === 'POST') {
             const out = require('../lib/generation-cancel').cancelRun(parts[2], parts[5]);
             return json(res, out.ok ? 200 : out.status, out);

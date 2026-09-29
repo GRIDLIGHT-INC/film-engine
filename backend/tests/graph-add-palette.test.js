@@ -62,7 +62,9 @@ test('the page previews with the same rule, over every case', () => {
 });
 
 test('the route writes the code the rule gives, and refuses the 27th insert', async () => {
-    assert.match(fs.readFileSync(path.join(__dirname, '..', 'routes', 'shots.js'), 'utf8'), /nextInsertCode\(/, 'the route keeps its own copy of the rule');
+    const route = fs.readFileSync(path.join(__dirname, '..', 'routes', 'shots.js'), 'utf8');
+    assert.match(route, /shot-insert-code'\)\.(insertShotsAfter|nextInsertCode)\(/, 'the route does not use the shared rule');
+    assert.doesNotMatch(route, /String\.fromCharCode/, 'the route keeps its own copy of the suffix walk');
     const P = generateId(), SC = generateId(), A = generateId();
     db.prepare("INSERT INTO film_projects (id, title) VALUES (?, 'Add')").run(P);
     db.prepare("INSERT INTO film_scenes (id, project_id, scene_number) VALUES (?, ?, 2)").run(SC, P);
