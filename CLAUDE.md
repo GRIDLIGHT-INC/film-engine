@@ -494,6 +494,7 @@ film-engine/
 │       ├── flow-provenance.test.js    # FOG-008: a flow output's and a picked frame's recipe names the flow, version, saving and generating node, its provider and model, the run and the apply, or names each as not found; make another re-applies the flow to the shot
 │       ├── flow-form.test.js          # FOG-009: every input node type a form control or refused with why; the values change the plan, its fingerprint and the runs; unexposed, unknown, scene and foreign-asset values refused; flow_form and the drawer
 │       ├── flow-next-node.test.js     # FOG-010: for every port type, the canvas suggests exactly the node types with a compatible input (compatibleNextNodes), agrees with portsCompatible on every pair, and a pick is placed and wired
+│       ├── flow-canvas-reach.test.js  # FOG-011: every graph surface that names a flow (picker, frames, version drawer, queue strip, form, recipe — derived from the renderers) opens the canvas on THAT flow; the Flows page is reachable by address with the graph on; browser Back and the page's own Back return to the graph
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6370,6 +6371,7 @@ node --test backend/tests/flow-queue.test.js
 node --test backend/tests/flow-provenance.test.js
 node --test backend/tests/flow-form.test.js
 node --test backend/tests/flow-next-node.test.js
+node --test backend/tests/flow-canvas-reach.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
