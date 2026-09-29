@@ -40813,7 +40813,9 @@ ${fountainText.slice(0, 50000)}`;
          */
         if (typeof o.describe === 'function') {
             body.innerHTML = `${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}${o.describe(d)}`;
-            confirmGenArm(true);
+            // A plan can say nothing may run (nothing to run, over budget):
+            // the caller's armable decides, so Confirm is never ready by default.
+            confirmGenArm(o.armable ? !!o.armable(d) : true);
             const agreed = await decision;
             if (!agreed) return;
             return o.send({});
@@ -44054,8 +44056,9 @@ function pgInitCanvas() {
             if (PG.sel) PG.selBeforeClick = PG.sel;
             if (ev.target.closest && ev.target.closest('#pgCanvas') && !ev.target.closest('.pg-furniture, .pg-minimap')) pgSelect(null);
         } else if (g.kind === 'node') {
-            // Shift+click picks shots for "a sequence from the picked shots" (PGN-019).
-            if (!g.moved && ev.shiftKey && g.key.startsWith('shot:')) { pgTogglePick(g.key); return; }
+            // Shift+click picks shots for "a sequence from the picked shots" (PGN-019),
+            // and shots or sequences for "Apply flow…" (FOG-003).
+            if (!g.moved && ev.shiftKey && (g.key.startsWith('shot:') || g.key.startsWith('seq:'))) { pgTogglePick(g.key); return; }
             if (!g.moved) { pgSelect(g.key); return; }
             const n = pgNode(g.key);
             n.pinned = true;
@@ -44356,12 +44359,12 @@ function pgFilterEntries(entries, query) {
     return (entries || []).filter(e => words.every(w => String(e.label || '').toLowerCase().includes(w)));
 }
 
-/** Pick or unpick a shot for "a sequence from the picked shots". */
+/** Pick or unpick a shot (or a sequence, for "Apply flow…") — a picked sequence never joins "a sequence from the picked shots". */
 function pgTogglePick(key) {
     if (PG.picked.has(key)) PG.picked.delete(key); else PG.picked.add(key);
     const el = document.querySelector(`#pgWorld .pg-node[data-key="${key}"]`);
     if (el) el.classList.toggle('picked', PG.picked.has(key));
-    setStatus(PG.picked.size ? `${PG.picked.size} shot${PG.picked.size === 1 ? '' : 's'} picked — double-click the canvas to make a sequence of them.` : 'Nothing picked.');
+    setStatus(PG.picked.size ? `${PG.picked.size} picked — right-click one to apply a flow to them, or double-click the canvas to make a sequence of the picked shots.` : 'Nothing picked.');
 }
 
 async function pgOpenAddPalette(clientX, clientY, at) {
@@ -44722,6 +44725,7 @@ function pgOpenMenu(x, y, key, group) {
         // Only where the server can plan it (PGN-009); the set is held equal to run-to-here TARGETS.
         if (PG_RUN_TO_HERE_TYPES.includes(n.type)) items.push(`<button onclick="pgMenuDo('to-here')" title="Make everything this still needs, in order, after one confirmation">Run to here</button>`);
         if (n.type === 'shot' || n.type === 'sequence' || n.type === 'sound') items.push(`<button onclick="pgMenuDo('dup')">Duplicate</button>`);
+        items.push(pgApplyMenuItem(n, PG.picked.size));
         if (PG_HOLD_ROUTES[n.type]) items.push(`<button onclick="pgMenuDo('hold')" title="Batch runs skip a held node; the film keeps it (Ctrl+B)">${n.held ? 'Release hold' : 'Hold'}</button>`);
         const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || (n.type === 'shot' && n.sequence_id);
         items.push(`<button onclick="pgMenuDo('remove')" ${removable ? '' : 'disabled title="A shot leaves the film on the Scenes page, not here"'}>${
@@ -44747,9 +44751,150 @@ async function pgMenuDo(what) {
         return pgRunNode(n.key);
     }
     if (what === 'to-here') return pgRunToHere(n.key);
+    if (what === 'apply') return pgOpenApplyFlow(n.key);
     if (what === 'hold') return pgToggleHold(n.key);
     if (what === 'dup') return pgDuplicate(n);
     if (what === 'remove') return pgRemove(n);
+}
+
+// ── Apply a flow to a selection (FOG-003) ──────────────────────────────
+
+/** The node types a flow can be applied to — the server's APPLY_TARGETS, held equal by test. */
+const PG_APPLY_TYPES = Object.freeze(['shot', 'sequence']);
+
+/**
+ * What an apply is sent for: the picks plus the node clicked, keeping only
+ * nodes that can take a flow (a picked clip version would only be refused).
+ */
+function pgApplyTargets(picked, key, byKey) {
+    const out = [];
+    for (const k of [...(picked || []), key]) {
+        const n = k && byKey.get(k);
+        if (n && PG_APPLY_TYPES.includes(n.type) && !out.includes(k)) out.push(k);
+    }
+    return out;
+}
+
+/** The node menu's "Apply flow…": on every node, disabled with the reason where a flow cannot go. */
+function pgApplyMenuItem(n, pickedCount) {
+    if (PG_APPLY_TYPES.includes(n.type)) {
+        const also = pickedCount ? ` (with ${pickedCount} picked)` : '';
+        return `<button onclick="pgMenuDo('apply')" title="Run a flow on this, and on anything picked with Shift+click, after one confirmation">Apply flow…${esc(also)}</button>`;
+    }
+    const why = {
+        video: 'A clip version is an output of its shot or sequence; apply the flow to that shot or sequence instead.',
+        audio: 'A sound version is an output of its sound cue; a flow run binds one shot, so apply it to the shots of that scene instead.',
+        sound: 'A sound cue belongs to a scene, and a flow run binds one shot\'s context; apply the flow to the scene\'s shots instead.',
+        link: 'A borrowed frame is a reference between sequences, not a shot; apply the flow to the sequence that uses it instead.',
+    }[n.type] || `A ${n.type} node cannot take a flow; apply it to a shot or a sequence.`;
+    return `<button disabled title="${esc(why)}">Apply flow…</button>`;
+}
+
+/** The picker: the project's and the library's flows, then every ready-made template. */
+function pgApplyPickerHtml(flows, templates, targets) {
+    const n = (targets || []).length;
+    const flowRows = (flows || []).map(f => `<button class="pg-sbtn" style="display:block;width:100%;text-align:left;margin:3px 0;"
+        onclick="pgApplyChoose('flow','${esc(f.id)}')"><b>${esc(f.name)}</b> <span class="text-muted text-sm">${esc(f.scope || '')}${f.node_count ? ' · ' + Number(f.node_count) + ' nodes' : ''}</span></button>`).join('');
+    const tplRows = (templates || []).map(t => `<button class="pg-sbtn" style="display:block;width:100%;text-align:left;margin:3px 0;"
+        onclick="pgApplyChoose('template','${esc(t.id)}')"><b>${esc(t.name)}</b> <span class="text-muted text-sm">${esc(t.description || '')}</span></button>`).join('');
+    return `<h3 style="margin-top:0;">Apply a flow</h3>
+        <p class="text-sm text-muted">${n} selected. Pick a flow; the next screen shows what each shot binds and what it costs, and nothing runs until you confirm.</p>
+        <div class="text-sm" style="margin:8px 0 4px;"><b>Flows</b></div>
+        ${flowRows || '<p class="text-sm text-muted">No flows yet in this project or the library.</p>'}
+        <div class="text-sm" style="margin:12px 0 4px;"><b>Templates</b> <span class="text-muted">(picking one saves it as a flow in this project)</span></div>
+        ${tplRows || '<p class="text-sm text-muted">No templates.</p>'}
+        <div style="text-align:right;margin-top:12px;"><button class="pg-sbtn" onclick="closeModal('pgApplyModal')">Cancel</button></div>`;
+}
+
+/** A plan can be confirmed only when it has loaded, something can run, and it is within budget. */
+function pgApplyArmable(plan) {
+    return !!(plan && Number(plan.runs) > 0 && !(plan.budget && plan.budget.wouldExceed));
+}
+
+/** The confirmation body for an apply: every target, every shot's bindings and cost, held shots, the budget. */
+function pgApplyPlanDescribe(plan) {
+    const p = plan || {};
+    const money = v => '$' + (Number(v) || 0).toFixed(2);
+    const refused = (p.targets || []).filter(t => t.status === 'refused')
+        .map(t => `<li><b>${esc(t.key)}</b>${t.type ? ' (' + esc(t.type) + ')' : ''} — ${esc(t.reason)}</li>`).join('');
+    const shots = (p.shots || []).map(s => {
+        const binds = (s.bindings || []).map(b => `${esc(b.label || b.type)} ← ${esc(b.binds)}${b.value ? ': ' + esc(String(b.value).slice(0, 80)) : ''}`).join('<br>');
+        const notes = [...(s.reasons || []).map(r => `<div style="color:#f06a4a;">${esc(r)}</div>`),
+            ...(s.warnings || []).map(w => `<div style="color:var(--warning,#b8860b);">${esc(w)}</div>`)].join('');
+        return `<li><b>${esc(s.shot_code)}</b> · ${s.status === 'ok' ? money(s.cost) : 'will not run'}
+            ${binds ? `<div class="text-muted" style="font-size:12px;">${binds}</div>` : ''}${notes}</li>`;
+    }).join('');
+    const held = (p.held || []).map(h => `<li><b>${esc(h.shot_code)}</b> — ${esc(h.reason || 'held')}</li>`).join('');
+    const b = p.budget || {};
+    const over = b.wouldExceed
+        ? `<p style="color:#f06a4a;">Over budget: ${money(p.total_cost)} on top of ${money(b.spent)} already spent passes the ${money(b.limit)} budget.</p>
+           <label class="text-sm"><input type="checkbox" id="pgApplyIgnoreBudget" onchange="pgApplyBudgetToggle(this.checked)"> Go over the budget deliberately</label>`
+        : '';
+    const none = !Number(p.runs) ? '<p style="color:#f06a4a;">Nothing in the selection can run, so there is nothing to confirm.</p>' : '';
+    return `<p>Apply <b>${esc(p.flow_name || 'this flow')}</b>: ${Number(p.runs) || 0} run${Number(p.runs) === 1 ? '' : 's'}, one per shot, one at a time, about <b>${money(p.total_cost)}</b>.</p>
+        ${over}${none}
+        ${shots ? `<ol style="padding-left:18px;margin:6px 0;">${shots}</ol>` : ''}
+        ${refused ? `<details open><summary>Cannot take this flow (${(p.targets || []).filter(t => t.status === 'refused').length})</summary><ul style="padding-left:18px;">${refused}</ul></details>` : ''}
+        ${held ? `<details open><summary>Held, left out (${(p.held || []).length})</summary><ul style="padding-left:18px;">${held}</ul></details>` : ''}`;
+}
+
+/** Over budget, the deliberate override is the only thing that arms Confirm. */
+function pgApplyBudgetToggle(on) {
+    const btn = document.getElementById('confirmGenGo');
+    if (btn) btn.disabled = !on;
+}
+
+/** "Apply flow…": the picker for the picks plus this node. */
+async function pgOpenApplyFlow(key) {
+    if (!state.currentProject || !PG.graph) return;
+    const targets = pgApplyTargets([...PG.picked], key, PG.byKey);
+    if (!targets.length) { setStatus('Nothing selected can take a flow: pick shots or sequences.', true); return; }
+    PG.applyTargets = targets;
+    const pid = state.currentProject.id;
+    let flows = [], templates = [];
+    try {
+        const [f, t] = await Promise.all([api(`/projects/${pid}/flows`), api('/flow-templates')]);
+        flows = (f && f.flows) || []; templates = (t && t.templates) || [];
+    } catch (err) { setStatus('Could not read the flows: ' + err.message, true); return; }
+    showModalHtml('pgApplyModal', pgApplyPickerHtml(flows, templates, targets));
+}
+
+/** A flow or template picked: a template is saved as a flow first, then the plan and the one confirmation. */
+async function pgApplyChoose(kind, id) {
+    const targets = PG.applyTargets || [];
+    closeModal('pgApplyModal');
+    let flowId = id;
+    if (kind === 'template') {
+        try {
+            const f = await api(`/projects/${state.currentProject.id}/flows/from-template`, { method: 'POST', body: JSON.stringify({ template_id: id }) });
+            flowId = f && f.id;
+        } catch (err) { setStatus('Could not make a flow from that template: ' + err.message, true); return; }
+    }
+    if (flowId) return pgApplyFlow(flowId, targets);
+}
+
+/** The free plan in the one confirmation, then the apply with that plan's fingerprint. */
+async function pgApplyFlow(flowId, targets) {
+    const pid = state.currentProject.id;
+    let plan = null;
+    return confirmPaidImage({
+        capability: 'image',
+        title: 'Apply flow',
+        previewUrl: `/flows/${flowId}/apply-plan?project_id=${encodeURIComponent(pid)}&targets=${encodeURIComponent(targets.join(','))}`,
+        describe: d => { plan = d; return pgApplyPlanDescribe(d); },
+        armable: pgApplyArmable,
+        send: async () => {
+            if (!plan) return;
+            const box = document.getElementById('pgApplyIgnoreBudget');
+            try {
+                const r = await api(`/flows/${flowId}/apply`, { method: 'POST', body: JSON.stringify({
+                    project_id: pid, targets, fingerprint: plan.fingerprint, ignore_budget: !!(box && box.checked) }) });
+                PG.picked = new Set();
+                setStatus(r && r.apply_id ? `Applying: ${(r.runs || []).length} run(s) — ${r.summary || ''}` : (r && r.error) || 'Nothing was started.');
+                pgPollRunning();
+            } catch (err) { setStatus('Apply failed: ' + err.message, true); }
+        },
+    });
 }
 
 /** The node types "Run to here" can start from — the server's run-to-here TARGETS. */

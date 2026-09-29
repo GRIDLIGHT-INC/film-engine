@@ -481,6 +481,7 @@ film-engine/
 │       ├── hold-in-batches.test.js    # Every batch function derived from routes/ skips a held node and names it; plans leave it out of the total; conform and export never read it
 │       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── graph-add-palette.test.js  # Double-click to add: the previewed insert code is the written one, every cue type, a sequence from picked shots, keyboard only
+│       ├── graph-apply-flow.test.js   # FOG-003: "Apply flow…" on every node type (disabled with the server's reason where it cannot go), every flow and template in the picker, the plan rendered per target kind, nothing armed until it loads, the apply sent with its fingerprint
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6347,6 +6348,7 @@ node --test backend/tests/graph-hold.test.js
 node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/graph-add-palette.test.js
+node --test backend/tests/graph-apply-flow.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
