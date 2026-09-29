@@ -478,6 +478,7 @@ film-engine/
 │       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── graph-add-palette.test.js  # Double-click to add: the previewed insert code is the written one, every cue type, a sequence from picked shots, keyboard only
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
+│       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6298,6 +6299,7 @@ node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/graph-add-palette.test.js
 node --test backend/tests/graph-patterns.test.js
+node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js

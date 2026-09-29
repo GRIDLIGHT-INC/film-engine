@@ -370,8 +370,10 @@ test('the pair list covers every create tool on the surface', () => {
     const tools = listTools().map(t => t.name);
     // A create tool with no entry here is a kind whose removability nobody
     // decided on.
+    // pattern_create makes SHOTS and a SEQUENCE, not a pattern; each is removed
+    // by its own delete (shot_delete, sequence_delete), which is its decision.
     const creates = tools.filter(n => /_create$|_add$|_annotate$/.test(n)
-        && !['flow_create_from_template', 'entities_create'].includes(n));
+        && !['flow_create_from_template', 'entities_create', 'pattern_create'].includes(n));
     const uncovered = creates.filter(c => !CREATE_DELETE_PAIRS.some(p => p.create === c));
     assert.deepStrictEqual(uncovered, [],
         `create tools with no delete decision: ${uncovered.join(', ')}`);

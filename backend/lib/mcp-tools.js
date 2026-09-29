@@ -63,6 +63,7 @@ const { handleMediaImport } = require('../routes/media-import');
 const { handleVideoGen } = require('../routes/video-gen');
 const { handleVoice } = require('../routes/voice');
 const { handleSequences } = require('../routes/sequences');
+const { handleProductionGraph } = require('../routes/production-graph');
 const { handleAnnotations } = require('../routes/annotations');
 const { handlePrevis } = require('../routes/previs');
 const { handleThreeD } = require('../routes/threed');
@@ -861,6 +862,132 @@ const PRODUCTION_TOOLS = [
             + 'is usually still running and already paid for. Check here before generating the same '
             + 'thing again, which would buy it twice.',
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    /*
+     * THE PRODUCTION GRAPH (PGN-021). Every action the graph's page offers,
+     * dispatched through its own route — tests/graph-mcp-tools.test.js derives
+     * the set from routes/production-graph.js, so a route added later arrives
+     * with a tool or a stated reason.
+     */
+    {
+        name: 'production_graph_get',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph`,
+        description: 'The Production phase as one graph: every shot, sequence, sound and version as a node with its key '
+            + '(shot:<id>, seq:<id>, sound:<id>, ver:<id>), what each is built from, whether it is behind (impact), held, or running, '
+            + 'and what "Run pending" would make. FREE. Read this first: the other graph tools take these node keys.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'production_graph_running',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/running`,
+        description: 'What is generating right now and on which node, with its percentage or phase where the provider reports one. FREE.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'generation_queue',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/queue`,
+        description: 'The queue in one read: running, waiting in a batch, done today, awaiting collection, and failed — each job in '
+            + 'exactly one bucket, with its node and, while running, whether it can really be cancelled. FREE.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'run_changed_plan',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/run-changed/plan`,
+        description: '"Run what changed", planned for FREE: every out-of-date item that can be redone now, in dependency order, '
+            + 'each priced, the total, the budget verdict, and everything left out with why (waiting on something above it, a '
+            + 'card a person must rewrite, a locked board, a held node). Read this before run_changed.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'run_changed',
+        handler: handleProductionGraph, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/production-graph/run-changed`,
+        body: a => (a && a.ignore_budget ? { ignore_budget: true } : {}),
+        description: 'COSTS MONEY: redoes everything run_changed_plan lists, one item at a time in the background, re-planning after '
+            + 'each, stopping at the first refusal and naming what it did not attempt. Refused (402) over budget unless ignore_budget. '
+            + 'Answers at once with a run id; follow it with run_changed_status. Held nodes are skipped.',
+        schema: { project_id: { type: 'string' }, ignore_budget: { type: 'boolean' } }, required: ['project_id'],
+    },
+    {
+        name: 'run_changed_status',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/run-changed/${a.run_id}`,
+        description: 'Where a "Run what changed" or "Run to here" run has got to: done, failed, still to come, and why it stopped. FREE.',
+        schema: { project_id: { type: 'string' }, run_id: { type: 'string' } }, required: ['project_id', 'run_id'],
+    },
+    {
+        name: 'run_to_here_plan',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/nodes/${encodeURIComponent(a.node_key)}/run-to-here/plan`,
+        description: '"Run to here", planned for FREE: what a shot, clip, sequence or sound still needs, frames before clips, borrowed '
+            + 'frames traced, each step priced, blockers named, held nodes listed apart. node_key comes from production_graph_get.',
+        schema: { project_id: { type: 'string' }, node_key: { type: 'string' } }, required: ['project_id', 'node_key'],
+    },
+    {
+        name: 'run_to_here',
+        handler: handleProductionGraph, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/production-graph/nodes/${encodeURIComponent(a.node_key)}/run-to-here`,
+        body: a => (a && a.ignore_budget ? { ignore_budget: true } : {}),
+        description: 'COSTS MONEY: makes everything run_to_here_plan lists, in order, through each step’s own generate path, in the '
+            + 'background. Refused when something upstream blocks it (409) or over budget (402). Follow it with run_changed_status.',
+        schema: { project_id: { type: 'string' }, node_key: { type: 'string' }, ignore_budget: { type: 'boolean' } },
+        required: ['project_id', 'node_key'],
+    },
+    {
+        name: 'run_cancel',
+        handler: handleProductionGraph, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/production-graph/runs/${a.run_id}/cancel`,
+        description: 'Stop a "Run what changed" / "Run to here" batch before its next step. FREE. A step already at a provider '
+            + 'finishes (and bills); only what has not started is left undone, and the run names it.',
+        schema: { project_id: { type: 'string' }, run_id: { type: 'string' } }, required: ['project_id', 'run_id'],
+    },
+    {
+        name: 'generation_cancel',
+        handler: handleGenerationJobs, method: 'POST',
+        path: a => `/film/generation-jobs/${a.job_id}/cancel`,
+        description: 'Cancel one running generation. FREE. Where the provider really cancels (Runway) it is cancelled there; '
+            + 'everywhere else Film Engine STOPS WAITING and says the provider may still finish and bill — the job stays '
+            + 'collectable with generation_collect. A synchronous call has nothing to cancel and says so.',
+        schema: { job_id: { type: 'string' } }, required: ['job_id'],
+    },
+    {
+        name: 'asset_provenance',
+        handler: handleAssets, method: 'GET',
+        path: a => `/film/assets/${a.asset_id}/provenance`,
+        description: 'How one version was made: provider, model, prompt, negative prompt, references, seed (and whether the '
+            + 'provider honours one), size, tier, whether its inputs are still current, the render-ledger row, what it cost, and '
+            + 'when — every fact it cannot find named as unknown. Plus the disclosure manifest. FREE.',
+        schema: { asset_id: { type: 'string' } }, required: ['asset_id'],
+    },
+    {
+        name: 'pattern_list',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/patterns`,
+        description: 'The coverage patterns (shot / reverse shot, insert then reaction, wide / medium / close): the shots and joins each lays down. FREE.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'pattern_preview',
+        handler: handleProductionGraph, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/production-graph/patterns/${encodeURIComponent(a.pattern)}/preview?after=${encodeURIComponent(a.after_shot_id)}`,
+        description: 'What a pattern would create after a shot, for FREE: the shots with the insert codes they will get (2AA, 2AB…), '
+            + 'their framing and role, the cast carried over, and the sequence with its joins. Writes nothing.',
+        schema: { project_id: { type: 'string' }, pattern: { type: 'string' }, after_shot_id: { type: 'string' } },
+        required: ['project_id', 'pattern', 'after_shot_id'],
+    },
+    {
+        name: 'pattern_create',
+        handler: handleProductionGraph, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/production-graph/patterns/${encodeURIComponent(a.pattern)}`,
+        body: a => ({ after_shot_id: a.after_shot_id }),
+        description: 'Create a pattern after a shot: its shots, inserted after it as a script supervisor numbers inserts, and one '
+            + 'sequence of them with its joins. Nothing is generated — FREE; make their frames and clips afterwards.',
+        schema: { project_id: { type: 'string' }, pattern: { type: 'string' }, after_shot_id: { type: 'string' } },
+        required: ['project_id', 'pattern', 'after_shot_id'],
     },
     {
         name: 'generation_collect',
@@ -4838,6 +4965,51 @@ async function callRouteTool(t, args) {
 // exactly as they do over HTTP.
 
 const BATCH_TOOLS = [
+    {
+        name: 'graph_hold',
+        description: 'Hold or release a node by its graph key (shot:<id>, seq:<id>, sound:<id>): a held node is skipped by every '
+            + 'batch run and said so, and stays in the film — conform and export never read the hold. FREE. Goes through the '
+            + 'node’s own update route, exactly as shot_update / sequence_update / music_cue_update with `held` would.',
+        schema: { node_key: { type: 'string' }, held: { type: 'boolean', description: 'true holds, false releases.' } },
+        required: ['node_key', 'held'],
+        async run(a) {
+            const hold = require('./graph-hold');
+            const [prefix, id] = String(a.node_key || '').split(':');
+            const h = hold.HOLDABLE.find(x => x.key_prefix === prefix);
+            if (!h || !id) return { error: `A ${prefix || 'node'} cannot be held; holdable: ${hold.HOLDABLE.map(x => x.key_prefix + ':<id>').join(', ')}` };
+            const handler = require(`../routes/${h.route_module}`)[h.handler];
+            return callRoute('PUT', h.path(id), { held: a.held }, handler);
+        },
+    },
+    {
+        name: 'version_select',
+        description: 'Choose which version plays — a shot’s clip, a sequence’s clip, or a sound’s — by the version’s asset '
+            + 'id (the id in its ver:<id> key); clear: true goes back to the ordinary rule. FREE: it moves a pointer, it '
+            + 'generates nothing. Through the parent’s own select route.',
+        schema: { asset_id: { type: 'string' }, clear: { type: 'boolean' } },
+        required: ['asset_id'],
+        async run(a) {
+            const { db } = require('../db/database');
+            const row = db.prepare('SELECT id, asset_type, shot_id, metadata FROM film_assets WHERE id = ?').get(a.asset_id);
+            if (!row) return { error: 'No such version' };
+            let meta = {};
+            try { meta = JSON.parse(row.metadata || '{}') || {}; } catch (_) { meta = {}; }
+            const method = a.clear ? 'DELETE' : 'POST';
+            const body = { asset_id: row.id };
+            if (/^audio_/.test(row.asset_type)) {
+                const cue = meta.cue_id || meta.music_cue_id
+                    || (db.prepare('SELECT id FROM film_music_cues WHERE generated_asset_id = ?').get(row.id) || {}).id;
+                if (!cue) return { error: 'That sound belongs to no cue, so there is nothing to select it for' };
+                return callRoute(method, `/film/music-cues/${cue}/select`, body, handleProductionGraph);
+            }
+            if (/^video_/.test(row.asset_type)) {
+                if (meta.sequence_id) return callRoute(method, `/film/sequences/${meta.sequence_id}/video/select`, body, handleSequences);
+                if (row.shot_id) return callRoute(method, `/film/shots/${row.shot_id}/video/select`, body, handleProductionGraph);
+            }
+            return { error: `A ${row.asset_type} is not a version that plays; frames are chosen with shot_frame_restore` };
+        },
+    },
+
     {
         name: 'shot_review',
         description:

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**375 tools, 76 families.** Everything the app can do, you can ask for in a
+**391 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -589,7 +589,7 @@ These resolve a provider and bill you:
 `node_gen_post` · `node_gen_model3d` · `node_gen_world` · `world_generate` ·
 `storyboard_generate` ·
 `storyboard_regenerate` · `storyboard_refine` · `plate_generate` ·
-`plate_generate_all` · `flow_run`
+`plate_generate_all` · `flow_run` · `run_changed` · `run_to_here`
 
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
 `flow_estimate` (projected cost), `run_plan` (cost of a whole batch), `conform_plan`,
@@ -1086,6 +1086,30 @@ the selection that already exists.
 
 Media in both travels as **absolute paths**, and the packet says so in
 `media.transport` — a serving URL only resolves on this machine's own network.
+
+### Working on the production graph
+
+`production_graph_get` · `production_graph_running` · `generation_queue` ·
+`run_changed_plan` · `run_changed` · `run_changed_status` · `run_to_here_plan` ·
+`run_to_here` · `run_cancel` · `generation_cancel` · `asset_provenance` ·
+`graph_hold` · `version_select` · `pattern_list` · `pattern_preview` ·
+`pattern_create`
+
+Production as one graph. `production_graph_get` returns every shot, sequence,
+sound and version as a node with a key (`shot:<id>`, `seq:<id>`, `sound:<id>`,
+`ver:<id>`) and says which are behind, held or running; the other tools take
+those keys. "Run what changed" (`run_changed_plan`, then `run_changed`) redoes
+what is out of date in dependency order; "Run to here" (`run_to_here_plan`, then
+`run_to_here`) makes what one node still needs. Both plans are free; both runs
+**cost money**, work in the background, and are followed with
+`run_changed_status` and stopped with `run_cancel`. `generation_queue` shows
+running, waiting, done, awaiting collection and failed work;
+`generation_cancel` cancels one job where the provider really can, and
+otherwise stops waiting and says it may still bill. `asset_provenance` says how
+a version was made. `graph_hold` holds a node so batch runs skip it — it stays
+in the film. `version_select` chooses which clip or sound plays. The patterns
+(`pattern_list`, `pattern_preview`, `pattern_create`) lay down shot / reverse,
+insert then reaction, or wide / medium / close after a shot, generating nothing.
 
 ### Where the production stands
 
