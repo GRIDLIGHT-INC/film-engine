@@ -215,6 +215,12 @@ function keyframeCount(p) {
 function workflowFor(p, images) {
     const asked = String(p.workflow || '').trim();
     if (WORKFLOWS[asked]) return asked;
+    /*
+     * RECORDED DIALOGUE travels only on omni-reference (`audios_list`), so a
+     * shot sent with its voice runs there, and the board frame goes as a
+     * reference rather than the exact first frame. Said in the preview.
+     */
+    if (Array.isArray(p.audio_references) && p.audio_references.length) return 'omni-reference';
     if (p.source_video || p.video_url) return p.extend ? 'video-extend' : 'video-edit';
     const keyframes = keyframeCount(p);
     // Two real keyframes are a start and an end, and their order is the meaning.
@@ -385,6 +391,9 @@ function buildVideoRequest(payload) {
         body[field] = field === 'image_url' ? used[0] : used;
     }
     if (p.source_video || p.video_url) body.video_url = p.source_video || p.video_url;
+    const audio = (Array.isArray(p.audio_references) ? p.audio_references : [])
+        .map(a => (typeof a === 'string' ? a : (a && (a.uri || a.url || a.file_path)))).filter(Boolean).slice(0, 10);
+    if (workflow === 'omni-reference' && audio.length) body.audios_list = audio;
 
     return {
         url: `${BASE_URL}/seedance-2.5-${workflow}${RESOLUTIONS[resolution].suffix}`,
@@ -634,6 +643,10 @@ function describeVideoRequest(payload) {
     if (built.workflow === 'text-to-video') {
         notes.push('No image is attached, so this generates from words alone.');
     }
+    if (built.body.audios_list && built.body.audios_list.length) {
+        notes.push(`${built.body.audios_list.length} recorded dialogue clip(s) travel as audio references. They go on the `
+            + 'omni-reference workflow, where the storyboard frame is a reference rather than the exact first frame.');
+    }
     if (built.workflow === 'omni-reference') {
         notes.push(`${built.images.length} pictures travel as references — Seedance reconciles them into one sequence.`);
     }
@@ -809,6 +822,17 @@ async function generate(capability, payload, opts) {
         const hosted = await hostFile(req.body.video_url, apiKey);
         if (!hosted.ok) return { ok: false, status: 422, error: `seedance: ${hosted.error}` };
         req.body.video_url = hosted.url;
+    }
+    // Recorded dialogue: local files go up the same free way a clip does.
+    if (Array.isArray(req.body.audios_list) && req.body.audios_list.some(a => !/^https?:\/\//i.test(a))) {
+        const { hostFile } = require('./muapi-upload');
+        const urls = [];
+        for (const a of req.body.audios_list) {
+            const h = await hostFile(a, apiKey);
+            if (!h.ok) return { ok: false, status: 422, error: `seedance: dialogue audio — ${h.error}` };
+            urls.push(h.url);
+        }
+        req.body.audios_list = urls;
     }
     const imageFields = ['images_list', 'image_url', 'first_frame_image', 'last_frame_image'];
     for (const field of imageFields) {

@@ -239,11 +239,26 @@ test('every path that generates a keyframe gathers references the same way', () 
         { file: 'routes/storyboard.js', fn: 'regenerateShot(' },
         { file: 'lib/capability-payloads.js', fn: 'loadShotContext(' },
     ];
+    /*
+     * The function's own body, bounded by BRACE DEPTH from its declaration.
+     * It was a 12000-character window, which stopped reaching the gather call
+     * the day loadShotContext grew past it and then reported the function as
+     * not gathering at all: the bounded-window trap CLAUDE.md records.
+     */
+    const bodyOf = (src, i) => {
+        const open = src.indexOf('{', src.indexOf(')', i));
+        let depth = 0;
+        for (let j = open; j < src.length; j++) {
+            if (src[j] === '{') depth++;
+            else if (src[j] === '}' && --depth === 0) return src.slice(i, j + 1);
+        }
+        return src.slice(i);
+    };
     const missing = ENTRY_POINTS.filter(({ file, fn }) => {
         const src = read(file);
         const i = src.indexOf('function ' + fn);
         if (i < 0) return true;
-        const body = src.slice(i, i + 12000);
+        const body = bodyOf(src, i);
         return !/gatherShotReferences\(|shotReferencesFor\(/.test(body);
     }).map(e => `${e.file}:${e.fn}`);
     assert.deepStrictEqual(missing, [],

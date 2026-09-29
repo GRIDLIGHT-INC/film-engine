@@ -607,6 +607,22 @@ function buildVideoRequest(payload) {
     }
     if (promptImage) body.promptImage = promptImage;
 
+    /*
+     * RECORDED DIALOGUE on Seedance 2.5: `referenceAudio`, a list of
+     * { type: 'audio', uri }, up to ten (probed 2026-09-29; `audio` is the
+     * generate-sound switch, not a reference). Only a model whose contract takes
+     * audio carries it; any other says so rather than dropping it in silence.
+     * The uris may be local paths here: generate() hosts them before sending.
+     */
+    const audio = (Array.isArray(p.audio_references) ? p.audio_references : [])
+        .map(a => (typeof a === 'string' ? a : (a && (a.uri || a.url || a.file_path)))).filter(Boolean);
+    let audioRefused = null;
+    if (audio.length) {
+        const maxAudio = Number(require('../video-reference').contractFor(model).maxAudio) || 0;
+        if (maxAudio) body.referenceAudio = audio.slice(0, maxAudio).map(uri => ({ type: 'audio', uri }));
+        else audioRefused = `${model} takes no audio reference; seedance2_5 does.`;
+    }
+
     const seed = normalizeSeed(p.seed);
     if (seed !== undefined) body.seed = seed;
 
@@ -614,7 +630,42 @@ function buildVideoRequest(payload) {
         url: `${baseUrl()}/${mode}`, headers: jsonHeaders(), body, mode,
         // Named so a caller can tell the director what could not be sent.
         ...(dropped.length ? { dropped: dropped.map(k => k.uri) } : {}),
+        ...(audioRefused ? { audio_refused: audioRefused } : {}),
     };
+}
+
+/*
+ * A dialogue file Runway can fetch: a MuAPI-hosted URL when a MuAPI key is
+ * configured (free, and the same upload the MuAPI path uses), else a data URI
+ * up to Runway's 5MB inline ceiling. Beyond that it is refused by name:
+ * Runway's own ephemeral upload is not implemented here.
+ */
+async function hostReferenceAudio(body) {
+    if (!Array.isArray(body.referenceAudio)) return { ok: true };
+    const { hostFile, sniffMedia } = require('./muapi-upload');
+    const { getCredential } = require('./credentials');
+    const muapi = (getCredential('muapi') || {}).apiKey || (getCredential('seedance') || {}).apiKey || '';
+    for (const ref of body.referenceAudio) {
+        if (/^(https?:|data:)/i.test(ref.uri)) continue;
+        if (muapi) {
+            const h = await hostFile(ref.uri, muapi);
+            if (!h.ok) return { ok: false, error: `runway: dialogue audio — ${h.error}` };
+            ref.uri = h.url;
+            continue;
+        }
+        const fs = require('fs');
+        const p = String(ref.uri).startsWith('file://') ? decodeURI(String(ref.uri).slice(7)) : String(ref.uri);
+        let bytes;
+        try { bytes = fs.readFileSync(p); } catch (_) { return { ok: false, error: `runway: there is no dialogue file at ${p}` }; }
+        const kind = sniffMedia(bytes);
+        if (!kind || !/^audio\//.test(kind.mime)) return { ok: false, error: `runway: ${p} is not an mp3, m4a or wav file` };
+        const { DATA_URI_LIMIT } = require('../provider-media');
+        if (Math.ceil(bytes.length / 3) * 4 > DATA_URI_LIMIT) {
+            return { ok: false, error: `runway: ${p} is over Runway's 5MB inline limit; set a MuAPI key so it can be uploaded instead` };
+        }
+        ref.uri = `data:${kind.mime};base64,${bytes.toString('base64')}`;
+    }
+    return { ok: true };
 }
 
 function sanitizedPromptImage(value) {
@@ -755,6 +806,8 @@ function describeVideoRequest(payload) {
     if (built.dropped && built.dropped.length) {
         notes.push(`${built.dropped.length} keyframe(s) beyond the first and last will not be sent.`);
     }
+    if (built.body.referenceAudio) notes.push(`${built.body.referenceAudio.length} recorded dialogue clip(s) travel as referenceAudio.`);
+    if (built.audio_refused) notes.push(`Dialogue audio will not be sent: ${built.audio_refused}`);
 
     const estimatedCredits = estimateVideoCredits(built.body);
     if (p.camera_control && Array.isArray(p.camera_control.path) && p.camera_control.path.length > 1) {
@@ -1114,6 +1167,8 @@ const adapter = {
         if (!request.body.promptText && !request.body.promptImage) {
             return { ok: false, status: 400, error: 'runway: a prompt or a keyframe image is required' };
         }
+        const heard = await hostReferenceAudio(request.body);
+        if (!heard.ok) return { ok: false, status: 422, error: heard.error };
 
         const timeout = require('../generation-jobs').budgetFor((opts && opts.timeout) || DEFAULT_TIMEOUT_MS);
         const deadline = Date.now() + timeout;

@@ -372,6 +372,15 @@ the upscaler picks to reach the project's resolution, and the price.
 selected clip, with its sound. The original stays. On the production canvas
 the same thing is **Upscale…** in the node menu of a shot or a shot's clip.
 
+**Your own recorded dialogue in the clip.** Upload each line to the shot with
+`media_upload` (capability `voice`), then pass `use_dialogue_audio: true` to
+`video_preview` and `video_generate`. The shot's lines travel in the order they
+are said, as audio references, to Seedance 2.5: the audio list on MuAPI, where
+the shot runs the omni-reference workflow and the storyboard frame becomes a
+reference rather than the exact first frame; or Runway's reference audio with
+`video_model: seedance2_5`. The preview says how many lines would go, or why
+none can: a model that takes no audio is named rather than ignored.
+
 **Keep the actor, change the background.** Every other generator here makes a
 NEW picture; `video_background_replace` takes footage that already exists and
 changes one thing about it — the performance is preserved by the model rather

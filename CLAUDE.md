@@ -628,6 +628,7 @@ film-engine/
 │       ├── motion-prompt.test.js    # Motion, the spatial locks, and the eight techniques
 │       ├── video-model-contracts.test.js # Rates, reference contracts, tiers, and the picture an agent can see
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
+│       ├── dialogue-audio-reference.test.js # Recorded dialogue to Seedance 2.5: audios_list on MuAPI, referenceAudio on Runway, uploaded first, held to the probed fields
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
 │       ├── seedance-tiers.test.js      # 480p draft and 4K finish, traced to a real Seedance 2.5 URL
 │       ├── video-surfaces.test.js      # A capability with no control does not exist
@@ -665,6 +666,7 @@ film-engine/
 │       ├── e2e-readiness.test.js         # Preflight covers every stage screenplay→final
 │       ├── e2e-first-film-plan.test.js    # The plan for the first finished film, held to the stage registry
 │       ├── fixtures/thirty-second.fountain # 30-second E2E test screenplay
+│       ├── fixtures/seedance-audio-contract.json # The Seedance 2.5 audio fields on MuAPI and Runway, probed free on 2026-09-29
 │       ├── fixtures/thirty-second.score.json # ...and its score: shots, the arc, the cue, the stems, the Live return
 │       ├── phase6-live-runs.test.js       # SSE streaming, orchestrator persistence (Phase 6)
 │       ├── flow-branches.test.js         # Fan-out, select gate, budget guard (Phase 3)
@@ -1250,6 +1252,13 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### Your Recorded Dialogue, Sent to Seedance 2.5
+*"Set up the path to upload audio, as I have audio files for a project (my dialogue), with Seedance 2.5 on Runway or MuAPI."*
+
+A line goes in as the shot's voice: **Upload dialogue** on the Video Shots page and in the canvas shot drawer, or `media_upload` (`voice`). Each file is an `audio_dialogue` asset. `loadShotContext` now gathers all of a shot's lines as `dialogueAudio`, in the order they are said (by the line index in the file name, the newest row per file winning). With `use_dialogue_audio` (a checkbox in the video confirmation, and on `video_preview` and `video_generate`) the payload carries them as `audio_references`, up to the model's `maxAudio`. A shot with no lines, or a model that takes no audio, is refused by name in `audio_refused`, and the preview's `dialogue_audio` says how many lines would go.
+
+The fields are the free probes of 2026-09-29, held in `tests/fixtures/seedance-audio-contract.json`. **MuAPI** takes audio only on `seedance-2.5-omni-reference` (`audios_list`). So a shot sent with its voice runs there, and the storyboard frame travels as a reference rather than the exact first frame, which the preview says. **Runway** `seedance2_5` takes `referenceAudio: [{type: 'audio', uri}]`, up to ten. Local files are uploaded through MuAPI's free `upload_file` before the request. On Runway that happens when a MuAPI key exists; otherwise the line is inlined as a data URI within Runway's 5MB ceiling, and refused by name past it. Not sent unless asked, so every existing clip builds byte-identically.
 
 ### Upscaling on MuAPI, From the Canvas
 *"Set up the appropriate upscale for MuAPI and a node to be able to upscale on the production canvas."*
@@ -6609,6 +6618,7 @@ node --test backend/tests/motion-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
 node --test backend/tests/muapi-upscale.test.js
+node --test backend/tests/dialogue-audio-reference.test.js
 node --test backend/tests/seedance-tiers.test.js
 node --test backend/tests/video-surfaces.test.js
 node --test backend/tests/provider-image-encoding.test.js

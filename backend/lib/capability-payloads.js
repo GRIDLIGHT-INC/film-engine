@@ -728,6 +728,28 @@ const CAPABILITY_BUILDERS = {
         if (picked.dropped.length) built.references_dropped = picked.dropped;
 
         /*
+         * THE SHOT'S OWN DIALOGUE, AS AN AUDIO REFERENCE — asked for per
+         * generation (`use_dialogue_audio`), because it changes what the model
+         * is conditioned on. Seedance 2.5 takes up to ten audio clips (MuAPI
+         * omni-reference `audios_list`, Runway seedance2_5 `referenceAudio`);
+         * a model that takes none is refused by name rather than ignored.
+         * Local paths here: the adapter hosts them, since the builder stays pure.
+         */
+        if (ctx.useDialogueAudio) {
+            const lines = ctx.dialogueAudio || [];
+            const maxAudio = Number(contract.maxAudio) || Number(videoRef.contractFor(built.model).maxAudio) || 0;
+            if (!lines.length) {
+                built.audio_refused = 'This shot has no recorded dialogue yet. Upload it as the shot\'s voice (media_upload, or Upload on the shot) first.';
+            } else if (!maxAudio) {
+                built.audio_refused = `${built.model || 'This model'} takes no audio reference. Seedance 2.5 does: on MuAPI, or seedance2_5 on Runway.`;
+            } else {
+                built.audio_references = lines.slice(0, maxAudio)
+                    .map(a => ({ role: 'audio', asset_id: a.id, file_path: a.file_path, file_name: a.file_name, duration_ms: a.duration_ms || null }));
+                if (lines.length > maxAudio) built.audio_dropped = lines.slice(maxAudio).map(a => a.file_name);
+            }
+        }
+
+        /*
          * DRAFT WHILE WORKING, FINISH AT THE END.
          *
          * Most generated clips are thrown away — an angle is tried, watched and
@@ -1206,6 +1228,19 @@ function loadShotContext(shotId, opts) {
     const audioAsset = db.prepare(
         "SELECT * FROM film_assets WHERE shot_id = ? AND asset_type = 'audio_dialogue' ORDER BY created_at DESC LIMIT 1"
     ).get(shotId);
+    /*
+     * Every recorded or generated line of this shot, in the order it is said:
+     * one file per line, the newest row for a file name winning (a line redone
+     * writes over its own file and adds a row).
+     */
+    const dialogueAudio = (() => {
+        const rows = db.prepare(`SELECT id, file_path, file_name, duration_ms, created_at FROM film_assets
+            WHERE shot_id = ? AND asset_type = 'audio_dialogue' ORDER BY created_at DESC`).all(shotId);
+        const seen = new Map();
+        for (const r of rows) if (!seen.has(r.file_name)) seen.set(r.file_name, r);
+        const idx = n => { const m = /_(\d+)\.[a-z0-9]+$/i.exec(n || ''); return m ? Number(m[1]) : 0; };
+        return [...seen.values()].sort((a, b) => idx(a.file_name) - idx(b.file_name) || String(a.file_name).localeCompare(String(b.file_name)));
+    })();
 
     const musicCue = db.prepare(
         'SELECT * FROM film_music_cues WHERE scene_id = ? ORDER BY start_ms LIMIT 1'
@@ -1407,7 +1442,7 @@ function loadShotContext(shotId, opts) {
 
     return {
         shot, scene, project, sceneCard, characters, location, voiceProfiles, props,
-        keyframeAsset, videoAsset, audioAsset, musicCue, ambient, initImage,
+        keyframeAsset, videoAsset, audioAsset, dialogueAudio, musicCue, ambient, initImage,
         consistency: consistencyContext,
         previs,
         // State is useful for disclosure even when the durable payload rightly

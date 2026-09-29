@@ -41222,6 +41222,7 @@ ${fountainText.slice(0, 50000)}`;
 
           ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
           ${deliveryLineHtml(d.delivery)}
+          ${dialogueAudioRowHtml(d.dialogue_audio)}
 
           ${o.editable === false
               ? `<div class="form-group">
@@ -41240,7 +41241,9 @@ ${fountainText.slice(0, 50000)}`;
         const ok = await decision;
         if (!ok) return;
 
+        const dlg = document.getElementById('confirmDialogueAudio');
         return o.send({
+            ...(dlg && dlg.checked ? { use_dialogue_audio: true } : {}),
             ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
             ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
@@ -41972,6 +41975,22 @@ ${fountainText.slice(0, 50000)}`;
             Delivery ${esc(dl.asked)} &middot; this generator renders ${esc(dl.delivered || 'an unreported size')}
             ${dl.draft ? ' &middot; a draft, on purpose' : down ? ' &middot; <strong>below delivery</strong> — its best; upscale after' : ' &middot; full size'}
             ${dl.why ? `<div class="text-muted">${esc(dl.why)}</div>` : ''}</div>`;
+    }
+
+    /*
+     * THE SHOT'S RECORDED DIALOGUE, offered as an audio reference when the shot
+     * has any. Seedance 2.5 takes it; the line under the box says what happens
+     * (on MuAPI the board frame becomes a reference, not the exact first frame).
+     */
+    function dialogueAudioRowHtml(da) {
+        if (!da || !da.available) return '';
+        return `<div class="form-group" data-dialogue-audio style="margin:6px 0;">
+            <label style="display:flex;gap:8px;align-items:center;">
+              <input type="checkbox" id="confirmDialogueAudio">
+              Send this shot's recorded dialogue (${da.available} line${da.available === 1 ? '' : 's'}) as an audio reference
+            </label>
+            <div class="text-sm text-muted">Seedance 2.5 only (MuAPI, or seedance2_5 on Runway). On MuAPI it runs the omni-reference workflow, where the storyboard frame is a reference rather than the exact first frame. The preview names anything that cannot be sent.</div>
+          </div>`;
     }
 
     /*
@@ -45903,6 +45922,7 @@ function pgDrawerShot(n, body, foot, close) {
           ${uploadControl('storyboard-image', `/shots/${n.id}/storyboard/import`, { after: 'loadProductionGraph', label: '+ Upload' })}
           ${f ? `<button class="btn btn-secondary btn-sm" onclick="setAnchor('${n.id}')">Anchor</button>
                  <button class="btn btn-secondary btn-sm" onclick="openFrameViewer('${n.id}')">Mark up</button>` : ''}
+          ${mediaUploadControl('voice', 'audio', 'shot', n.id, { after: 'loadProductionGraph', label: 'Upload dialogue' })}
         </div></div>
       ${pgFlowFramesHtml(n)}
       ${f ? `<div class="pg-dsec"><div class="pg-kicker"><span>How was v${f.version} made</span></div>

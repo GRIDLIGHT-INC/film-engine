@@ -1,0 +1,20 @@
+{
+  "checked": "2026-09-29",
+  "how": "Free validation probes: each endpoint was sent a body of deliberately wrong types, and its 422/400 answer named the fields it accepts. Nothing was generated or billed.",
+  "muapi": {
+    "endpoint": "POST https://api.muapi.ai/api/v1/seedance-2.5-omni-reference[-1080p|-4k]",
+    "fields": ["prompt", "images_list", "videos_list", "audios_list", "resolution", "aspect_ratio", "duration"],
+    "audio_field": "audios_list",
+    "audio_max": 10,
+    "upload": "POST https://api.muapi.ai/api/v1/upload_file (multipart `file`, header x-api-key) accepts mp4 and mp3 and returns {url: https://cdn.muapi.ai/...}",
+    "note": "Only omni-reference takes audio. image-to-video (one keyframe, `image_url`) has no audio field."
+  },
+  "runway": {
+    "endpoint": "POST https://api.dev.runwayml.com/v1/image_to_video with model seedance2_5",
+    "audio_field": "referenceAudio",
+    "audio_shape": {"type": "audio", "uri": "<https or data URI>"},
+    "audio_max": 10,
+    "not_references": ["references", "referenceImages", "referenceVideos"],
+    "note": "`audio` on this endpoint is a boolean (generate sound), not a reference."
+  }
+}

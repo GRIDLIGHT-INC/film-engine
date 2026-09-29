@@ -121,7 +121,7 @@ function providerConfigFor_(ctx) {
     catch (_) { return {}; }
 }
 
-async function previewVideo(res, shotId, previewOverride, tierChoice) {
+async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     const { estimateVideoCost } = require('../lib/video-cost');
 
@@ -129,6 +129,7 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
     try { ctx = await loadShotContext(shotId); }
     catch (err) { return json(res, 404, { error: err.message }); }
     if (!ctx || !ctx.shot) return json(res, 404, { error: 'Shot not found' });
+    ctx.useDialogueAudio = wantsDialogueAudio(query);
 
     // The model this generation would be told to use, exactly as generateVideo
     // sets it — or the preview describes a clip on a model nobody asked for.
@@ -222,6 +223,8 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
     // A clip that will come back smaller than the project delivers is said
     // BEFORE it is bought: the best this generator does, and the fix.
     const delivery = payload.delivery || null;
+    if (payload.audio_refused) warnings.push(`Recorded dialogue will not be sent: ${payload.audio_refused}`);
+    if (payload.audio_dropped && payload.audio_dropped.length) warnings.push(`${payload.audio_dropped.length} dialogue clip(s) beyond this model's limit will not be sent.`);
     if (delivery && delivery.downgraded && !delivery.draft) {
         warnings.push(`This generator cannot deliver ${delivery.asked}; it will render its best, ${delivery.delivered}. `
             + 'The upscale pass (post) brings it to the delivery size, or pick a generator that reaches it.');
@@ -263,6 +266,13 @@ async function previewVideo(res, shotId, previewOverride, tierChoice) {
         tier: tierChoice ? tierChoice.tierId : null,
         // Asked, what it will deliver, and whether that is a downgrade.
         delivery,
+        // The shot's recorded lines: how many exist, how many would go, and why not.
+        dialogue_audio: {
+            available: (ctx.dialogueAudio || []).length,
+            asked: !!ctx.useDialogueAudio,
+            sending: (payload.audio_references || []).map(a => a.file_name),
+            refused: payload.audio_refused || null,
+        },
         references: {
             sending: refs.length,
             roles: refs.map(r => r.role),
@@ -318,7 +328,7 @@ function handleVideoGen(req, res, urlParts, query) {
         // segment never reaches this handler at all.
         if (sub === 'preview' && req.method === 'GET') {
             const tier = videoTierOf(req, query);
-            return previewVideo(res, shotId, videoOverrideOf(req, query), applyTier(tier, req, query));
+            return previewVideo(res, shotId, videoOverrideOf(req, query), applyTier(tier, req, query), query);
         }
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
@@ -375,9 +385,16 @@ function nextClip(shotId, shotCode) {
     return { version, filename: version === 1 ? `${shotCode}.mp4` : `${shotCode}_v${version}.mp4` };
 }
 
+/** The shot's recorded dialogue goes as an audio reference only when asked. */
+function wantsDialogueAudio(src) {
+    const v = src && src.use_dialogue_audio;
+    return v === true || v === 1 || v === '1' || v === 'true';
+}
+
 async function generateVideo(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
+    ctx.useDialogueAudio = wantsDialogueAudio(req.body);
 
     const { shot, scene, sceneCard, project } = ctx;
     const videoProvider = resolve('video',
@@ -515,6 +532,7 @@ async function generateVideo(req, res, shotId) {
 async function generateVideoStream(req, res, shotId) {
     const ctx = loadShotContext(shotId);
     if (!ctx) return json(res, 404, { error: 'Shot not found' });
+    ctx.useDialogueAudio = wantsDialogueAudio(req.body);
 
     const { shot, scene, project } = ctx;
     const videoProvider = resolve('video',
