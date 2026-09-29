@@ -359,12 +359,13 @@ bullets([
 
 # ── 9 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('9. Queue and history strip — and what Cancel really does', level=1)
-p('Under the canvas, the queue strip lists every generation for this film in five groups. Closed, it shows the counts; '
+p('Under the canvas, the queue strip lists every generation and flow run for this film in six groups. Closed, it shows the counts; '
   'click "Queue" to open it. Click any item to jump to its node.')
 pic('47-queue', 'The strip open: one running (with Cancel), two done today, one waiting to be collected (Collect) and one failed (Re-run).')
 table(['Group', 'What is in it', 'What you can do'], [
     ['Running', 'Being made now, with its percentage or phase.', 'Cancel — or Stop waiting (below).'],
     ['Waiting', 'The rest of a "Run what changed" or "Run to here" still to come.', 'Cancel run: stops before the next step.'],
+    ['Waiting for a pick', 'A flow run that stopped at a "pick one" step. Its variations are on the shot, not yet on the board.', 'Pick — opens the shot, where each variation has a Pick button; Cancel run keeps the variations and ends the run.'],
     ['Done today', 'Finished today.', 'Click to see it on its node.'],
     ['Waiting to be collected', 'A job the provider accepted and nobody was waiting for any more (for example a call Claude gave up on after 60 seconds). The provider probably finished it and billed for it.', 'Collect — free; fetches the result onto its node.'],
     ['Failed', 'What went wrong, in the provider\'s words.', 'Re-run — through the node\'s own confirmation.'],

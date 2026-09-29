@@ -4,7 +4,9 @@
  * Everything the Production graph's queue strip shows, from ONE free read:
  *
  *   running              a job heard from in the last few minutes, with progress
- *   waiting              the rest of a "Run what changed" / "Run to here" in progress
+ *   waiting              the rest of a "Run what changed" / "Run to here" in progress,
+ *                        and a flow run an apply has queued but not started
+ *   paused               a flow run stopped at a pick, waiting for a person (FOG-007)
  *   done_today           finished today
  *   awaiting_collection  a provider still holds a job the caller stopped waiting for
  *   failed               refused or broke today — or a job with no provider handle
@@ -14,7 +16,20 @@
  * one pure function, so nothing is shown twice and nothing silently vanishes.
  */
 
-const QUEUE_BUCKETS = Object.freeze(['running', 'waiting', 'done_today', 'awaiting_collection', 'failed']);
+const QUEUE_BUCKETS = Object.freeze(['running', 'waiting', 'paused', 'done_today', 'awaiting_collection', 'failed']);
+
+/*
+ * FLOW RUNS (FOG-007). Every status film_flow_runs' CHECK allows has a bucket,
+ * or is left out on purpose with the reason. A finished or failed run shows
+ * only on the day it settled, as a generation job does.
+ */
+const FLOW_RUN_STATUS = Object.freeze({
+    pending: 'waiting', running: 'running', paused: 'paused',
+    complete: 'done_today', failed: 'failed', cancelled: null,
+});
+const FLOW_RUN_LEFT_OUT = Object.freeze({
+    cancelled: 'A cancelled run is over by a person\'s choice: nothing is running, waiting or owed, and any variations it made stay on the shot.',
+});
 
 /**
  * @param {object} row  a film_generation_jobs row with computed
@@ -99,8 +114,37 @@ function projectQueue(projectId) {
                 thumb: it.key && it.key.startsWith('shot:') ? shotFrame(it.key.slice(5)) : null });
         }
     }
+    // ── flow runs ──
+    let applyLive = () => true;
+    try { applyLive = require('./flow-apply').isApplyLive; } catch (_) { /* no applies to ask about */ }
+    const flowRuns = db.prepare(`SELECT r.id, r.flow_id, r.shot_id, r.status, r.error_message, r.started_at, r.completed_at, r.created_at, r.apply_id,
+            f.name AS flow_name, sh.shot_code,
+            CASE WHEN date(r.completed_at) = date('now') THEN 1 ELSE 0 END AS settled_today
+        FROM film_flow_runs r LEFT JOIN film_flows f ON f.id = r.flow_id LEFT JOIN film_shots sh ON sh.id = r.shot_id
+        WHERE r.project_id = ? AND (r.status IN ('pending', 'running', 'paused') OR date(r.completed_at) = date('now'))
+        ORDER BY COALESCE(r.completed_at, r.started_at, r.created_at) DESC`).all(projectId);
+    for (const r of flowRuns) {
+        let bucket = FLOW_RUN_STATUS[r.status];
+        if (!bucket) continue;
+        if ((bucket === 'done_today' || bucket === 'failed') && !Number(r.settled_today)) continue;
+        // An applied run whose runner is gone (the process stopped) will never move.
+        const orphan = (r.status === 'pending' || r.status === 'running') && r.apply_id && !applyLive(r.apply_id);
+        if (orphan) bucket = 'failed';
+        const key = r.shot_id ? `shot:${r.shot_id}` : null;
+        out[bucket].push({
+            kind: 'flow_run', run_id: r.id, flow_id: r.flow_id, flow_name: r.flow_name || 'flow', apply_id: r.apply_id || null,
+            key, shot_code: r.shot_code || null, status: r.status,
+            stage: bucket === 'paused' ? 'waiting for a pick' : (r.flow_name || 'flow'),
+            started_at: r.started_at || r.created_at, settled_at: r.completed_at || null,
+            error: bucket === 'failed' ? (orphan ? 'Interrupted: the process running this apply stopped before the run finished.' : (r.error_message || 'failed')) : null,
+            // The existing cancel route stops a run that is still live.
+            cancel: ['running', 'waiting', 'paused'].includes(bucket) ? 'cancel' : null,
+            thumb: key ? shotFrame(r.shot_id) : null,
+        });
+    }
+
     out.counts = Object.fromEntries(QUEUE_BUCKETS.map(b => [b, out[b].length]));
     return out;
 }
 
-module.exports = { QUEUE_BUCKETS, classifyJob, projectQueue };
+module.exports = { QUEUE_BUCKETS, FLOW_RUN_STATUS, FLOW_RUN_LEFT_OUT, classifyJob, projectQueue };

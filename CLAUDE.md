@@ -171,7 +171,7 @@ film-engine/
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending; a cut join makes nothing
 │   │   ├── production-graph.js    # Every node, edge and group read in one pass; linked frames resolved to the selected version
 │   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
-│   │   ├── generation-queue.js    # One queue read: running, waiting, done today, awaiting collection, failed — each job in exactly one bucket
+│   │   ├── generation-queue.js    # One queue read: running, waiting, paused (a flow run waiting for a pick), done today, awaiting collection, failed — each job and flow run in exactly one bucket
 │   │   ├── generation-cancel.js   # Cancel only where the provider really stops; otherwise stop waiting, collectable, with the billing warning
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
@@ -487,6 +487,7 @@ film-engine/
 │       ├── graph-templates-shelf.test.js # FOG-006: every template on the add palette's shelf beside the patterns, applied to the picks and selection through the apply, refused with why when nothing can run; every template runs on a shot or says what it cannot bind
 │       ├── flow-outputs.test.js       # FOG-004: every out.asset port saved to disk as a flow candidate and drawn on its shot by kind (or named why not); nothing selected by itself, not on the board, not in playback
 │       ├── flow-pick.test.js          # FOG-005: every variation of a paused run a candidate; a pick resumes from the gate without regenerating and makes it the shot's version of every kind; a finished, cancelled or locked case refused
+│       ├── flow-queue.test.js         # FOG-007: every flow-run status from the migration in exactly one queue bucket (paused = waiting for a pick) or left out with why; each pans to its shot; a live one cancels, and a cancel stops a run that is going
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6357,6 +6358,7 @@ node --test backend/tests/graph-apply-flow.test.js
 node --test backend/tests/graph-templates-shelf.test.js
 node --test backend/tests/flow-outputs.test.js
 node --test backend/tests/flow-pick.test.js
+node --test backend/tests/flow-queue.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js

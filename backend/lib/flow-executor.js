@@ -128,8 +128,17 @@ async function runFlow(graph, ctx, opts) {
 
     const totalNodes = (graph.nodes || []).length;
 
+    /*
+     * A cancel through the route writes the run row (FOG-007); the executor
+     * reads it between nodes, or a run that is going would finish anyway and
+     * overwrite the cancel with its own status.
+     */
+    const cancelledInDb = () => {
+        const row = db.prepare('SELECT status FROM film_flow_runs WHERE id = ?').get(runId);
+        return !!(row && row.status === 'cancelled');
+    };
     for (let guard = 0; guard <= totalNodes; guard++) {
-        if (options.isCancelled && options.isCancelled()) {
+        if ((options.isCancelled && options.isCancelled()) || cancelledInDb()) {
             setRunStatus(runId, 'cancelled', '');
             return { id: runId, status: 'cancelled', nodes: nodeResults };
         }
@@ -193,6 +202,7 @@ async function runFlow(graph, ctx, opts) {
         if (paused) break;
     }
 
+    if (cancelledInDb()) return { id: runId, status: 'cancelled', nodes: nodeResults };
     const status = failed.length ? 'failed' : (paused ? 'paused' : 'complete');
     setRunStatus(runId, status, failed.length ? `${failed.length} node(s) failed` : '');
 

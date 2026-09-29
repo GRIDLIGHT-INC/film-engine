@@ -24,7 +24,8 @@ const { db, generateId } = require('../db/database');
 const q = require('../lib/generation-queue');
 
 test('the buckets are declared once, in the order the strip reads them', () => {
-    assert.deepEqual([...q.QUEUE_BUCKETS], ['running', 'waiting', 'done_today', 'awaiting_collection', 'failed']);
+    // 'paused' arrived with flow runs on the strip (FOG-007): a run stopped at a pick, waiting for a person.
+    assert.deepEqual([...q.QUEUE_BUCKETS], ['running', 'waiting', 'paused', 'done_today', 'awaiting_collection', 'failed']);
 });
 
 test('every job state lands in exactly one bucket, or is left out on purpose', () => {
@@ -78,6 +79,8 @@ test('the project queue fills every bucket from real rows, each item with its no
     db.prepare(`INSERT INTO film_pipeline_runs (id, project_id, run_type, status, params, steps_remaining)
         VALUES (?, ?, 'project', 'running', ?, ?)`).run(generateId(), P, JSON.stringify({ kind: 'run_changed' }),
         JSON.stringify([{ stage: 'video', key: 'shot:' + SH, shot_code: '1A' }]));
+    // The paused bucket is filled by a flow run waiting for a pick (FOG-007).
+    db.prepare("INSERT INTO film_flow_runs (id, flow_id, project_id, shot_id, status) VALUES (?, 'f', ?, ?, 'paused')").run(generateId(), P, SH);
     const out = q.projectQueue(P);
     assert.ok(out, 'no queue for a real project');
     for (const b of q.QUEUE_BUCKETS) assert.ok(Array.isArray(out[b]) && out[b].length >= 1, `${b} is empty`);

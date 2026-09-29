@@ -44622,7 +44622,7 @@ async function pgRunChanged() {
 
 /** The queue strip's buckets — exactly the server's QUEUE_BUCKETS (PGN-011). */
 const PG_QUEUE_LABELS = Object.freeze({
-    running: 'Running', waiting: 'Waiting', done_today: 'Done today',
+    running: 'Running', waiting: 'Waiting', paused: 'Waiting for a pick', done_today: 'Done today',
     awaiting_collection: 'Waiting to be collected', failed: 'Failed',
 });
 
@@ -44641,10 +44641,17 @@ function pgQueueHtml(q, open, labelOf) {
     if (!total) return head + '<div class="pg-qempty">Nothing running, waiting or finished today.</div>';
     const row = (b, it) => {
         const go = it.key ? ` onclick="pgQueueGo('${esc(it.key)}')" role="button" tabindex="0"` : '';
-        const detail = b === 'running'
+        const detail = it.kind === 'flow_run'
+            ? [it.flow_name, b === 'failed' ? (it.error || 'failed') : (b === 'paused' ? 'waiting for a pick' : '')].filter(Boolean).join(' · ')
+            : b === 'running'
             ? [it.phase, it.percent != null ? Math.round(it.percent) + '%' : null].filter(Boolean).join(' · ')
             : (b === 'failed' ? (it.error || 'failed') : (it.stage || it.capability || ''));
-        const act = b === 'awaiting_collection' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCollect('${esc(it.job_id)}')">Collect</button>`
+        // A flow run (FOG-007): a paused one opens its shot, where the variations are picked; a live one can be cancelled.
+        const flowAct = it.kind === 'flow_run'
+            ? `${b === 'paused' && it.key ? `<button class="pg-sbtn primary" onclick="event.stopPropagation();pgQueueGo('${esc(it.key)}')" title="Open the shot: its variations are in the drawer">Pick</button>` : ''}${
+               it.cancel ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgFlowCancelRun('${esc(it.run_id)}')" title="Stops before its next node; anything it made stays on the shot">Cancel run</button>` : ''}`
+            : null;
+        const act = flowAct !== null ? flowAct : b === 'awaiting_collection' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCollect('${esc(it.job_id)}')">Collect</button>`
             : (b === 'failed' && it.key ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueRerun('${esc(it.key)}')">Re-run</button>`
             // Cancel only where the provider really stops; otherwise say what "stop waiting" does (PGN-012).
             : (b === 'running' && it.cancel === 'provider' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancel('${esc(it.job_id)}')">Cancel</button>`

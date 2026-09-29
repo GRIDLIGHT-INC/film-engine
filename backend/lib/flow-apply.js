@@ -312,4 +312,7 @@ function readApply(db, applyId) {
     };
 }
 
-module.exports = { APPLY_TARGETS, APPLY_REFUSED, INPUT_BINDINGS, planApply, deriveApplyStatus, startApply, readApply, _testHold };
+/** Is this apply's runner alive in THIS process? A pending run of any other is abandoned. */
+const isApplyLive = applyId => live.has(applyId);
+
+module.exports = { APPLY_TARGETS, APPLY_REFUSED, INPUT_BINDINGS, planApply, deriveApplyStatus, startApply, readApply, isApplyLive, _testHold };
