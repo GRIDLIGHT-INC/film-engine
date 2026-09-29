@@ -1510,6 +1510,15 @@ function start() {
         console.error('Failed to seed built-in flows:', err.message);
     }
 
+    /*
+     * Scheduled backups to the folder chosen in Settings. Not started for a
+     * throwaway test database, so a test that writes backup_dir can never write
+     * into somebody's real folder.
+     */
+    const tmpData = process.env.FILM_DATA_DIR && require('path').resolve(process.env.FILM_DATA_DIR)
+        .startsWith(require('fs').realpathSync(require('os').tmpdir())) || (process.env.FILM_DATA_DIR || '').startsWith(require('os').tmpdir());
+    if (!tmpData) require('./lib/backup-folder').startBackupSchedule(require('./db/database').db);
+
     server.listen(PORT, () => {
         console.log(`  Film Engine API ready on http://localhost:${PORT}`);
         console.log('  Routes: /film/projects, /film/shots, /film/scenes, /film/characters,');

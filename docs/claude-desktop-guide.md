@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**404 tools, 82 families.** Everything the app can do, you can ask for in a
+**407 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -531,6 +531,16 @@ takes a parent folder (make the film's folder inside this one) or an exact folde
 nothing, but it changes where the person finds their work, so confirm the
 destination first. A project made before folders existed moves into one the
 same way.
+
+`backup_folder_status` · `backup_folder_set` · `backup_folder_run`
+
+Each person backs up to a folder they choose (`backup_folder_set`, e.g. a
+Dropbox or Google Drive folder), every six hours unless told otherwise. A
+backup is a consistent snapshot of the whole database, written into
+`Film Engine Backups/<user>@<machine>` so people sharing one folder never
+overwrite each other. `backup_folder_status` is free and carries the restore
+steps; `backup_folder_run` writes one now. Media is not in the snapshot: it
+lives in each project's own folder.
 
 ### Bringing an edit back from Premiere
 

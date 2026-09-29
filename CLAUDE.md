@@ -312,7 +312,8 @@ film-engine/
 │   │   ├── project-presets.js   # Aspect ratios, resolutions, delivery presets (Phase 15)
 │   │   ├── subtitle-generator.js # SRT/VTT generation, parsing, conversion (Phase 17)
 │   │   ├── audio-deliverables.js # 5.1 spec, M&E, stems, validation (Phase 17)
-│   │   └── backup.js            # Project JSON export/import (Phase 18)
+│   │   ├── backup.js            # Project JSON export/import (Phase 18)
+│   │   └── backup-folder.js     # Scheduled database snapshots to a folder each person chooses, one sub-folder per user and machine
 │   └── tests/
 │       ├── nle-export.test.js          # NLE export unit tests
 │       ├── storyboard-prompt.test.js   # Storyboard prompt unit tests
@@ -645,6 +646,7 @@ film-engine/
 │       ├── project-presets.test.js  # Project presets unit tests (Phase 15)
 │       ├── subtitle-generator.test.js # Subtitle format tests (Phase 17)
 │       ├── backup.test.js           # Backup export/import tests (Phase 18)
+│       ├── backup-folder.test.js    # A whole openable snapshot in the chosen folder, per user, pruned without touching foreign files, scheduled, reachable by person and agent
 │       ├── mcp-tools.test.js             # MCP tool generation, dispatch, JSON-RPC wire
 │       ├── previs-routes.test.js         # Previs API + single-file viewer guarantees (Phase 2)
 │       ├── previs-to-video.test.js        # Blocking reaches camera_control; unblocked byte-identical (Phase 3)
@@ -872,6 +874,7 @@ All routes prefixed with `/film`:
 | Music Rights | `GET /projects/:id/music-rights`, `PUT /music-cues/:id/rights` |
 | Backups | `GET/POST /projects/:id/backups`, `GET/DELETE /backups/:id` |
 | Backups | `GET /backups/:id/download`, `POST /backups/:id/restore` |
+| Backups | `GET /backups/folder` (free: where, when, what is there, how to restore), `POST /backups/folder/run` |
 | 3D | `POST /characters/:id/model/generate[/stream]`, `POST /characters/:id/model/from-image[/stream]` |
 | 3D | `POST /locations/:id/model/generate[/stream]` (a previs stage) |
 | 3D | `POST /props/:id/model/generate[/stream]`, `POST /props/:id/model/from-image[/stream]` |
@@ -2279,6 +2282,13 @@ who has the footage elsewhere.
 Served at `GET /film/projects/:id/export/{preflight,package}`, listed among the
 export formats so they are discoverable, and as `export_preflight` /
 `export_package` (**214 tools**).
+
+### Backups Go Where Each Person Says
+*"What if I share this to other users — how can they set their projects to a folder that saves backup?"*
+
+A film lives in two places: its project folder (the media, which each person already chooses) and this machine's database (every row saying what the media is). The database was backed up only by a script outside the app. Now `backup_dir`, `backup_every_hours` (blank is 6, 0 means only when asked), `backup_keep` (blank is 28) and `backup_projects` are app settings, set in the **Backups** card in Settings or with `backup_folder_set`, and `lib/backup-folder.js` writes there on a schedule the server checks every ten minutes. The setting is read each time, so no restart is needed.
+
+A backup is `VACUUM INTO` a `.part` file renamed when complete: a consistent snapshot with the WAL included, never a copy of a file that is being written. It goes in `Film Engine Backups/<user>@<machine>/`, so several people pointing at one shared folder never overwrite each other. Pruning keeps the newest N and never deletes a file Film Engine did not write. `backup_projects` also writes each project's rows as JSON, so one film can be restored alone. `GET /backups/folder` (`backup_folder_status`) is free and carries the restore steps; `POST /backups/folder/run` (`backup_folder_run`) writes one now. The schedule does not start for a database under the temp directory, so a test that sets `backup_dir` cannot write into somebody's real folder.
 
 ### Premiere, One Folder Per Scene
 *"A function on Film Engine that creates the folders per scene for Premiere and drops the video in, to make it easy for the editing part."*
@@ -6606,6 +6616,7 @@ node --test backend/tests/gridlight-video.test.js
 node --test backend/tests/project-presets.test.js
 node --test backend/tests/subtitle-generator.test.js
 node --test backend/tests/backup.test.js
+node --test backend/tests/backup-folder.test.js
 node --test backend/tests/mcp-tools.test.js
 node --test backend/tests/conform-contract.test.js
 node --test backend/tests/project-master.test.js

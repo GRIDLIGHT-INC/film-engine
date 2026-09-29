@@ -32,6 +32,8 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleBackups } = require('../routes/backups');
+const { handleAppSettings } = require('../routes/app-settings');
 const { handleProjectStorage } = require('../routes/project-storage');
 const { handleEdits } = require('../routes/edits');
 const { handleMusicMidi } = require('../routes/music-midi');
@@ -1731,9 +1733,9 @@ const PRODUCTION_TOOLS = [
             video_draft: {
                 type: 'boolean',
                 description: 'Generate footage at the model\'s cheapest documented tier instead of '
-                    + 'the delivery raster. ON by default and worth leaving on while blocking: on '
-                    + 'Seedance a draft second is $0.17 against $0.85 at 1080p. Turn it OFF for the '
-                    + 'take you intend to keep. Video only — the board is unaffected.',
+                    + 'the delivery raster. OFF by default: every clip is asked at the delivery size, and '
+                    + 'a generator that cannot reach it gives its best. Turn it on while blocking: on '
+                    + 'Seedance a draft second is $0.17 against $0.85 at 1080p. Video only — the board is unaffected.',
             },
         },
         required: ['title'],
@@ -1951,6 +1953,9 @@ const PRODUCTION_TOOLS = [
             project_id: { type: 'string' },
             style_preset: { type: 'string', description: 'The visual look applied to every prompt.' },
             aspect_ratio: { type: 'string', description: 'Delivery frame, e.g. "2.39:1", "16:9".' },
+            video_draft: { type: 'boolean', description: 'Draft video: clips at the model\'s cheapest size, upscaled at the end. Off by default, so every clip is asked at the delivery size.' },
+            delivery_codec: { type: 'string', description: 'The delivery master\'s codec: h264, h265, prores_422_proxy, prores_422_lt, prores_422, prores_422_hq, prores_4444, dnxhr_hq or jpeg2000. Anything other than h264 (or audio other than stereo) makes the conform write a delivery master beside the H.264 one.' },
+            delivery_audio_channels: { type: 'number', description: 'The delivery master\'s audio channels: 2 stereo, 6 for 5.1, 8 for 7.1, 12 for 12.0.' },
             logline: { type: 'string' },
             genre: { type: 'string' },
             annotation_feedback: {
@@ -3701,6 +3706,35 @@ const PRODUCTION_TOOLS = [
         description: 'Write the Premiere handover with ONE FOLDER PER SCENE into the project\u2019s Exports folder: Scene_NN_<heading>/Video holds each shot\u2019s SELECTED clip named by shot code, Sound holds its dialogue, effects and the scene\u2019s beds, and a Premiere XML carries the cut as a sequence plus a bin per scene. Media is COPIED, never moved. Spends nothing. Refuses when no shot has a clip yet.',
         path: a => `/film/projects/${a.project_id}/export/premiere-scenes`,
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'backup_folder_status',
+        handler: handleBackups, method: 'GET',
+        description: 'FREE. Where this machine\'s database is backed up (the backup_dir set in Settings), how often, how many are kept, the snapshots already there, when the next is due, and the steps to restore one. Each person sets their own folder; snapshots go in "Film Engine Backups/<user>@<machine>" inside it.',
+        path: () => '/film/backups/folder',
+        schema: {}, required: [],
+    },
+    {
+        name: 'backup_folder_set',
+        handler: handleAppSettings, method: 'PUT',
+        description: 'Choose where and how often this machine backs up: backup_dir (a full path, e.g. a Dropbox or Google Drive folder; \'\' turns scheduled backups off), backup_every_hours (0 = only when asked), backup_keep (snapshots kept), backup_projects (also write each project\'s rows as JSON). Send only what changes. Takes effect without a restart.',
+        path: () => '/film/settings',
+        body: a => Object.fromEntries(['backup_dir', 'backup_every_hours', 'backup_keep', 'backup_projects']
+            .filter(k => a && a[k] !== undefined).map(k => [k, a[k]])),
+        schema: {
+            backup_dir: { type: 'string', description: 'A full path. Blank turns scheduled backups off.' },
+            backup_every_hours: { type: 'number', description: 'Hours between backups; 0 writes only on backup_folder_run.' },
+            backup_keep: { type: 'number', description: 'How many snapshots to keep; older ones Film Engine wrote are deleted.' },
+            backup_projects: { type: 'boolean', description: 'Also write each project\'s rows as JSON.' },
+        },
+        required: [],
+    },
+    {
+        name: 'backup_folder_run',
+        handler: handleBackups, method: 'POST',
+        description: 'Write a backup to the backup folder NOW: a consistent snapshot of the whole database (VACUUM INTO, safe while Film Engine runs), plus each project\'s rows as JSON when backup_projects is on. Media is not copied; it lives in each project\'s own folder. Refuses when no backup_dir is set. Spends nothing.',
+        path: () => '/film/backups/folder/run',
+        schema: {}, required: [],
     },
     {
         name: 'run_report',

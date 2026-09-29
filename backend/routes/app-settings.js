@@ -64,6 +64,37 @@ const SETTINGS = {
         },
         example: '~/Film Engine',
     },
+    /*
+     * BACKUPS TO A FOLDER YOU CHOOSE (lib/backup-folder.js). Per person, like
+     * projects_root: somebody this app is shared with sets their own folder,
+     * and their snapshots go in a sub-folder named for them and their machine.
+     */
+    backup_dir: {
+        description: 'The folder the database is backed up to on a schedule, e.g. a Dropbox, Google Drive or NAS folder. Snapshots go in "Film Engine Backups/<you>@<this machine>" inside it. Blank turns scheduled backups off.',
+        default: '',
+        validate: v => {
+            if (v === '' || v === null || v === undefined) return [];
+            const expanded = require('../lib/project-folders').expandHome(String(v));
+            return require('path').isAbsolute(expanded) ? [] : ['backup_dir must be a full path (start it with / or ~/)'];
+        },
+        example: '~/Film Engine Backups',
+    },
+    backup_every_hours: {
+        description: 'How often a backup is written, in hours. Blank is every 6 hours; 0 writes only when you press Back up now.',
+        default: '',
+        validate: v => (v === '' || v == null || (Number.isFinite(Number(v)) && Number(v) >= 0)) ? [] : ['backup_every_hours must be a number of hours, 0 or more'],
+        example: '6',
+    },
+    backup_keep: {
+        description: 'How many database snapshots to keep in the folder; the oldest beyond this are deleted. Blank keeps 28 (a week at every 6 hours). Only snapshots Film Engine wrote are ever deleted.',
+        default: '',
+        validate: v => (v === '' || v == null || (Number.isInteger(Number(v)) && Number(v) >= 1)) ? [] : ['backup_keep must be a whole number, 1 or more'],
+        example: '28',
+    },
+    backup_projects: {
+        description: 'Also write each project\u2019s rows as JSON beside the snapshot, so one film can be restored alone. Media is not copied: it lives in each project\u2019s own folder.',
+        default: false,
+    },
     music_rights_policy: {
         description: 'JSON: what each music rights status does at each gate, e.g. {"approval":{"unknown":"warn"},"final_export":{"restricted":"block"}}. Statuses: cleared, unknown, restricted, expired, blocked; actions: allow, warn, block. Blank keeps the stated default (unknown and restricted warn; expired blocks final export; blocked blocks both).',
         default: '',

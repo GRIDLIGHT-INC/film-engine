@@ -7,6 +7,8 @@
  * GET  /film/backups/:id/download — download backup JSON
  * POST /film/backups/:id/restore — restore from backup
  * DELETE /film/backups/:id — delete backup
+ * GET  /film/backups/folder — the scheduled folder backups: where, when, what is there (free)
+ * POST /film/backups/folder/run — write a database snapshot to that folder now
  */
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +30,21 @@ function handleBackups(req, res, urlParts, query) {
         }
         if (req.method === 'GET') return listBackups(req, res, projectId);
         if (req.method === 'POST') return createBackup(req, res, projectId);
+    }
+
+    /*
+     * /film/backups/folder — the scheduled backups to the folder a person chose
+     * (lib/backup-folder.js). GET is the status, free; POST …/run writes one now.
+     */
+    if (urlParts[1] === 'backups' && urlParts[2] === 'folder') {
+        const bf = require('../lib/backup-folder');
+        const send = (c, body) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+        if (!urlParts[3] && req.method === 'GET') return send(200, bf.backupStatus());
+        if (urlParts[3] === 'run' && req.method === 'POST') {
+            try { return send(200, bf.runBackup(db)); }
+            catch (err) { return send(err.code === 'NO_BACKUP_DIR' ? 409 : 500, { error: err.code || 'BACKUP_FAILED', message: err.message }); }
+        }
+        return send(405, { error: 'Method not allowed' });
     }
 
     // /film/backups/:id[/download|/restore]

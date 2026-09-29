@@ -7177,6 +7177,42 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     <span class="text-sm text-muted">The default offered when you start a new project &mdash; each one gets its own folder inside this one. Changing it does not move any project that already exists.</span>
                 </div>
             </div>
+            <!--
+                BACKUPS TO A FOLDER YOU CHOOSE. Per person: somebody this app is
+                shared with sets their own folder here, and their snapshots go in
+                a sub-folder named for them and their machine.
+            -->
+            <div class="card mt-16" style="max-width:640px;" id="settingsBackupCard">
+                <h3 class="mb-8">Backups</h3>
+                <div class="form-group">
+                    <label>Back up to</label>
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" id="settingsBackupDir" placeholder="e.g. ~/Dropbox/Film Engine Backups" style="flex:1;" onchange="saveBackupSettings()">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsBackupDir', saveBackupSettings)">Browse&hellip;</button>
+                    </div>
+                    <span class="text-sm text-muted">A Dropbox, Google Drive or NAS folder works. Each person's snapshots go in their own sub-folder, so several people can share one folder. Blank turns scheduled backups off.</span>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Every (hours)</label>
+                        <input type="number" id="settingsBackupEvery" min="0" step="1" placeholder="6" onchange="saveBackupSettings()">
+                    </div>
+                    <div class="form-group">
+                        <label>Keep</label>
+                        <input type="number" id="settingsBackupKeep" min="1" step="1" placeholder="28" onchange="saveBackupSettings()">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;gap:8px;align-items:center;">
+                        <input type="checkbox" id="settingsBackupProjects" onchange="saveBackupSettings()">
+                        Also save each project as JSON beside the snapshot
+                    </label>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="runBackupNow()">Back up now</button>
+                    <span class="text-sm text-muted" id="settingsBackupStatus"></span>
+                </div>
+            </div>
             <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
                 <h3 class="mb-8">Project Settings</h3>
                 <div class="form-group">
@@ -18558,6 +18594,7 @@ THREE.GLTFLoader = GLTFLoader;
             const root = document.getElementById('settingsProjectsRoot');
             if (root) root.value = (l.settings && l.settings.projects_root) || '';
         } catch (_) { /* leave it blank: the default applies */ }
+        loadBackupSettings();
         const title = document.getElementById('settingsFolderTitle');
         if (!state.currentProject) {
             if (title) title.textContent = 'Where this project is saved';
@@ -18616,6 +18653,47 @@ THREE.GLTFLoader = GLTFLoader;
             if (btn) btn.disabled = false;
             loadProjectFolder();
         }
+    }
+
+    /* Backups to the folder chosen above (lib/backup-folder.js). */
+    async function loadBackupSettings() {
+        const st = document.getElementById('settingsBackupStatus');
+        if (!st) return;
+        try {
+            const [s, b] = await Promise.all([api('/settings'), api('/backups/folder')]);
+            const v = s.settings || {};
+            document.getElementById('settingsBackupDir').value = v.backup_dir || '';
+            document.getElementById('settingsBackupEvery').value = v.backup_every_hours === '' ? '' : v.backup_every_hours;
+            document.getElementById('settingsBackupKeep').value = v.backup_keep || '';
+            document.getElementById('settingsBackupProjects').checked = !!v.backup_projects;
+            st.textContent = !b.configured ? 'Off: no folder set.'
+                : b.last ? `Last: ${new Date(b.last.at).toLocaleString()} · ${b.count} kept · ${b.folder}`
+                : `No backup yet · ${b.folder}`;
+        } catch (err) { st.textContent = 'Could not read the backup settings: ' + err.message; }
+    }
+
+    async function saveBackupSettings() {
+        const body = {
+            backup_dir: document.getElementById('settingsBackupDir').value.trim(),
+            backup_every_hours: document.getElementById('settingsBackupEvery').value.trim(),
+            backup_keep: document.getElementById('settingsBackupKeep').value.trim(),
+            backup_projects: document.getElementById('settingsBackupProjects').checked,
+        };
+        try {
+            await api('/settings', { method: 'PUT', body: JSON.stringify(body) });
+            setStatus(body.backup_dir ? 'Backups go to ' + body.backup_dir : 'Scheduled backups are off');
+        } catch (err) { setStatus('Error: ' + err.message); }
+        loadBackupSettings();
+    }
+
+    async function runBackupNow() {
+        const st = document.getElementById('settingsBackupStatus');
+        if (st) st.textContent = 'Backing up…';
+        try {
+            const r = await api('/backups/folder/run', { method: 'POST', body: '{}' });
+            setStatus(`Backed up to ${r.folder}/${r.file}`);
+        } catch (err) { setStatus('Backup failed: ' + err.message); }
+        loadBackupSettings();
     }
 
     async function saveProjectsRoot() {
