@@ -483,6 +483,7 @@ film-engine/
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
 │       ├── production-graph-docs.test.js # The epic recorded: every module in its real directory, every route in the table, all eight features, progress and cancel per adapter, every tool in the guide
 │       ├── canvas-guide.test.js       # The Word guide to the canvas, built from scripts/make-canvas-guide.py: every feature, menu item, header control, queue bucket, state and tool, every picture present
+│       ├── self-hosted-models-plan.test.js # How GRD-4453 is worked: FEM-001..014 once each, a repo and its test command, prerequisites that cannot loop, the AWS gate, and no status (Jira holds it)
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -6334,6 +6335,7 @@ node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
 node --test backend/tests/production-graph-docs.test.js
 node --test backend/tests/canvas-guide.test.js
+node --test backend/tests/self-hosted-models-plan.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
