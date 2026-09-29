@@ -488,6 +488,7 @@ film-engine/
 │       ├── flow-outputs.test.js       # FOG-004: every out.asset port saved to disk as a flow candidate and drawn on its shot by kind (or named why not); nothing selected by itself, not on the board, not in playback
 │       ├── flow-pick.test.js          # FOG-005: every variation of a paused run a candidate; a pick resumes from the gate without regenerating and makes it the shot's version of every kind; a finished, cancelled or locked case refused
 │       ├── flow-queue.test.js         # FOG-007: every flow-run status from the migration in exactly one queue bucket (paused = waiting for a pick) or left out with why; each pans to its shot; a live one cancels, and a cancel stops a run that is going
+│       ├── flow-provenance.test.js    # FOG-008: a flow output's and a picked frame's recipe names the flow, version, saving and generating node, its provider and model, the run and the apply, or names each as not found; make another re-applies the flow to the shot
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6359,6 +6360,7 @@ node --test backend/tests/graph-templates-shelf.test.js
 node --test backend/tests/flow-outputs.test.js
 node --test backend/tests/flow-pick.test.js
 node --test backend/tests/flow-queue.test.js
+node --test backend/tests/flow-provenance.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js

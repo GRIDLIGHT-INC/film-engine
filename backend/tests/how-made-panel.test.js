@@ -79,7 +79,7 @@ const full = {
 };
 
 test('every recipe field has a place in the panel; unknown ones are NAMED, not dropped', () => {
-    const { pgRecipeHtml } = page(['pgRecipeHtml']);
+    const { pgRecipeHtml } = page(['pgRecipeHtml', 'pgRecipeFlowHtml']);
     const html = pgRecipeHtml(full);
     for (const needle of ['bfl', 'flux-2-pro', 'A woman waits', 'text', 'plate.png', '1234', '2048x1152', 'standard', 'behind', '0.12', '2026-09-28 10:00:00'])
         assert.ok(html.includes(needle), `${needle} not shown`);
@@ -93,7 +93,7 @@ test('every recipe field has a place in the panel; unknown ones are NAMED, not d
 });
 
 test('a seed the provider ignores is shown with that said, never as a promise', () => {
-    const { pgRecipeHtml } = page(['pgRecipeHtml']);
+    const { pgRecipeHtml } = page(['pgRecipeHtml', 'pgRecipeFlowHtml']);
     assert.match(pgRecipeHtml(Object.assign({}, full, { provider: 'muapi', seed_honoured: false })), /ignor|not honou?red/i);
 });
 

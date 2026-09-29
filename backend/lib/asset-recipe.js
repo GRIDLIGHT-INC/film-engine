@@ -21,6 +21,68 @@ const LEDGER_STEP = Object.freeze({
 });
 const NEAR_SECONDS = 600;
 
+/*
+ * WHAT A FLOW MADE (FOG-008). A flow output's facts live in the flow run, not
+ * on the asset: which flow and version, the node that saved it, the generating
+ * node upstream of it and that node's provider and model, the run, the apply.
+ * Each is read from where it lives and named in `unknown` when it is gone.
+ */
+const FLOW_RECIPE_FIELDS = Object.freeze(['flow', 'flow_version', 'node', 'generated_by', 'provider', 'model', 'run', 'apply']);
+
+function flowProvenance(db, meta) {
+    const from = meta && meta.flow_from;
+    let m = meta || {};
+    if (from) {
+        // A frame picked from a flow: its facts are the candidate's.
+        const cand = from.asset_id ? db.prepare('SELECT metadata FROM film_assets WHERE id = ?').get(from.asset_id) : null;
+        m = Object.assign({}, parse(cand && cand.metadata, {}) || {}, from);
+    } else if (m.source !== 'flow') return null;
+
+    const run = m.run_id ? db.prepare('SELECT id, flow_id, status, graph_snapshot, apply_id, started_at, completed_at FROM film_flow_runs WHERE id = ?').get(m.run_id) : null;
+    const flowId = m.flow_id || (run && run.flow_id) || null;
+    const flow = flowId ? db.prepare('SELECT id, name, version FROM film_flows WHERE id = ?').get(flowId) : null;
+    const applyId = m.apply_id || (run && run.apply_id) || null;
+    const apply = applyId ? db.prepare('SELECT id, status, created_at FROM film_flow_applies WHERE id = ?').get(applyId) : null;
+
+    // The generating node: walk upstream from the node that saved it, in the graph AS RUN.
+    let gen = null, provider = null, model = null;
+    const graph = run ? parse(run.graph_snapshot, null) : null;
+    if (graph && m.node) {
+        const byId = new Map((graph.nodes || []).map(n => [n.id, n]));
+        const seen = new Set();
+        const queue = [m.node];
+        while (queue.length && !gen) {
+            const id = queue.shift();
+            for (const e of graph.edges || []) {
+                if (e.to !== id || seen.has(e.from)) continue;
+                seen.add(e.from);
+                const n = byId.get(e.from);
+                if (n && String(n.type).startsWith('gen.')) { gen = n; break; }
+                queue.push(e.from);
+            }
+        }
+        if (gen) {
+            const nr = db.prepare(`SELECT nr.provider_id FROM film_flow_node_runs nr LEFT JOIN film_flow_branches b ON b.id = nr.branch_id
+                WHERE nr.run_id = ? AND nr.node_id = ? AND (b.branch_key = ? OR nr.branch_id IS NULL) AND nr.provider_id != ''
+                ORDER BY nr.branch_id IS NULL LIMIT 1`).get(run.id, gen.id, m.branch || '');
+            provider = (nr && nr.provider_id) || null;
+            model = (gen.config && gen.config.model) || null;
+        }
+    }
+    const out = {
+        flow: flow ? { id: flow.id, name: flow.name } : null,
+        flow_version: flow && flow.version != null ? Number(flow.version) : null,
+        node: m.node || null,
+        generated_by: gen ? { id: gen.id, type: gen.type } : null,
+        provider, model,
+        run: run ? { id: run.id, status: run.status, started_at: run.started_at, completed_at: run.completed_at } : null,
+        apply: apply ? { id: apply.id, status: apply.status, created_at: apply.created_at } : null,
+        branch: m.branch || null,
+    };
+    out.unknown = FLOW_RECIPE_FIELDS.filter(f => out[f] === null || out[f] === undefined);
+    return out;
+}
+
 const parse = (t, d) => { try { return t ? JSON.parse(t) : d; } catch (_) { return d; } };
 const blank = v => v === undefined || v === null || v === '' || v === 'unrecorded';
 
@@ -84,10 +146,12 @@ function assetRecipe(db, assetId) {
         : (meta.width && meta.height ? `${meta.width}x${meta.height}` : (meta.size || meta.raster || null));
     const seed = ledger && Number(ledger.seed) >= 0 ? Number(ledger.seed)
         : (!blank(meta.seed) ? meta.seed : (!blank(frameMeta.seed) ? frameMeta.seed : null));
+    const flow = flowProvenance(db, meta);
     const out = {
-        asset_id: a.id, asset_type: a.asset_type,
-        provider: a.provider || (ledger && parse(ledger.extra_params, {}).provider) || null,
-        model: !blank(a.provider_model) ? a.provider_model : (ledger && !blank(ledger.model_id) ? ledger.model_id : null),
+        asset_id: a.id, asset_type: a.asset_type, shot_id: a.shot_id || null,
+        // A flow output's generator is the flow node's, read from its run.
+        provider: a.provider || (ledger && parse(ledger.extra_params, {}).provider) || (flow && flow.provider) || null,
+        model: !blank(a.provider_model) ? a.provider_model : (ledger && !blank(ledger.model_id) ? ledger.model_id : (flow && flow.model) || null),
         prompt: (ledger && !blank(ledger.prompt) && ledger.prompt) || meta.prompt || frameMeta.prompt || null,
         negative_prompt: (ledger && !blank(ledger.negative_prompt) && ledger.negative_prompt) || meta.negative_prompt || frameMeta.negative_prompt || null,
         references: refs,
@@ -100,6 +164,7 @@ function assetRecipe(db, assetId) {
         made_at: a.created_at || null,
         ledger_match: ledgerMatch,
         cost_match: costMatch,
+        flow,
     };
     // Whether the provider honours a seed at all — read from the adapter, so
     // "make another like this" never promises the same again from a provider
@@ -113,4 +178,4 @@ function assetRecipe(db, assetId) {
     return out;
 }
 
-module.exports = { assetRecipe, RECIPE_FIELDS, LEDGER_STEP };
+module.exports = { assetRecipe, RECIPE_FIELDS, FLOW_RECIPE_FIELDS, LEDGER_STEP };

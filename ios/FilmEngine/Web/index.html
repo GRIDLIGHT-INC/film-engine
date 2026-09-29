@@ -45795,8 +45795,24 @@ function pgRecipeHtml(r) {
     const prompt = !unknown.has('prompt') ? `<div class="pg-kicker" style="margin-top:8px;"><span>Prompt</span></div><pre class="pg-pre">${esc(r.prompt)}</pre>` : '';
     const neg = !unknown.has('negative_prompt') ? `<div class="pg-kicker"><span>Negative</span></div><pre class="pg-pre">${esc(r.negative_prompt)}</pre>` : '';
     const missing = [...unknown].map(f => f.replace(/_/g, ' '));
-    return `<div class="pg-list">${rows.join('')}</div>${prompt}${neg}${refs}
+    return `${pgRecipeFlowHtml(r.flow)}<div class="pg-list">${rows.join('')}</div>${prompt}${neg}${refs}
         ${missing.length ? `<div class="pg-note" style="margin-top:8px;">Not recorded: ${esc(missing.join(', '))}</div>` : ''}`;
+}
+
+/** Which flow made this, from its run (FOG-008): every fact named, or named as not found. */
+function pgRecipeFlowHtml(f) {
+    if (!f) return '';
+    const row = (label, val) => `<div class="pg-li"><span class="grow">${esc(label)}</span><span class="m">${val}</span></div>`;
+    const rows = [];
+    if (f.flow) rows.push(row('Flow', esc(f.flow.name) + (f.flow_version != null ? ` · v${esc(f.flow_version)}` : '')));
+    if (f.node) rows.push(row('Saved by node', esc(f.node)));
+    if (f.generated_by) rows.push(row('Made by node', `${esc(f.generated_by.id)} · ${esc(f.generated_by.type)}`));
+    if (f.provider || f.model) rows.push(row('Node generator', esc(f.provider || 'not recorded') + (f.model ? ' · ' + esc(f.model) : '')));
+    if (f.run) rows.push(row('Run', `${esc(String(f.run.id).slice(0, 8))} · ${esc(f.run.status)}${f.branch && f.branch !== 'root' ? ' · ' + esc(f.branch) : ''}`));
+    if (f.apply) rows.push(row('Apply', `${esc(String(f.apply.id).slice(0, 8))} · ${esc(f.apply.status || '')}`));
+    const missing = (f.unknown || []).map(x => x.replace(/_/g, ' '));
+    return `<div class="pg-kicker"><span>Made by a flow</span></div><div class="pg-list">${rows.join('')}</div>
+        ${missing.length ? `<div class="pg-note">Not found for this flow output: ${esc(missing.join(', '))}</div>` : ''}`;
 }
 
 /**
@@ -45808,6 +45824,13 @@ function pgRecipeHtml(r) {
  */
 function pgMakeAnotherPlan(r, kind, parent) {
     if (!r) return { refused: 'Nothing is recorded about how this was made.' };
+    // A flow output is made again by applying the same flow to its shot (FOG-008 → FOG-003).
+    if (r.flow) {
+        if (!r.flow.flow) return { refused: 'The flow that made this has been deleted, so it cannot be applied again.' };
+        const shotId = (parent && parent.type === 'shot' && parent.id) || r.shot_id;
+        if (!shotId) return { refused: 'This flow output belongs to no shot, so there is nothing to apply the flow to.' };
+        return { flowId: r.flow.flow.id, targets: [`shot:${shotId}`] };
+    }
     if (kind === 'audio' || (parent && parent.type === 'sound'))
         return { refused: 'A sound is regenerated from its cue’s direction, not from a stored prompt — use Regenerate on the sound.' };
     if (!parent || parent.type !== 'shot')
@@ -45853,6 +45876,8 @@ async function pgMakeAnother(assetId) {
     const r = (PG.drawerCache.recipes || {})[assetId];
     const plan = pgMakeAnotherPlan(r, ctx.kind, pgNode(ctx.parentKey));
     if (plan.refused) return setStatus(plan.refused);
+    // The flow's own plan and confirmation, the same as "Apply flow…".
+    if (plan.flowId) return pgApplyFlow(plan.flowId, plan.targets);
     return confirmPaidImage({
         capability: plan.capability,
         title: 'Make another like this',
