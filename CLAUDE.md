@@ -75,9 +75,6 @@ film-engine/
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
-│   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
-│   │   ├── generation-queue.js    # One queue read: running, waiting, done today, awaiting collection, failed — each job in exactly one bucket
-│   │   ├── generation-cancel.js   # Cancel only where the provider really stops; otherwise stop waiting, collectable, with the billing warning
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
 │   │   ├── annotations.js      # Markup on a storyboard frame (arrows, shapes, notes)
@@ -172,6 +169,9 @@ film-engine/
 │   │   ├── capture-to-world.js    # A capture nobody can generate from is a file, not an input
 │   │   ├── video-sequence.js      # N shots -> N-1 interpolated segments, planned without spending; a cut join makes nothing
 │   │   ├── production-graph.js    # Every node, edge and group read in one pass; linked frames resolved to the selected version
+│   │   ├── generation-progress.js # What is running and how far along: a row for every generation, progress throttled to one write a second
+│   │   ├── generation-queue.js    # One queue read: running, waiting, done today, awaiting collection, failed — each job in exactly one bucket
+│   │   ├── generation-cancel.js   # Cancel only where the provider really stops; otherwise stop waiting, collectable, with the billing warning
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
@@ -480,6 +480,7 @@ film-engine/
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
+│       ├── production-graph-docs.test.js # The epic recorded: every module in its real directory, every route in the table, all eight features, progress and cancel per adapter, every tool in the guide
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
@@ -764,6 +765,7 @@ All routes prefixed with `/film`:
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
 | Production graph | `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST\|DELETE /shots/:id/video/select`, `POST\|DELETE /sequences/:id/video/select`, `POST\|DELETE /music-cues/:id/select` |
+| Production graph | `GET …/production-graph/{running,queue,run-changed/plan,patterns}` (free), `GET …/nodes/:key/run-to-here/plan` (free), `GET …/match?sha256=&size=` (free), `GET …/patterns/:id/preview?after=` (free), `POST …/run-changed`, `GET …/run-changed/:runId`, `POST …/nodes/:key/run-to-here`, `POST …/runs/:runId/cancel`, `POST …/patterns/:id`, `PUT …/groups/:groupKey`, `POST /generation-jobs/:id/cancel`, `GET /assets/:id/provenance` (free) |
 | Score Sessions | `GET/POST /projects/:id/music-sessions`, `GET/PUT/DELETE /music-sessions/:id` |
 | Score Sessions | `GET /music-sessions/:id/{brief,drift}` (free), `POST /music-sessions/:id/{rebase,batch}` |
 | Score Sessions | `GET/POST /music-sessions/:id/{tracks,clips,markers,emotion-ranges,automation}`, `PUT/DELETE …/:kind/:childId` |
@@ -3107,6 +3109,31 @@ The displays were fixed a round later than the assemblies, and the reason is wor
 **Layout.** Placed automatically from the shot list — one group per sequence, versions right of their parent, sound under it. A node a person drags is pinned in `production_node_layout`; Tidy forgets only the unpinned rows.
 
 Served at `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST|DELETE /shots/:id/video/select`, `POST|DELETE /sequences/:id/video/select`, `POST|DELETE /music-cues/:id/select`, and `GET /music-cues/:id/generate` (the cue's free preview). `tests/production-graph.test.js` drives it through a spawned server, because the dispatch order is part of what breaks.
+
+### The Graph Shows Its Work
+*From the comparison of ComfyUI's editor with this Production screen (GRD-4533, `docs/plans/production-graph-nodes-epic.md`).* The graph already put every shot, sequence, sound and version on one canvas; what the engine KNEW about them — what is running, what is behind, what a clip still needs, how a version was made — never reached it. Eight features bring it there, built on data that already existed, all behind the `production_graph` setting and all spending only through the one confirmation.
+
+**Live progress on the node.** Every generation is a row in `film_generation_jobs` while it runs, synchronous ones included (migration 117; `lib/generation-progress.js`, at most one write a second per job, the latest value kept). Progress comes from the ADAPTER, through an `onProgress` that `resolve()` injects, and each adapter declares what it can honestly report as `reportsProgress`: a **percent** from runway, bfl, meshy and gridlight (step over total); a **phase** from muapi, seedance and worldlabs, whose polls carry a status and no number; **none** from the synchronous rest. A provider with no percentage is drawn as elapsed time and "no percentage from this provider" — a percentage is never invented, and a poll with no progress field is never read as 0%. Because it is written to the database, a job Claude starts in the MCP process shows on the page too; the page polls while anything runs, since the live channel is silent about its own server's writes.
+
+**Out-of-date on the graph, and "Run what changed".** Every node carries `impact` — current, redo, waiting, never or **untracked** — from `lib/impact.js` and nowhere else, one rule per node type; voice, lip-sync, SFX and post roll up as badges on the shot. Untracked is said aloud: a file made outside the workflow has no input fingerprint, and calling it current would be a guess. `lib/run-changed.js` plans the redo-now rows for free, priced and in chain order, naming everything it leaves out (waiting, a card only a person can rewrite, a locked board, a held node); the run goes one item at a time through the pipeline's own `executeStep`, re-reading the report after each, and stops at the first refusal naming the rest.
+
+**Run to here.** `lib/run-to-here.js` plans what a clip, sequence or sound still needs — frames before clips, borrowed frames traced to their source, cut joins costing nothing — and runs it through each stage's own route. A blocker refuses before anything runs.
+
+**Queue and history strip.** `lib/generation-queue.js` puts every job in exactly one of running, waiting, done today, awaiting collection and failed; the strip under the canvas pans to each item's node, collects a pending job in place and re-runs a failed one through its node's confirmation.
+
+**What cancel really does.** Each async adapter declares `cancel`. Only runway really cancels at the provider (`DELETE /v1/tasks/:id`), and there the job is marked cancelled. Everywhere else (bfl, meshy, muapi, seedance, worldlabs) the provider cannot be stopped, so the button is **Stop waiting**: the job stays collectable and the answer says the provider may still finish and bill for it (`lib/generation-cancel.js`). Cancelling a run stops it before its next step and names what it did not attempt.
+
+**How was this made.** `lib/asset-recipe.js` serves a version's provider, model, prompt, negative, references, seed, size, tier, fingerprint, ledger row and cost on `GET /assets/:id/provenance`, naming whatever was not recorded rather than borrowing it from a neighbour; the panel offers "Make another like this" (the seed only where the provider honours one) and an A/B wipe. **Drop a file on the canvas** to find its recipe: it is hashed in the browser and matched by hash and size (`lib/asset-match.js`), so the bytes never leave the page.
+
+**Hold a node.** Migration 118's `held_at` on shots, sequences and cues, set through each node's own update route and MCP tool or Ctrl+B. `lib/graph-hold.js` lists every batch entry point that skips a held node and says so; conform and export never read the hold, so a held shot stays in the film.
+
+**Collapse a group.** A sequence or scene becomes one card with its length, shots done, how many are behind and anything running (migration 119, `production_group_layout`). Collapsing moves no node, Tidy keeps a collapsed group's members, and Fit, the minimap and the side panel treat the card as the thing on the canvas.
+
+**Search to add, and patterns.** Double-click opens a keyboard palette: a shot inserted after the nearest one with the next insert code (`lib/shot-insert-code.js`, the one insert the route also uses), a sound of any cue type, or a sequence of the picked shots. `lib/graph-patterns.js` holds shot / reverse shot, insert then reaction, and wide / medium / close: a free preview, then shots and a sequence with its joins, and nothing generated.
+
+**Agent parity.** Every action has a tool dispatched through its route: `production_graph_get`, `production_graph_running`, `generation_queue`, `run_changed_plan`, `run_changed`, `run_changed_status`, `run_to_here_plan`, `run_to_here`, `run_cancel`, `generation_cancel`, `asset_provenance`, `pattern_list`, `pattern_preview`, `pattern_create`, `graph_hold` and `version_select` (see `docs/claude-desktop-guide.md`). Plans are free; `run_changed` and `run_to_here` spend.
+
+**The browser pass found what the unit tests could not.** `pgRender` built nodes with `.map(pgNodeHtml)`, so Array.map's index arrived as `raw` and every node but the first was drawn without its state and its hold badge — each feature's own test called `pgNodeHtml(n)` directly and passed. `tests/production-graph-nodes.test.js` runs the renderer itself, and drives all eight features together through a spawned server on one project with a running job, a stale frame, a held shot and a collapsed sequence.
 
 ### One Clip, Several Shots
 *"I generated a video that includes 1A-B-C… when playing a video in playback it should be playing the entire video, not a few seconds and then switch to the next image. And if I option select which other shots are part of the video, it shouldn't play any of the images that are part of the video."*
@@ -6302,6 +6329,7 @@ node --test backend/tests/graph-add-palette.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
+node --test backend/tests/production-graph-docs.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/spot-duration.test.js
