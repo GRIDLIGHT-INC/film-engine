@@ -86,7 +86,8 @@ test('every picture with real weight asks for a size', () => {
     ];
     const offenders = [];
     for (const tag of servedImageTags()) {
-        if (/[?&]w=|plateSrc\(/.test(tag)) continue;
+        // pgThumb(url, w) asks for a width: it joins ?w= onto the URL itself.
+        if (/[?&]w=|plateSrc\(|pgThumb\(/.test(tag)) continue;
         if (EXEMPT.some(([re]) => re.test(tag))) continue;
         offenders.push(tag.replace(/\s+/g, ' ').slice(0, 84));
     }

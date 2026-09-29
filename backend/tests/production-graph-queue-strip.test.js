@@ -39,7 +39,7 @@ function constSource(name) {
 function render() {
     for (const n of ['PG_QUEUE_LABELS', 'pgQueueHtml']) assert.ok(fnSource(n) || constSource(n), `the page has no ${n}`);
     return new Function(`const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-        ${constSource('PG_QUEUE_LABELS')} ${fnSource('pgQueueHtml')}; return { pgQueueHtml, PG_QUEUE_LABELS };`)();
+        const pgSrc = u => u; ${fnSource('pgThumb')} ${constSource('PG_QUEUE_LABELS')} ${fnSource('pgQueueHtml')}; return { pgQueueHtml, PG_QUEUE_LABELS };`)();
 }
 
 const item = (b, i) => ({ job_id: `${b}-${i}`, key: 'shot:s' + i, stage: 'video', provider: 'runway', capability: 'video',

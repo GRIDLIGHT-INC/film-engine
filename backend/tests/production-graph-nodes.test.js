@@ -324,3 +324,63 @@ test('pgRender decorates EVERY node, not only the first (map passes the index as
     const raw = calls.filter(([, r]) => r).map(([k]) => k);
     assert.deepEqual(raw, [], `these nodes were drawn raw, without their state and hold: ${raw.join(', ')}`);
 });
+
+// ── Pictures reach the API, not the page server (found writing the guide) ──
+
+test('every picture or clip a pg* function draws goes through pgSrc/pgThumb, so it reaches the API origin', () => {
+    // The page and the API are two servers (3200 and 3100 in normal use). A
+    // root-relative /film/... src resolves against the PAGE server and draws
+    // a broken image — the queue strip's thumbnails did exactly that.
+    const bad = [];
+    let fn = null;
+    for (const line of SPA.split('\n')) {
+        const m = line.match(/^(?:async\s+)?function\s+(pg\w*)\s*\(/);
+        if (m) fn = m[1]; else if (/^(?:async\s+)?function\s+/.test(line)) fn = null;
+        if (!fn) continue;
+        for (const s of line.matchAll(/<(?:img|video|audio)[^>]*\ssrc="\$\{([^}]*)\}/g)) {
+            if (!/pgSrc\(|pgThumb\(|mediaUrl\(|frameSrc\(|plateSrc\(|API_BASE|\bsrc\(/.test(s[1])) bad.push(`${fn}: ${s[1].slice(0, 60)}`);
+        }
+    }
+    assert.deepEqual(bad, [], 'these draw a media URL straight from the data, which the page server cannot serve');
+});
+
+test('pgThumb reaches the API and joins the width onto a URL that already has a query', () => {
+    const src = fnSource('pgThumb');
+    assert.ok(src, 'no pgThumb(): each caller appends ?w= by hand, and one got a URL that already had ?v=');
+    const pgThumb = new Function('pgSrc', `${src}; return pgThumb;`)(u => 'http://api:3100' + u);
+    assert.equal(pgThumb('/film/storyboards/p/1A.png', 96), 'http://api:3100/film/storyboards/p/1A.png?w=96');
+    assert.equal(pgThumb('/film/storyboards/p/1A.png?v=3', 96), 'http://api:3100/film/storyboards/p/1A.png?v=3&w=96');
+    assert.equal(pgThumb('', 96), '');
+    assert.doesNotMatch(fnSource('pgRecipeHtml'), /pgSrc\([^)]*\)\}\?w=/, 'the recipe panel still appends ?w= after pgSrc by hand');
+});
+
+// ── Every run confirmation names what the hold leaves out (found writing the guide) ──
+
+test('every run confirmation names a held node, whatever else the plan holds', () => {
+    // "Run to here" on a sequence with a held shot planned around it and the
+    // confirmation said nothing: the server's plan carried `held`, the dialog
+    // never read it, so a director approved a sequence built on a frame the
+    // hold kept stale without being told.
+    const ESC = 'const esc = s => String(s == null ? "" : s);';
+    const held = { key: 'shot:b', kind: 'shot', id: 'b', label: '1B', shot_code: '1B', stage: 'keyframe', reason: hold.HELD_REASON };
+    const plans = {
+        pgRunToHereDescribe: [
+            { items: [{ shot_code: '1C', stage: 'keyframe', cost: 0.04 }], held: [held], blockers: [], total_cost: 0.04 },
+            { items: [], held: [held], blockers: [], total_cost: 0, summary: 'Nothing to do.' },
+        ],
+        pgRunChangedDescribe: [
+            { items: [{ shot_code: '1C', stage: 'keyframe', cost: 0.04 }], held: [held], skipped: [held], total_cost: 0.04 },
+        ],
+    };
+    const quiet = [];
+    for (const [fn, list] of Object.entries(plans)) {
+        const src = fnSource(fn);
+        assert.ok(src, `no ${fn}`);
+        const describe = new Function(`${ESC} ${src}; return ${fn};`)();
+        list.forEach((plan, i) => {
+            const html = describe(plan);
+            if (!/1B/.test(html) || !/held/i.test(html)) quiet.push(`${fn} #${i}`);
+        });
+    }
+    assert.deepEqual(quiet, [], 'these confirmations leave a held node out without saying so');
+});

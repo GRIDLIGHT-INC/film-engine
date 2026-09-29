@@ -43644,6 +43644,8 @@ async function pgLoad() {
 function pgNode(key) { return PG.byKey.get(key); }
 /** A served path (/film/…) with the API's origin, the rule mediaUrl already states. */
 function pgSrc(url) { return url ? mediaUrl(url) : ''; }
+/** A thumbnail: through pgSrc (the API origin, not the page server), the width joined onto any query already there. */
+function pgThumb(url, w) { if (!url) return ''; const u = pgSrc(url); return u + (u.includes('?') ? '&' : '?') + 'w=' + (w || 96); }
 function pgShots() { return (PG.graph ? PG.graph.nodes : []).filter(n => n.type === 'shot'); }
 function pgSecs(ms) { return ms ? (Math.round(ms / 100) / 10) + 's' : '—'; }
 
@@ -44613,7 +44615,7 @@ function pgQueueHtml(q, open, labelOf) {
             : (b === 'running' && it.cancel === 'provider' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancel('${esc(it.job_id)}')">Cancel</button>`
             : (b === 'running' && it.cancel === 'stop_waiting' ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancel('${esc(it.job_id)}')" title="${esc((it.provider || 'This provider') + ' cannot be told to stop. It may still finish and bill; the job stays collectable.')}">Stop waiting</button>`
             : (b === 'waiting' && it.run_id ? `<button class="pg-sbtn" onclick="event.stopPropagation();pgQueueCancelRun('${esc(it.run_id)}')" title="Stops before its next step">Cancel run</button>` : ''))));
-        return `<div class="pg-qitem"${go}>${it.thumb ? `<img src="${esc(it.thumb + (String(it.thumb).includes('?') ? '&w=96' : '?w=96'))}" alt="" loading="lazy">` : '<span class="pg-qnothumb"></span>'}
+        return `<div class="pg-qitem"${go}>${it.thumb ? `<img src="${esc(pgThumb(it.thumb, 96))}" alt="" loading="lazy">` : '<span class="pg-qnothumb"></span>'}
             <span class="pg-qname">${esc(name(it))}</span><span class="pg-qdetail">${esc(detail)}</span>${act}</div>`;
     };
     const sections = Object.keys(PG_QUEUE_LABELS).filter(b => (q[b] || []).length)
@@ -44754,11 +44756,15 @@ function pgRunToHereDescribe(plan) {
     if ((p.blockers || []).length) {
         return `<p style="color:#f06a4a;">This cannot run yet:</p><ul style="padding-left:18px;">${p.blockers.map(b => `<li>${esc(b.reason)}</li>`).join('')}</ul>`;
     }
-    if (!(p.items || []).length) return `<p>${esc(p.summary || 'Nothing to do: everything this needs is already made and current.')}</p>`;
+    // A held node is left out of the run and said so here: approving a
+    // sequence built around a frame the hold kept stale must not be a surprise.
+    const heldList = (p.held || []).map(h => `<li><b>${esc(h.label || h.shot_code || h.key || '')}</b> — ${esc(h.reason || 'held')}</li>`).join('');
+    const heldHtml = heldList ? `<details open><summary>Held, left out (${(p.held || []).length})</summary><ul style="padding-left:18px;">${heldList}</ul></details>` : '';
+    if (!(p.items || []).length) return `<p>${esc(p.summary || 'Nothing to do: everything this needs is already made and current.')}</p>${heldHtml}`;
     const who = it => esc(it.shot_code || it.name || it.key || '');
     const rows = p.items.map(it => `<li><b>${who(it)}</b> · ${esc(it.stage)}${it.legs ? ` · ${it.legs} leg${it.legs === 1 ? '' : 's'}` : ''} · ${money(it.cost)}${it.why ? `<div class="text-muted" style="font-size:12px;">${esc(it.why)}</div>` : ''}</li>`).join('');
     const over = p.refused ? `<p style="color:#f06a4a;">Over budget: this would take the project past its budget. Nothing will run unless you raise it.</p>` : '';
-    return `${over}<p>${p.items.length} step${p.items.length === 1 ? '' : 's'}, in this order, about <b>${money(p.total_cost)}</b>. It stops at the first refusal.</p><ol style="padding-left:18px;margin:6px 0;">${rows}</ol>`;
+    return `${over}<p>${p.items.length} step${p.items.length === 1 ? '' : 's'}, in this order, about <b>${money(p.total_cost)}</b>. It stops at the first refusal.</p><ol style="padding-left:18px;margin:6px 0;">${rows}</ol>${heldHtml}`;
 }
 
 /** "Run to here": the node's free plan in the one confirmation, then the steps in order. */
@@ -45537,7 +45543,7 @@ function pgRecipeHtml(r) {
     if (!unknown.has('made_at')) rows.push(row('Made', esc(r.made_at)));
     const refs = (r.references || []).length ? `<div class="pg-kicker" style="margin-top:8px;"><span>References</span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">${r.references.map(x => x.thumb
-            ? `<img src="${esc(pgSrc(x.thumb))}?w=96" alt="${esc(x.file_name || '')}" title="${esc(x.file_name || '')}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">`
+            ? `<img src="${esc(pgThumb(x.thumb, 96))}" alt="${esc(x.file_name || '')}" title="${esc(x.file_name || '')}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">`
             : `<span class="pg-note">${esc(x.file_name || x.asset_id)}${x.missing ? ' (gone)' : ''}</span>`).join('')}</div>` : '';
     const prompt = !unknown.has('prompt') ? `<div class="pg-kicker" style="margin-top:8px;"><span>Prompt</span></div><pre class="pg-pre">${esc(r.prompt)}</pre>` : '';
     const neg = !unknown.has('negative_prompt') ? `<div class="pg-kicker"><span>Negative</span></div><pre class="pg-pre">${esc(r.negative_prompt)}</pre>` : '';

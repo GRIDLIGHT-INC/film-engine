@@ -41,7 +41,7 @@ function fnSource(name) {
     return null;
 }
 const ESC = `const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-    const pgSrc = u => u; const jsAttr = s => JSON.stringify(String(s)).replace(/"/g, '&quot;');`;
+    const pgSrc = u => u; ${fnSource('pgThumb')} const jsAttr = s => JSON.stringify(String(s)).replace(/"/g, '&quot;');`;
 function page(names) {
     for (const n of names) assert.ok(fnSource(n), `${n} is not defined on the page`);
     return new Function(`${ESC} ${names.map(fnSource).join('\n')}; return { ${names.join(', ')} };`)();
