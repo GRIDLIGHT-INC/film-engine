@@ -414,6 +414,7 @@ film-engine/
 │       ├── story-bible.test.js         # A section revised flags only what was written from it
 │       ├── subject-scale.test.js       # Nothing is invented; every surface can set a size
 │       ├── nav-chrome.test.js          # Global actions in the top bar; nothing orphaned by moving them
+│       ├── nav-chrome-projects.test.js # Back to the project list, the left panel leaves the film's phase: every page of every phase
 │       ├── home-page.test.js           # Six design blocks: each renders, is fed, and is served
 │       ├── app-settings.test.js        # Author is set once; the title page is printed, not edited inline
 │       ├── artefact-staleness.test.js  # All 12 generated kinds fingerprint and notice input changes
@@ -6278,6 +6279,7 @@ node --test backend/tests/live-events.test.js
 node --test backend/tests/story-bible.test.js
 node --test backend/tests/subject-scale.test.js
 node --test backend/tests/nav-chrome.test.js
+node --test backend/tests/nav-chrome-projects.test.js
 node --test backend/tests/home-page.test.js
 node --test backend/tests/app-settings.test.js
 node --test backend/tests/artefact-staleness.test.js

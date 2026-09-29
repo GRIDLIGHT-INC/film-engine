@@ -46150,7 +46150,7 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(applyProductionFl
   }
 
   window.toggleDrawer = toggleDrawer;
-  window.feShowPhase = function () { if (els.list) showPhase(current, false); };
+  window.feShowPhase = function () { if (!els.list) return; if (window.state && window.state.currentProject) showPhase(current, false); else showNoProject(); };
   window.closeDrawer = closeDrawer;
   window.applyShellMode = applyShellMode;
 
@@ -46289,12 +46289,27 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(applyProductionFl
     refresh();
   }
 
+  /*
+   * No film open: the project list. It belongs to no phase, so the panel must
+   * not keep drawing the last one — its pages (and the graph's shot outline)
+   * would stand beside a list of projects as links into a film that is closed.
+   */
+  function showNoProject() {
+    els.noProject = true;
+    els.kicker.textContent = 'Film Engine';
+    els.title.textContent = 'Projects';
+    els.blurb.textContent = 'Open a film to work on it, or start a new one.';
+    Array.prototype.forEach.call(els.list.children, function (b) { b.style.display = 'none'; });
+  }
+
   function refresh() {
     var page = currentPage(), ph = phaseOf[page];
-    if (ph && ph !== current) showPhase(ph, false);
+    var film = window.state && window.state.currentProject;
+    if (!film) { if (!els.noProject) showNoProject(); }
+    else if (els.noProject || (ph && ph !== current)) { els.noProject = false; showPhase(ph || current, false); }
     if (window.worldSyncPanelShots) window.worldSyncPanelShots(page);
     Array.prototype.forEach.call(els.track.children, function (b) {
-      b.classList.toggle('on', b.dataset.phase === current);
+      b.classList.toggle('on', !!film && b.dataset.phase === current);
       var pr = progress(b.dataset.phase);
       b.querySelector('.fe-ph-frac').textContent = pr ? pr.frac : '';
       b.querySelector('.fe-ph-fill').style.width = pr ? pr.pct + '%' : '0';
