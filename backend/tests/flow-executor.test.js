@@ -217,10 +217,14 @@ test('out.asset persists rather than discarding — the Phase 0 gap', async () =
     // orchestrated run produced no assets at all. Handlers own persistence now.
     const ctx = baseCtx([]);
     const before = db.prepare('SELECT COUNT(*) AS n FROM film_assets WHERE shot_id = ?').get(SHOT).n;
+    // A real file: a value naming a path that does not exist is a row pointing
+    // at nothing, which out.asset refuses since FOG-004.
+    const png = require('path').join(require('os').tmpdir(), `fe-flow-exec-${process.pid}-1A.png`);
+    require('fs').writeFileSync(png, Buffer.from('89504e470d0a1a0a', 'hex'));
 
     const r = await executeNode(
         { id: 'save', type: 'out.asset', config: { asset_type: 'keyframe' } },
-        { image: { type: 'image', value: { path: '/tmp/1A.png', file_name: '1A.png' } } },
+        { image: { type: 'image', value: { path: png, file_name: '1A.png' } } },
         ctx
     );
     assert.strictEqual(r.ok, true, r.error);

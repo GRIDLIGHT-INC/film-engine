@@ -43738,7 +43738,7 @@ function pgNodeHtml(n, raw) {
         const hasVideo = n.videos.length || (inSeq && inSeq.videos.length);
         return `<div class="pg-node pg-shot${sel}${f ? '' : ' failed'}" data-key="${n.key}" style="${pos}width:200px;height:180px;">
             <div class="pg-nh"><div class="pg-nt"><span class="pg-title">${esc(n.shot_code)}</span>
-              ${f ? `<span class="pg-vtag">v${f.version}/${n.frames.length}</span>` : '<span class="pg-pill fail">no frame</span>'}</div>
+              ${f ? `<span class="pg-vtag">v${f.version}/${n.frames.length}</span>` : '<span class="pg-pill fail">no frame</span>'}${pgFlowBadge(n)}</div>
               <div class="pg-sub">shot${n.framing ? ' · ' + esc(n.framing) : ''} · ${pgSecs(n.duration_ms)}${pgPrevisTag(n)}</div>
               <span class="pg-hport">${pgPort('out', 'scene', 'scene')}</span></div>
             ${frame}
@@ -43772,9 +43772,9 @@ function pgNodeHtml(n, raw) {
     }
     if (n.type === 'video') {
         const parent = pgNode(n.parent);
-        const all = parent ? parent.videos : [];
+        const all = (parent && parent.videos) || [];
         return `<div class="pg-node ver${sel}" data-key="${n.key}" style="${pos}width:200px;height:178px;">
-            <div class="pg-nh"><div class="pg-nt"><span class="pg-title">v${n.version} of ${all.length}</span>
+            <div class="pg-nh"><div class="pg-nt"><span class="pg-title">${pgVersionTitle(n, all)}</span>
               ${n.selected ? '<span class="pg-pill play">▶ playing</span>' : ''}</div>
               <div class="pg-sub">video · ${esc(n.provider || 'upload')} · ${pgSecs(n.duration_ms)}</div></div>
             <div class="pg-row" style="margin-top:3px;justify-content:flex-start;">${pgPort('in', 'video', 'in')}<span>from ${esc(n.parent_label || '')}</span></div>
@@ -43784,9 +43784,10 @@ function pgNodeHtml(n, raw) {
     }
     if (n.type === 'audio') {
         const parent = pgNode(n.parent);
-        const all = parent ? parent.versions : [];
+        // A flow's sound hangs off a SHOT, which has no cue versions (FOG-004).
+        const all = (parent && parent.versions) || [];
         return `<div class="pg-node ver${sel}" data-key="${n.key}" style="${pos}width:180px;height:110px;">
-            <div class="pg-nh"><div class="pg-nt"><span class="pg-title">v${n.version} of ${all.length}</span>
+            <div class="pg-nh"><div class="pg-nt"><span class="pg-title">${pgVersionTitle(n, all)}</span>
               ${n.selected ? '<span class="pg-pill play">▶ playing</span>' : ''}</div>
               <div class="pg-sub">audio · ${pgSecs(n.duration_ms)}</div></div>
             <div class="pg-row" style="margin-top:3px;">${pgPort('in', 'audio', 'in')}</div>
@@ -45239,6 +45240,32 @@ async function pgLoadPrevis(n) {
         + (stale ? `<div class="pg-warn" style="margin-top:6px;">${stale} locked decision${stale === 1 ? ' has' : 's have'} changed since it was locked — re-lock or unlock it in Previs so the card and the lock agree.</div>` : '');
 }
 
+// ── What flows made for a shot (FOG-004) ───────────────────────────────
+
+/** A version node's title: its place in its parent's versions, or that a flow made it. */
+function pgVersionTitle(n, all) {
+    if (n.source === 'flow') return 'from a flow';
+    return `v${n.version} of ${(all || []).length}`;
+}
+
+/** On the shot node: how many frames flows made for it, which are not on the board until picked. */
+function pgFlowBadge(n) {
+    const k = (n.flow_frames || []).length;
+    return k ? ` <span class="pg-pill" title="Frames a flow made for this shot. They are candidates: none is on the board until it is picked.">+${k} from flows</span>` : '';
+}
+
+/** In the shot drawer: the frames flows made, each saying which run made it. Candidates, never the board's frame. */
+function pgFlowFramesHtml(n) {
+    const list = n.flow_frames || [];
+    if (!list.length) return '';
+    const tiles = list.map(x => `<figure style="margin:0;width:96px;">
+        <img src="${esc(pgSrc(x.url) + (String(x.url).includes('?') ? '&w=200' : '?w=200'))}" alt="" loading="lazy" style="width:96px;height:54px;object-fit:cover;border-radius:4px;">
+        <figcaption class="text-muted" style="font-size:11px;line-height:1.3;">${esc(x.branch && x.branch !== 'root' ? x.branch : 'flow')}${x.run_id ? ' · run ' + esc(String(x.run_id).slice(0, 6)) : ''}</figcaption></figure>`).join('');
+    return `<div class="pg-dsec"><div class="pg-kicker"><span>Made by flows (${list.length})</span><em>not on the board</em></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${tiles}</div>
+        <div class="pg-note">A flow's output is a candidate: the board keeps the frame it has until one of these is picked.</div></div>`;
+}
+
 function pgDrawerShot(n, body, foot, close) {
     const f = n.selected_frame;
     const seq = n.sequence_id ? pgNode('seq:' + n.sequence_id) : null;
@@ -45260,6 +45287,7 @@ function pgDrawerShot(n, body, foot, close) {
           ${f ? `<button class="btn btn-secondary btn-sm" onclick="setAnchor('${n.id}')">Anchor</button>
                  <button class="btn btn-secondary btn-sm" onclick="openFrameViewer('${n.id}')">Mark up</button>` : ''}
         </div></div>
+      ${pgFlowFramesHtml(n)}
       ${f ? `<div class="pg-dsec"><div class="pg-kicker"><span>How was v${f.version} made</span></div>
         <div id="pgHowMade"><div class="pg-note">Reading how this was made…</div></div>
         ${n.frames.length > 1 ? `<label class="pg-l">Compare with the selected frame</label>

@@ -24,51 +24,28 @@ function firstMedia(inputs) {
     return null;
 }
 
-// Port -> a sensible film_assets.asset_type when the node does not name one.
-const DEFAULT_ASSET_TYPE = {
-    image: 'keyframe', video: 'video_raw', audio: 'audio_dialogue', model3d: 'other',
-};
-
 const handlers = {
     /**
      * Register the incoming value in film_assets so canvas output is
      * indistinguishable from pipeline output.
      */
     'out.asset': {
+        /*
+         * Save the incoming media and register it as a CANDIDATE version on
+         * the shot the run is for (FOG-004): the bytes on disk, the row typed
+         * `other` so nothing that picks "the newest frame" or "the best clip"
+         * takes it by itself, and the type it would be once picked kept in
+         * metadata. lib/flow-outputs.js says why, per port.
+         */
         async execute(node, inputs, ctx) {
             const media = firstMedia(inputs || {});
             if (!media) {
                 return { ok: true, skipped: true, message: 'nothing to save', outputs: {} };
             }
-
-            const config = node.config || {};
-            const { db, generateId } = require('../../db/database');
-
-            const projectId = (ctx.scene && ctx.scene.project_id) || (ctx.project && ctx.project.id) || null;
-            if (!projectId) return { ok: false, error: 'cannot register an asset without a project' };
-
-            const value = media.value;
-            const filePath = (value && (value.path || value.file_path)) || '';
-            const fileName = (value && (value.file_name || value.filename))
-                || (filePath ? String(filePath).split('/').pop() : `${node.id}.out`);
-
-            const assetId = generateId();
-            db.prepare(
-                `INSERT INTO film_assets (id, project_id, shot_id, scene_id, asset_type, file_path, file_name, version, provider, license_source, license_status, metadata)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'generated', 'generated', ?)`
-            ).run(
-                assetId,
-                projectId,
-                (ctx.shot && ctx.shot.id) || null,
-                (ctx.scene && ctx.scene.id) || null,
-                config.asset_type || DEFAULT_ASSET_TYPE[media.port] || 'other',
-                filePath,
-                fileName,
-                ctx.providerId || '',
-                JSON.stringify({ source: 'flow', node: node.id, run_id: ctx.runId || '' })
-            );
-
-            return { ok: true, outputs: {}, assetId };
+            const { db } = require('../../db/database');
+            const r = await require('../flow-outputs').saveFlowOutput(db, { port: media.port, value: media.value, node, ctx: ctx || {} });
+            if (!r.ok) return { ok: false, error: r.error };
+            return { ok: true, outputs: {}, assetId: r.assetId };
         },
     },
 

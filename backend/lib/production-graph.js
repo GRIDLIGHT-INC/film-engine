@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { flowOutputsOf } = require('./flow-outputs');
 
 const NODE_SIZE = Object.freeze({
     shot: { w: 200, h: 180 },
@@ -435,6 +436,31 @@ function buildGraph(db, projectId) {
             nodes.push({ key: vk, type: 'video', parent: n.key, parent_label: sh.shot_code, ...v });
             edge(n.key, 'video', vk, 'in', 'video', 'solid');
         }
+        /*
+         * What flows made for this shot (FOG-004): candidates, never counted as
+         * the shot's own frames or clips and never selected unless a pointer
+         * names them. An image sits on the shot as a frame version; a clip and
+         * a sound are version nodes of their kind, wired from the shot.
+         */
+        n.flow_frames = [];
+        n.flow_versions = [];
+        for (const o of flowOutputsOf(db, sh.id)) {
+            const url = urlFor(o.path, o.created_at);
+            if (o.version === 'frame') {
+                n.flow_frames.push({ ...o, url, source: 'flow', selected: false });
+            } else if (o.version === 'clip' || o.version === 'sound') {
+                const type = o.version === 'clip' ? 'video' : 'audio';
+                const vk = `ver:${o.asset_id}`;
+                const selected = type === 'video' && o.asset_id === sh.selected_video_asset_id;
+                nodes.push({ key: vk, type, kind: type, parent: n.key, parent_label: sh.shot_code, source: 'flow',
+                    asset_id: o.asset_id, as_type: o.as_type, url, path: o.path,
+                    provider: o.provider, model: o.model, created_at: o.created_at,
+                    flow_id: o.flow_id, apply_id: o.apply_id, run_id: o.run_id, flow_node: o.node, branch: o.branch,
+                    version: null, selected });
+                edge(n.key, type, vk, 'in', type, 'solid');
+                n.flow_versions.push(vk);
+            }
+        }
     }
 
     const seqNode = new Map();
@@ -542,7 +568,8 @@ function buildGraph(db, projectId) {
             links_start: sn.links.start ? [`link:${q.id}:start`] : [],
             links_end: sn.links.end ? [`link:${q.id}:end`] : [],
             versions: [...sn.videos.map(v => `ver:${v.asset_id}`),
-                ...shotKeys.flatMap(k => ((nodes.find(n => n.key === k) || {}).videos || []).map(v => `ver:${v.asset_id}`))],
+                ...shotKeys.flatMap(k => ((nodes.find(n => n.key === k) || {}).videos || []).map(v => `ver:${v.asset_id}`)),
+                ...shotKeys.flatMap(k => (nodes.find(n => n.key === k) || {}).flow_versions || [])],
             sounds,
         });
     }
@@ -561,7 +588,8 @@ function buildGraph(db, projectId) {
             order: filmIndex(s.shots[0] && s.shots[0].slice('shot:'.length)),
             id: `scene:${sceneId}`, label: `SC ${s.scene_number} · ${(s.location || '').toUpperCase()}`,
             shots: s.shots, sequence: null, links_start: [], links_end: [],
-            versions: s.shots.flatMap(k => ((nodes.find(n => n.key === k) || {}).videos || []).map(v => `ver:${v.asset_id}`)),
+            versions: [...s.shots.flatMap(k => ((nodes.find(n => n.key === k) || {}).videos || []).map(v => `ver:${v.asset_id}`)),
+                ...s.shots.flatMap(k => (nodes.find(n => n.key === k) || {}).flow_versions || [])],
             sounds,
         });
     }

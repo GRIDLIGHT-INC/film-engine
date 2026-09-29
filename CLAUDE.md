@@ -203,6 +203,7 @@ film-engine/
 │   │   ├── sequence-delivery.js# Where a leg's finished clip goes, said once for both roads it arrives by
 │   │   ├── flow-cost.js          # Projected cost + the budget gate (Phase 3)
 │   │   ├── flow-apply.js         # Apply a flow to a selection on the Production graph: the free plan (targets, bindings, cost, budget) and the apply, one run per shot under one record (FOG-001/002)
+│   │   ├── flow-outputs.js       # What a flow makes, saved to disk and kept as a CANDIDATE version on its shot: typed other so nothing picks it by itself, the type it would be kept for the pick (FOG-004)
 │   │   ├── flow-templates.js     # Six ready-made flows, validated at load (Phase 5)
 │   │   ├── flow-executor.js      # runFlow / executeNode / resolveNodeInputs (Phase 2)
 │   │   ├── node-handlers/        # Per-node execution, autoloaded by filename (Phase 2)
@@ -482,6 +483,7 @@ film-engine/
 │       ├── graph-collapse.test.js     # A sequence or scene collapses to a card with its summary; no node moves, expand restores exactly, Tidy keeps collapsed groups
 │       ├── graph-add-palette.test.js  # Double-click to add: the previewed insert code is the written one, every cue type, a sequence from picked shots, keyboard only
 │       ├── graph-apply-flow.test.js   # FOG-003: "Apply flow…" on every node type (disabled with the server's reason where it cannot go), every flow and template in the picker, the plan rendered per target kind, nothing armed until it loads, the apply sent with its fingerprint
+│       ├── flow-outputs.test.js       # FOG-004: every out.asset port saved to disk as a flow candidate and drawn on its shot by kind (or named why not); nothing selected by itself, not on the board, not in playback
 │       ├── graph-patterns.test.js     # Every pattern in the schema's vocabulary; its free preview is exactly what creating makes, in order, with no generation
 │       ├── graph-mcp-tools.test.js    # Every production-graph dispatch has a tool through its route or a named exemption; each tool run for real
 │       ├── production-graph-nodes.test.js # The eight features together through a real server: every node type drawn with a state, every stage placed, every batch point held; and the renderer decorates every node
@@ -6349,6 +6351,7 @@ node --test backend/tests/hold-in-batches.test.js
 node --test backend/tests/graph-collapse.test.js
 node --test backend/tests/graph-add-palette.test.js
 node --test backend/tests/graph-apply-flow.test.js
+node --test backend/tests/flow-outputs.test.js
 node --test backend/tests/graph-patterns.test.js
 node --test backend/tests/graph-mcp-tools.test.js
 node --test backend/tests/production-graph-nodes.test.js
