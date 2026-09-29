@@ -247,4 +247,19 @@ function nodeTypeForStep(stepId) {
     return null;
 }
 
-module.exports = { NODE_TYPES, PORT_TYPES, nodeType, portsCompatible, byKind, nodeTypeForStep };
+/**
+ * The node types a wire dragged from a port of this type could go to (FOG-010):
+ * every type with an input portsCompatible accepts, and the first such input,
+ * which is the one the canvas wires. A type with no inputs is never offered.
+ */
+function compatibleNextNodes(fromType) {
+    if (!PORT_TYPES.includes(fromType)) return [];
+    const out = [];
+    for (const [id, def] of Object.entries(NODE_TYPES)) {
+        const input = (def.inputs || []).find(i => portsCompatible(fromType, i));
+        if (input) out.push({ type: id, input, label: def.label, kind: def.kind });
+    }
+    return out;
+}
+
+module.exports = { NODE_TYPES, PORT_TYPES, nodeType, portsCompatible, compatibleNextNodes, byKind, nodeTypeForStep };

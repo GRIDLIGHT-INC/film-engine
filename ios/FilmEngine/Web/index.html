@@ -14427,6 +14427,64 @@ THREE.GLTFLoader = GLTFLoader;
 
     const portsCompatibleClient = (a, b) => a === b || a === 'any' || b === 'any';
 
+    /*
+     * WHERE A WIRE COULD GO (FOG-010). Letting go of a wire on empty canvas
+     * lists only the node types with an input this port can feed — the
+     * server's compatibleNextNodes, computed here from the same registry the
+     * palette reads — and picking one places it there, wired.
+     */
+    function flowNextNodeSuggestions(types, fromPort) {
+        const out = [];
+        for (const [type, def] of Object.entries(types || {})) {
+            const input = (def.inputs || []).find(i => portsCompatibleClient(fromPort, i));
+            if (input) out.push({ type, input, label: def.label || type, kind: def.kind });
+        }
+        return out;
+    }
+
+    function flowNextNodeMenuHtml(list, fromPort) {
+        if (!list.length) return `<div class="text-sm text-muted" style="padding:6px 8px;">Nothing takes ${escapeHtml(fromPort)}.</div>`;
+        return `<div class="text-sm text-muted" style="padding:4px 8px;">Add a node that takes ${escapeHtml(fromPort)}</div>`
+            + list.map(s => `<button class="btn btn-secondary btn-sm" style="display:block;width:100%;text-align:left;margin:2px 0;"
+                onclick="flowPickNextNode('${escapeHtml(s.type)}','${escapeHtml(s.input)}')">${escapeHtml(s.label)} <span class="text-muted">· ${escapeHtml(s.type)} · ${escapeHtml(s.input)}</span></button>`).join('');
+    }
+
+    function flowOpenNextNode(link, clientX, clientY) {
+        if (!link || !FLOW.flow || FLOW.flow.is_builtin) return;
+        FLOW.next = { from: link.from, port: link.port, at: link.cursor };
+        flowCloseNextNode(true);
+        const el = document.createElement('div');
+        el.id = 'flowNextNode';
+        el.style.cssText = `position:fixed;left:${Math.min(clientX, window.innerWidth - 280)}px;top:${Math.min(clientY, window.innerHeight - 320)}px;`
+            + 'z-index:3000;width:260px;max-height:300px;overflow:auto;background:var(--bg-secondary,#1b1b1f);border:1px solid var(--border,#333);border-radius:8px;padding:4px;';
+        el.innerHTML = flowNextNodeMenuHtml(flowNextNodeSuggestions(FLOW.types, link.port), link.port);
+        document.body.appendChild(el);
+        setTimeout(() => document.addEventListener('mousedown', flowNextNodeOutside, { once: true }), 0);
+    }
+    function flowNextNodeOutside(evt) { if (!evt.target.closest || !evt.target.closest('#flowNextNode')) flowCloseNextNode(); }
+    function flowCloseNextNode(keep) {
+        const el = document.getElementById('flowNextNode');
+        if (el) el.remove();
+        if (!keep) FLOW.next = null;
+    }
+
+    function flowPickNextNode(type, input) {
+        const nx = FLOW.next;
+        flowCloseNextNode();
+        if (!nx || !FLOW.flow || FLOW.flow.is_builtin) return;
+        const def = FLOW.types[type] || {};
+        const base = type.split('.')[1] || 'node';
+        let id = base, i = 1;
+        while (FLOW.flow.nodes.some(n => n.id === id)) id = `${base}${++i}`;
+        FLOW.flow.nodes.push({ id, type, label: def.label || type, config: {}, x: nx.at.x, y: nx.at.y });
+        FLOW.flow.edges.push({ from: nx.from, fromPort: nx.port, to: id, toPort: input });
+        FLOW.selected = id;
+        FLOW.dirty = true;
+        setFlowStatus('Node added and wired — unsaved');
+        renderFlowInspector();
+        flowCanvasRender();
+    }
+
     function flowCanvasDeleteEdge(from, fromPort, to, toPort) {
         if (FLOW.flow.is_builtin) return;
         FLOW.flow.edges = FLOW.flow.edges.filter(e => !(e.from === from && e.fromPort === fromPort && e.to === to && e.toPort === toPort));
@@ -14694,8 +14752,9 @@ THREE.GLTFLoader = GLTFLoader;
         }
     });
 
-    document.addEventListener('mouseup', () => {
-        if (FLOW.link) { FLOW.link = null; flowCanvasRender(); }
+    document.addEventListener('mouseup', (evt) => {
+        // A wire let go on empty canvas offers the nodes that could take it (FOG-010).
+        if (FLOW.link) { const link = FLOW.link; FLOW.link = null; flowCanvasRender(); flowOpenNextNode(link, evt.clientX, evt.clientY); }
         FLOW.drag = null;
         FLOW.pan = null;
         const svg = document.getElementById('flowCanvas');
