@@ -131,7 +131,8 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '17. The playback bar', '18. What costs money, and what is free', '19. Asking Claude to do it',
          '20. Flows on the canvas', '21. The Score page', '22. Your own instruments',
          '23. An edit made in Premiere', '24. The final film and its sound', '25. Sending the film to Premiere',
-         '26. Good to know'])
+         '26. Delivery quality: the resolution you asked for', '27. Upscaling a clip', '28. Your recorded dialogue in a clip',
+         '29. Backups', '30. Good to know'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -471,6 +472,7 @@ table(['Item', 'What it does'], [
     ['Open the source sequence', 'On a linked frame: jumps to the sequence it borrows from.'],
     ['Run to here', 'Everything this node still needs, in order, after one confirmation (section 8).'],
     ['Duplicate', 'Shot: a new shot after it with the same description. Sequence: a copy WITHOUT its shots. Sound: a copy with the same direction.'],
+    ['Upscale…', 'On a shot, or one of a shot\'s clip versions: enlarges the clip to the delivery size on MuAPI, after one confirmation (section 27).'],
     ['Hold / Release hold', 'Batch runs skip it, or stop skipping it (section 11). Also Ctrl+B.'],
     ['Remove from its sequence', 'On a shot in a sequence: takes it out. The shot and its frames are kept.'],
     ['Remove from graph', 'Sequence: deletes the sequence — its shots and clips stay. Sound: deletes the cue — its audio stays. Linked frame: unlinks.'],
@@ -513,7 +515,8 @@ table(['Free (nothing is generated)', 'Spends credits'], [
     ['The plans of Run what changed and Run to here', 'Generate a sound, Generate dialogue'],
     ['How was this made, Compare, dropping a file to find its recipe', 'Run pending, Run what changed, Run to here (what they list)'],
     ['Collect (the provider already billed for it)', 'Make another like this, Re-run'],
-    ['Uploading your own frame, clip or audio', ''],
+    ['Uploading your own frame, clip or audio', 'Upscale… (MuAPI)'],
+    ['The delivery check, Premiere by scene, Back up now', ''],
 ], widths=[Inches(3.35), Inches(3.35)])
 p('Stop waiting does not un-bill a job: the provider may still finish it and charge for it, which is why the button says so.')
 
@@ -660,14 +663,83 @@ bullets([
     ('Send to Premiere ', '(Export page) downloads a Premiere Pro XML: one sequence in running order, each clip named by its shot '
      'code with a "Scene N" marker, and separate audio tracks for dialogue, music, sound effects and ambience. It points at '
      'the files where they are on this Mac. In Premiere: File → Import.'),
-    ('Shots with no clip ', 'are left out of the Premiere sequence; the export preflight names them.'),
+    ('Premiere, by scene ', '(Export page, "Make the folders") is the handover an editor opens: in 07 Delivery/Exports, a folder '
+     'per scene (Scene_01_INT-DINER-NIGHT…) with each shot\'s selected clip in Video, named by its shot code, and its dialogue, '
+     'effects and the scene\'s beds in Sound. The XML beside them carries the cut and a bin per scene, and points at the copies, '
+     'so everything opens online. A READ ME lists anything missing. Free; the originals are copied, never moved.'),
+    ('Every export uses the clip you selected. ', 'It used to take a shot\'s oldest clip; now it is the same one Playback and the '
+     'final film play.'),
+    ('Shots with no clip ', 'are left out of the Premiere sequence; the export preflight names them, and warns about any clip '
+     'below the delivery size (section 26).'),
     ('A packaged handover ', '(ask Claude for export_package) writes the XML with a copy of every file it uses into one folder '
      'under 07 Delivery/Exports, for another machine or an editor.'),
-    ('Not yet: ', 'bins. Premiere puts everything the XML names in one bin; there is no bin per scene.'),
 ])
 
 # ── 26 ────────────────────────────────────────────────────────────────────
-doc.add_heading('26. Good to know', level=1)
+doc.add_heading('26. Delivery quality: the resolution you asked for', level=1)
+p('Settings → Technical Settings decides what the film is delivered at. Every generator is asked for that size; one that cannot '
+  'reach it renders the best it can, and says so before you pay.')
+bullets([
+    ('Resolution: ', 'every clip is asked for it. Runway now renders 1080p on a model that offers it (it used to send 720p every '
+     'time). A generator whose best is smaller shows "below delivery — its best; upscale after" in the video confirmation.'),
+    ('Draft video ', '(a checkbox, off by default): clips at the model\'s cheapest size while you are blocking, upscaled at the end. '
+     'It used to be on for every project with no way to see it.'),
+    ('Delivery preset: ', 'choosing one now saves its codec and audio layout too. Delivery codec (H.264, H.265, ProRes 422 Proxy '
+     'to 4444, DNxHR HQ, JPEG 2000) and Delivery audio (stereo, 5.1, 7.1, 12.0) can also be set by hand.'),
+    ('The final film ', 'is always an H.264 stereo master; when the delivery asks for anything else, Conform also writes a '
+     'delivery master beside it in that codec and layout.'),
+    ('The delivery check ', '(top of the Export page, free) measures every shot\'s selected clip from the file and lists any '
+     'below the delivery size, with the fix: Upscale (section 27).'),
+])
+
+# ── 27 ────────────────────────────────────────────────────────────────────
+doc.add_heading('27. Upscaling a clip', level=1)
+p('Right-click a shot or one of its clip versions on the canvas and choose "Upscale…" (on the Video Shots page it is the '
+  'Upscale button). The confirmation measures the clip, names the step that reaches the delivery size, and lets you pick the '
+  'MuAPI upscaler with its price:')
+table(['Upscaler', 'What it does', 'Listed price'], [
+    ['Topaz video upscale (default)', '2x or 4x', '$0.08'],
+    ['AI video upscaler', 'to 1080p, 2K or 4K', '$0.03'],
+    ['AI video upscaler Pro', 'to 1080p, 2K or 4K, finer', '$0.24'],
+    ['FLUX.3 video upscaler', 'prompted, 2x to 4x', '$1.43'],
+], widths=[Inches(2.3), Inches(2.6), Inches(1.8)])
+bullets([
+    ('Prices ', 'are MuAPI\'s own list, which gives no unit; Film Engine counts them per second of the clip, which errs high.'),
+    ('The result ', 'is a new version that keeps its sound and becomes the clip that plays. The original stays.'),
+    ('The clip is uploaded to MuAPI first, ', 'for free, and only then enlarged.'),
+])
+
+# ── 28 ────────────────────────────────────────────────────────────────────
+doc.add_heading('28. Your recorded dialogue in a clip', level=1)
+p('If you have recorded the lines yourself, Seedance 2.5 can take them as audio references so the performance follows your '
+  'recording.')
+bullets([
+    ('Upload each line ', 'with "Upload dialogue": on each shot of the Video Shots page, and in the shot\'s drawer on the canvas. '
+     'Name files so their order shows (1A_RAY_1.mp3, 1A_JUNE_2.mp3): they are sent in that order.'),
+    ('Then, in the video confirmation, ', 'tick "Send this shot\'s recorded dialogue". Only Seedance 2.5 takes it: on MuAPI, or '
+     'the seedance2_5 model on Runway. Any other model says it cannot, rather than ignoring the lines.'),
+    ('On MuAPI ', 'a shot sent with its dialogue runs Seedance\'s reference workflow, where the storyboard frame guides the clip '
+     'rather than being its exact first frame. The confirmation says so.'),
+    ('Up to ten lines ', 'per clip. They are uploaded to MuAPI for free before the clip is asked for.'),
+])
+
+# ── 29 ────────────────────────────────────────────────────────────────────
+doc.add_heading('29. Backups', level=1)
+p('Settings → Backups. Choose a folder (Dropbox, Google Drive and a NAS all work) and Film Engine backs up its database '
+  'there every 6 hours, or as often as you set. Each person who uses Film Engine sets their own folder; backups go in a '
+  'sub-folder named for them and their Mac, so several people can share one folder.')
+bullets([
+    ('What is in a backup: ', 'the whole database, as a snapshot that is safe to take while Film Engine runs. Optionally each '
+     'project\'s records as a separate file, so one film can be restored alone.'),
+    ('What is not: ', 'the media. It lives in each project\'s own folder (Settings, "Where new projects are saved"), '
+     'which can itself be in a shared or synced folder.'),
+    ('Keep ', 'is how many backups are kept; older ones Film Engine wrote are deleted, and nothing else in the folder is touched.'),
+    ('Back up now ', 'writes one immediately. To restore, stop Film Engine and copy a backup over the database; the steps are in '
+     'latest.json in the backup folder, and Claude can read them to you (backup_folder_status).'),
+])
+
+# ── 30 ────────────────────────────────────────────────────────────────────
+doc.add_heading('30. Good to know', level=1)
 bullets([
     ('Nothing is overwritten. ', 'Every generation is a new version; you choose which one plays.'),
     ('Red means do it now; amber means not yet. ', '"waiting" work is built on something that is itself being redone.'),
@@ -681,6 +753,7 @@ bullets([
     ('Previs decisions are read here, changed in Previs. ', 'The Shot drawer shows them; "Open in Previs" to change them.'),
     ('The score is written against a picture. ', 'Approve it once and it plays everywhere the film does (section 21).'),
     ('Your instruments are free to play. ', 'A render through your own library costs nothing and lands as a take (section 22).'),
+    ('Every generator is asked for your resolution. ', 'A smaller result is said before you pay and listed by the delivery check (section 26).'),
 ])
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
