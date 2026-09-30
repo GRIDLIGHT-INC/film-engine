@@ -5071,6 +5071,8 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .pv-float { position:absolute; top:10px; display:flex; align-items:center; gap:6px; z-index:5; }
 .pv-float-l { left:10px; }
 .pv-float-r { right:10px; }
+.pv-walkbar { top:auto; bottom:10px; left:10px; right:10px; flex-wrap:wrap; pointer-events:auto; }
+.pv-walkbar:empty { display:none; }
 .pv-seg { display:flex; gap:2px; padding:3px; border-radius:10px; background:rgba(21,21,23,0.9);
   border:1px solid rgba(255,255,255,0.08); }
 .pv-seg-btn { height:24px; padding:0 10px; border-radius:7px; border:none; background:transparent;
@@ -16151,9 +16153,15 @@ THREE.GLTFLoader = GLTFLoader;
     /** A nudge is a PROPOSAL, validated like every other camera change. */
     async function worldNudge(field, amount) {
         if (!WORLD.shotId) return;
+        const axis = OPERATE_AXES.find(a => a.field === field);
         try {
-            await api(`/shots/${WORLD.shotId}/direct`,
-                { method: 'POST', body: JSON.stringify({ [field]: amount, apply: true }) });
+            // The proposal contract: the move under `changes`, and a rationale.
+            // Sent flat, every nudge was refused ("the proposal changes
+            // nothing") and the only sign was a line on the status bar.
+            await api(`/shots/${WORLD.shotId}/direct`, { method: 'POST', body: JSON.stringify({
+                rationale: `Camera Operate: ${axis ? axis.label : field} ${amount > 0 ? '+' : ''}${amount}${axis ? axis.unit : ''}`,
+                changes: { [field]: amount }, apply: true,
+            }) });
             WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`);
         } catch (err) { setStatus('That move was refused: ' + err.message); }
         worldConsoleRender();
@@ -16517,8 +16525,12 @@ THREE.GLTFLoader = GLTFLoader;
                 </div>
                 <div class="pv-float pv-float-l">
                   <div class="pv-seg">${worldModeButtonsHtml()}</div>
+                  <button class="pv-btn${WALK.on ? ' pv-amber' : ''}" onclick="worldWalkToggle()"
+                          title="Move through the set with the keyboard and mouse. Nothing is kept until you say so."
+                          ${WORLD.shotId ? '' : 'disabled'}>${WALK.on ? 'Walking' : 'Walk'}</button>
                   <span class="we-live" id="weCamSpec"></span>
                 </div>
+                <div class="pv-float pv-walkbar" id="weWalkBar">${worldWalkBarHtml()}</div>
                 <div class="pv-float pv-float-r">
                   <button class="pv-btn" onclick="worldToggleOverlayMenu()">Overlays · <span id="weOvCount">0</span></button>
                   ${worldRegionOn('match-reference-composition')
@@ -16635,6 +16647,8 @@ THREE.GLTFLoader = GLTFLoader;
         if (WORLD.viewMode) return WORLD.viewMode;
         // Open on the set itself when this version has splats; geometry otherwise.
         const info = SPLAT.info;
+        // A scene built in Blender is drawn textured, splats or no splats.
+        if (info && info.mesh) return 'look';
         if (!worldFlagOn('world_splats') || (info && (!info.enabled || !info.splats.length))) return 'geo';
         return 'look';
     }
@@ -16644,7 +16658,8 @@ THREE.GLTFLoader = GLTFLoader;
         const info = SPLAT.info;
         return PV_MODES.map(m => {
             let off = '';
-            if (m.splat && info && !info.enabled) off = ' disabled title="Switch world_splats on in Setup to render the world itself"';
+            if (m.splat && info && info.mesh) off = '';
+            else if (m.splat && info && !info.enabled) off = ' disabled title="Switch world_splats on in Setup to render the world itself"';
             else if (m.id === 'look' && info && info.enabled && !info.splats.length) off = ' disabled title="This world version recorded no splat"';
             else if (m.id === 'pano' && info && info.enabled && !info.panorama && !info.splats.length) off = ' disabled title="This world version has neither a splat nor a panorama"';
             return `<button class="pv-seg-btn${vm === m.id ? ' active' : ''}"${off}
@@ -16744,8 +16759,11 @@ THREE.GLTFLoader = GLTFLoader;
     async function worldSplatSync() {
         const vm = worldViewMode();
         const frame = document.getElementById('weFrame');
+        if (vm !== 'look' && vm !== 'pano') worldMeshStop();
         if (!frame || (vm !== 'look' && vm !== 'pano')) return worldSplatStop();
         const info = await worldSplatInfo();
+        if (info && info.mesh) { worldSplatStop(); return worldMeshSync(vm, info); }
+        worldMeshStop();
         const note = document.getElementById('pvModeNote');
         if (!info || !info.enabled || (vm === 'look' && !info.splats.length)
             || (vm === 'pano' && !info.panorama && !info.splats.length)) {
@@ -16849,6 +16867,265 @@ THREE.GLTFLoader = GLTFLoader;
         }
         SPLAT.renderer.render(SPLAT.scene, SPLAT.camera);
     }
+
+    /*
+     * A SCENE BUILT IN BLENDER, drawn as itself.
+     *
+     * The collider of an imported version IS the textured set (Blender exports
+     * its materials into the GLB), so Look draws it with the page's own three
+     * r149 and GLTFLoader, on its own canvas -- the splat module carries a
+     * different three, and a GL context belongs to one renderer. Same pose as
+     * the painter (worldCameraPose), so what you frame here is the shot.
+     */
+    const MESHLOOK = { canvas: null, renderer: null, scene: null, camera: null, url: null, root: null, error: null };
+
+    function worldMeshStop() { if (MESHLOOK.canvas) MESHLOOK.canvas.style.display = 'none'; }
+
+    function worldMeshCanvas() {
+        if (!MESHLOOK.canvas) {
+            const c = document.createElement('canvas');
+            c.id = 'pvGLMesh';
+            c.className = 'pv-gl';
+            let drag = null;
+            c.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); });
+            c.addEventListener('pointermove', e => {
+                if (!drag) return;
+                const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+                drag = { x: e.clientX, y: e.clientY };
+                if (worldViewMode() === 'pano') {
+                    SPLAT.look.yaw -= dx * 0.25;
+                    SPLAT.look.pitch = Math.max(-80, Math.min(80, SPLAT.look.pitch + dy * 0.2));
+                    worldMeshRenderOnce();
+                } else if (WALK.on) {
+                    worldWalkTurn(-dx * 0.2, -dy * 0.15);
+                }
+            });
+            c.addEventListener('pointerup', () => { drag = null; });
+            MESHLOOK.canvas = c;
+        }
+        return MESHLOOK.canvas;
+    }
+
+    async function worldMeshSync(vm, info) {
+        const frame = document.getElementById('weFrame');
+        const note = document.getElementById('pvModeNote');
+        const T = window.THREE;
+        if (!frame) return;
+        if (!T || !T.GLTFLoader) { if (note) note.textContent = 'The 3D renderer is not loaded on this page.'; return; }
+        const canvas = worldMeshCanvas();
+        if (canvas.parentElement !== frame) frame.insertBefore(canvas, frame.firstChild);
+        canvas.style.display = '';
+        if (!MESHLOOK.renderer) {
+            MESHLOOK.renderer = new T.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+            MESHLOOK.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            if (T.sRGBEncoding !== undefined) MESHLOOK.renderer.outputEncoding = T.sRGBEncoding;
+            MESHLOOK.scene = new T.Scene();
+            MESHLOOK.scene.background = new T.Color(0x14161a);
+            // A soft sky and one sun, so a scene exported without lights still
+            // reads; Blender's own lights, when exported, add to these.
+            MESHLOOK.scene.add(new T.HemisphereLight(0xffffff, 0x3a3a3a, 0.9));
+            const sun = new T.DirectionalLight(0xffffff, 0.8);
+            sun.position.set(5, 10, 7);
+            MESHLOOK.scene.add(sun);
+            MESHLOOK.camera = new T.PerspectiveCamera(40, 16 / 9, 0.02, 2000);
+        }
+        const box = frame.getBoundingClientRect();
+        MESHLOOK.renderer.setSize(Math.max(2, Math.round(box.width)), Math.max(2, Math.round(box.height)), false);
+        MESHLOOK.camera.aspect = Math.max(0.1, box.width / Math.max(1, box.height));
+        if (MESHLOOK.url !== info.mesh.url) {
+            if (MESHLOOK.root) MESHLOOK.scene.remove(MESHLOOK.root);
+            MESHLOOK.root = null;
+            MESHLOOK.url = info.mesh.url;
+            if (note) note.textContent = 'Loading the scene…';
+            new T.GLTFLoader().load(mediaUrl(info.mesh.url), gltf => {
+                if (MESHLOOK.url !== info.mesh.url) return;
+                MESHLOOK.root = gltf.scene;
+                // The same scale the painter applies on read (1 for a scene in metres).
+                MESHLOOK.root.scale.setScalar(info.scale_factor || 1);
+                MESHLOOK.scene.add(MESHLOOK.root);
+                const n = document.getElementById('pvModeNote');
+                if (n) n.textContent = MESH_MODE_NOTES[worldViewMode()] || '';
+                worldMeshRenderOnce();
+            }, undefined, err => {
+                const n = document.getElementById('pvModeNote');
+                if (n) n.textContent = 'The scene did not load: ' + ((err && err.message) || err);
+            });
+        } else if (note) note.textContent = MESH_MODE_NOTES[vm] || '';
+        worldMeshRenderOnce();
+    }
+
+    const MESH_MODE_NOTES = Object.freeze({
+        look: 'SCENE — BUILT IN BLENDER, IN METRES · GENERATION RECEIVES THE GEOMETRIC PLATE',
+        pano: '360° — DRAG TO LOOK AROUND FROM THE CAMERA · NOT THE SHOT',
+    });
+
+    function worldMeshRenderOnce() {
+        if (!MESHLOOK.renderer || !document.getElementById('pvGLMesh')) return;
+        const p = worldCameraPose();
+        if (!p) return;
+        const cam = MESHLOOK.camera;
+        if (worldViewMode() === 'pano') {
+            const d = [p.target[0] - p.eye[0], p.target[1] - p.eye[1], p.target[2] - p.eye[2]];
+            const yaw = (Math.atan2(d[0], d[2]) * 180 / Math.PI + SPLAT.look.yaw) * Math.PI / 180;
+            const pitch = SPLAT.look.pitch * Math.PI / 180;
+            const o = p.eye;
+            cam.position.set(o[0], o[1], o[2]);
+            cam.up.set(0, 1, 0);
+            cam.lookAt(o[0] + Math.sin(yaw) * Math.cos(pitch), o[1] + Math.sin(pitch), o[2] + Math.cos(yaw) * Math.cos(pitch));
+            cam.fov = Math.max(p.vDeg, 60);
+            cam.updateProjectionMatrix();
+        } else {
+            worldAimCamera(cam, p, window.THREE);
+        }
+        MESHLOOK.renderer.render(MESHLOOK.scene, cam);
+    }
+
+    /*
+     * WALK. Move through the set freely -- W/S forward and back, A/D sideways,
+     * R/F up and down, the arrows and a drag to turn, Shift to move faster --
+     * and nothing is kept until "Use this camera". Keeping it goes through the
+     * SAME validated proposal a nudge does (/direct), so a camera walked into a
+     * wall is refused exactly as a nudged one is.
+     *
+     * The walk moves the shot's own staged camera in the page, so every view --
+     * Look, Geometry, Depth, Plan -- follows it at once.
+     */
+    const WALK = { on: false, from: null, moved: false };
+
+    function worldWalkCamera() {
+        const b = WORLD.blocking && WORLD.blocking.blocking;
+        if (!b) return null;
+        if (!b.camera || !Array.isArray(b.camera.position)) {
+            // Start from where the frame is standing now, in the mesh's space,
+            // turned into a position and a rotation the proposal can carry.
+            const f = Number(WORLD.version && WORLD.version.scale_factor);
+            const k = Number.isFinite(f) && f > 0 ? f : 1;
+            const d = worldDefaultCamera(WORLD.geometry);
+            if (!d) return null;
+            const v = [d.target[0] - d.position[0], d.target[1] - d.position[1], d.target[2] - d.position[2]];
+            const len = Math.hypot(v[0], v[1], v[2]) || 1;
+            b.camera = Object.assign({}, b.camera || {}, {
+                position: d.position.map(n => n / k),
+                rotation: [Math.atan2(-v[0], -v[2]) * 180 / Math.PI, Math.asin(v[1] / len) * 180 / Math.PI, 0],
+            });
+        }
+        if (!Array.isArray(b.camera.rotation)) b.camera.rotation = [0, 0, 0];
+        return b.camera;
+    }
+
+    function worldWalkToggle() {
+        WALK.on = !WALK.on;
+        if (WALK.on && !WALK.from) {
+            const b = WORLD.blocking && WORLD.blocking.blocking;
+            const saved = b && b.camera && Array.isArray(b.camera.position) ? b.camera : null;
+            WALK.from = saved
+                ? { position: saved.position.slice(), rotation: (saved.rotation || [0, 0, 0]).slice(), saved: true }
+                : { position: [0, 0, 0], rotation: [0, 0, 0], saved: false };
+            worldWalkCamera();
+        }
+        worldConsoleRender();
+    }
+
+    function worldWalkRepaint() {
+        WALK.moved = true;
+        worldPaintFrame();
+        worldMeshRenderOnce();
+        worldSplatRenderOnce();
+        const bar = document.getElementById('weWalkBar');
+        if (bar) bar.innerHTML = worldWalkBarHtml();
+    }
+
+    function worldWalkTurn(yawDeg, pitchDeg) {
+        const c = worldWalkCamera();
+        if (!c) return;
+        c.rotation[0] = ((c.rotation[0] + yawDeg + 540) % 360) - 180;
+        c.rotation[1] = Math.max(-85, Math.min(85, c.rotation[1] + pitchDeg));
+        worldWalkRepaint();
+    }
+
+    /** Metres along the camera's own ground axes: forward, right, up. */
+    function worldWalkStep(fwdM, rightM, upM) {
+        const c = worldWalkCamera();
+        if (!c) return;
+        const f = Number(WORLD.version && WORLD.version.scale_factor);
+        const k = Number.isFinite(f) && f > 0 ? f : 1;
+        const yaw = c.rotation[0] * Math.PI / 180;
+        const fwd = [-Math.sin(yaw), -Math.cos(yaw)];
+        const right = [Math.cos(yaw), -Math.sin(yaw)];
+        c.position[0] += (fwd[0] * fwdM + right[0] * rightM) / k;
+        c.position[2] += (fwd[1] * fwdM + right[1] * rightM) / k;
+        c.position[1] += upM / k;
+        worldWalkRepaint();
+    }
+
+    function worldWalkKey(e) {
+        if (!WALK.on || state.currentPage !== 'previs') return;
+        const t = e.target && e.target.tagName;
+        if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || (e.target && e.target.isContentEditable)) return;
+        const m = e.shiftKey ? 1.0 : 0.25;          // metres a press
+        const k = e.key.toLowerCase();
+        const moves = {
+            w: () => worldWalkStep(m, 0, 0), s: () => worldWalkStep(-m, 0, 0),
+            a: () => worldWalkStep(0, -m, 0), d: () => worldWalkStep(0, m, 0),
+            r: () => worldWalkStep(0, 0, m / 2), f: () => worldWalkStep(0, 0, -m / 2),
+            arrowleft: () => worldWalkTurn(e.shiftKey ? 10 : 3, 0), arrowright: () => worldWalkTurn(e.shiftKey ? -10 : -3, 0),
+            arrowup: () => worldWalkTurn(0, 2), arrowdown: () => worldWalkTurn(0, -2),
+        };
+        if (moves[k]) { e.preventDefault(); moves[k](); }
+    }
+    document.addEventListener('keydown', worldWalkKey);
+
+    function worldWalkBarHtml() {
+        if (!WALK.on) return '';
+        const c = worldWalkCamera();
+        const f = Number(WORLD.version && WORLD.version.scale_factor);
+        const k = Number.isFinite(f) && f > 0 ? f : null;
+        const at = c && k ? c.position.map(n => (n * k).toFixed(2)).join(' / ') + ' m' : '';
+        return `<span class="we-live">WALK · W/S A/D R/F · arrows or drag to turn · Shift faster${at ? ' · ' + esc(at) : ''}</span>
+            <button class="pv-btn pv-primary" onclick="worldWalkKeep()"${WALK.moved ? '' : ' disabled'}>Use this camera</button>
+            <button class="pv-btn" onclick="worldWalkUndo()"${WALK.moved ? '' : ' disabled'}>Put it back</button>`;
+    }
+
+    /*
+     * Keep the walked camera: the difference from the saved one, as the moves
+     * and turns the proposal contract speaks, plus the lens. The route builds
+     * the camera from the saved blocking and validates it against the geometry.
+     */
+    async function worldWalkKeep() {
+        const c = worldWalkCamera();
+        if (!c || !WALK.from || !WORLD.shotId) return;
+        const f = Number(WORLD.version && WORLD.version.scale_factor);
+        if (!(Number.isFinite(f) && f > 0)) {
+            return setStatus('Calibrate this world first: a camera cannot be kept in metres in a world with no unit.', true);
+        }
+        const d = i => (c.position[i] - WALK.from.position[i]) * f;
+        const r = i => (c.rotation[i] || 0) - (WALK.from.rotation[i] || 0);
+        const proposal = {
+            rationale: 'Walked to in Previs and chosen by eye.',
+            changes: {
+                truckM: +d(0).toFixed(3), pedestalM: +d(1).toFixed(3), dollyM: +d(2).toFixed(3),
+                panDeg: +r(0).toFixed(2), tiltDeg: +r(1).toFixed(2), rollDeg: +r(2).toFixed(2),
+                focalLengthMm: WORLD.lens,
+            },
+            apply: true,
+        };
+        try {
+            await api(`/shots/${WORLD.shotId}/direct`, { method: 'POST', body: JSON.stringify(proposal) });
+            WALK.on = false; WALK.from = null; WALK.moved = false;
+            setStatus('Camera kept on the shot. Apply it to the shot, then generate the board frame from it.');
+        } catch (err) {
+            return setStatus('That camera was refused: ' + err.message, true);
+        }
+        await worldRefreshBlocking();
+    }
+
+    async function worldWalkUndo() {
+        WALK.on = false; WALK.from = null; WALK.moved = false;
+        await worldRefreshBlocking();
+    }
+    window.worldWalkToggle = worldWalkToggle;
+    window.worldWalkKeep = worldWalkKeep;
+    window.worldWalkUndo = worldWalkUndo;
 
     /*
      * EXPLORE, RENDERED. Each accepted camera is drawn through its own lens
@@ -18061,6 +18338,13 @@ THREE.GLTFLoader = GLTFLoader;
         if (!PAGE_RELOAD) return;
         if (!state.currentProject && state.currentPage !== 'projects') return;
         if (BUSY.count > 0) { BUSY.pending = true; return; }
+        /*
+         * A WALK IN PROGRESS IS UNSAVED WORK. Reloading Previs re-reads the
+         * shot's saved camera, which put the director back where they started
+         * mid-walk. Held, not dropped: keeping the camera or putting it back
+         * reloads the page anyway.
+         */
+        if (state.currentPage === 'previs' && typeof WALK !== 'undefined' && WALK.on && WALK.moved) return;
         const now = Date.now();
         if (now - LAST_RELOAD < RELOAD_THROTTLE_MS) {
             /*

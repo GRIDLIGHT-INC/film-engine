@@ -442,6 +442,28 @@ const PRODUCTION_TOOLS = [
         }, required: ['world_version_id', 'source', 'known_meters', 'measured_units'],
     },
     {
+        name: 'world_import_glb',
+        handler: handleWorlds, method: 'POST',
+        path: a => `/film/worlds/${a.world_id}/versions/import`,
+        body: a => { const { world_id, ...rest } = a || {}; return rest; },
+        description:
+            'Make a scene built in Blender the next version of a world, so Previs can walk through it and '
+            + 'frame shots inside it. FREE: nothing is generated. Export the scene from Blender as glTF '
+            + 'Binary (.glb, no Draco or meshopt compression) into the project\'s own folder (for example '
+            + '03 Previs) and pass file_path relative to that folder, or send the bytes as glb (base64). '
+            + 'glTF is metres, so the version arrives calibrated. The previous version is kept, and shots '
+            + 'pinned to it stay; pin a shot to the new version with world_pin_shot. An optional '
+            + 'equirectangular panorama rendered in Blender gives the 360 view.',
+        schema: {
+            world_id: { type: 'string' },
+            file_path: { type: 'string', description: 'The .glb, relative to the project folder (or absolute inside it).' },
+            glb: { type: 'string', description: 'The .glb as base64, when it is not in the project folder.' },
+            panorama_path: { type: 'string', description: 'Optional 2:1 equirectangular PNG inside the project folder.' },
+            source: { type: 'string', description: 'blender (default) | glb' },
+            reason: { type: 'string', description: 'What changed in this version of the set.' },
+        }, required: ['world_id'],
+    },
+    {
         name: 'world_lock',
         handler: handleWorlds, method: 'POST',
         path: a => `/film/worlds/${a.world_id}/lock`,

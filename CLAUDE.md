@@ -637,6 +637,7 @@ film-engine/
 │       ├── dialogue-audio-reference.test.js # Recorded dialogue to Seedance 2.5: audios_list on MuAPI, referenceAudio on Runway, uploaded first, held to the probed fields
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
 │       ├── video-model-options.test.js # Every video model's options offered from its provider's schema, each reaching the request, refused by name outside it, through the preview and the paid call
+│       ├── world-blender-import.test.js # A Blender GLB as the next world version, in metres: walked in Previs, the camera kept through the validated proposal, applied to the card
 │       ├── generation-options.test.js # Any connected provider on every generate dialog, its own options each reaching the request, applied at the funnel only to its own provider
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
@@ -4024,6 +4025,15 @@ Migration 081 fingerprints the applied stage and applied card separately. A mism
 `tests/decision-parity.test.js` derives its denominator from three code sources — `EDITABLE` in `routes/shots.js`, the `film_previs_blocking` columns, and the `film_projects` switches the board actually reads — so a field added later is accounted for or fails. Its probes are behavioural where it matters: the round trip is **run**, and payload reachability is **differential** (change the value, assert what a provider would receive changes), because a stored choice and an applied choice look identical from the outside. Three of its early findings were the fixture's fault rather than the product's — a phantom plate path, byte-identical plate images, and a string accepted as `props` and then iterated character by character — and each was cheap to mistake for a real defect. Where the schema is loose, *what validates* and *what a field means* are different questions, so every sample the probe builds is now derived from something that constrains behaviour rather than from what the validator will tolerate.
 
 
+### A Set Built in Blender, Walked in Previs
+*"Could we, with Higgsfield and Blender, create our previz environment, then drop it into our previz screen? … walk within the scene and use all the cinematography tools … and once I love a shot set the new camera settings to the shot so it generates the appropriate storyboard shot."*
+
+Higgsfield builds 3D inside Blender (its Scene Builder, driven through an MCP bridge); Film Engine takes what Blender exports. **A GLB becomes the next version of a world** (`importVersion`, `POST /worlds/:id/versions/import`, `world_import_glb`), never an overwrite: the previous version keeps its assets and every shot pinned to it stays. The GLB IS the version's collider, so every measurement, the plate, Plan and Depth read it unchanged, and it is served to the Look view as the textured set (`mesh` on `/splats`), drawn with the page's own three r149 and GLTFLoader on its own canvas from exactly the painter's pose. **It arrives calibrated**: glTF is metres, so `scale_factor` is 1 with `scale_source: 'glb_metres'`, and lens, height and distance are true with no door measured. What is not a GLB, or cannot be read (Draco, meshopt, truncated), is refused by name before any row is written. A file path is honoured only inside the project's own folder: the server is unauthenticated, and an import must not become a way to read any file.
+
+**Walk.** In Previs, Walk moves the shot's own camera with W/S/A/D, R/F for height, the arrows or a drag to turn and Shift to go faster. Every view follows, and nothing is kept until **Use this camera**. Keeping sends the difference from the saved camera as a `/direct` proposal (truck, pedestal, dolly, pan, tilt, roll, lens), so a walked camera inside a wall is refused exactly as a nudge is. Apply then writes it onto the card, which is what the board frame is generated from. A background page refresh is held while a walk is unsaved, because it re-read the saved camera and put the director back where they started.
+
+**The Camera Operate nudges had never moved a camera.** They sent the move flat with no rationale, and `/direct` takes `{ rationale, changes, apply }`, so every nudge was refused with "the proposal changes nothing", said only on the status bar. Both the nudges and the walk now send the contract, and `tests/world-blender-import.test.js` runs each request through the route's own validator.
+
 ### A Preview Is Built the Way Its Purchase Is
 Parity made the two surfaces agree about what a director decided. It did not make the REQUEST agree with the screen, and that is where the money is: `routes/storyboard.js` called `buildStoryboardPrompt` directly for generate-all, the streaming generate and per-shot regenerate, and `routes/video-gen.js` had its own `loadShotContext` and four direct `buildVideoPayload` calls. Neither file mentioned previs anywhere in those paths, while `/shots/:id/prompt` and the previs previews went through `loadShotContext` + `buildCapabilityPayload` and did carry it.
 
@@ -6678,6 +6688,7 @@ node --test backend/tests/seedance-post.test.js
 node --test backend/tests/muapi-upscale.test.js
 node --test backend/tests/video-model-options.test.js
 node --test backend/tests/generation-options.test.js
+node --test backend/tests/world-blender-import.test.js
 node --test backend/tests/topaz-upscale.test.js
 node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/setup-models.test.js

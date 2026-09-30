@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**409 tools, 82 families.** Everything the app can do, you can ask for in a
+**410 tools, 82 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -978,7 +978,7 @@ shot with a cast and a location; a clip reaches no generator at all.
 
 `world_create` · `world_list` · `world_get` · `world_plan` · `world_generate` ·
 `world_calibrate` · `world_lock` · `world_unlock` · `world_pin_shot` ·
-`world_delete`
+`world_delete` · `world_import_glb`
 
 A world is the persistent SET — a place reconstructed from a location's own
 plates, that many shots are framed inside. It is not a shot and not a subject.
@@ -992,6 +992,13 @@ without a unit, so until then every distance in it is decorative, and the world
 says `APPROXIMATE SCALE` rather than guessing. And a version is **never**
 overwritten: improving a world makes a new one, and a shot pinned to the old
 version stays there until somebody moves it deliberately.
+
+A set built in Blender (by hand, or by Higgsfield's Scene Builder in your open
+Blender) comes in with `world_import_glb`, FREE: export it as glTF Binary (.glb,
+no Draco) into the project's own folder and pass its path. It becomes the next
+version of the world, drawn textured in Previs's Look view, and it arrives in
+metres, so it needs no `world_calibrate`. Pin a shot to it with `world_pin_shot`;
+the camera kept in Previs is applied to the shot's card like any other.
 
 ### The geometric plate
 

@@ -175,6 +175,79 @@ async function ingestWorld(db, versionId, providerWorld, opts) {
     return { assets: stored, bounds, caption: (providerWorld && providerWorld.caption) || null };
 }
 
+// ── a scene built elsewhere (Blender) ───────────────────────────────────────
+
+/**
+ * Where a world version came from, when it was not generated here.
+ *
+ * `metres` is the load-bearing field. glTF is metres by specification and
+ * Blender exports in metres, so a scene built there arrives CALIBRATED: every
+ * lens, height and distance the console computes is true without anybody
+ * measuring a door. A Marble world arrives with no unit at all, which is why
+ * its scale is NULL until somebody measures one thing in it.
+ */
+const IMPORT_SOURCES = Object.freeze({
+    blender: { label: 'Blender', metres: true },
+    glb: { label: 'a GLB file', metres: true },
+});
+
+/**
+ * A new version of a world, from a GLB built somewhere else.
+ *
+ * The GLB IS the scene: it becomes the version's collider (everything the
+ * console measures and blocks against) and, because it carries its own
+ * materials, the Look view draws it textured. A version is never overwritten:
+ * this is version n+1 with the previous one as its parent, so every shot pinned
+ * to an older version stays exactly where it was.
+ *
+ * Refused BY NAME before anything is written: a file that is not a GLB, or one
+ * this engine cannot read (Draco / meshopt compression are export switches).
+ */
+function importVersion(db, worldId, input) {
+    const o = input || {};
+    const world = getWorld(db, worldId);
+    if (!world) throw new Error('world not found');
+    refuseIfLocked(db, worldId, 'adding a version');
+    const source = IMPORT_SOURCES[o.source || 'blender'] ? (o.source || 'blender') : null;
+    if (!source) throw new Error(`Unknown import source '${o.source}'. Known: ${Object.keys(IMPORT_SOURCES).join(', ')}`);
+    const bytes = o.glb;
+    if (!Buffer.isBuffer(bytes) || bytes.length < 20 || bytes.toString('ascii', 0, 4) !== 'glTF') {
+        throw new Error('That is not a GLB. Export the scene from Blender as glTF Binary (.glb).');
+    }
+    // Parsed before any row exists, so a file the stage cannot read is refused
+    // whole rather than leaving a version that says "no collider".
+    const geo = require('./glb-parser').parseGlb(bytes);
+
+    const { generateId } = ids();
+    const next = (db.prepare('SELECT MAX(version) v FROM film_world_versions WHERE world_id = ?')
+        .get(worldId).v || 0) + 1;
+    const parent = db.prepare('SELECT id FROM film_world_versions WHERE world_id = ? ORDER BY version DESC LIMIT 1')
+        .get(worldId);
+    const id = generateId();
+    const metres = IMPORT_SOURCES[source].metres;
+    const tx = db.transaction(() => {
+        db.prepare(
+            `INSERT INTO film_world_versions (id, world_id, version, parent_version_id, model, reason, provider,
+                                              scale_factor, scale_source, bounds_json, caption)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+        ).run(id, worldId, next, parent ? parent.id : null,
+            String(o.reason || `Built in ${IMPORT_SOURCES[source].label}`), source,
+            metres ? 1 : null, metres ? 'glb_metres' : null,
+            JSON.stringify(geo.bounds), String(o.caption || '') || null);
+        assetsLib.storeLocalAsset(db, id, world.project_id, 'collider', bytes);
+        if (Buffer.isBuffer(o.panorama) && o.panorama.length) {
+            assetsLib.storeLocalAsset(db, id, world.project_id, 'panorama', o.panorama);
+        }
+        db.prepare("UPDATE film_worlds SET active_version_id = ?, updated_at = datetime('now') WHERE id = ?")
+            .run(id, worldId);
+    });
+    tx();
+    return Object.assign(getVersion(db, id), {
+        triangles: geo.triangles.length,
+        size_m: geo.size,
+    });
+}
+
 // ── geometry ────────────────────────────────────────────────────────────────
 
 function rawGeometry(db, versionId) {
@@ -402,6 +475,6 @@ function saveCamera(db, shotId, camera) {
 module.exports = {    WORLD_ASSET_KINDS, COPIED_KINDS,
     createWorld, getWorld, worldsFor, updateWorld, deleteWorld, lockWorld,
     newVersion, getVersion, versionsFor, worldOf, calibrateVersion,
-    ingestWorld, worldGeometry,
+    ingestWorld, worldGeometry, importVersion, IMPORT_SOURCES,
     pinShot, unpinShot, pinFor,
     planVersion, generateVersion, saveCamera,};

@@ -201,6 +201,38 @@ async function ingestAssets(db, versionId, world, opts) {
     return out;
 }
 
+/**
+ * Store bytes we were HANDED (a scene exported from Blender, its panorama) as
+ * one of a version's assets, exactly where a provider's copy would land: the
+ * same file name, the same film_assets row, the same world-asset row with no
+ * remote URL, because there is no remote. Replaces, never accumulates.
+ */
+function storeLocalAsset(db, versionId, projectId, kind, buf) {
+    if (!WORLD_ASSET_KINDS.includes(kind)) throw new Error(`Unknown world asset kind '${kind}'`);
+    if (!Buffer.isBuffer(buf) || !buf.length) throw new Error(`The ${kind} is empty`);
+    if (buf.length > MAX_ASSET_BYTES) {
+        throw new Error(`The ${kind} is ${buf.length} bytes; the ceiling is ${MAX_ASSET_BYTES}.`);
+    }
+    const { generateId } = require('../db/database');
+    const fileName = fileNameFor(versionId, kind);
+    const filePath = saveFile(projectId, SUBDIR, fileName, buf);
+    const assetId = generateId();
+    db.prepare(
+        `INSERT INTO film_assets (id, project_id, asset_type, file_path, file_name,
+                                  format, mime_type, size_bytes, version, metadata)
+         VALUES (?, ?, 'other', ?, ?, ?, ?, ?, 1, ?)`
+    ).run(assetId, projectId, filePath, fileName, (EXT[kind] || '').replace('.', ''),
+        MIME[EXT[kind]] || 'application/octet-stream', buf.length,
+        JSON.stringify({ kind: `world_${kind}`, world_version_id: versionId, imported: true }));
+    db.prepare('DELETE FROM film_world_assets WHERE world_version_id = ? AND kind = ?').run(versionId, kind);
+    const id = generateId();
+    db.prepare(
+        `INSERT INTO film_world_assets (id, world_version_id, kind, remote_url, asset_id, bytes, metadata_json)
+         VALUES (?, ?, ?, NULL, ?, ?, ?)`
+    ).run(id, versionId, kind, assetId, buf.length, JSON.stringify({ imported: true }));
+    return { id, kind, asset_id: assetId, bytes: buf.length };
+}
+
 /** The bytes of one copied asset, or null when it was recorded by URL only. */
 function localBytes(db, versionId, kind) {
     const row = db.prepare(
@@ -213,4 +245,4 @@ function localBytes(db, versionId, kind) {
 
 module.exports = {    WORLD_ASSET_KINDS, COPIED_KINDS, SOURCE_OF, SUBDIR,
     assertFetchableUrl, MAX_ASSET_BYTES,
-    ingestAssets, localBytes, servedUrlFor, fileNameFor,};
+    ingestAssets, storeLocalAsset, localBytes, servedUrlFor, fileNameFor,};

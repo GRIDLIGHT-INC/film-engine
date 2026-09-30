@@ -7,6 +7,7 @@
  * GET|PATCH|DELETE /film/worlds/:id               read / rename / delete
  * POST|DELETE /film/worlds/:id/lock               lock / unlock
  * GET|POST   /film/worlds/:id/versions            list / improve (never overwrite)
+ * POST       /film/worlds/:id/versions/import     a scene built in Blender (a GLB) as the next version, in metres
  * GET        /film/world-versions/:vid            read
  * POST       /film/world-versions/:vid/calibrate  set the scale
  * GET        /film/world-versions/:vid/geometry   collider, decimated, scaled on read
@@ -60,6 +61,40 @@ function versionPayload(v) {
         // different claim from a factor of one and must read that way.
         scale_state: describeScale(v),
     });
+}
+
+/**
+ * The bytes of an imported file: sent in the body (base64 or a data URI), or
+ * named by a path INSIDE THIS PROJECT'S OWN FOLDER, which is where Blender (or
+ * an agent driving Blender) exports to. A path anywhere else is refused: this
+ * server is unauthenticated, and "read any file the process can" is not a
+ * feature an import may grow.
+ */
+function importedBytes(projectId, body, field, pathField, optional) {
+    const b = body || {};
+    const inline = b[field];
+    if (typeof inline === 'string' && inline.trim()) {
+        const m = inline.match(/^data:[^;,]*;base64,(.*)$/s);
+        return Buffer.from(m ? m[1] : inline, 'base64');
+    }
+    const want = b[pathField];
+    if (typeof want === 'string' && want.trim()) {
+        const fs = require('fs');
+        const path = require('path');
+        const row = db.prepare('SELECT assets_dir FROM film_projects WHERE id = ?').get(projectId);
+        if (!row || !row.assets_dir) {
+            throw new Error('This project has no folder of its own, so a file can only be imported by sending its bytes.');
+        }
+        let root, target;
+        try { root = fs.realpathSync(row.assets_dir); } catch (_) { throw new Error('The project folder cannot be read.'); }
+        try { target = fs.realpathSync(path.resolve(root, want)); } catch (_) { throw new Error(`No file at ${want}.`); }
+        if (target !== root && !target.startsWith(root + path.sep)) {
+            throw new Error(`${want} is outside this project's folder (${row.assets_dir}). Export it there and import it again.`);
+        }
+        return fs.readFileSync(target);
+    }
+    if (optional) return null;
+    throw new Error(`Send the scene as \`${field}\` (base64) or \`${pathField}\` (a file inside the project folder).`);
 }
 
 function worldPayload(w) {
@@ -325,6 +360,26 @@ async function handleWorlds(req, res, urlParts, query) {
             return json(res, 405, { error: 'Method not allowed' });
         }
 
+        if (tail === 'versions' && urlParts[4] === 'import') {
+            const w = worlds.getWorld(db, worldId);
+            if (!w) return json(res, 404, { error: 'World not found' });
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            try {
+                const glb = importedBytes(w.project_id, body, 'glb', 'file_path');
+                const panorama = importedBytes(w.project_id, body, 'panorama', 'panorama_path', true);
+                const v = worlds.importVersion(db, worldId, {
+                    glb, panorama, source: body.source, reason: body.reason, caption: body.caption,
+                });
+                return json(res, 201, {
+                    version: versionPayload(v),
+                    triangles: v.triangles,
+                    size_m: v.size_m,
+                    note: 'In metres (glTF\'s own unit), so lens, height and distance are true without calibrating. '
+                        + 'Pin a shot to this version to frame it here; shots pinned to older versions stay where they are.',
+                });
+            } catch (err) { return fail(res, err); }
+        }
+
         if (tail === 'versions') {
             if (!worlds.getWorld(db, worldId)) return json(res, 404, { error: 'World not found' });
             if (req.method === 'GET') {
@@ -388,8 +443,17 @@ async function handleWorlds(req, res, urlParts, query) {
                 .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))
                 .map(r => ({ kind: r.kind, url: url(r), local: !!r.asset_id, bytes: r.bytes || null }));
             const pano = rows.find(r => r.kind === 'panorama');
+            /*
+             * A scene built in Blender carries its own materials: the collider IS
+             * the textured set, so the Look view draws it directly. It is not
+             * gated by world_splats, because it is not a splat.
+             */
+            const coll = rows.find(r => r.kind === 'collider');
+            const imported = worlds.IMPORT_SOURCES[v.provider];
+            const mesh = imported && coll && coll.asset_id && world.project_id
+                ? { url: worldAssets.servedUrlFor(world.project_id, versionId, 'collider'), source: v.provider } : null;
             return json(res, 200, {
-                world_version_id: versionId, enabled,
+                world_version_id: versionId, enabled, mesh,
                 scale_factor: Number(v.scale_factor) > 0 ? Number(v.scale_factor) : 1,
                 splats: enabled ? splats : [],
                 available: splats.map(s => s.kind),
