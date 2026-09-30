@@ -5437,13 +5437,35 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
    The providers card spans the page (capability table beside the keys); every
    other card packs into as many columns as the width allows, so most settings
    are visible without scrolling. Long explanations sit behind "Why". */
-#page-settings .set-grid { display:flex; flex-direction:column; gap:14px; }
+#page-settings .set-shell { display:grid; grid-template-columns:220px minmax(0,1fr); gap:28px; align-items:start; }
+#page-settings .set-nav { position:sticky; top:0; display:flex; flex-direction:column; gap:2px; padding:4px 0; }
+#page-settings .set-nav-h { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--gl-text-muted); padding:14px 12px 8px; }
+#page-settings .set-nav-h:first-child { padding-top:0; }
+#page-settings .set-nav-btn { text-align:left; min-height:40px; padding:9px 12px; border:0; border-radius:8px; background:transparent; color:var(--gl-text-secondary); font:inherit; font-size:14px; cursor:pointer; }
+#page-settings .set-nav-btn:hover { background:rgba(255,255,255,.05); color:var(--gl-text-primary); }
+#page-settings .set-nav-btn.on { background:#1d2742; color:var(--gl-text-primary); font-weight:600; }
+#page-settings .set-card.set-off { display:none !important; }
+#page-settings .set-lede { margin:0 0 18px; font-size:14px; line-height:1.55; color:var(--gl-text-secondary); max-width:820px; }
+#page-settings .set-key-count { font-size:13px; font-weight:400; color:var(--gl-text-muted); margin-left:8px; }
+#page-settings .set-group { display:grid; grid-template-columns:170px minmax(0,1fr); gap:20px; padding:18px 0; border-top:1px solid var(--gl-border-subtle); }
+#page-settings .set-group-h { font-size:16px; font-weight:600; margin:0 0 4px; }
+#page-settings .set-group-note { font-size:12px; line-height:1.45; color:var(--gl-text-muted); margin:0; }
+#page-settings .set-caps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+#page-settings .set-cap { display:flex; flex-direction:column; gap:10px; padding:14px; border-radius:10px; background:var(--gl-bg-elevated); border:1px solid var(--gl-border-subtle); min-width:0; }
+#page-settings .set-cap-name { font-size:14px; font-weight:600; }
+#page-settings .set-cap .set-cap-note { font-size:12px; font-weight:400; line-height:1.4; color:var(--gl-text-muted); margin-top:2px; }
+#page-settings .set-cap label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--gl-text-secondary); margin:0; }
+#page-settings .set-cap select { width:100%; min-width:0; min-height:38px; padding:0 8px; font-size:13px; }
+#page-settings .set-cap-state { display:flex; align-items:flex-start; gap:7px; font-size:12px; line-height:1.4; color:var(--gl-text-secondary); }
+#page-settings .set-cap-state::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--gl-success); flex-shrink:0; margin-top:5px; }
+#page-settings .set-cap-state.warn { color:var(--gl-warning); }
+#page-settings .set-cap-state.warn::before { background:var(--gl-warning); }
+#page-settings .set-grid { display:flex; flex-direction:column; gap:14px; min-width:0; }
 #page-settings .set-card { margin:0 !important; max-width:none !important; min-width:0; }
-#page-settings .set-cols { column-width: 380px; column-gap: 14px; }
-#page-settings .set-cols > .set-card { break-inside: avoid; display:block; margin-bottom:14px !important; }
+#page-settings .set-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:14px; align-items:start; }
+#page-settings .set-cols > .set-card { display:block; }
 #page-settings .set-cols > .set-card.hidden { display:none; }
-#page-settings .set-prov { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:20px; align-items:start; }
-@media (max-width: 1100px) { #page-settings .set-prov { grid-template-columns:minmax(0,1fr); } }
+@media (max-width: 1100px) { #page-settings .set-caps { grid-template-columns:repeat(2,minmax(0,1fr)); } #page-settings .set-group { grid-template-columns:minmax(0,1fr); gap:10px; } }
 #page-settings .set-h4 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--gl-text-muted); margin:0 0 8px; }
 #page-settings .set-h4 span { text-transform:none; letter-spacing:0; font-size:12px; }
 #page-settings .set-why { margin-top:4px; }
@@ -5460,13 +5482,27 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 #page-settings .set-cap-table .set-cap-warn { font-size:11px; color:#d9a441; margin-top:2px; }
 #page-settings .set-tiers { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
 #page-settings .set-tiers .fe-tier { flex:1 1 150px; text-align:left; padding:8px 10px; line-height:1.3; white-space:normal; }
-#page-settings .set-keys { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
-#page-settings .set-key { display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr) auto; gap:6px; align-items:center; }
-#page-settings .set-key label { margin:0; font-size:12px; font-weight:600; }
+#page-settings .set-keys { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+#page-settings .set-key { display:flex; flex-direction:column; gap:8px; padding:14px; border-radius:10px; background:var(--gl-bg-elevated); border:1px solid var(--gl-border-subtle); min-width:0; }
+#page-settings .set-key label { margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#page-settings .set-key-serves { font-size:12px; color:var(--gl-text-muted); line-height:1.4; }
+#page-settings .set-pill { flex-shrink:0; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:rgba(255,255,255,.07); color:var(--gl-text-secondary); white-space:nowrap; }
+#page-settings .set-pill.ok { background:rgba(79,211,156,.14); color:var(--gl-success); }
+#page-settings .set-pill.warn { background:rgba(224,163,62,.16); color:var(--gl-warning); }
+/* The project's fields in a grid, the long ones across it, as the design drew them. */
+#page-settings #settingsProjectCard:not(.hidden):not(.collapsed) { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); column-gap:16px; align-items:start; }
+#page-settings #settingsProjectCard > * { grid-column:span 2; min-width:0; }
+#page-settings #settingsProjectCard > h3,
+#page-settings #settingsProjectCard > .btn-row,
+#page-settings #settingsProjectCard > .form-group:has(#settingsLogline),
+#page-settings #settingsProjectCard > .form-group:has(#settingsStylePreset),
+#page-settings #settingsProjectCard > .form-group:has(#settingsVideoDraft) { grid-column:1 / -1; }
+#page-settings #settingsProjectCard > .form-group:has(#settingsTargetDuration),
+#page-settings #settingsProjectCard > .form-group:has(#settingsStatus) { grid-column:span 1; }
 #page-settings .set-key .tag { font-size:10px; }
 #page-settings .set-key input { min-width:0; padding:5px 8px; font-size:13px; }
 #page-settings .set-key .set-key-btns { display:flex; gap:4px; }
-@media (max-width: 700px) { #page-settings .set-key { grid-template-columns:minmax(0,1fr); } }
+@media (max-width: 700px) { #page-settings .set-shell { grid-template-columns:minmax(0,1fr); } #page-settings .set-nav { position:static; flex-direction:row; flex-wrap:wrap; } #page-settings .set-nav-h { display:none; } #page-settings .set-caps { grid-template-columns:minmax(0,1fr); } }
 
 /* The project list's stage: a badge that opens a dropdown. */
 .project-stage-btn { cursor:pointer; border:0; font:inherit; font-size:11px; }
@@ -7128,11 +7164,37 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 
         <div class="page" id="page-settings">
             <div class="page-header"><h2>Settings</h2></div>
+            <!--
+              ONE SECTION AT A TIME, ACROSS THE FULL WIDTH.
+              Every setting was a card in one column-packed wall, and the API
+              keys sat in a narrow column in the corner of the providers card.
+              A section list on the left shows one section; the cards keep
+              their ids, so everything that fills them is unchanged. The
+              sections a project owns come first; the ones this Mac owns after.
+            -->
+            <div class="set-shell">
+            <nav class="set-nav" aria-label="Settings sections">
+                <div class="set-nav-h">This project</div>
+                <button type="button" class="set-nav-btn" data-set-go="providers" onclick="showSettingsSection('providers')">AI providers and models</button>
+                <button type="button" class="set-nav-btn" data-set-go="project" onclick="showSettingsSection('project')">Project</button>
+                <button type="button" class="set-nav-btn" data-set-go="delivery" onclick="showSettingsSection('delivery')">Picture and delivery</button>
+                <button type="button" class="set-nav-btn" data-set-go="folder" onclick="showSettingsSection('folder')">Where it is saved</button>
+                <div class="set-nav-h">This Mac</div>
+                <button type="button" class="set-nav-btn" data-set-go="keys" onclick="showSettingsSection('keys')">API keys</button>
+                <button type="button" class="set-nav-btn" data-set-go="backups" onclick="showSettingsSection('backups')">Backups</button>
+                <button type="button" class="set-nav-btn" data-set-go="you" onclick="showSettingsSection('you')">You and connection</button>
+                <button type="button" class="set-nav-btn" data-set-go="graph" onclick="showSettingsSection('graph')">Production graph</button>
+            </nav>
             <div class="set-grid">
+            <p class="text-sm text-muted set-empty hidden" id="setSectionEmpty">Open a project to change these; they belong to one film.</p>
 
             <!-- AI Providers (Phase 1: multi-provider layer) -->
-            <div class="card set-card set-wide" id="settingsProvidersCard">
+            <div class="card set-card set-wide" id="settingsProvidersCard" data-set-section="providers">
                 <h3 class="mb-8">AI providers and models</h3>
+                <p class="set-lede">Which service makes each kind of thing for this project only, and the model it uses.
+                    Any single generation can still be sent elsewhere from its own confirmation. The API keys
+                    these need are under <a href="javascript:void(0)" onclick="showSettingsSection('keys')">API keys</a>,
+                    shared by every project on this Mac.</p>
                 <!--
                   WHICH HALF OF THIS PAGE IS GLOBAL.
                   Keys are stored by provider with no project column at all, so a
@@ -7140,26 +7202,19 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                   choices beside them belong to the open project. Said on the
                   card, because the ambiguity cost an afternoon of re-entering.
                 -->
-                <div class="set-prov">
-                    <div class="set-prov-map">
-                        <h4 class="set-h4">
-                            Provider and model per capability <span>(this project only &mdash; the keys are shared)</span>
-                        </h4>
-                        <div id="providerCapabilityMap"></div>
-                        <div class="btn-row" style="margin-top:12px;">
-                            <button class="btn btn-primary" onclick="saveProviderConfig()">Save providers and models</button>
-                        </div>
-                    </div>
-                    <div class="set-prov-keys">
-                        <h4 class="set-h4">
-                            API keys <span>(shared by every project on this machine &mdash; enter once; kept on the server, never sent back)</span>
-                        </h4>
-                        <div id="providerCredentials"></div>
-                    </div>
+                <div id="providerCapabilityMap"></div>
+                <div class="btn-row" style="margin-top:16px;">
+                    <button class="btn btn-primary" onclick="saveProviderConfig()">Save providers and models</button>
                 </div>
             </div>
+
+            <div class="card set-card set-wide" id="settingsKeysCard" data-set-section="keys">
+                <h3 class="mb-8">API keys <span class="set-key-count" id="providerKeyCount"></span></h3>
+                <p class="set-lede">Entered once on this Mac and shared by every project. Kept on the server, never sent back.</p>
+                <div id="providerCredentials"></div>
+            </div>
                 <div class="set-cols">
-                <div class="card set-card" id="settingsProjectCard">
+                <div class="card set-card" id="settingsProjectCard" data-set-section="project">
                     <h3 class="mb-8">Project Settings</h3>
                     <div class="form-group">
                         <label>Title</label>
@@ -7265,7 +7320,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     </div>
                 </div>
                 <!-- FILM-138: Technical Project Settings -->
-                <div class="card set-card" id="settingsTechnicalCard">
+                <div class="card set-card" id="settingsTechnicalCard" data-set-section="delivery">
                     <h3 class="mb-8">Technical Settings</h3>
                     <p class="text-sm text-muted mb-16">Resolution, frame rate, color space, and delivery format for NLE exports.</p>
                     <div class="form-group">
@@ -7283,7 +7338,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                             <option value="spot_social">Spot — social</option>
                         </select>
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0 16px;">
                         <div class="form-group">
                             <label>Aspect Ratio</label>
                             <select id="settingsAspectRatio" onchange="onAspectRatioChange(this.value)">
@@ -7413,7 +7468,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     its files (and moving them), and where NEW projects go. One card
                     held both, and which field answered which was a guess.
                 -->
-                <div class="card set-card" id="settingsFolderCard">
+                <div class="card set-card" id="settingsFolderCard" data-set-section="folder">
                     <h3 class="mb-8" id="settingsFolderTitle">Where this project is saved</h3>
                     <div id="settingsFolderInfo" class="text-sm text-muted">Open a project to see where its files are.</div>
                     <div class="form-group mt-8" id="settingsFolderMoveRow" style="display:none;">
@@ -7426,7 +7481,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <span class="text-sm text-muted">A folder for this film is made inside the one you pick. Every file moves and every record follows it; nothing is regenerated.</span>
                     </div>
                 </div>
-                <div class="card set-card" id="settingsNewProjectsFolderCard">
+                <div class="card set-card" id="settingsNewProjectsFolderCard" data-set-section="folder">
                     <h3 class="mb-8">Where new projects are saved</h3>
                     <div class="form-group">
                         <div style="display:flex;gap:6px;">
@@ -7441,7 +7496,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     shared with sets their own folder here, and their snapshots go in
                     a sub-folder named for them and their machine.
                 -->
-                <div class="card set-card" id="settingsBackupCard">
+                <div class="card set-card" id="settingsBackupCard" data-set-section="backups">
                     <h3 class="mb-8">Backups</h3>
                     <div class="form-group">
                         <label>Back up to</label>
@@ -7472,7 +7527,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <span class="text-sm text-muted" id="settingsBackupStatus"></span>
                     </div>
                 </div>
-                <div class="card set-card" id="settingsYouCard">
+                <div class="card set-card" id="settingsYouCard" data-set-section="you">
                     <h3 class="mb-8">You</h3>
                     <div class="form-group">
                         <label>Author</label>
@@ -7487,7 +7542,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <button class="btn btn-primary" onclick="saveAppSettings()">Save</button>
                     </div>
                 </div>
-                <div class="card set-card" id="settingsConnectionCard">
+                <div class="card set-card" id="settingsConnectionCard" data-set-section="you">
                     <h3 class="mb-8">Backend Connection</h3>
                     <div class="form-group">
                         <label>API URL</label>
@@ -7498,7 +7553,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <button class="btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
                     </div>
                 </div>
-                <div class="card set-card" id="settingsLocalCard">
+                <div class="card set-card" id="settingsLocalCard" data-set-section="you">
                     <h3 class="mb-8">Local endpoints</h3>
                     <div class="form-group">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -7517,7 +7572,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     </div>
                 </div>
 
-                <div class="card set-card" id="settingsGraphCard">
+                <div class="card set-card" id="settingsGraphCard" data-set-section="graph">
                     <h3 class="mb-8">Production graph</h3>
                     <div class="form-group">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -7533,6 +7588,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     </div>
                 </div>
                 </div>
+            </div>
             </div>
         </div>
 
@@ -30265,8 +30321,39 @@ ${fountainText.slice(0, 50000)}`;
     // ══════════════════════════════════════════════════════════════
     // SETTINGS
     // ══════════════════════════════════════════════════════════════
+    /*
+     * One Settings section at a time. The section is a class on each card
+     * (`set-off`), never `hidden`: the project and delivery cards already use
+     * `hidden` for "no project is open", and the two must not overwrite each
+     * other. The last section opened is remembered for this browser only.
+     */
+    const SETTINGS_SECTIONS = ['providers', 'project', 'delivery', 'folder', 'keys', 'backups', 'you', 'graph'];
+    function showSettingsSection(id) {
+        const want = SETTINGS_SECTIONS.includes(id) ? id : 'providers';
+        const page = document.getElementById('page-settings');
+        if (!page) return;
+        page.querySelectorAll('.set-card[data-set-section]').forEach(c => {
+            c.classList.toggle('set-off', c.dataset.setSection !== want);
+        });
+        page.querySelectorAll('.set-nav-btn').forEach(b => {
+            const on = b.dataset.setGo === want;
+            b.classList.toggle('on', on);
+            if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+        });
+        // A project section with no project open says why it is empty.
+        const shown = [...page.querySelectorAll('.set-card[data-set-section]')]
+            .filter(c => c.dataset.setSection === want && !c.classList.contains('hidden'));
+        const empty = document.getElementById('setSectionEmpty');
+        if (empty) empty.classList.toggle('hidden', shown.length > 0);
+        try { localStorage.setItem('fe_settings_section', want); } catch (_) { /* a remembered section is a convenience */ }
+    }
+    window.showSettingsSection = showSettingsSection;
+
     function loadSettings() {
         document.getElementById('settingsApiUrl').value = API_BASE;
+        let remembered = null;
+        try { remembered = localStorage.getItem('fe_settings_section'); } catch (_) { remembered = null; }
+        showSettingsSection(remembered || 'providers');
         const pc = document.getElementById('settingsProjectCard');
         if (state.currentProject) {
             pc.classList.remove('hidden');
@@ -30291,6 +30378,8 @@ ${fountainText.slice(0, 50000)}`;
             pc.classList.add('hidden');
         }
         loadTechnicalSettings();
+        // Again, now the project cards know whether they are shown.
+        showSettingsSection(remembered || 'providers');
         loadProviders();
         loadAppSettings();
         loadProjectFolder();
@@ -30366,7 +30455,17 @@ ${fountainText.slice(0, 50000)}`;
             _providerCatalog = catalog;
 
             // Connection rows: providers that need a key, OAuth connect, or config fields.
-            const needsSetup = (catalog.providers || []).filter(p => p.requiresKey || p.connection);
+            const keyIsSet = p => (!!(p.credentials && (p.credentials.set || p.credentials.connected)) && !(p.credentials && p.credentials.suspect))
+                || !!p.enabled;
+            // Set ones first, so what is missing is the second thing you read, not lost in the middle.
+            const needsSetup = (catalog.providers || []).filter(p => p.requiresKey || p.connection)
+                .sort((a, b) => (keyIsSet(b) - keyIsSet(a)) || String(a.label).localeCompare(String(b.label)));
+            const countEl = document.getElementById('providerKeyCount');
+            if (countEl) countEl.textContent = needsSetup.length ? `${needsSetup.filter(keyIsSet).length} of ${needsSetup.length} set` : '';
+            // What a key is FOR, in the words the provider section uses.
+            const CAP_WORDS = { llm: 'Writing', image: 'Image', video: 'Video', music: 'Music', voice: 'Voice', sfx: 'Effects',
+                ambient: 'Ambience', lipsync: 'Lip-sync', post: 'Upscale', model3d: '3D', world: 'World' };
+            const serves = p => (p.capabilities || []).map(c => CAP_WORDS[c] || c).join(' · ');
             credEl.className = 'set-keys';
             credEl.innerHTML = needsSetup.length ? needsSetup.map(p => {
                 const c = p.credentials || { set: false, fields: {} };
@@ -30376,7 +30475,7 @@ ${fountainText.slice(0, 50000)}`;
                 // 1) OAuth "Connect" providers (any adapter declaring connection.oauth).
                 if (conn && conn.oauth) {
                     const connected = c.connected;
-                    const status = connected ? '<span class="tag" style="background:var(--gl-success,#166534);">connected</span>' : '<span class="tag">not connected</span>';
+                    const status = connected ? '<span class="set-pill ok">connected</span>' : '<span class="set-pill">not connected</span>';
                     // Optional: existing-OAuth-client fields (to skip dynamic registration).
                     const optFields = (Array.isArray(conn.fields) && conn.fields.length) ? `
                         <details style="margin-top:8px;">
@@ -30389,8 +30488,8 @@ ${fountainText.slice(0, 50000)}`;
                                 <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save client</button>
                             </div>
                         </details>` : '';
-                    return `<div class="form-group" style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:10px;">
-                        <label>${esc(p.label)} ${status}</label>${instr}
+                    return `<div class="set-key">
+                        <label>${esc(p.label)} ${status}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="btn btn-primary btn-sm" onclick="connectProviderOAuth('${esc(p.id)}')">${connected ? 'Reconnect' : 'Connect ' + esc(p.label.split(' ')[0])}</button>
                             ${connected ? '<button class="btn btn-danger btn-sm" onclick="disconnectProvider(\'' + esc(p.id) + '\')">Disconnect</button>' : ''}
@@ -30412,8 +30511,8 @@ ${fountainText.slice(0, 50000)}`;
                             <input type="${f.type === 'password' ? 'password' : 'text'}" id="provfield-${esc(p.id)}-${esc(f.key)}" placeholder="${isSet ? '•••••• (leave blank to keep)' : esc(f.placeholder || '')}" style="width:100%;">
                         </div>`;
                     }).join('');
-                    return `<div class="form-group" style="border:1px solid var(--gl-border-subtle);border-radius:8px;padding:10px;">
-                        <label>${esc(p.label)}</label>${instr}${fieldsHtml}
+                    return `<div class="set-key">
+                        <label>${esc(p.label)}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}${fieldsHtml}
                         <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save</button>
                     </div>`;
                 }
@@ -30423,13 +30522,16 @@ ${fountainText.slice(0, 50000)}`;
                 // wear the same green badge as a working key: "set ••••k" is
                 // what let six providers look configured until a 401 arrived.
                 const status = c.suspect
-                    ? '<span class="tag" style="background:var(--gl-warning);">too short to be a key</span>'
-                    : c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>'
-                    : '<span class="tag">not set</span>';
+                    ? '<span class="set-pill warn">too short to be a key</span>'
+                    : c.set ? '<span class="set-pill ok">set ••••' + esc(c.last4 || '') + '</span>'
+                    // Runs on a key stored for another adapter of the same account (MuAPI images use Seedance's).
+                    : p.enabled ? '<span class="set-pill ok" title="This provider runs on a key stored for another provider of the same account.">ready · shared key</span>'
+                    : '<span class="set-pill">not set</span>';
                 const helpUrl = conn && conn.helpUrl;
                 const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="' + esc((conn && conn.instructions) || 'Opens the provider\'s key page') + '">Get key &#8599;</a>' : '';
                 return `<div class="set-key">
                     <label title="${esc((conn && conn.instructions) || '')}">${esc(p.label)} ${status}</label>
+                    ${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}
                     <input type="password" id="provkey-${esc(p.id)}" placeholder="${c.set ? 'Replace key' : 'Enter API key'}">
                     <div class="set-key-btns">
                         ${getKeyBtn}
@@ -30448,20 +30550,42 @@ ${fountainText.slice(0, 50000)}`;
             const caps = proj.capabilities || [];
             const supportsCap = (cap) => (catalog.providers || []).filter(p => (p.capabilities || []).includes(cap));
             const capabilityLabels = {
-                llm: 'Text / LLM',
-                image: 'Images',
+                llm: 'Writing',
+                image: 'Image',
                 video: 'Video',
                 music: 'Music',
                 voice: 'Voice',
-                sfx: 'SFX',
-                ambient: 'Ambient',
+                sfx: 'Sound effects',
+                ambient: 'Ambience',
                 lipsync: 'Lip-sync',
-                post: 'Post',
-                model3d: '3D Models'
+                post: 'Upscale and finish',
+                model3d: '3D model',
+                world: 'World',
             };
             const capabilityHelp = {
-                llm: 'Screenplay AI, breakdowns, and prose-to-screenplay conversion.'
+                llm: 'Scene cards, descriptions and analysis.',
+                image: 'Storyboard frames and reference plates.',
+                model3d: 'Characters and props as meshes.',
+                world: 'A location as a navigable world.',
+                video: 'A clip from each shot\'s board frame.',
+                post: 'Clips brought to the delivery size.',
+                lipsync: 'Mouths matched to the dialogue.',
+                voice: 'Each character\'s lines.',
+                music: 'Score cues.',
+                sfx: 'One-shot effects on a shot.',
+                ambient: 'A scene\'s room tone, looped.',
             };
+            /*
+             * GROUPED BY WHAT THEY MAKE, so a director finds "the video one"
+             * without reading eleven rows. A capability not named here still
+             * lands, under Other: a new one must never be dropped from the page.
+             */
+            const CAP_GROUPS = [
+                { title: 'Pictures', note: 'Frames, plates, and places a camera can stand in', caps: ['image', 'model3d', 'world'] },
+                { title: 'Motion', note: 'Clips, and what finishes them', caps: ['video', 'post', 'lipsync'] },
+                { title: 'Sound', note: 'Dialogue, score, effects and room tone', caps: ['voice', 'music', 'sfx', 'ambient'] },
+                { title: 'Writing', note: 'Scene cards, descriptions, analysis', caps: ['llm'] },
+            ];
             /*
              * QUALITY FIRST, PROVIDER SECOND.
              *
@@ -30481,6 +30605,7 @@ ${fountainText.slice(0, 50000)}`;
             // preferred provider holds no key does not promise a model we
             // cannot run.
             const tierHtml = !tiers.length ? '' : `
+                <h4 class="set-h4">Image quality <span>&mdash; chooses the image provider and model when neither is pinned below</span></h4>
                 <div class="set-tiers" title="Image quality: the tier chooses the provider and model when neither is pinned below.">
                     ${tiers.map(t => `
                         <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'} fe-tier"
@@ -30502,20 +30627,15 @@ ${fountainText.slice(0, 50000)}`;
             const stamp = `<input type="hidden" id="providerPanelProject" value="${esc(proj.project_id || (state.currentProject && state.currentProject.id) || '')}">`;
 
             /*
-             * WHO CHOSE THIS, said where the choice is made. "Automatic" and a
+             * WHO CHOSE THIS is said on each card's status line: "Automatic" and a
              * pinned provider can resolve to the SAME vendor; only who chose it
              * differs, and a lost pin went on billing another company's account
              * until its billing refused.
              */
-            const fallbackNote = cap => {
-                const r = (proj.resolution || {})[cap];
-                if (!r || !r.provider || r.explicit) return '';
-                return '<div class="set-cap-warn">⚠ ' + esc(r.note) + ' — spend goes to that vendor.</div>';
-            };
             _providerModelMenus = {};
             const rows = caps.map(cap => {
                 const opts = supportsCap(cap);
-                if (opts.length === 0) return '';
+                if (opts.length === 0) return null;
                 // What was PINNED, which is not the same as what resolved.
                 const pinned = (proj.config && proj.config[cap]) || '';
                 const gen = (proj.generation || {})[cap];
@@ -30524,28 +30644,46 @@ ${fountainText.slice(0, 50000)}`;
                 _providerModelMenus[cap] = {};
                 ((gen && gen.providers) || []).forEach(p => { _providerModelMenus[cap][p.id] = { models: p.models || [], default_model: p.default_model || null }; });
                 const pinnedModel = (proj.config && proj.config[cap + '_model']) || '';
-                return `<tr>
-                    <td>${esc(capabilityLabels[cap] || cap)}${capabilityHelp[cap] ? '<div class="set-cap-note" style="font-weight:400;">' + esc(capabilityHelp[cap]) + '</div>' : ''}</td>
-                    <td>
+                // One line saying who runs this and whether it can: the vendor's key is the usual gap.
+                const effectiveId = (proj.effective && proj.effective[cap]) || '';
+                const eff = (catalog.providers || []).find(p => p.id === effectiveId);
+                // `enabled` is the engine's own answer: MuAPI's image adapter runs on the
+                // key stored for Seedance, so "its own key is empty" is not "cannot run".
+                const noKey = eff && eff.requiresKey && !eff.enabled;
+                const r = (proj.resolution || {})[cap];
+                const fellThrough = !pinned && r && r.provider && !r.explicit;
+                const vendor = esc((eff && eff.label) || effectiveId);
+                const who = pinned ? 'Pinned for this project' : (effectiveId ? `Automatic → ${vendor}` : 'Automatic');
+                const stateLine = noKey
+                    ? `<div class="set-cap-state warn">${who} · no key for ${vendor} — add it under API keys</div>`
+                    : fellThrough
+                        ? `<div class="set-cap-state warn" title="${esc(r.note || '')}">Nobody picked this: it falls to ${vendor}, and spend goes there. Pick a provider to pin it.</div>`
+                        : `<div class="set-cap-state">${who}</div>`;
+                return { cap, html: `<div class="set-cap">
+                    <div><div class="set-cap-name">${esc(capabilityLabels[cap] || cap)}</div>${capabilityHelp[cap] ? '<div class="set-cap-note">' + esc(capabilityHelp[cap]) + '</div>' : ''}</div>
+                    <label>Provider
                         <select id="provcap-${esc(cap)}" onchange="refreshModelMenu('${esc(cap)}')">
                             <option value=""${pinned ? '' : ' selected'}>Automatic${cap === 'image' ? ' (quality tier)' : ''}${proj.effective && proj.effective[cap] ? ' → ' + esc(proj.effective[cap]) : ''}</option>
                             ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === pinned ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('')}
                         </select>
-                        ${fallbackNote(cap)}
-                    </td>
-                    <td>
-                        ${cap === 'llm'
-                            ? '<div class="set-cap-note">The connected agent (Claude or ChatGPT Desktop) is the model.</div>'
-                            : `<select id="provmodel-${esc(cap)}" data-pinned="${esc(pinnedModel)}" data-effective="${esc((proj.effective && proj.effective[cap]) || '')}"></select>`}
-                    </td>
-                </tr>`;
-            }).join('');
+                    </label>
+                    ${cap === 'llm'
+                        ? '<div class="set-cap-note">The connected agent (Claude or ChatGPT Desktop) is the model.</div>'
+                        : `<label>Model<select id="provmodel-${esc(cap)}" data-pinned="${esc(pinnedModel)}" data-effective="${esc((proj.effective && proj.effective[cap]) || '')}"></select></label>`}
+                    ${stateLine}
+                </div>` };
+            }).filter(Boolean);
 
-            mapEl.innerHTML = tierHtml + stamp + `
-                <table class="set-cap-table">
-                    <thead><tr><th>Capability</th><th>Provider</th><th>Model</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
+            const byCap = new Map(rows.map(r => [r.cap, r.html]));
+            const named = new Set(CAP_GROUPS.flatMap(g => g.caps));
+            const groups = CAP_GROUPS.concat([{ title: 'Other', note: '', caps: rows.map(r => r.cap).filter(c => !named.has(c)) }])
+                .map(g => ({ ...g, cards: g.caps.filter(c => byCap.has(c)).map(c => byCap.get(c)) }))
+                .filter(g => g.cards.length);
+            mapEl.innerHTML = tierHtml + stamp + groups.map(g => `
+                <section class="set-group">
+                    <div><h4 class="set-group-h">${esc(g.title)}</h4>${g.note ? `<p class="set-group-note">${esc(g.note)}</p>` : ''}</div>
+                    <div class="set-caps">${g.cards.join('')}</div>
+                </section>`).join('') + `
                 ${(proj.config && proj.config.image_model) ? '<div class="set-cap-note" style="margin-top:6px;">A pinned image model overrides the quality tier; set it back to Default to let quality decide again.</div>' : ''}`;
             caps.forEach(cap => { if (document.getElementById('provmodel-' + cap)) refreshModelMenu(cap); });
         } catch (err) { credEl.innerHTML = '<p class="text-sm text-muted">Providers unavailable: ' + esc(err.message) + '</p>'; }

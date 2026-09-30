@@ -154,16 +154,55 @@ test('every capability row has a provider menu and a model menu, and saving send
     assert.match(fn('saveProviderConfig'), /config\[cap \+ '_model'\] = ms\.value\.trim\(\)/);
 });
 
-test('Setup is one full-width grid: providers across the top, the rest in columns, no fixed card widths', () => {
+test('Setup is one section at a time: a section list, every card in exactly one section, keys in their own', () => {
     const at = SPA.indexOf('<div class="page" id="page-settings">');
     const page = SPA.slice(at, SPA.indexOf('<!-- ==== CODEX:START ops-compliance-pages ==== -->'));
     const cards = [...page.matchAll(/<div class="card[^"]*"[^>]*>/g)].map(m => m[0]);
     assert.ok(cards.length >= 10, `only ${cards.length} cards`);
+    const sections = [...page.matchAll(/data-set-go="([a-z]+)"/g)].map(m => m[1]);
+    assert.ok(sections.length >= 8, `only ${sections.length} sections in the list`);
     for (const c of cards) {
-        assert.match(c, /set-card/, `a card outside the grid: ${c}`);
+        assert.match(c, /set-card/, `a card outside the settings layout: ${c}`);
         assert.doesNotMatch(c, /max-width/, `a card with a fixed width: ${c}`);
+        const sec = (c.match(/data-set-section="([a-z]+)"/) || [])[1];
+        assert.ok(sec, `a card in no section, so it would never show: ${c}`);
+        assert.ok(sections.includes(sec), `${sec} has no entry in the section list`);
     }
-    assert.ok(page.indexOf('id="settingsProvidersCard"') < page.indexOf('class="set-cols"'), 'providers lead, above the columns');
-    assert.match(SPA, /#page-settings \.set-cols \{ column-width: 380px;/, 'the other cards pack into columns');
-    assert.match(SPA, /#page-settings \.set-card \{ margin:0 !important; max-width:none !important;/);
+    for (const s of sections) assert.ok(cards.some(c => c.includes(`data-set-section="${s}"`)), `section ${s} shows nothing`);
+    // The keys are a section of their own, not a column in the providers card.
+    const keysCard = page.slice(page.indexOf('id="settingsKeysCard"'), page.indexOf('<div class="set-cols">'));
+    assert.match(keysCard, /id="providerCredentials"/);
+    assert.match(SPA, /#page-settings \.set-keys \{ display:grid; grid-template-columns:repeat\(auto-fill,minmax\(250px,1fr\)\);/,
+        'the keys are not laid out across the width');
+
+    // Execute the switch: one section's cards shown, the rest off, the button marked.
+    const mk = (sec, hidden) => { const cl = new Set(hidden ? ['hidden'] : []);
+        return { dataset: { setSection: sec }, classList: { toggle: (k, on) => (on ? cl.add(k) : cl.delete(k)), contains: k => cl.has(k) }, cl }; };
+    const cs = [mk('providers'), mk('keys'), mk('project', true)];
+    const bs = sections.map(s => ({ dataset: { setGo: s }, attrs: {}, cl: new Set(),
+        classList: null, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } }));
+    bs.forEach(b => { b.classList = { toggle: (k, on) => (on ? b.cl.add(k) : b.cl.delete(k)) }; });
+    const empty = { cl: new Set(), classList: null }; empty.classList = { toggle: (k, on) => (on ? empty.cl.add(k) : empty.cl.delete(k)) };
+    const page2 = { querySelectorAll: q => (q.includes('set-nav-btn') ? bs : cs) };
+    const doc = { getElementById: id => (id === 'page-settings' ? page2 : id === 'setSectionEmpty' ? empty : null) };
+    const body = fn('showSettingsSection');
+    const src = SPA.slice(SPA.indexOf('const SETTINGS_SECTIONS'), SPA.indexOf(';', SPA.indexOf('const SETTINGS_SECTIONS')) + 1);
+    // eslint-disable-next-line no-new-func
+    const show = new Function('document', 'localStorage', src + body + '\nreturn showSettingsSection;')(doc, { setItem() {} });
+    show('keys');
+    assert.deepEqual(cs.map(c => c.cl.has('set-off')), [true, false, true]);
+    assert.ok(bs.find(b => b.dataset.setGo === 'keys').cl.has('on'));
+    assert.ok(empty.cl.has('hidden'), 'the empty note shows beside a section that has cards');
+    show('project');
+    assert.ok(!empty.cl.has('hidden'), 'a project section with no project open does not say why it is empty');
+    show('nonsense');
+    assert.ok(!cs[0].cl.has('set-off'), 'an unknown section does not fall back to the providers');
+});
+
+test('the providers are grouped by what they make, and no capability is left off the page', () => {
+    const load = fn('loadProviders');
+    const groups = load.slice(load.indexOf('const CAP_GROUPS'), load.indexOf('];', load.indexOf('const CAP_GROUPS')));
+    const grouped = [...groups.matchAll(/'([a-z0-9]+)'/g)].map(m => m[1]).filter(c => CAPABILITIES.includes(c));
+    for (const cap of CAPABILITIES) assert.ok(grouped.includes(cap), `${cap} is in no group`);
+    assert.match(load, /title: 'Other'/, 'a capability outside the groups would be dropped');
 });

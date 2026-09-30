@@ -753,19 +753,24 @@ bullets([
 
 # ── 30 ────────────────────────────────────────────────────────────────────
 doc.add_heading('30. Setup: providers, models and keys', level=1)
-p('Settings is one screen now: "AI providers and models" across the top, and every other setting in columns beside each '
-  'other. Longer explanations sit behind a small "Why" you can open.')
+p('Settings shows one section at a time, chosen from the list on its left. The first four belong to the open project: '
+  'AI providers and models, Project, Picture and delivery, Where it is saved. The rest belong to this Mac: API keys, Backups, '
+  'You and connection, Production graph. The section you last opened is the one you come back to. Longer explanations sit '
+  'behind a small "Why" you can open.')
 bullets([
     ('Image quality ', '(the row of buttons above the table): Draft, Standard, Precision or Auto. It chooses the image provider '
      'and model when neither is pinned below.'),
-    ('Provider and model per capability: ', 'one row each for images, video, music, voice, sound effects, ambience, lip-sync, '
-     'post (upscaling), 3D and worlds. Pick the provider, then the model: the model menu lists only what that provider offers. '
+    ('Provider and model for each kind of thing, grouped as Pictures (image, 3D model, world), Motion (video, upscale and '
+     'finish, lip-sync), Sound (voice, music, sound effects, ambience) and Writing: ', 'one card each. '
+     'Pick the provider, then the model: the model menu lists only what that provider offers. Each card\'s last line says who '
+     'chose it, and warns when nobody did and when the provider has no key. '
      '"Automatic" uses the provider already in use (named in the menu); "Default" lets the provider, or for images the quality '
      'tier, choose. Save providers and models to keep it.'),
     ('A model you pin is used for every generation of that kind ', 'in this project, unless you pick a different one in a '
      'generation\'s own confirmation. A model the provider does not offer is refused when you save, with the list it does offer.'),
     ('Text / LLM has no model menu: ', 'the connected agent (Claude or ChatGPT Desktop) is the model.'),
-    ('API keys ', '(on the right) are entered once for this Mac and shared by every project. "Get key" opens the provider\'s page.'),
+    ('API keys ', 'have their own section: one tile per provider saying what it is used for and whether its key is set, '
+     'entered once for this Mac and shared by every project. "Get key" opens the provider\'s page.'),
 ])
 
 # ── 31 ────────────────────────────────────────────────────────────────────
