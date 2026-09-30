@@ -32,7 +32,45 @@ function imageOverride(body) {
     if (typeof b.provider === 'string' && b.provider.trim()) out.image = b.provider.trim();
     if (typeof b.model === 'string' && b.model.trim()) out.image_model = b.model.trim().slice(0, 80);
 
+    // A size and a provider's own options, chosen on the dialog for this one.
+    // Read by the same helpers generationOverride uses, so an image route and
+    // any other cannot come to read them differently.
+    Object.assign(out, sizeOverlay('image', b), optionsOverlay('image', b));
+
     return Object.keys(out).length ? out : null;
+}
+
+/**
+ * A size chosen for this one image, as `image_target_resolution` ("WxH").
+ * Only a raster the project presets name is taken: an invented one would reach
+ * the provider as a size nobody offered.
+ */
+function sizeOverlay(capability, body) {
+    const b = body || {};
+    if (capability !== 'image' || typeof b.size !== 'string' || !b.size.trim()) return {};
+    const { RESOLUTIONS } = require('./project-presets');
+    const found = RESOLUTIONS.find(r => r.id === b.size.trim());
+    return found ? { image_target_resolution: `${found.width}x${found.height}` } : {};
+}
+
+/**
+ * A provider's own options chosen for this one, as `<cap>_options`.
+ *
+ * They are kept WITH the provider they were chosen for, and resolve() applies
+ * them only when that provider is the one about to run: a fallback that walks
+ * to another vendor after a refusal must not carry one vendor's switches to
+ * another. Video is left alone -- its routes read and apply `options`
+ * themselves (lib/model-options.js).
+ */
+function optionsOverlay(capability, body) {
+    const b = body || {};
+    if (capability === 'video') return {};
+    let values = b.options;
+    if (typeof values === 'string') { try { values = JSON.parse(values); } catch (_) { values = null; } }
+    if (!values || typeof values !== 'object' || Array.isArray(values) || !Object.keys(values).length) return {};
+    const provider = String(b.options_provider || b.provider || '').trim();
+    if (!provider) return {};
+    return { [`${capability}_options`]: { provider, values } };
 }
 
 /**
@@ -146,6 +184,7 @@ function generationOverride(capability, body) {
             out.height = found.height;
         }
     }
+    Object.assign(out, sizeOverlay(cap, b), optionsOverlay(cap, b));
 
     return Object.keys(out).length ? out : null;
 }
@@ -234,13 +273,22 @@ function generationOptions(capability) {
              */
             models: (() => {
                 const list = modelList(a, cap);
-                if (!list || cap !== 'video') return list;
-                // What each video model lets you choose, from the provider's own schema.
-                const mo = require('./model-options');
+                if (!list) return list;
+                // What each model lets you choose, from the provider's own vocabulary.
                 return list.map(m => {
-                    const o = mo.optionsFor(a.id, m.id);
+                    const o = require('./generation-options').controlsFor(cap, a.id, m.id);
                     return o ? { ...m, options: o.controls, option_notes: o.notes } : m;
                 });
+            })(),
+            /*
+             * The provider's options on its own default model, for a provider
+             * with no model menu and for "their default". The dialog draws
+             * these the moment a provider is picked, or for the project's own
+             * provider before anything is picked.
+             */
+            ...(() => {
+                const o = require('./generation-options').controlsFor(cap, a.id, a.defaultModel || null);
+                return o ? { options: o.controls, option_notes: o.notes, option_source: o.source } : {};
             })(),
         })),
         tiers: tiers
@@ -254,5 +302,5 @@ function generationOptions(capability) {
     };
 }
 
-module.exports = { imageOverride, promptOverride, generationOverride,
+module.exports = { imageOverride, promptOverride, generationOverride, sizeOverlay, optionsOverlay,
     generationOptions, TIERS_FOR, tiersOf };

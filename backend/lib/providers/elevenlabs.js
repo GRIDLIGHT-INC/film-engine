@@ -828,7 +828,7 @@ async function listVoices(opts) {
     }
 }
 
-module.exports = {    wrapPcmAsWav, normalizeOutputFormat,
+module.exports = {    wrapPcmAsWav, normalizeOutputFormat, SFX_MIN_SECONDS, SFX_MAX_SECONDS,
     adapter,
     listVoices,
     recordVoiceRefusal,

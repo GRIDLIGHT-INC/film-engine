@@ -49,6 +49,9 @@ function imageSizeFor(width, height, model) {
     return order.slice(order.indexOf(wanted)).find(s => allowed.includes(s)) || allowed[allowed.length - 1];
 }
 
+/** The ratios this adapter snaps to, stated once so the dialog offers the same set. */
+const ASPECTS = Object.freeze(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']);
+
 /** The aspect ratio as Google states it, or nothing rather than a guess. */
 function aspectFor(payload) {
     const declared = String(payload.aspect_ratio || '').trim();
@@ -57,8 +60,7 @@ function aspectFor(payload) {
     if (!w || !h) return undefined;
     const r = w / h;
     // Snapped to the ratios the API names, because an arbitrary ratio is a 400.
-    const known = [['21:9', 21 / 9], ['16:9', 16 / 9], ['4:3', 4 / 3], ['1:1', 1],
-        ['3:4', 3 / 4], ['9:16', 9 / 16]];
+    const known = ASPECTS.map(a => { const [x, y] = a.split(':').map(Number); return [a, x / y]; });
     return known.reduce((best, k) =>
         Math.abs(k[1] - r) < Math.abs(best[1] - r) ? k : best, known[0])[0];
 }
@@ -248,4 +250,4 @@ const googleImageAdapter = {
     },
 };
 
-module.exports = { adapter: googleImageAdapter, googleImageAdapter, buildImageRequest, MODELS, generate };
+module.exports = { adapter: googleImageAdapter, googleImageAdapter, buildImageRequest, MODELS, ASPECTS, generate };

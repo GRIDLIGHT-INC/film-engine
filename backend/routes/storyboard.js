@@ -334,7 +334,13 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
      */
     const bytes = await imageResultToBuffer(result.data);
     const { conformBoardBuffer } = require('../lib/board-raster');
-    const fitted = conformBoardBuffer(bytes, { width: requestBody.width, height: requestBody.height });
+    // "Asked" is what was SENT: a size or a frame chosen on the dialog is
+    // applied at resolve(), after this payload was built, so the target is
+    // worked out by the same rule for the provider that actually served it —
+    // otherwise a 4:5 frame chosen for this one would be cropped back to 16:9.
+    const asked = require('../lib/generation-options').finalRaster(projectConfig || {},
+        result.provider, requestBody.width, requestBody.height);
+    const fitted = conformBoardBuffer(bytes, asked);
 
     return {
         buffer: fitted.buffer,

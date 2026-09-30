@@ -496,4 +496,4 @@ const adapter = {
     },
 };
 
-module.exports = { adapter, buildImageRequest, buildLLMRequest, extractResponseText };
+module.exports = { adapter, buildImageRequest, buildLLMRequest, extractResponseText, VALID_SIZES, VALID_QUALITY };

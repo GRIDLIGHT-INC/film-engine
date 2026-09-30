@@ -168,7 +168,8 @@ test('the video helpers rename the override rather than reading it twice', () =>
     for (const [name, src] of [['video-gen', vg], ['sequences', sq]]) {
         assert.ok(/require\('\.\.\/lib\/generation-override'\)/.test(src),
             `${name} reads the override itself instead of through the shared helper`);
-        assert.ok(/video:\s*o\.image|\.video\s*=\s*o\.image/.test(src),
+        // Renamed from the image override, or read AS video by the shared helper.
+        assert.ok(/video:\s*o\.image|\.video\s*=\s*o\.image|generationOverride\('video'/.test(src),
             `${name} does not map the chosen provider onto the video capability, so the pick `
             + 'would be stored under a key nothing resolves on');
     }

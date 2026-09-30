@@ -194,6 +194,7 @@ film-engine/
 │   │   ├── angle-explore.js      # Four angles on one shot, one camera each; pick one and it is the frame
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
 │   │   ├── model-options.js     # What each video model lets you choose, from the provider's own schema: offered, checked, applied, or said to be absent
+│   │   ├── generation-options.js # Every other capability's per-provider options, from each adapter's own vocabulary, applied at resolve() only to the provider they were chosen for
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
 │   │   ├── waveform.js         # What a sound LOOKS like, so a card can be read at a glance
@@ -636,6 +637,7 @@ film-engine/
 │       ├── dialogue-audio-reference.test.js # Recorded dialogue to Seedance 2.5: audios_list on MuAPI, referenceAudio on Runway, uploaded first, held to the probed fields
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
 │       ├── video-model-options.test.js # Every video model's options offered from its provider's schema, each reaching the request, refused by name outside it, through the preview and the paid call
+│       ├── generation-options.test.js # Any connected provider on every generate dialog, its own options each reaching the request, applied at the funnel only to its own provider
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
 │       ├── setup-models.test.js        # A model pinned per capability in Setup: checked against its provider, applied at the one funnel, outranked only by a per-generation choice
@@ -1286,6 +1288,17 @@ Automatic ratios are now the table's priced ratios less any the spec refuses. Th
 **Five more Runway models, wired 2026-09-30.** Grok Imagine 1.5, Wan 3, Wan 3 Prime, MiniMax H3 Max and Gemini Omni Flash 1.1, each with its schema's lengths and frames and Runway's published per-resolution rates: Grok 10/16/29 credits a second at 480p/720p/1080p plus 1 per image or audio reference; Wan 3 5/10/20; Wan 3 Prime 6.8/14/28; H3 Max 5/8 at 480p/768p; Gemini 1.1 3.4/10/15/30 at 360p/720p/1080p/4K. A model Runway sizes by its `resolution` field (Grok, H3 Max, HappyHorse, Hailuo 3; `sizedBy: 'resolution'`) is now SENT a tier: the one chosen, else the largest at or below the delivery frame, else its best, flagged as a downgrade. It was never sent, so Runway used its own default while the estimate priced another tier. A model whose schema has no ratio field (Grok, H3 Max, HappyHorse) is sent none. The estimate's tier lookup is case-blind (the schema says 768p where the card said 768P).
 
 `video_preview` and `video_generate` take the same `options`. `tests/video-model-options.test.js` is set-based over every model the dialog offers: each option changes the field it names in that provider's request, every automatic Runway ratio and length is one the schema accepts, and the preview and the paid call carry what was chosen.
+
+### Any Connected Provider, and Its Own Options, on Every Generate Button
+*"I pressed generate for a shot node on the production side; on the modal I should be able to select any provider who has been connected, and on this modal the options for that provider would show. Once I click generate these options along with the prompt would be passed in the payload."*
+
+**The pickers were drawn only beside an editable prompt.** `confirmPaidImage` built provider, model, tier and size inside the branch that draws the prompt box, and every clip, cue and dialogue dialog has a read-only prompt, so no video dialog (on the shot pages or on the Production graph) could choose its generator. The shot node's Generate went through `confirmGeneration`, which offered the quality tier and nothing else, and the graph's sound node used a describe-only dialog with no pickers at all. `confirmPickers` now builds the pickers for every dialog, and `confirmPromptBox` is the editable prompt, drawn only where the prompt can be edited.
+
+**Each provider's options come from the adapter's own vocabulary** (`lib/generation-options.js`), as video's already come from its provider's schema: MuAPI's accepted ratios (from the fields its endpoints report), Google's, Meshy's and Runway's ratio lists, OpenAI's sizes and qualities, the gateway's seed, a negative for every image provider; ElevenLabs' voice settings (stability, similarity, style, speed, speaker boost), an effect's length and prompt influence, a cue's vocals; and Meshy's mesh art style, remesh, negative and seed. What a provider does not take is said in a note, not offered. They are served beside each provider's models (`generation.<cap>.providers[].options`), and the dialog draws them for the provider picked, or for the project's own provider (`effective`) before a pick.
+
+**They travel with the provider they were chosen for.** The dialog sends `options` and `options_provider`; `generationOverride` / `imageOverride` carry them as `<cap>_options`, and `resolve()`'s wrapper applies them only when that provider is the one about to run, so a fallback after a refusal does not inherit another vendor's switches. A chosen frame reshapes the payload and names the ratio (MuAPI now sends a ratio chosen from its own list rather than snapping 4:5 to the nearest it knew), and the board conforms to what was actually sent (`finalRaster`), or a chosen 4:5 would have been cropped back to 16:9.
+
+**Four more dead controls were found on the way.** "Size for this one" on image dialogs reached nothing: `imageOverride` never read `size` (it is `image_target_resolution` now, applied at the funnel and to fallbacks). Voice generation read the dialog's provider in its preview and not in the purchase. The sound library's one-prompt generate resolved with a bare `{ id }` rather than the project's config. And the sequence routes kept only the provider, dropping the model. **A clip picked for another provider was priced and described as Runway's Hailuo 3**: the production tier's preferred model was applied whoever ran, so a clip picked for MuAPI's Seedance showed Hailuo 3's $1.08. `applyTier` now applies the tier's model only where the provider that will run sells it, and a non-Runway clip is priced by its adapter's own `meter()` over the rate book, the path that bills it (6 s of Seedance 1080p: $5.10). A clip dialog with its own priced tier row no longer draws a second one. `tests/generation-options.test.js` is set-based over every (capability, provider) in the registry: each option must change the request its adapter would send.
 
 ### Topaz and Magnific Upscale Too, and a Model Is Chosen in Setup
 *"Work on adding the topaz adapter, but also how do I select which model in the app?"* and *"also can we add magnific as a provider"*.
@@ -6664,6 +6677,7 @@ node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
 node --test backend/tests/muapi-upscale.test.js
 node --test backend/tests/video-model-options.test.js
+node --test backend/tests/generation-options.test.js
 node --test backend/tests/topaz-upscale.test.js
 node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/setup-models.test.js

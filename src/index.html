@@ -40616,9 +40616,24 @@ ${fountainText.slice(0, 50000)}`;
      * editable prompt; they do not lose the facts.
      */
     async function confirmExtras(prompt, ceiling, capability) {
-        const cap = capability || 'image';
+        const pickers = await confirmPickers(capability);
         CONFIRM_GEN_PROMPT = prompt || '';
         CONFIRM_GEN_EDITED = false;
+        return pickers + confirmPromptBox(prompt, ceiling);
+    }
+
+    /*
+     * WHO MAKES IT AND WITH WHAT: provider, model, that provider's own options,
+     * quality and size. Split from the prompt box because a read-only prompt
+     * (a clip's motion prompt, a cue, a scene's dialogue) is not a reason to
+     * hide the generator -- and it was: every video dialog showed no provider
+     * picker at all, because the pickers only rendered beside an editable box.
+     */
+    async function confirmPickers(capability, how) {
+        const cap = capability || 'image';
+        // A clip dialog with its own priced tier row ("How good does this one
+        // need to be?") must not draw a second, unpriced one beside it.
+        const ownTiers = !!(how && how.ownTiers);
         CONFIRM_GEN_QUALITY = null;
         CONFIRM_GEN_PROVIDER = null;
         CONFIRM_GEN_MODEL = null;
@@ -40636,13 +40651,22 @@ ${fountainText.slice(0, 50000)}`;
          * recompose confirmations down with it.
          */
         let opts = null;
+        let tierFacts = {};
+        CONFIRM_GEN_DEFAULT = null;
+        CONFIRM_GEN_OPTIONS = {};
         try {
             const cat = await api(`/projects/${state.currentProject.id}/providers`);
             opts = (cat.generation || {})[cap] || null;
+            // Which provider runs when nobody picks one: its options are the
+            // ones drawn before a pick, so "Project default" is not a blank.
+            // An image tier's price and whether its provider has a key, which
+            // the shot dialog showed on each tier button and must keep showing.
+            tierFacts = Object.fromEntries(((cap === 'image' && cat.image_tiers) || []).map(t => [t.id, t]));
+            const eff = (cat.effective || {})[cap];
+            CONFIRM_GEN_DEFAULT = (eff && typeof eff === 'object') ? (eff.provider || eff.id || null) : (eff || null);
         } catch (_) { opts = null; }
         CONFIRM_GEN_OPTS = opts;
 
-        const n = Number(ceiling) || 0;
         const box = (title, inner, note, noteId) => `
           <div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
             <div class="text-sm" style="opacity:.7;margin-bottom:6px;">${esc(title)}</div>
@@ -40669,11 +40693,15 @@ ${fountainText.slice(0, 50000)}`;
             'This generation only. Nothing is pinned to the project.', 'confirmGenProviderNote');
 
         const tiers = (opts && opts.tiers) || null;
-        const tierBox = tiers && tiers.length ? box('Quality for this one',
-            tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm"
+        const tierBox = ownTiers ? '' : tiers && tiers.length ? box('Quality for this one',
+            tiers.map(t => {
+                const f = tierFacts[t.id] || {};
+                return `<button type="button" class="btn btn-secondary btn-sm"
                     data-tier="${esc(t.id)}" onclick="pickGenQuality('${esc(t.id)}')"
+                    ${f.available === false ? 'disabled' : ''}
                     style="flex:1;min-width:118px;" title="${esc(t.purpose || '')}">
-                    ${esc(t.label || t.id)}</button>`).join(''),
+                    ${esc(t.label || t.id)}${f.usd_per_image != null ? ` &middot; $${Number(f.usd_per_image).toFixed(3)}` : ''}</button>`;
+            }).join(''),
             "Using this project's setting. Pick one to change it for this generation only.",
             'confirmGenQualityNote')
             : (opts && opts.tiers_note
@@ -40685,7 +40713,7 @@ ${fountainText.slice(0, 50000)}`;
          * change it back afterwards.
          */
         const sizes = (opts && opts.sizes) || null;
-        const sizeBox = sizes && sizes.length ? box('Size for this one',
+        const sizeBox = ownTiers ? '' : sizes && sizes.length ? box('Size for this one',
             `<button type="button" class="btn btn-sm" data-size="" onclick="pickGenSize('')"
                      style="flex:1;min-width:110px;">Project default</button>`
             + sizes.map(z => `<button type="button" class="btn btn-secondary btn-sm"
@@ -40706,8 +40734,15 @@ ${fountainText.slice(0, 50000)}`;
         return `
           ${providerBox}
           <div id="confirmGenModelBox"></div>
+          ${cap === 'video' ? '' : '<div id="confirmGenOptionsBox"></div>'}
           ${tierBox}
-          ${sizeBox}
+          ${sizeBox}`;
+    }
+
+    /** The editable prompt, for the dialogs whose prompt can be edited. */
+    function confirmPromptBox(prompt, ceiling) {
+        const n = Number(ceiling) || 0;
+        return `
           <div class="form-group">
             <label>The prompt
               <span class="text-sm text-muted" id="confirmGenChars">${(prompt || '').length}${n ? ` of ${n}` : ''}</span>
@@ -40737,11 +40772,18 @@ ${fountainText.slice(0, 50000)}`;
 
     /** What the director chose in the confirmation just closed. */
     function confirmChoices() {
+        const chosenOptions = CONFIRM_GEN_CAP === 'video' ? CONFIRM_GEN_VIDEO_OPTIONS : CONFIRM_GEN_OPTIONS;
+        const optionsProvider = CONFIRM_GEN_PROVIDER || CONFIRM_GEN_DEFAULT;
         return {
             ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
             ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
             ...(CONFIRM_GEN_SIZE ? { size: CONFIRM_GEN_SIZE } : {}),
+            // The provider's own options, with the provider they were chosen
+            // for: the server applies them only when that provider runs.
+            ...(chosenOptions && Object.keys(chosenOptions).length ? { options: { ...chosenOptions } } : {}),
+            ...(CONFIRM_GEN_CAP !== 'video' && optionsProvider && Object.keys(CONFIRM_GEN_OPTIONS).length
+                ? { options_provider: optionsProvider } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
         };
@@ -40783,7 +40825,7 @@ ${fountainText.slice(0, 50000)}`;
                  <strong>${esc(d.matched_against)}</strong>.</p>` : ''}
               <p class="text-sm text-muted" style="line-height:1.45;">Costs credits. The frame you are
                  refining stays in the version list either way.</p>`;
-            confirmGenArm(true);
+            paintGenOptions(); confirmGenArm(true);
         } catch (err) {
             // Disarmed: a refine whose payload cannot be read is exactly the
             // blind spend this dialog exists to prevent.
@@ -40987,7 +41029,7 @@ ${fountainText.slice(0, 50000)}`;
                               border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.negative_prompt)}</pre>
                 </div>
               </details>`;
-            confirmGenArm(true);
+            paintGenOptions(); confirmGenArm(true);
         } catch (err) {
             body.innerHTML = `<p class="text-sm" style="color:var(--gl-danger,#ef4444);">
                 Could not read what would be sent: ${escapeHtml(err.message)}. Nothing will be
@@ -41327,6 +41369,81 @@ ${fountainText.slice(0, 50000)}`;
           </div>`;
     }
 
+    /*
+     * THE PICKED PROVIDER'S OWN OPTIONS, for everything that is not a clip
+     * (a clip's are read from its preview, which re-prices them). Served with
+     * the provider's models by the server from the adapter's own vocabulary, so
+     * the dialog offers exactly what the request can carry. Before a pick, the
+     * project's own provider's options are drawn.
+     */
+    function paintGenOptions() {
+        const box = document.getElementById('confirmGenOptionsBox');
+        if (!box) return;
+        const id = CONFIRM_GEN_PROVIDER || CONFIRM_GEN_DEFAULT;
+        const p = ((CONFIRM_GEN_OPTS && CONFIRM_GEN_OPTS.providers) || []).find(x => x.id === id);
+        if (!p) { box.innerHTML = ''; return; }
+        const m = CONFIRM_GEN_MODEL ? (p.models || []).find(x => x.id === CONFIRM_GEN_MODEL) : null;
+        const controls = (m && m.options) || p.options || [];
+        const notes = (m && m.option_notes) || p.option_notes || [];
+        box.innerHTML = genOptionsHtml(p.label || p.id, controls, notes, p.option_source);
+    }
+
+    function setGenOption(key, value) {
+        if (value === '' || value === null || value === undefined) delete CONFIRM_GEN_OPTIONS[key];
+        else CONFIRM_GEN_OPTIONS[key] = value;
+    }
+    window.setGenOption = setGenOption;
+
+    function genOptionsHtml(who, controls, notes, source) {
+        if (!controls.length && !notes.length) {
+            return `<div class="text-sm text-muted" style="margin:8px 0;">${esc(who)} takes no options here.</div>`;
+        }
+        const cur = k => (CONFIRM_GEN_OPTIONS[k] !== undefined ? CONFIRM_GEN_OPTIONS[k] : '');
+        const field = (c, inner) => `<label class="vopt"><span>${esc(c.label)}</span>${inner}
+            ${c.note ? `<small>${esc(c.note)}</small>` : ''}</label>`;
+        const onSel = k => `onchange="setGenOption('${k}', this.value)"`;
+        const html = controls.map(c => {
+            const k = c.key;
+            if (c.type === 'choice') {
+                return field(c, `<select data-gopt="${esc(k)}" ${onSel(k)}>
+                    <option value="">Default</option>
+                    ${(c.choices || []).map(x => `<option value="${esc(String(x.id))}" ${
+                        String(cur(k)) === String(x.id) ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+                  </select>`);
+            }
+            if (c.type === 'decimal' || c.type === 'range') {
+                return field(c, `<span style="display:flex;gap:6px;align-items:center;">
+                    <input type="number" data-gopt="${esc(k)}" min="${c.min}" max="${c.max}" step="${c.step || 1}"
+                        value="${esc(String(cur(k)))}" placeholder="Default" ${onSel(k)} style="width:90px;">
+                    <span class="text-sm text-muted">${c.min}–${c.max}${esc(c.unit || '')}</span></span>`);
+            }
+            if (c.type === 'toggle') {
+                const d = c.default === true ? 'on' : c.default === false ? 'off' : 'the provider\'s';
+                const v = cur(k) === '' ? '' : (cur(k) === true || cur(k) === 'true' ? 'true' : 'false');
+                return field(c, `<select data-gopt="${esc(k)}" ${onSel(k)}>
+                    <option value="">Default (${d})</option>
+                    <option value="true" ${v === 'true' ? 'selected' : ''}>On</option>
+                    <option value="false" ${v === 'false' ? 'selected' : ''}>Off</option></select>`);
+            }
+            if (c.type === 'number') {
+                return field(c, `<input type="number" data-gopt="${esc(k)}" min="${c.min}" max="${c.max}" step="1"
+                    value="${esc(String(cur(k)))}" placeholder="Random" ${onSel(k)}>`);
+            }
+            if (c.type === 'text') {
+                return field(c, `<input type="text" data-gopt="${esc(k)}" maxlength="${c.max || 1000}"
+                    value="${esc(String(cur(k)))}" ${onSel(k)}>`);
+            }
+            return '';
+        }).join('');
+        return `<div class="vopt-box">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Options on ${esc(who)}
+              <span style="opacity:.7;">&middot; this one only</span></div>
+            ${html ? `<div class="vopt-grid">${html}</div>` : ''}
+            ${notes.map(n => `<div class="text-sm text-muted" style="margin-top:4px;line-height:1.45;">${esc(n)}</div>`).join('')}
+            ${source ? `<div class="text-sm" style="opacity:.5;margin-top:6px;">From ${esc(source)}.</div>` : ''}
+          </div>`;
+    }
+
     function pickGenModel(id) {
         CONFIRM_GEN_MODEL = id || null;
         document.querySelectorAll('#confirmGenModal [data-genmodel]').forEach(b => {
@@ -41336,12 +41453,14 @@ ${fountainText.slice(0, 50000)}`;
         if (note) note.textContent = id ? `Using ${id} for this generation only.` : 'This generation only.';
         // A different model takes different options: start again from its defaults.
         if (CONFIRM_GEN_CAP === 'video') { CONFIRM_GEN_VIDEO_OPTIONS = {}; repreviewVideo(); }
+        else { CONFIRM_GEN_OPTIONS = {}; paintGenOptions(); }
     }
 
     function pickGenerator(id) {
         CONFIRM_GEN_PROVIDER = id || null;
         paintGenModels(id || '');
         if (CONFIRM_GEN_CAP === 'video') { CONFIRM_GEN_VIDEO_OPTIONS = {}; repreviewVideo(); }
+        else { CONFIRM_GEN_OPTIONS = {}; paintGenOptions(); }
         document.querySelectorAll('#confirmGenModal [data-gen]').forEach(b => {
             b.classList.toggle('btn-secondary', b.dataset.gen !== (id || ''));
         });
@@ -41374,17 +41493,18 @@ ${fountainText.slice(0, 50000)}`;
 
     function videoEstimateHtml(d) {
         const e = d && d.estimate;
-        if (!e || !e.credits) return '<div class="text-sm" style="opacity:.6;">No estimate available for this model.</div>';
+        // Runway prices in credits; MuAPI and the rest in dollars from the rate book.
+        if (!e || !(e.credits || e.usd)) return '<div class="text-sm" style="opacity:.6;">No estimate available for this model.</div>';
         const refs = (d.references && d.references.sending) || 0;
         const dropped = (d.references && d.references.dropped) || [];
         return `
           <div style="display:flex;justify-content:space-between;align-items:baseline;">
             <strong style="font-size:15px;">$${Number(e.usd).toFixed(2)}</strong>
-            <span class="text-sm" style="opacity:.6;">${e.credits} credits${
+            <span class="text-sm" style="opacity:.6;">${e.credits ? `${e.credits} credits` : 'rate book'}${
                 e.minimumApplied ? ' &middot; minimum applied' : ''}</span>
           </div>
           <div class="text-sm" style="opacity:.7;margin-top:5px;line-height:1.6;">
-            ${(e.lines || []).map(l => `${esc(l.label)} &middot; ${l.credits} cr`).join('<br>')}
+            ${(e.lines || []).map(l => `${esc(l.label)} &middot; ${l.credits != null ? l.credits + ' cr' : '$' + Number(l.usd || 0).toFixed(2)}`).join('<br>')}
           </div>
           ${refs ? `<div class="text-sm" style="opacity:.6;margin-top:5px;">Sending ${refs} reference${
                 refs === 1 ? '' : 's'}: ${esc((d.references.roles || []).join(', '))}</div>` : ''}
@@ -41590,8 +41710,8 @@ ${fountainText.slice(0, 50000)}`;
          * edit against today's prompt: the version's own words are the ones
          * that go, unless somebody changes them back.
          */
-        const dials = await confirmExtras(o.prefill || d.prompt || '', Number(d.ceiling) || 0,
-            o.capability || 'image');
+        const pickers = await confirmPickers(o.capability || 'image', { ownTiers: !!o.videoTiers });
+        const promptBox = confirmPromptBox(o.prefill || d.prompt || '', Number(d.ceiling) || 0);
 
         const prompt = d.prompt || '';
         const ceiling = Number(d.ceiling) || 0;
@@ -41609,6 +41729,7 @@ ${fountainText.slice(0, 50000)}`;
                 Number(d.estimated_cost.usd).toFixed(3)}</strong>` : ''}
           </div>
 
+          ${pickers}
           ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
           ${o.capability === 'video' && d.options ? `<div id="confirmVideoOptions">${videoOptionsHtml(d.options)}</div>` : ''}
           ${deliveryLineHtml(d.delivery)}
@@ -41624,8 +41745,11 @@ ${fountainText.slice(0, 50000)}`;
                         margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${esc(d.prompt || '')}</pre>
                    <div class="text-sm text-muted" style="margin-top:4px;">${esc(o.notEditableWhy || '')}</div>
                  </div>`
-              : dials}
+              : promptBox}
         `;
+        CONFIRM_GEN_PROMPT = prompt;
+        CONFIRM_GEN_EDITED = !!(o.prefill && o.prefill !== prompt);
+        paintGenOptions();
 
         confirmGenArm(true);
         const ok = await decision;
@@ -41634,14 +41758,7 @@ ${fountainText.slice(0, 50000)}`;
         const dlg = document.getElementById('confirmDialogueAudio');
         return o.send({
             ...(dlg && dlg.checked ? { use_dialogue_audio: true } : {}),
-            ...(CONFIRM_GEN_PROVIDER ? { provider: CONFIRM_GEN_PROVIDER } : {}),
-            ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
-            ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
-            ...(CONFIRM_GEN_SIZE ? { size: CONFIRM_GEN_SIZE } : {}),
-            ...(o.capability === 'video' && Object.keys(CONFIRM_GEN_VIDEO_OPTIONS).length
-                ? { options: { ...CONFIRM_GEN_VIDEO_OPTIONS } } : {}),
-            ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
-                ? { prompt_override: confirmGenEditedPrompt() } : {}),
+            ...confirmChoices(),
         });
     }
 
@@ -41685,27 +41802,17 @@ ${fountainText.slice(0, 50000)}`;
              * because this is the gate every paid image path already passes
              * through, and it is where the price is already in front of you.
              */
-            let tiers = [];
-            try { tiers = (await api(`/projects/${state.currentProject.id}/providers`)).image_tiers || []; }
-            catch (_) { tiers = []; }
-            CONFIRM_GEN_QUALITY = null;
+            // The same pickers every other generate button has: any connected
+            // provider, its models, its own options, quality and size. This
+            // dialog offered the quality tier and nothing else, so the shot
+            // node's Generate on the Production graph could not choose who
+            // made the frame.
+            const pickers = await confirmPickers('image');
 
             body.innerHTML = `
               ${o.note ? `<p class="text-sm text-muted" style="line-height:1.5;">${esc(o.note)}</p>` : ''}
 
-              ${tiers.length ? `<div style="margin:10px 0;padding:9px 11px;border-radius:7px;background:rgba(255,255,255,.04);">
-                  <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Generator for this frame</div>
-                  <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    ${tiers.map(t => `<button type="button" class="btn btn-secondary btn-sm" data-tier="${esc(t.id)}"
-                        onclick="pickGenQuality('${esc(t.id)}')" ${t.available ? '' : 'disabled'}
-                        style="flex:1;min-width:118px;">
-                        ${esc(t.label)}${t.usd_per_image != null ? ` &middot; $${t.usd_per_image.toFixed(3)}` : ''}
-                      </button>`).join('')}
-                  </div>
-                  <div class="text-sm" style="opacity:.6;margin-top:6px;" id="confirmGenQualityNote">
-                    Using this project's setting. Pick one to change it for this frame only.
-                  </div>
-                </div>` : ''}
+              ${pickers}
 
               ${d.staged_notice ? `<p class="text-sm" style="color:var(--warning,#b8860b);line-height:1.5;">
                   <strong>${d.card_ahead || d.conflict ? 'Resolve the board/Previs conflict.' : 'Apply this Previs first.'}</strong>
@@ -41796,6 +41903,7 @@ ${fountainText.slice(0, 50000)}`;
                          engine will not add references or the style preset on top of it.
                        </div>`}
               </div>`;
+            paintGenOptions();
             // A preview may inspect an experiment, but a paid Board action may
             // not silently consume it. Apply staged blocking, or re-seed when
             // the board is newer, then reopen this confirmation.
@@ -41834,6 +41942,8 @@ ${fountainText.slice(0, 50000)}`;
     let CONFIRM_GEN_SIZE = null;
     let CONFIRM_GEN_CAP = 'image';
     let CONFIRM_GEN_OPTS = null;
+    let CONFIRM_GEN_DEFAULT = null;     // the provider that runs when none is picked
+    let CONFIRM_GEN_OPTIONS = {};       // that provider's own options, for this one
     let CONFIRM_GEN_PROMPT = null;      // the text as it was offered
     let CONFIRM_GEN_EDITED = false;
 
@@ -41991,12 +42101,11 @@ ${fountainText.slice(0, 50000)}`;
                     ...(directionMode ? { direction_mode: directionMode } : {}),
                     ...(keepPlates && keepPlates.length ? { keep_plates: keepPlates } : {}),
                     ...(CONFIRM_GEN_IGNORE_STAGED ? { ignore_staged: true } : {}),
-                    ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
-                    // Only when it was actually changed: sending the unedited
-                    // text as an override would set promptIsFinal and silently
-                    // stop the references and the style preset being applied.
-                    ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
-                        ? { prompt_override: confirmGenEditedPrompt() } : {}),
+                    // Provider, model, its options, quality, size -- and the
+                    // prompt only when it was actually changed: sending the
+                    // unedited text as an override would set promptIsFinal and
+                    // silently stop the references and the style preset.
+                    ...confirmChoices(),
                 }),
             });
             done();
@@ -46676,13 +46785,14 @@ function pgGenerateSound(n) {
         title: 'Generate ' + (n.title || k.label),
         previewUrl: '/music-cues/' + n.id + '/generate',
         note: 'Costs credits. The new sound becomes a version of this node and the one that plays.',
-        describe: d => `<div class="text-sm text-muted" style="margin:6px 0;">${esc(d.provider || '')} · ${esc(d.gen_type || '')}${d.duration_s ? ' · ' + d.duration_s + ' s' : ''}</div>
-            <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;margin:0;padding:8px;border-radius:6px;background:rgba(148,163,184,.10);">${
-            esc((d.prompt || '') + (d.negative_prompt ? '\n\nAvoid: ' + d.negative_prompt : ''))}</pre>`,
-        send: async () => pgBusy(n.key, 'generating', async () => {
+        // Read-only here, with the same pickers as every other generate
+        // button: which connected provider, its model and its own options.
+        editable: false,
+        notEditableWhy: 'The cue\'s direction is written in this node\'s drawer.',
+        send: async choices => pgBusy(n.key, 'generating', async () => {
             setStatus(`Generating ${n.title || k.label}…`, true);
             try {
-                await api('/music-cues/' + n.id + '/generate', { method: 'POST', body: '{}' });
+                await api('/music-cues/' + n.id + '/generate', { method: 'POST', body: JSON.stringify(choices || {}) });
                 setStatus(`${n.title || k.label}: a new version is playing.`);
             } catch (err) { setStatus('Could not generate: ' + err.message); }
         }),

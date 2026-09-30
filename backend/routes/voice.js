@@ -193,7 +193,11 @@ async function generateVoiceForShotId(shotId, req_body) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
-    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene));
+    // What the director chose on the dialog: provider, model and its options.
+    // The preview read them and the purchase did not, so a voice picked there
+    // was shown and never used.
+    const chosen = require('../lib/generation-override').generationOverride('voice', req_body || {});
+    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene, chosen));
     const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
 
     ensureDir(scene.project_id, 'audio');
@@ -491,7 +495,8 @@ async function generateVoiceStream(req, res, shotId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(scene.project_id);
-    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene));
+    const chosen = require('../lib/generation-override').generationOverride('voice', req.body || {});
+    const voiceProvider = resolve('voice', spendContext({ id: scene.project_id }, shot, scene, chosen));
     const consistencyContext = buildShotReferencePayload(shot, scene, { id: scene.project_id });
     ensureDir(scene.project_id, 'audio');
 
@@ -577,7 +582,8 @@ async function batchVoiceStream(req, res, projectId) {
     const voiceProfiles = db.prepare(
         'SELECT * FROM film_voice_profiles WHERE character_id IN (SELECT id FROM film_characters WHERE project_id = ?)'
     ).all(projectId);
-    const voiceProvider = resolve('voice', parseProjectConfig(projectId));
+    const chosen = require('../lib/generation-override').generationOverride('voice', req.body || {});
+    const voiceProvider = resolve('voice', chosen ? { ...parseProjectConfig(projectId), ...chosen } : parseProjectConfig(projectId));
     ensureDir(projectId, 'audio');
 
     let totalCompleted = 0, totalFailed = 0;

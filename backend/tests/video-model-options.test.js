@@ -259,7 +259,11 @@ test('the dialog draws a control for every option a model takes, and sends them'
         }
     }
     const confirm = fn('confirmPaidImage');
-    assert.match(confirm, /options: \{ \.\.\.CONFIRM_GEN_VIDEO_OPTIONS \}/, 'the chosen options are not sent');
+    // Sent through confirmChoices(), which every dialog uses; for a clip the
+    // options it sends are the video options.
+    assert.match(confirm, /\.\.\.confirmChoices\(\)/, 'the chosen options are not sent');
+    assert.match(fn('confirmChoices'), /CONFIRM_GEN_CAP === 'video' \? CONFIRM_GEN_VIDEO_OPTIONS/, 'a clip does not send its video options');
+    assert.match(fn('confirmChoices'), /options: \{ \.\.\.chosenOptions \}/, 'the chosen options are not sent');
     assert.match(confirm, /videoOptionsHtml\(d\.options\)/, 'the confirmation does not draw the options');
     assert.match(fn('videoPreviewUrl'), /q\.set\('options', JSON\.stringify\(CONFIRM_GEN_VIDEO_OPTIONS\)\)/,
         'changing an option does not re-price the clip');

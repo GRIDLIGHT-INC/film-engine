@@ -651,7 +651,22 @@ test('the pre-spend confirmation lets the prompt be edited, and an edit is what 
     const rest = html.slice(from + 40);
     const end = rest.search(/\n    (?:async )?function /);
     const call = end > 0 ? rest.slice(0, end) : rest.slice(0, 4000);
-    assert.ok(/CONFIRM_GEN_EDITED\s*&&/.test(call),
+    // Inline, or one call level down in confirmChoices(), which every dialog
+    // now sends its choices through.
+    const choicesFrom = html.indexOf('function confirmChoices(');
+    // Bounded by brace depth from the declaration, never a character window.
+    const choices = (() => {
+        if (choicesFrom < 0) return '';
+        const open = html.indexOf('{', choicesFrom);
+        let d = 0;
+        for (let j = open; j < html.length; j++) {
+            if (html[j] === '{') d++;
+            else if (html[j] === '}' && --d === 0) return html.slice(choicesFrom, j + 1);
+        }
+        return '';
+    })();
+    const viaChoices = /\.\.\.confirmChoices\(\)/.test(call) && /CONFIRM_GEN_EDITED\s*&&/.test(choices);
+    assert.ok(/CONFIRM_GEN_EDITED\s*&&/.test(call) || viaChoices,
         'the prompt is sent as an override unconditionally, which would drop the '
         + 'references and the style preset on an untouched generation');
 });

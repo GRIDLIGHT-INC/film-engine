@@ -109,7 +109,7 @@ function imageProviderChain(projectConfig, opts) {
         // installs metering, and only the lead provider comes through it. Left
         // alone, every image served AFTER a refusal would be free in the
         // report, which is precisely the shot a director paid twice for.
-        chain.push(providers.metered(adapter, projectConfig || {}));
+        chain.push(withChoices(providers.metered(adapter, projectConfig || {}), projectConfig || {}));
         seen.add(adapter.id);
     }
 
@@ -231,6 +231,22 @@ function orderForFloor(chain, needsPixels) {
 function imageModelIds(adapter) {
     try { return require('./providers').modelIdsFor(adapter, 'image'); }
     catch (_) { return adapter && adapter.models ? Object.keys(adapter.models) : null; }
+}
+
+/*
+ * A fallback is a RAW adapter, so it does not pass resolve()'s wrapper where
+ * the dialog's choices are applied. A size chosen for this one image still
+ * holds after a refusal; a provider's own options still apply only to the
+ * provider they were chosen for, which a fallback never is.
+ */
+function withChoices(adapter, projectConfig) {
+    if (!adapter || typeof adapter.generate !== 'function') return adapter;
+    const wrapped = Object.create(adapter);
+    wrapped.generate = (cap, payload, opts) => {
+        require('./generation-options').applyChosen(cap || 'image', projectConfig, adapter.id, payload);
+        return adapter.generate(cap, payload, opts);
+    };
+    return wrapped;
 }
 
 async function runImageFallbackChain(chain, payloadOrFactory, opts) {

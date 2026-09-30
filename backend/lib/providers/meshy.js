@@ -792,4 +792,4 @@ const adapter = {
 
 // Named `adapter` because providers/index.js autoloads on `mod.adapter` —
 // exporting the object directly would register nothing, silently.
-module.exports = { adapter, buildRequest, buildImageRequest, snapMeshyRatio, pickModelUrl, IMAGE_MODELS };
+module.exports = { adapter, buildRequest, buildImageRequest, snapMeshyRatio, pickModelUrl, IMAGE_MODELS, IMAGE_RATIOS };

@@ -234,7 +234,12 @@ async function generateSound(req, res, projectId) {
     const capability = kind === 'music' ? 'music' : kind;
     let provider;
     try {
-        provider = resolveGenerator(capability, { id: projectId });
+        // The project's own config plus what was chosen on the dialog. This
+        // passed a bare { id }, so neither the project's pinned provider nor a
+        // provider picked for this one reached the sound it made.
+        const { spendContext } = require('../lib/provider-config');
+        const chosen = require('../lib/generation-override').generationOverride(capability, body);
+        provider = resolveGenerator(capability, spendContext({ id: projectId }, shot || null, scene || null, chosen));
     } catch (err) {
         return json(res, 400, { error: `No provider for ${capability}: ${err.message}` });
     }

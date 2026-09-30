@@ -84,17 +84,42 @@ function videoTierOf(req, query) {
 }
 
 /** What the tier contributes, without overriding anything explicitly asked for. */
-function applyTier(tier, req, query, pinned) {
+function applyTier(tier, req, query, pinned, providerId) {
     const src = { ...(query || {}), ...((req && req.body) || {}) };
+    /*
+     * The tier's preferred model is a RUNWAY model (Hailuo 3, Gen-4 Turbo).
+     * Picked on the dialog, another provider must not be sent it: the preview
+     * priced and described Hailuo 3 for a clip going to MuAPI's Seedance, whose
+     * own models are its resolutions. So it applies only where the provider
+     * that will run actually offers it.
+     */
+    let tierModel = tier.preferredModel || undefined;
+    if (tierModel && providerId) {
+        try {
+            const reg = require('../lib/providers');
+            const offered = reg.modelIdsFor(reg.get(providerId), 'video') || [];
+            if (!offered.includes(tierModel)) tierModel = undefined;
+        } catch (_) { tierModel = undefined; }
+    }
     return {
         // `video_model` is what the MCP tools send; see videoOverrideOf. The
         // project's pinned model (Setup) outranks the tier's preference: a
         // default that beats a deliberate choice is worse than no default.
-        model: src.model || src.video_model || pinned || tier.preferredModel || undefined,
+        model: src.model || src.video_model || pinned || tierModel,
         durationSeconds: Number(src.duration_s) || tier.durationSeconds || undefined,
         resolution: src.resolution || tier.resolution || undefined,
         tierId: tier.id,
     };
+}
+
+/** The provider this clip would run on: the one picked for it, else the project's. */
+function videoProviderIdFor(shotId, override) {
+    try {
+        const row = db.prepare(`SELECT p.provider_config FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id
+            JOIN film_projects p ON p.id = sc.project_id WHERE s.id = ?`).get(shotId);
+        const cfg = { ...JSON.parse((row && row.provider_config) || '{}'), ...(override || {}) };
+        return require('../lib/providers').resolveId('video', cfg) || null;
+    } catch (_) { return null; }
 }
 
 /**
@@ -265,6 +290,29 @@ async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
             .reduce((n, r) => n + (Number(r.durationSeconds) || 0), 0),
     });
 
+    /*
+     * A provider whose clips are not on Runway's rate card (MuAPI's Seedance)
+     * is priced the way it will be BILLED: its own meter over this payload,
+     * then the rate book. Runway's estimator knows only Runway's models, so a
+     * clip picked for Seedance showed Hailuo 3's price, and then none.
+     */
+    if (provider && provider.id !== 'runway' && typeof provider.meter === 'function') {
+        try {
+            const dur = chosenOptions.values.duration > 0 ? chosenOptions.values.duration : payload.duration_s;
+            const u = provider.meter('video', { ...payload, duration_s: dur }, null);
+            const priced = u && require('../lib/provider-pricing')
+                .priceUsage({ provider: provider.id, capability: 'video', ...u });
+            if (priced && priced.priced) {
+                Object.assign(estimate, {
+                    model: u.model || null, credits: 0, usd: Number(priced.amount_usd.toFixed(2)),
+                    unknownModel: false, note: null,
+                    lines: [{ label: `${u.quantity} ${u.unit}${u.quantity === 1 ? '' : 's'} of ${u.model || provider.id}`,
+                        usd: Number(priced.amount_usd.toFixed(2)) }],
+                });
+            }
+        } catch (_) { /* an estimate that cannot be worked out is said, not invented */ }
+    }
+
     let sent = null, unverified = false;
     if (provider && typeof provider.describeVideoRequest === 'function') {
         try { sent = provider.describeVideoRequest(payload); }
@@ -423,7 +471,8 @@ function handleVideoGen(req, res, urlParts, query) {
         if (sub === 'preview' && req.method === 'GET') {
             const tier = videoTierOf(req, query);
             const ov = videoOverrideOf(req, query);
-            return previewVideo(res, shotId, ov, applyTier(tier, req, query, videoPinFor(shotId, ov)), query);
+            return previewVideo(res, shotId, ov, applyTier(tier, req, query, videoPinFor(shotId, ov),
+                videoProviderIdFor(shotId, ov)), query);
         }
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
@@ -498,7 +547,8 @@ async function generateVideo(req, res, shotId) {
 
     ctx.consistency = consistencyContext;
     const tier = videoTierOf(req, null);
-    const chosen = applyTier(tier, req, null, videoPinFor(shotId, videoOverrideOf(req)));
+    const chosen = applyTier(tier, req, null, videoPinFor(shotId, videoOverrideOf(req)),
+        videoProviderIdFor(shotId, videoOverrideOf(req)));
     ctx.overrides = {
         seed: req.body && req.body.seed ? req.body.seed : consistencyContext.locked_seed,
         // The tier supplies a model only when the caller named none: a default

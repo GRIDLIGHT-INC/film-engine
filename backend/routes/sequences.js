@@ -21,7 +21,7 @@
  */
 
 const { db, generateId } = require('../db/database');
-const { imageOverride } = require('../lib/generation-override');
+// The per-generation choice is read in seqConfig below, as video.
 // The strip: what a shot's stations are, and what a model documents room for.
 const { expandShots, MAX_STATIONS_PER_SHOT, DEFAULT_CADENCE_S } = require('../lib/inbetweens');
 const { contractFor, selectReferences } = require('../lib/video-reference');
@@ -37,9 +37,10 @@ const { runStrip, stripFingerprint, approvalState } = require('../lib/inbetween-
  */
 function seqConfig(projectId, req) {
     const base = providerConfigFor(projectId);
-    const o = imageOverride((req && req.body) || {});
-    if (!o || !o.image) return base;
-    return { ...base, video: o.image };
+    // Provider, model and tier, read as video. This read the IMAGE override and
+    // kept only the provider, so a model picked for a sequence was dropped.
+    const o = require('../lib/generation-override').generationOverride('video', (req && req.body) || {});
+    return o ? { ...base, ...o } : base;
 }
 const { resolve } = require('../lib/providers');
 const { providerConfigFor } = require('../lib/provider-config');

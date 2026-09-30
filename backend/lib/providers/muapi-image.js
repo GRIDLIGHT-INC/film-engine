@@ -149,6 +149,14 @@ function imageSizeFor(width, height, model) {
     return covering || allowed[allowed.length - 1];
 }
 
+/**
+ * The ratios every Nano Banana endpoint here accepts, text and edit alike
+ * (read from the fields MuAPI's endpoints report, tests/fixtures/
+ * muapi-contract.json). A ratio a director chose from this set is sent as
+ * chosen; anything else is derived from the width and height, as before.
+ */
+const ACCEPTED_RATIOS = Object.freeze(['1:1', '3:4', '4:3', '9:16', '16:9', '3:2', '2:3', '5:4', '4:5', '21:9']);
+
 /** "16:9" from a width and height, since MuAPI takes a ratio rather than pixels. */
 function aspectFor(width, height) {
     const w = Number(width) || 0, h = Number(height) || 0;
@@ -191,7 +199,7 @@ function buildImageRequest(p) {
 
     const body = {
         prompt,
-        aspect_ratio: aspectFor(p.width, p.height),
+        aspect_ratio: ACCEPTED_RATIOS.includes(p.aspect_ratio) ? p.aspect_ratio : aspectFor(p.width, p.height),
     };
     /*
      * Only where the endpoint has the field. `nano-banana` and the Lite model
@@ -444,4 +452,4 @@ const muapiImageAdapter = {
 };
 
 module.exports = { adapter: muapiImageAdapter, muapiImageAdapter, buildImageRequest,
-                   describeImageRequest, MODELS, generate, collect, imageSizeFor, aspectFor };
+                   describeImageRequest, MODELS, ACCEPTED_RATIOS, generate, collect, imageSizeFor, aspectFor };

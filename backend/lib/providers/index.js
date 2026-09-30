@@ -745,6 +745,14 @@ function withJobRecording_(adapter, capability, projectConfig) {
                 if (pinned) payload.model = pinned;
             }
         } catch (_) { /* a pin that cannot be read never blocks a generation */ }
+        /*
+         * WHAT THE DIRECTOR CHOSE ON THE DIALOG, applied once for every route:
+         * a size for this one image, and the provider's own options (a frame,
+         * a quality, a voice setting, a mesh style). Only when THIS adapter is
+         * the provider they were chosen for — a fallback to another vendor
+         * does not inherit them. Nothing chosen changes nothing.
+         */
+        require('../generation-options').applyChosen(cap || capability, cfg, adapter.id, payload);
         const o = Object.assign({}, opts || {});
         let jobId = open(cap, o);
         /*
