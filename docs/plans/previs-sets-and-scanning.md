@@ -15,12 +15,18 @@ is described in CLAUDE.md; this file holds what was decided and what comes next.
 | **A phone video is not enough for a complex location.** | Measured on The Lodgers house: the camera path solves, but the geometry is sparse and splits into six unconnected pieces. A multi-level house needs LiDAR. |
 | **We build our own scanner, not a subscription.** | See below. The user has a paid Apple developer account; the signing certificate is fixed when we publish to TestFlight. |
 
+## Built (2026-09-30)
+
+- Previs: people, furniture and project 3D models staged and moved; panels fold away; the camera moves with the mouse; framing and angle in film terms (EWS–ECU; eye, shoulder, hip, knee, ground, low, high, overhead, Dutch); draggable Camera Operate values; the playhead shows the move.
+- Lighting: seventeen techniques over the card's moods, per shot, per location, with the film's look as the general style; lit in Previs and drawn on the plan.
+- The scanner, step 1: RoomPlan in the iOS app, room after room in one session (multiple storeys included), uploaded and built as the location's set.
+
 ## Next: the scanner in the Film Engine iOS app
 
 The existing iOS app (`ios/FilmEngine`) gains a native **Scan location** screen.
 
 1. **RoomPlan** (LiDAR, iPhone Pro). It gives walls, doors, windows, floors and furniture as labelled boxes, in metres, room by room, and supports multi-room capture on iOS 17 and later. Export the `CapturedStructure` as JSON plus USDZ.
-2. **Guided plates.** After the scan the app knows the room, so it tells you where to stand: one plate per wall from the opposite corner at eye height, plus a master wide, with an on-screen target and level. Each plate is saved with its camera pose from ARKit, so it lines up with the scan exactly (no solving).
+2. **Guided plates (next).** After the scan the app knows the room, so it tells you where to stand: one plate per wall from the opposite corner at eye height, plus a master wide, with an on-screen target and level. Each plate is saved with its camera pose from ARKit, so it lines up with the scan exactly (no solving).
 3. **Upload** to the location in Film Engine through the resumable upload route (already built): the RoomPlan JSON, the USDZ and the posed plates.
 4. **Engine side.** Convert the RoomPlan JSON into the set-build layout vocabulary (walls, openings, slabs, stairs, objects), swap each furniture box for the nearest library piece at its measured size, and use the posed plates for the clean colour sampling. The build is then automatic.
 

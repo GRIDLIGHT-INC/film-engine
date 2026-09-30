@@ -128,6 +128,8 @@ struct WebAppView: UIViewRepresentable {
          * with the view on screen.
          */
         config.userContentController.add(context.coordinator, name: PlateCameraBridge.name)
+        // The LiDAR room scan, asked for by the page the same way.
+        config.userContentController.add(context.coordinator, name: RoomScanBridge.name)
 
         /*
          * Tell the web app where the engine is BEFORE it boots, by TWO routes.
@@ -145,6 +147,8 @@ struct WebAppView: UIViewRepresentable {
          */
         let inject = WKUserScript(
             source: "window.__filmEngineApiBase = '\(serverURL)';"
+                  + "window.__filmEngineRoomScan = \(RoomScanSupport.available ? "true" : "false");"
+                  + "window.__filmEngineRoomScanWhyNot = '\(RoomScanSupport.reason)';"
                   + "try { localStorage.setItem('film_api_url', '\(serverURL)'); } catch (e) {}",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true)
@@ -175,6 +179,15 @@ struct WebAppView: UIViewRepresentable {
 
         func userContentController(_ controller: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
+            if message.name == RoomScanBridge.name {
+                guard let body = message.body as? String, let data = body.data(using: .utf8),
+                      var request = try? JSONDecoder().decode(RoomScanRequest.self, from: data) else {
+                    reportScan(RoomScanResult(cancelled: true)); return
+                }
+                if request.apiBase.isEmpty { request = request.withBase(serverURL) }
+                presentScan(request)
+                return
+            }
             guard message.name == PlateCameraBridge.name,
                   let body = message.body as? String,
                   let data = body.data(using: .utf8),
@@ -198,6 +211,29 @@ struct WebAppView: UIViewRepresentable {
             sheet.modalPresentationStyle = .fullScreen
             presented = sheet
             (host.presentedViewController ?? host).present(sheet, animated: true)
+        }
+
+        private func presentScan(_ request: RoomScanRequest) {
+            guard #available(iOS 17.0, *), RoomScanSupport.available else {
+                reportScan(RoomScanResult(error: RoomScanSupport.reason)); return
+            }
+            guard let host = webView?.window?.rootViewController else { return }
+            let sheet = UIHostingController(rootView: RoomScanView(request: request) { [weak self] result in
+                self?.presented?.dismiss(animated: true)
+                self?.presented = nil
+                self?.reportScan(result)
+            })
+            sheet.modalPresentationStyle = .fullScreen
+            presented = sheet
+            (host.presentedViewController ?? host).present(sheet, animated: true)
+        }
+
+        private func reportScan(_ result: RoomScanResult) {
+            let json = (try? JSONEncoder().encode(result)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            let escaped = json.replacingOccurrences(of: "\\", with: "\\\\")
+                              .replacingOccurrences(of: "'", with: "\\'")
+            webView?.evaluateJavaScript(
+                "window.\(RoomScanBridge.callback) && window.\(RoomScanBridge.callback)('\(escaped)')")
         }
 
         /// Back to the page, which refreshes whatever the plate belongs to. A

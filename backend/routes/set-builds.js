@@ -7,6 +7,8 @@
  *   GET  /film/set-builds/:id                    one attempt
  *   GET  /film/set-builds/:id/files/:name        a comparison sheet
  *   POST /film/set-builds/:id/finish             project, export, world version, 3D asset (free)
+ *   POST /film/locations/:id/room-scan/import    a RoomPlan scan (JSON, USDZ beside it) built as the location's set (free);
+ *                                                `dry_run` answers the layout it would build and builds nothing
  *
  * The layout is written by the connected agent; see lib/set-build.js for why
  * the engine never writes it.
@@ -27,7 +29,7 @@ function fail(res, err) {
 }
 
 /** The URL segments this router answers, so server.js can dispatch before the location catch-all. */
-const LOCATION_TAILS = Object.freeze(['set-build', 'set-builds']);
+const LOCATION_TAILS = Object.freeze(['set-build', 'set-builds', 'room-scan']);
 
 async function handleSetBuilds(req, res, urlParts, query) {
     const q = query || {};
@@ -38,6 +40,24 @@ async function handleSetBuilds(req, res, urlParts, query) {
             if (urlParts[3] === 'set-build' && urlParts[4] === 'brief' && req.method === 'GET') {
                 const b = setBuild.brief(locationId, { withImages: q.images === '1' || q.images === 'true' });
                 return b ? json(res, 200, b) : json(res, 404, { error: 'Location not found' });
+            }
+            if (urlParts[3] === 'room-scan' && urlParts[4] === 'import' && req.method === 'POST') {
+                let structure = body.structure;
+                if (typeof structure === 'string') {
+                    try { structure = JSON.parse(structure); } catch (_) { return json(res, 400, { error: 'structure is not JSON' }); }
+                }
+                if (!structure || typeof structure !== 'object') {
+                    return json(res, 400, { error: 'send structure: the RoomPlan CapturedStructure or CapturedRoom as JSON' });
+                }
+                const { scanToLayout } = require('../lib/room-scan');
+                const { layout, report } = scanToLayout(structure);
+                if (body.dry_run) return json(res, 200, { dry_run: true, layout, report });
+                const files = { 'scan.json': JSON.stringify(structure) };
+                const m = typeof body.usdz === 'string' && body.usdz.match(/^data:[^;]*;base64,(.*)$/);
+                if (m) files['scan.usdz'] = Buffer.from(m[1], 'base64');
+                const built = await setBuild.measuredAttempt(locationId, layout,
+                    { note: body.name ? `RoomPlan: ${String(body.name).slice(0, 80)}` : 'RoomPlan scan', files });
+                return json(res, 201, Object.assign(built, { report }));
             }
             if (urlParts[3] === 'set-builds' && !urlParts[4]) {
                 if (req.method === 'GET') return json(res, 200, { builds: setBuild.listBuilds(locationId) });

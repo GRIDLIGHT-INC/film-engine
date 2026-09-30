@@ -123,7 +123,7 @@ const num = v => typeof v === 'number' && Number.isFinite(v);
  * plates this location has, because a camera for a plate that does not exist
  * is a render with nothing to hold it against.
  */
-function validateLayout(layout, plateViews) {
+function validateLayout(layout, plateViews, opts = {}) {
     const errors = [];
     const L = layout || {};
     if (!STRUCTURE.some(k => k === 'room' ? L.room : (Array.isArray(L[k]) && L[k].length))) {
@@ -228,7 +228,10 @@ function validateLayout(layout, plateViews) {
         if (L.light.sun_from != null && !WALL_SIDES.includes(L.light.sun_from)) errors.push(`light.sun_from must be one of ${WALL_SIDES.join(', ')}`);
     }
     const cams = L.cameras || [];
-    if (!cams.length) errors.push('cameras: at least one plate camera is required, or nothing can be held against a plate');
+    // A MEASURED layout (a LiDAR scan) has no plate to be held against: its
+    // geometry is the measurement. Only a layout written from photographs
+    // needs a camera per plate.
+    if (!cams.length && !opts.measured) errors.push('cameras: at least one plate camera is required, or nothing can be held against a plate');
     const seen = new Set();
     cams.forEach((c, i) => {
         const at = `cameras[${i}]`;
@@ -487,6 +490,41 @@ async function renderAttempt(locationId, layout, opts = {}) {
     return out;
 }
 
+/*
+ * A MEASURED attempt: a layout from a LiDAR scan rather than from plates. It is
+ * validated the same way (bar the plate cameras), recorded as an attempt like
+ * any other so it lists beside them, and finished at once — there is nothing
+ * to compare a measurement against. Clean style: surfaces keep the layout's
+ * colours, since no plate sees them.
+ */
+async function measuredAttempt(locationId, layout, opts = {}) {
+    const d = db();
+    const location = d.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId);
+    if (!location) { const e = new Error('Location not found'); e.status = 404; throw e; }
+    const L = Object.assign({ cameras: [] }, layout);
+    const errors = validateLayout(L, [], { measured: true });
+    if (errors.length) { const e = new Error(`Scan refused: ${errors[0]}`); e.status = 400; e.errors = errors; throw e; }
+    const resolved = resolveAssets(L, location.project_id);
+    if (resolved.errors.length) { const e = new Error(`Scan refused: ${resolved.errors[0]}`); e.status = 400; e.errors = resolved.errors; throw e; }
+    const { generateId } = require('../db/database');
+    const id = generateId();
+    const attempt = (d.prepare('SELECT MAX(attempt) a FROM film_set_builds WHERE location_id = ?').get(locationId).a || 0) + 1;
+    const outDir = buildDir(location.project_id, id);
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const [name, bytes] of Object.entries(opts.files || {})) {
+        try { fs.writeFileSync(path.join(outDir, name), bytes); } catch (_) { /* the source is a courtesy copy */ }
+    }
+    d.prepare(`INSERT INTO film_set_builds (id, project_id, location_id, attempt, layout_json, note, status, out_dir)
+               VALUES (?, ?, ?, ?, ?, ?, 'rendered', ?)`)
+        .run(id, location.project_id, locationId, attempt, JSON.stringify(L), opts.note || 'measured scan', outDir);
+    try {
+        return await finishAttempt(id, { style: 'clean' });
+    } catch (err) {
+        d.prepare("UPDATE film_set_builds SET status = 'failed', error = ? WHERE id = ?").run(String(err.message).slice(0, 2000), id);
+        throw err;
+    }
+}
+
 /** The world a location's set belongs to, made if it has none. */
 function worldForLocation(location) {
     const worlds = require('./worlds');
@@ -523,7 +561,9 @@ async function finishAttempt(buildId, opts = {}) {
     const worlds = require('./worlds');
     const version = worlds.importVersion(d, world.id, {
         glb, source: 'blender',
-        reason: `Set build attempt ${row.attempt} (${style}): built in Blender from ${used.map(p => p.view).join(', ')} plates`,
+        reason: used.length
+            ? `Set build attempt ${row.attempt} (${style}): built in Blender from ${used.map(p => p.view).join(', ')} plates`
+            : `Set build attempt ${row.attempt} (${style}): built in Blender from a measured scan${row.note ? ` (${row.note})` : ''}`,
         caption: row.note || null,
     });
     const asset = require('./media-imports').importMedia('three-d-model', {
@@ -545,6 +585,6 @@ async function finishAttempt(buildId, opts = {}) {
 }
 
 module.exports = {
-    resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, getBuild, listBuilds,
+    resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, measuredAttempt, getBuild, listBuilds,
     LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, STYLES, TIMES_OF_DAY, LIMITS, INSTRUCTIONS, SCRIPT, resolveAssets,
 };

@@ -2742,6 +2742,25 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id'],
     },
     {
+        name: 'room_scan_import',
+        handler: require('../routes/set-builds').handleSetBuilds, method: 'POST',
+        path: a => `/film/locations/${a.location_id}/room-scan/import`,
+        body: a => ({ structure: a.structure, dry_run: a.dry_run === true, name: a.name }),
+        description:
+            'Build a location\'s Previs set from an Apple RoomPlan scan (the CapturedStructure or CapturedRoom as JSON, '
+            + 'as the Film Engine iPhone app exports it). FREE: Blender on this Mac. Walls, doors, windows, floors and '
+            + 'stairs are built at their measured size, furniture becomes Previs library models, several rooms and '
+            + 'storeys scanned in one session keep their places. It becomes the next version of the location\'s world. '
+            + 'dry_run: true answers the layout and a report and builds nothing.',
+        schema: {
+            location_id: { type: 'string' },
+            structure: { type: ['object', 'string'], description: 'The RoomPlan JSON.' },
+            dry_run: { type: 'boolean' },
+            name: { type: 'string' },
+        },
+        required: ['location_id', 'structure'],
+    },
+    {
         name: 'previs_timeline',
         handler: handlePrevis, method: 'PUT',
         path: a => `/film/shots/${a.shot_id}/previs/timeline`,

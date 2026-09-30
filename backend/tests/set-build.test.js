@@ -272,7 +272,7 @@ test('the server routes it ahead of the /film/locations/:id catch-all', () => {
     const at = SERVER.indexOf('handleSetBuilds(req, res, parts, query)');
     const catchAll = SERVER.indexOf("if (parts[1] === 'locations') {");
     assert.ok(at > 0 && catchAll > 0 && at < catchAll, 'set-build routes must be dispatched before the location handler');
-    assert.deepEqual([...LOCATION_TAILS].sort(), ['set-build', 'set-builds']);
+    assert.deepEqual([...LOCATION_TAILS].sort(), ['room-scan', 'set-build', 'set-builds']);
 });
 
 test('Previs offers it, and the page says what to ask instead of guessing a room', () => {

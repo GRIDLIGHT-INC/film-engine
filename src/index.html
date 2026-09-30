@@ -18914,10 +18914,73 @@ THREE.GLTFLoader = GLTFLoader;
             ${ask ? `<div class="form-group"><label>Ask Claude</label>
               <div class="sb-ask"><code>${esc(ask)}</code>
               <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard && navigator.clipboard.writeText(${jsAttr(ask)}); setStatus('Copied')">Copy</button></div></div>` : ''}
+            ${loc ? roomScanHtml(loc) : ''}
             <div class="sb-attempts">${attempts || '<p class="text-sm text-muted">No attempts yet.</p>'}</div>
             <div class="btn-row"><button class="btn btn-secondary" onclick="setBuildOpen()">Refresh</button>
               <button class="btn btn-secondary" onclick="closeModal('setBuildModal')">Close</button></div>`;
     }
+    /*
+     * OR SCAN IT. On the Film Engine iPhone app (a Pro, with LiDAR) the phone
+     * scans the room — several rooms and floors in one session — and the
+     * engine builds it here, measured, with no plates needed. Anywhere else, a
+     * RoomPlan JSON exported by another app can be imported the same way.
+     */
+    function roomScanHtml(loc) {
+        const bridge = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.roomScan);
+        const can = bridge && window.__filmEngineRoomScan !== false;
+        const why = bridge && !can ? (window.__filmEngineRoomScanWhyNot || 'This phone cannot scan.') : '';
+        return `
+            <div class="form-group"><label>Or scan it with an iPhone (LiDAR)</label>
+              <p class="text-sm text-muted">Measured, not guessed: walls, doors, windows, floors, stairs and furniture at their
+                 real size. Scan room after room in one session — walk between them and up the stairs — and they keep their
+                 places, storeys included. Furniture becomes Previs library models. Free.</p>
+              <div class="btn-row" style="justify-content:flex-start">
+                ${bridge
+                    ? `<button class="btn btn-primary btn-sm" ${can ? '' : 'disabled'} onclick="roomScanStart(${jsAttr(loc.id)}, ${jsAttr(loc.name)})">Scan with this iPhone</button>
+                       ${why ? `<span class="text-sm text-muted">${esc(why)}</span>` : ''}`
+                    : `<span class="text-sm text-muted">Open Film Engine on an iPhone Pro to scan, or import a RoomPlan JSON:</span>`}
+                <label class="btn btn-secondary btn-sm">Import RoomPlan JSON
+                  <input type="file" accept="application/json,.json" style="display:none" onchange="roomScanImport(${jsAttr(loc.id)}, this)"></label>
+              </div></div>`;
+    }
+    function roomScanStart(locationId, name) {
+        try {
+            window.webkit.messageHandlers.roomScan.postMessage(JSON.stringify({
+                url: `/locations/${locationId}/room-scan/import`, apiBase: '', location: name || '' }));
+        } catch (err) { setStatus('The scanner is not available: ' + err.message, true); }
+    }
+    // The app reports the scan back here, with the engine's answer.
+    window.roomScanDone = function (json) {
+        let r = {};
+        try { r = JSON.parse(json); } catch (_) { r = {}; }
+        if (r.cancelled) return setStatus('Scan cancelled');
+        if (!r.ok) return setStatus('Scan not built: ' + (r.error || 'unknown error'), true);
+        let built = {};
+        try { built = JSON.parse(r.response || '{}'); } catch (_) { built = {}; }
+        const rep = built.report || {};
+        setStatus(`Scanned ${r.rooms} room${r.rooms === 1 ? '' : 's'}: ${rep.walls || 0} walls, ${rep.openings || 0} doors and windows, `
+            + `${rep.objects || 0} pieces of furniture${rep.stories && rep.stories.length > 1 ? `, ${rep.stories.length} storeys` : ''}. `
+            + 'It is the location\'s new world version: pin a shot to it to walk it.');
+        if (document.getElementById('setBuildModal') && document.getElementById('setBuildModal').classList.contains('open')) setBuildOpen();
+    };
+    async function roomScanImport(locationId, input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try { checkUploadSize(file, `/locations/${locationId}/room-scan/import`); }
+        catch (err) { input.value = ''; return setStatus(err.message, true); }
+        let structure;
+        try { structure = JSON.parse(await file.text()); } catch (_) { return setStatus('That file is not JSON', true); }
+        setStatus('Building the scan in Blender…');
+        try {
+            const r = await api(`/locations/${locationId}/room-scan/import`, { method: 'POST',
+                body: JSON.stringify({ structure, name: file.name }) });
+            window.roomScanDone(JSON.stringify({ ok: true, rooms: 1, response: JSON.stringify(r) }));
+        } catch (err) { setStatus('Scan not built: ' + err.message, true); }
+        input.value = '';
+    }
+    window.roomScanStart = roomScanStart;
+    window.roomScanImport = roomScanImport;
+
     async function setBuildFinish(buildId, btn) {
         if (btn) { btn.disabled = true; btn.textContent = 'Painting the plates on and exporting…'; }
         try {

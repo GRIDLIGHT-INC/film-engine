@@ -10,6 +10,7 @@
 		000000000000000000000017 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000011; };
 		000000000000000000000018 /* ServerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000012; };
 		0000000000000000000000B1 /* PlateCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000B2; };
+		0000000000000000000000C1 /* RoomScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000C2; };
 		000000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000014; };
 		00000000000000000000001A /* Web in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000015; };
 /* End PBXBuildFile section */
@@ -20,6 +21,7 @@
 		000000000000000000000011 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		000000000000000000000012 /* ServerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettings.swift; sourceTree = "<group>"; };
 		0000000000000000000000B2 /* PlateCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCamera.swift; sourceTree = "<group>"; };
+		0000000000000000000000C2 /* RoomScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScan.swift; sourceTree = "<group>"; };
 		000000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		000000000000000000000015 /* Web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
@@ -42,6 +44,7 @@
 				000000000000000000000011,
 				000000000000000000000012,
 				0000000000000000000000B2,
+				0000000000000000000000C2,
 				000000000000000000000014,
 				000000000000000000000015,
 				000000000000000000000013,
@@ -106,7 +109,7 @@
 		000000000000000000000009 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (000000000000000000000016, 000000000000000000000017, 000000000000000000000018, 0000000000000000000000B1);
+			files = (000000000000000000000016, 000000000000000000000017, 000000000000000000000018, 0000000000000000000000B1, 0000000000000000000000C1);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

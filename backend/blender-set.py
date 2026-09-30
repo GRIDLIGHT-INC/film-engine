@@ -249,6 +249,9 @@ def place_asset(ob, nm, cx, cy, cz):
         o.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
     bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+    # A model can share one mesh between parts (a bed's two pillows); applying a
+    # transform refuses a shared mesh, so each part gets its own copy first.
+    bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     if len(meshes) > 1:
         bpy.ops.object.join()
