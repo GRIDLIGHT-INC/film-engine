@@ -232,7 +232,16 @@ function generationOptions(capability) {
              * models as null, and Nano Banana Pro -- the only one of them that
              * a director would deliberately choose -- was unreachable.
              */
-            models: modelList(a, cap),
+            models: (() => {
+                const list = modelList(a, cap);
+                if (!list || cap !== 'video') return list;
+                // What each video model lets you choose, from the provider's own schema.
+                const mo = require('./model-options');
+                return list.map(m => {
+                    const o = mo.optionsFor(a.id, m.id);
+                    return o ? { ...m, options: o.controls, option_notes: o.notes } : m;
+                });
+            })(),
         })),
         tiers: tiers
             ? Object.entries(tiers).map(([id, t]) => ({

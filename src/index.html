@@ -5472,6 +5472,12 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .project-stage-btn { cursor:pointer; border:0; font:inherit; font-size:11px; }
 .project-stage-btn:hover { filter:brightness(1.2); }
 .project-stage-select { font-size:12px; padding:4px 6px; border-radius:6px; max-width:160px; }
+#confirmGenModal .vopt-box { margin:10px 0; padding:9px 11px; border-radius:7px; background:rgba(255,255,255,.04); }
+#confirmGenModal .vopt-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px 14px; }
+#confirmGenModal .vopt { display:flex; flex-direction:column; gap:4px; margin:0; font-size:12px; }
+#confirmGenModal .vopt > span { font-weight:600; }
+#confirmGenModal .vopt select, #confirmGenModal .vopt input[type=text] { width:100%; min-width:0; padding:5px 8px; font-size:12px; }
+#confirmGenModal .vopt small { font-size:11px; color:var(--gl-text-muted); line-height:1.35; }
 </style>
 </head>
 <body>
@@ -41174,11 +41180,14 @@ ${fountainText.slice(0, 50000)}`;
         });
         const note = document.getElementById('confirmGenModelNote');
         if (note) note.textContent = id ? `Using ${id} for this generation only.` : 'This generation only.';
+        // A different model takes different options: start again from its defaults.
+        if (CONFIRM_GEN_CAP === 'video') { CONFIRM_GEN_VIDEO_OPTIONS = {}; repreviewVideo(); }
     }
 
     function pickGenerator(id) {
         CONFIRM_GEN_PROVIDER = id || null;
         paintGenModels(id || '');
+        if (CONFIRM_GEN_CAP === 'video') { CONFIRM_GEN_VIDEO_OPTIONS = {}; repreviewVideo(); }
         document.querySelectorAll('#confirmGenModal [data-gen]').forEach(b => {
             b.classList.toggle('btn-secondary', b.dataset.gen !== (id || ''));
         });
@@ -41246,20 +41255,119 @@ ${fountainText.slice(0, 50000)}`;
 
     async function pickVideoTier(id) {
         CONFIRM_GEN_VIDEO_TIER = id;
-        const holder = document.getElementById('confirmVideoTierRow');
-        if (!holder || !CONFIRM_GEN_PREVIEW_URL) return;
-        holder.innerHTML = '<div class="text-sm" style="opacity:.6;">Re-reading what this would cost&hellip;</div>';
-        try {
-            const d = await api(CONFIRM_GEN_PREVIEW_URL
-                + (CONFIRM_GEN_PREVIEW_URL.includes('?') ? '&' : '?') + 'tier=' + encodeURIComponent(id));
-            holder.innerHTML = videoTierRow(d);
-        } catch (err) {
-            // A failed re-read must not leave a stale price under the button.
-            holder.innerHTML = `<div class="text-sm" style="color:var(--gl-danger,#ef4444);">
-                Could not re-price this tier: ${esc(err.message)}</div>`;
-        }
+        return repreviewVideo();
     }
     window.pickVideoTier = pickVideoTier;
+
+    /*
+     * WHAT THIS MODEL LETS YOU CHOOSE, for this clip only: length, frame,
+     * resolution, sound, the frame it ends on, output format, seed.
+     *
+     * Drawn from the PREVIEW's `options`, which the server reads from the
+     * provider's own schema for the model this clip would actually run on. So
+     * the dialog offers exactly what the request can carry, and changing the
+     * generator, the model or the tier redraws them. Unset means "as the
+     * project would have it", which is what every clip got before.
+     */
+    let CONFIRM_GEN_VIDEO_OPTIONS = {};
+    let VIDEO_REPREVIEW_TIMER = null;
+
+    function videoPreviewUrl() {
+        const q = new URLSearchParams();
+        if (CONFIRM_GEN_VIDEO_TIER) q.set('tier', CONFIRM_GEN_VIDEO_TIER);
+        if (CONFIRM_GEN_PROVIDER) q.set('video', CONFIRM_GEN_PROVIDER);
+        if (CONFIRM_GEN_MODEL) q.set('video_model', CONFIRM_GEN_MODEL);
+        if (Object.keys(CONFIRM_GEN_VIDEO_OPTIONS).length) q.set('options', JSON.stringify(CONFIRM_GEN_VIDEO_OPTIONS));
+        const qs = q.toString();
+        return CONFIRM_GEN_PREVIEW_URL + (qs ? (CONFIRM_GEN_PREVIEW_URL.includes('?') ? '&' : '?') + qs : '');
+    }
+
+    async function repreviewVideo() {
+        const holder = document.getElementById('confirmVideoTierRow');
+        const opts = document.getElementById('confirmVideoOptions');
+        if (!CONFIRM_GEN_PREVIEW_URL || (!holder && !opts)) return;
+        if (holder) holder.innerHTML = '<div class="text-sm" style="opacity:.6;">Re-reading what this would cost&hellip;</div>';
+        try {
+            const d = await api(videoPreviewUrl());
+            if (holder) holder.innerHTML = videoTierRow(d);
+            if (opts) opts.innerHTML = videoOptionsHtml(d.options);
+        } catch (err) {
+            // A failed re-read must not leave a stale price under the button.
+            if (holder) holder.innerHTML = `<div class="text-sm" style="color:var(--gl-danger,#ef4444);">
+                Could not re-price this: ${esc(err.message)}</div>`;
+        }
+    }
+
+    function setVideoOption(key, value) {
+        if (value === '' || value === null || value === undefined) delete CONFIRM_GEN_VIDEO_OPTIONS[key];
+        else CONFIRM_GEN_VIDEO_OPTIONS[key] = value;
+        clearTimeout(VIDEO_REPREVIEW_TIMER);
+        VIDEO_REPREVIEW_TIMER = setTimeout(repreviewVideo, 250);
+    }
+    window.setVideoOption = setVideoOption;
+
+    function videoOptionsHtml(o) {
+        if (!o) return '';
+        const v = o.values || {};
+        const chosen = CONFIRM_GEN_VIDEO_OPTIONS;
+        const cur = k => (chosen[k] !== undefined ? chosen[k] : (v[k] !== undefined ? v[k] : ''));
+        const field = (c, inner) => `<label class="vopt"><span>${esc(c.label)}</span>${inner}
+            ${c.note ? `<small>${esc(c.note)}</small>` : ''}</label>`;
+        const onSel = k => `onchange="setVideoOption('${k}', this.value)"`;
+        const controls = (o.controls || []).map(c => {
+            const k = c.key;
+            if (c.type === 'choice') {
+                return field(c, `<select data-vopt="${esc(k)}" ${onSel(k)}>
+                    <option value="">Default</option>
+                    ${(c.choices || []).map(x => `<option value="${esc(String(x.id))}" ${
+                        String(cur(k)) === String(x.id) ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+                  </select>`);
+            }
+            if (c.type === 'range') {
+                return field(c, `<span style="display:flex;gap:6px;align-items:center;">
+                    <input type="number" data-vopt="${esc(k)}" min="${c.min}" max="${c.max}" step="${c.step || 1}"
+                        value="${cur(k) === 'auto' ? '' : esc(String(cur(k)))}" placeholder="Shot's own"
+                        onchange="setVideoOption('${k}', this.value)" style="width:90px;">
+                    <span class="text-sm text-muted">${c.min}–${c.max}${esc(c.unit || '')}</span>
+                    ${c.allow_auto ? `<label class="text-sm" style="display:flex;gap:4px;align-items:center;margin:0;">
+                        <input type="checkbox" ${cur(k) === 'auto' ? 'checked' : ''}
+                          onchange="setVideoOption('${k}', this.checked ? 'auto' : '')"> Auto</label>` : ''}
+                  </span>`);
+            }
+            if (c.type === 'toggle') {
+                const d = c.default === true ? 'on' : c.default === false ? 'off' : 'the provider\'s';
+                const val = cur(k) === '' ? '' : (cur(k) === true || cur(k) === 'true' ? 'true' : 'false');
+                return field(c, `<select data-vopt="${esc(k)}" ${onSel(k)}>
+                    <option value="">Default (${d})</option>
+                    <option value="true" ${val === 'true' ? 'selected' : ''}>On</option>
+                    <option value="false" ${val === 'false' ? 'selected' : ''}>Off</option></select>`);
+            }
+            if (c.type === 'number') {
+                return field(c, `<input type="number" data-vopt="${esc(k)}" min="${c.min}" max="${c.max}" step="1"
+                    value="${esc(String(cur(k)))}" placeholder="Random" onchange="setVideoOption('${k}', this.value)">`);
+            }
+            if (c.type === 'text') {
+                return field(c, `<input type="text" data-vopt="${esc(k)}" maxlength="${c.max || 1000}"
+                    value="${esc(String(cur(k)))}" onchange="setVideoOption('${k}', this.value)">`);
+            }
+            if (c.type === 'frame') {
+                return field(c, `<select data-vopt="${esc(k)}" ${onSel(k)}>
+                    <option value="">No ending frame</option>
+                    ${(o.frames || []).map(f => `<option value="${esc(f.id)}" ${
+                        String(cur(k)) === String(f.id) ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}
+                  </select>`);
+            }
+            return '';
+        }).join('');
+        return `<div class="vopt-box">
+            <div class="text-sm" style="opacity:.7;margin-bottom:6px;">Options on ${esc(o.model || o.provider || 'this model')}
+              <span style="opacity:.7;">&middot; this clip only</span></div>
+            ${controls ? `<div class="vopt-grid">${controls}</div>` : ''}
+            ${(o.refused || []).map(r => `<div class="text-sm" style="color:var(--warning,#b8860b);">Not sent: ${esc(r)}</div>`).join('')}
+            ${(o.notes || []).map(n => `<div class="text-sm text-muted" style="margin-top:4px;line-height:1.45;">${esc(n)}</div>`).join('')}
+            ${o.source ? `<div class="text-sm" style="opacity:.5;margin-top:6px;">From ${esc(o.source)}, checked ${esc(o.checked || '')}.</div>` : ''}
+          </div>`;
+    }
 
     async function confirmPaidImage(o) {
         const body = document.getElementById('confirmGenBody');
@@ -41274,6 +41382,7 @@ ${fountainText.slice(0, 50000)}`;
         CONFIRM_GEN_QUALITY = null;
         CONFIRM_GEN_PROVIDER = null;
         CONFIRM_GEN_VIDEO_TIER = null;
+        CONFIRM_GEN_VIDEO_OPTIONS = {};
         CONFIRM_GEN_PREVIEW_URL = o.previewUrl || null;
         showModal('confirmGenModal');
         const decision = new Promise(resolve => { CONFIRM_GEN = resolve; });
@@ -41347,6 +41456,7 @@ ${fountainText.slice(0, 50000)}`;
           </div>
 
           ${o.videoTiers ? `<div id="confirmVideoTierRow">${videoTierRow(d)}</div>` : ''}
+          ${o.capability === 'video' && d.options ? `<div id="confirmVideoOptions">${videoOptionsHtml(d.options)}</div>` : ''}
           ${deliveryLineHtml(d.delivery)}
           ${dialogueAudioRowHtml(d.dialogue_audio)}
 
@@ -41374,6 +41484,8 @@ ${fountainText.slice(0, 50000)}`;
             ...(CONFIRM_GEN_QUALITY ? { quality: CONFIRM_GEN_QUALITY } : {}),
             ...(CONFIRM_GEN_MODEL ? { model: CONFIRM_GEN_MODEL } : {}),
             ...(CONFIRM_GEN_SIZE ? { size: CONFIRM_GEN_SIZE } : {}),
+            ...(o.capability === 'video' && Object.keys(CONFIRM_GEN_VIDEO_OPTIONS).length
+                ? { options: { ...CONFIRM_GEN_VIDEO_OPTIONS } } : {}),
             ...(CONFIRM_GEN_EDITED && confirmGenEditedPrompt()
                 ? { prompt_override: confirmGenEditedPrompt() } : {}),
         });

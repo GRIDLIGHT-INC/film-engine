@@ -53,7 +53,13 @@ test('every model declares the smallest raster it will actually accept', () => {
         // actually lists — anything else is a request built to be refused.
         const spec = (runway.RUNWAY_VIDEO_MODELS || {})[model];
         if (spec && Array.isArray(spec.ratios)) {
-            assert.ok(spec.ratios.includes(`${floor.width}:${floor.height}`),
+            // A model that takes aspect NAMES (Hailuo 3) is sized by its tier:
+            // what must be listed is the floor's shape.
+            const g = (x, y) => (y ? g(y, x % y) : x);
+            const d = g(floor.width, floor.height);
+            const named = spec.ratios.every(r => r.split(':').every(n => Number(n) < 100));
+            const want = named ? `${floor.width / d}:${floor.height / d}` : `${floor.width}:${floor.height}`;
+            assert.ok(spec.ratios.includes(want),
                 `${model}'s draft floor ${floor.width}:${floor.height} is not one of its documented `
                 + `ratios (${spec.ratios.join(', ')}) — the request would be refused`);
         }

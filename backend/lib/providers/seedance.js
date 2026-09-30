@@ -160,6 +160,8 @@ function resolutionFor(payload) {
 function aspectFor(payload) {
     const declared = String(payload.aspect_ratio || '').trim();
     if (ASPECTS.includes(declared)) return declared;
+    // Chosen on the dialog: the frame follows the picture it is handed.
+    if (declared === 'adaptive') return 'adaptive';
     const m = /^(\d+)\s*[x:]\s*(\d+)$/.exec(String(payload.target_resolution || ''));
     if (!m) return '16:9';
     const r = Number(m[1]) / Number(m[2]);
@@ -314,6 +316,8 @@ function buildVideoRequest(payload) {
         duration: clamped,
     };
     if (Number.isFinite(Number(p.seed)) && Number(p.seed) >= 0) body.seed = Number(p.seed);
+    // MuAPI's own draft switch, sent only when chosen on the dialog.
+    if (typeof p.muapi_draft === 'boolean' && workflow !== 'text-to-video') body.draft = p.muapi_draft;
 
     /*
      * SILENT BY DEFAULT, AND THAT IS A DELIBERATE DEPARTURE FROM THE PROVIDER.

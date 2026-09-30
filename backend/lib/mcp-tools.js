@@ -1369,14 +1369,16 @@ const PRODUCTION_TOOLS = [
         name: 'video_preview',
         handler: handleVideoGen, method: 'GET',
         path: a => `/film/shots/${a.shot_id}/video/preview`
-            + ((q => (q ? `?${q}` : ''))(['tier', 'video', 'video_model', 'use_dialogue_audio']
-                .filter(k => a[k]).map(k => `${k}=${encodeURIComponent(a[k])}`).join('&'))),
+            + ((q => (q ? `?${q}` : ''))(['tier', 'video', 'video_model', 'use_dialogue_audio', 'options']
+                .filter(k => a[k]).map(k => `${k}=${encodeURIComponent(k === 'options' && typeof a[k] === 'object'
+                    ? JSON.stringify(a[k]) : a[k])}`).join('&'))),
         description: 'What a clip for this shot would be asked for, and what it would COST \u2014 free, and nothing is generated. Reports the model, the length, whether the storyboard frame is attached, the reference package the model would receive, and an itemised credit estimate including reference charges and any minimum. Pass `tier` (draft | production | hero) to price the tier you are considering: a draft is 25 credits for five seconds, the cheap way to check blocking before buying the real shot. SPENDS NOTHING.',
         schema: { shot_id: { type: 'string' },
             tier: { type: 'string', enum: ['draft', 'production', 'hero'], description: 'Price and plan this tier. draft = Gen-4 Turbo, 5s, 25 credits — the blocking check. production = H3 768P with the reference package. hero = your choice.' },
             video: { type: 'string', description: 'Preview a different provider for this one clip — the same override video_generate takes.' },
             video_model: { type: 'string', description: 'Preview a different model for this one clip.' },
-            use_dialogue_audio: { type: 'boolean', description: 'Preview sending the shot\'s recorded dialogue as an audio reference (Seedance 2.5 on MuAPI, or seedance2_5 on Runway). The preview says how many lines would go, or why none can.' } },
+            use_dialogue_audio: { type: 'boolean', description: 'Preview sending the shot\'s recorded dialogue as an audio reference (Seedance 2.5 on MuAPI, or seedance2_5 on Runway). The preview says how many lines would go, or why none can.' },
+            options: { type: 'object', description: 'The model\'s own options for this one clip, as an object: duration (seconds, or \'auto\' where the model takes it), ratio, resolution, audio (true/false), last_frame (the id of another shot in this project whose board frame the clip ends on), output_format (Gen-4.5: mp4, prores, hdr10, hlg...), negative_prompt, seed, draft (MuAPI). Which of these a model takes, and their allowed values, is in video_preview\'s `options.controls`, read from the provider\'s own schema; a value outside it is refused by name and nothing is sent. Unset means as the project would have it. Returned as `options`: the controls this model takes, what is chosen, and the shots whose frame it could end on.' } },
         required: ['shot_id'],
     },
     {
@@ -1395,9 +1397,10 @@ const PRODUCTION_TOOLS = [
             video: { type: 'string', description: 'Override the provider for this one clip.' },
             video_model: { type: 'string', description: 'Override the model for this one clip.' },
             use_dialogue_audio: { type: 'boolean', description: 'Send the shot\'s recorded dialogue (its voice files, uploaded with media_upload or generated) as an audio reference, so the performance follows your recording. Seedance 2.5 only: on MuAPI it runs the omni-reference workflow, where the storyboard frame becomes a reference rather than the exact first frame; on Runway use video_model seedance2_5.' },
+            options: { type: 'object', description: 'The model\'s own options for this one clip, as an object: duration (seconds, or \'auto\' where the model takes it), ratio, resolution, audio (true/false), last_frame (the id of another shot in this project whose board frame the clip ends on), output_format (Gen-4.5: mp4, prores, hdr10, hlg...), negative_prompt, seed, draft (MuAPI). Which of these a model takes, and their allowed values, is in video_preview\'s `options.controls`, read from the provider\'s own schema; a value outside it is refused by name and nothing is sent. Unset means as the project would have it.' },
         },
         required: ['shot_id'],
-        bodyKeys: ['video', 'video_model', 'use_dialogue_audio'],
+        bodyKeys: ['video', 'video_model', 'use_dialogue_audio', 'options'],
         probe: { shot_id: '00000000-0000-0000-0000-000000000000' },
     },
     {

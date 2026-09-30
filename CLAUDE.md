@@ -193,6 +193,7 @@ film-engine/
 │   │   ├── image-standard.js     # The house rule: Nano Banana Pro at the project's own resolution — outranks every tier and pin
 │   │   ├── angle-explore.js      # Four angles on one shot, one camera each; pick one and it is the frame
 │   │   ├── generation-override.js # What a director chose for THIS generation, read once
+│   │   ├── model-options.js     # What each video model lets you choose, from the provider's own schema: offered, checked, applied, or said to be absent
 │   │   ├── dry-run.js           # Every capability described from its own builder, nothing sent
 │   │   ├── thumbnails.js        # A 260px card should not cost 1.5MB
 │   │   ├── waveform.js         # What a sound LOOKS like, so a card can be read at a glance
@@ -634,6 +635,7 @@ film-engine/
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
 │       ├── dialogue-audio-reference.test.js # Recorded dialogue to Seedance 2.5: audios_list on MuAPI, referenceAudio on Runway, uploaded first, held to the probed fields
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
+│       ├── video-model-options.test.js # Every video model's options offered from its provider's schema, each reaching the request, refused by name outside it, through the preview and the paid call
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
 │       ├── setup-models.test.js        # A model pinned per capability in Setup: checked against its provider, applied at the one funnel, outranked only by a per-generation choice
@@ -1262,6 +1264,26 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### A Video Model's Own Options, on the Dialog That Spends
+*"Do we know all the options for each model/provider so if we select one these options are available on the modal screen? Example: Seedance 2.5 takes a first and last frame and I can change the video length to up to 30 seconds, resolution quality, screen ratio and HDR."*
+
+The dialog let a director pick a provider and a model and nothing else. Length came from the shot's card, the frame from the project, the sound from the provider's default. And a length chosen per generation reached only the price: `duration_s` set the estimate, and the clip was generated at the card's length anyway.
+
+**The provider's own schema, snapshotted with its date.** `lib/providers/video-model-fields.json` holds Runway's per-model `image_to_video` schema (from its published OpenAPI spec) and the fields MuAPI's Seedance 2.5 endpoints accept (read from a free 422). `lib/model-options.js` turns them into controls: length, frame, resolution, sound, the frame the clip ends on, output format, negative prompt, seed, MuAPI's draft switch. The preview returns them for the model the clip would actually run on (`options`), the dialog draws them, and any change re-reads the preview so the price follows. `readOptions` refuses a value outside the schema by name; the paid call refuses before sending anything. `applyVideoOptions` writes the chosen values onto the built payload, in the preview and the purchase alike, and each adapter sends a field only when its schema has it. Unset builds exactly the request it always did.
+
+**What the schema corrected.** The hand-kept Runway table had drifted from the spec in six places, and the automatic choices followed it:
+- Gen-4.5 listed `672:1584`, which Runway refuses.
+- Gen-4 Turbo and Veo 3.1 were held to 5 or 10 and 5 or 8 seconds. The spec says any 2–10, and 4, 6 or 8.
+- Hailuo 3 was sent pixel ratios; it takes aspect names.
+- Seedance 2.0 was held to 30 seconds, where Runway allows 15.
+- Seedance 2.5 on Runway takes a first and a last frame, 18 ratios and an `audio` switch that defaults ON, and the table said none of that.
+
+Automatic ratios are now the table's priced ratios less any the spec refuses. The spec's full list is used only for a frame somebody chose, so a model priced at 720p is not handed a 4K ratio nobody asked for.
+
+**What the providers do not offer is said, not offered.** MuAPI's Seedance 2.5 has no HDR and no sound switch: `generate_audio`, which the adapter sends, is not among the fields MuAPI accepts, so whether a clip carries Seedance's own sound is MuAPI's default. On MuAPI the resolution is the model picked (480p, 720p, 1080p, 4K). HDR on Runway is an output format of Gen-4.5 (HDR10, HLG, HDR ProRes, EXR).
+
+`video_preview` and `video_generate` take the same `options`. `tests/video-model-options.test.js` is set-based over every model the dialog offers: each option changes the field it names in that provider's request, every automatic Runway ratio and length is one the schema accepts, and the preview and the paid call carry what was chosen.
 
 ### Topaz and Magnific Upscale Too, and a Model Is Chosen in Setup
 *"Work on adding the topaz adapter, but also how do I select which model in the app?"* and *"also can we add magnific as a provider"*.
@@ -6639,6 +6661,7 @@ node --test backend/tests/motion-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
 node --test backend/tests/muapi-upscale.test.js
+node --test backend/tests/video-model-options.test.js
 node --test backend/tests/topaz-upscale.test.js
 node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/setup-models.test.js

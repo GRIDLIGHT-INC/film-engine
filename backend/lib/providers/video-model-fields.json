@@ -1,0 +1,787 @@
+{
+ "checked": "2026-09-30",
+ "muapi": {
+  "absent": [
+   "generate_audio",
+   "hdr",
+   "enable_hdr",
+   "negative_prompt",
+   "last_frame",
+   "first_frame",
+   "fps",
+   "camera_fixed",
+   "watermark"
+  ],
+  "endpoints": {
+   "seedance-2.5-first-last-frame": {
+    "aspect_ratio": {
+     "enum": [
+      "adaptive",
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+     ],
+     "type": "choice"
+    },
+    "draft": {
+     "type": "bool"
+    },
+    "duration": {
+     "type": "int"
+    },
+    "images_list": {
+     "type": "list"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "resolution": {
+     "enum": [
+      "480p",
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "type": "choice"
+    },
+    "seed": {
+     "type": "int"
+    }
+   },
+   "seedance-2.5-image-to-video": {
+    "aspect_ratio": {
+     "enum": [
+      "adaptive",
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+     ],
+     "type": "choice"
+    },
+    "draft": {
+     "type": "bool"
+    },
+    "duration": {
+     "type": "int"
+    },
+    "image_url": {
+     "type": "url"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "resolution": {
+     "enum": [
+      "480p",
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "type": "choice"
+    },
+    "seed": {
+     "type": "int"
+    }
+   },
+   "seedance-2.5-omni-reference": {
+    "aspect_ratio": {
+     "enum": [
+      "adaptive",
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+     ],
+     "type": "choice"
+    },
+    "audios_list": {
+     "type": "list"
+    },
+    "draft": {
+     "type": "bool"
+    },
+    "duration": {
+     "type": "int"
+    },
+    "images_list": {
+     "type": "list"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "resolution": {
+     "enum": [
+      "480p",
+      "720p",
+      "1080p",
+      "4k"
+     ],
+     "type": "choice"
+    },
+    "seed": {
+     "type": "int"
+    },
+    "videos_list": {
+     "type": "list"
+    }
+   },
+   "seedance-2.5-text-to-video": {
+    "aspect_ratio": {
+     "enum": [
+      "adaptive",
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+     ],
+     "type": "choice"
+    },
+    "duration": {
+     "type": "int"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "seed": {
+     "type": "int"
+    }
+   }
+  },
+  "how": "Accepted fields read from a 422 on an all-wrong-types body (free), 2026-09-30. A field in `absent` was sent and not listed, so MuAPI ignores it.",
+  "partial": {
+   "seedance-2.5-text-to-video": "The probe output was cut off after seed; resolution and draft are not recorded for this endpoint."
+  },
+  "source": "https://api.muapi.ai/api/v1"
+ },
+ "runway": {
+  "how": "Read from the published OpenAPI spec, operation POST /v1/image_to_video, one schema per model.",
+  "models": {
+   "gemini_omni_flash": {
+    "duration": {
+     "maximum": 10,
+     "minimum": 3,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 1,
+     "positions": [
+      "first"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "1280:720",
+      "720:1280"
+     ],
+     "type": "string"
+    }
+   },
+   "gemini_omni_flash_1.1": {
+    "duration": {
+     "auto": true,
+     "maximum": 10,
+     "minimum": 3,
+     "type": "string"
+    },
+    "promptImage": {
+     "maxItems": 2,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "640:360",
+      "360:640",
+      "1280:720",
+      "720:1280",
+      "1920:1080",
+      "1080:1920",
+      "3840:2160",
+      "2160:3840"
+     ],
+     "type": "string"
+    }
+   },
+   "gen4.5": {
+    "duration": {
+     "maximum": 10,
+     "minimum": 2,
+     "type": "integer"
+    },
+    "outputFormat": {
+     "enum": [
+      "mp4",
+      "prores",
+      "png_sequence",
+      "hdr10",
+      "hlg",
+      "sdr_rec709_10bit",
+      "hdr_pq_12bit_master",
+      "hdr_prores",
+      "hdr_png_sequence",
+      "hdr_exr_sequence",
+      "hdr_exr_acescg_sequence_1_3",
+      "hdr_exr_acescg_sequence_2_0"
+     ],
+     "type": "string"
+    },
+    "promptImage": {
+     "maxItems": 1,
+     "positions": [
+      "first"
+     ]
+    },
+    "proresProfile": {
+     "enum": [
+      "422",
+      "4444",
+      "422 Proxy",
+      "422 LT",
+      "422 HQ",
+      "4444 XQ"
+     ],
+     "type": "string"
+    },
+    "ratio": {
+     "enum": [
+      "1280:720",
+      "720:1280",
+      "1104:832",
+      "960:960",
+      "832:1104",
+      "1584:672"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "gen4_turbo": {
+    "duration": {
+     "maximum": 10,
+     "minimum": 2,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 1,
+     "positions": [
+      "first"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "1280:720",
+      "720:1280",
+      "1104:832",
+      "832:1104",
+      "960:960",
+      "1584:672"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "grok_imagine_1_5": {
+    "duration": {
+     "maximum": 15,
+     "minimum": 1,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 1,
+     "positions": [
+      "first"
+     ]
+    },
+    "resolution": {
+     "enum": [
+      "480p",
+      "720p",
+      "1080p"
+     ],
+     "type": "string"
+    }
+   },
+   "h3_max": {
+    "duration": {
+     "maximum": 15,
+     "minimum": 5,
+     "type": "integer"
+    },
+    "promptExpansionMode": {
+     "enum": [
+      "disabled",
+      "balanced",
+      "quality"
+     ],
+     "type": "string"
+    },
+    "promptImage": {
+     "maxItems": 2,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "resolution": {
+     "enum": [
+      "480p",
+      "768p"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "hailuo3": {
+    "duration": {
+     "maximum": 15,
+     "minimum": 5,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 9,
+     "positions": []
+    },
+    "ratio": {
+     "enum": [
+      "adaptive",
+      "21:9",
+      "16:9",
+      "4:3",
+      "1:1",
+      "3:4",
+      "9:16"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 3,
+     "type": "array"
+    },
+    "resolution": {
+     "enum": [
+      "768p",
+      "2k",
+      "768P",
+      "2K"
+     ],
+     "type": "string"
+    }
+   },
+   "happyhorse_1_0": {
+    "duration": {
+     "maximum": 15,
+     "minimum": 3,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 1,
+     "positions": [
+      "first"
+     ]
+    },
+    "resolution": {
+     "enum": [
+      "720p",
+      "1080p",
+      "720P",
+      "1080P"
+     ],
+     "type": "string"
+    }
+   },
+   "seedance2": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "auto": true,
+     "maximum": 15,
+     "minimum": 4,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": null,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "992:432",
+      "864:496",
+      "752:560",
+      "640:640",
+      "560:752",
+      "496:864",
+      "1470:630",
+      "1280:720",
+      "1112:834",
+      "960:960",
+      "834:1112",
+      "720:1280",
+      "2206:946",
+      "1920:1080",
+      "1664:1248",
+      "1440:1440",
+      "1248:1664",
+      "1080:1920",
+      "3840:1646",
+      "3840:2160",
+      "3840:2880",
+      "3840:3840",
+      "2880:3840",
+      "2160:3840"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 3,
+     "type": "array"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "seedance2_5": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "auto": true,
+     "maximum": 30,
+     "minimum": 4,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": null,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "992:432",
+      "854:480",
+      "752:560",
+      "640:640",
+      "560:752",
+      "480:854",
+      "1470:630",
+      "1280:720",
+      "1112:834",
+      "960:960",
+      "834:1112",
+      "720:1280",
+      "2206:946",
+      "1920:1080",
+      "1664:1248",
+      "1440:1440",
+      "1248:1664",
+      "1080:1920"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 10,
+     "type": "array"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "seedance2_fast": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "auto": true,
+     "maximum": 15,
+     "minimum": 4,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": null,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "992:432",
+      "864:496",
+      "752:560",
+      "640:640",
+      "560:752",
+      "496:864",
+      "1470:630",
+      "1280:720",
+      "1112:834",
+      "960:960",
+      "834:1112",
+      "720:1280"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 3,
+     "type": "array"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "seedance2_mini": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "auto": true,
+     "maximum": 15,
+     "minimum": 4,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": null,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "992:432",
+      "864:496",
+      "752:560",
+      "640:640",
+      "560:752",
+      "496:864",
+      "1470:630",
+      "1280:720",
+      "1112:834",
+      "960:960",
+      "834:1112",
+      "720:1280"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 3,
+     "type": "array"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "veo3.1": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "enum": [
+      4,
+      6,
+      8
+     ],
+     "type": "number"
+    },
+    "negativePrompt": {
+     "type": "string"
+    },
+    "promptImage": {
+     "maxItems": 2,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "1280:720",
+      "720:1280",
+      "1080:1920",
+      "1920:1080"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "veo3.1_fast": {
+    "audio": {
+     "default": true,
+     "type": "boolean"
+    },
+    "duration": {
+     "enum": [
+      4,
+      6,
+      8
+     ],
+     "type": "number"
+    },
+    "negativePrompt": {
+     "type": "string"
+    },
+    "promptImage": {
+     "maxItems": 2,
+     "positions": [
+      "first",
+      "last"
+     ]
+    },
+    "ratio": {
+     "enum": [
+      "1280:720",
+      "720:1280",
+      "1080:1920",
+      "1920:1080"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "maximum": 4294967295,
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "wan3": {
+    "audio": {
+     "type": "boolean"
+    },
+    "duration": {
+     "maximum": 30,
+     "minimum": 2,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 10,
+     "positions": []
+    },
+    "ratio": {
+     "enum": [
+      "832:480",
+      "720:544",
+      "624:624",
+      "544:720",
+      "480:832",
+      "1280:720",
+      "1104:832",
+      "960:960",
+      "832:1104",
+      "720:1280",
+      "1920:1080",
+      "1648:1248",
+      "1440:1440",
+      "1248:1648",
+      "1080:1920",
+      "auto_480p",
+      "auto_720p",
+      "auto_1080p"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 5,
+     "type": "array"
+    },
+    "referenceVideos": {
+     "maxItems": 5,
+     "type": "array"
+    }
+   },
+   "wan3_prime": {
+    "audio": {
+     "type": "boolean"
+    },
+    "duration": {
+     "maximum": 30,
+     "minimum": 2,
+     "type": "integer"
+    },
+    "promptImage": {
+     "maxItems": 10,
+     "positions": []
+    },
+    "ratio": {
+     "enum": [
+      "832:480",
+      "720:544",
+      "624:624",
+      "544:720",
+      "480:832",
+      "1280:720",
+      "1104:832",
+      "960:960",
+      "832:1104",
+      "720:1280",
+      "1920:1080",
+      "1648:1248",
+      "1440:1440",
+      "1248:1648",
+      "1080:1920",
+      "auto_480p",
+      "auto_720p",
+      "auto_1080p"
+     ],
+     "type": "string"
+    },
+    "referenceAudio": {
+     "maxItems": 5,
+     "type": "array"
+    },
+    "referenceVideos": {
+     "maxItems": 5,
+     "type": "array"
+    }
+   }
+  },
+  "source": "https://docs.dev.runwayml.com/openapi.json"
+ }
+}

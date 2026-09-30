@@ -75,8 +75,9 @@ test('every video adapter says what frame it will deliver: the largest it offers
 test('Runway uses a model\'s 1080p ratio when the project asks for 1080p, and its best when asked for more', () => {
     const at = (model, w, h) => runway.buildVideoRequest({ model, width: w, height: h, prompt: 'x', init_image: 'https://example.com/k.png' }).body.ratio;
     // The 1080-capable models: every one whose ratio list carries 1920:1080.
+    // (Hailuo 3 is sized by its resolution tier and takes aspect names, so it has none.)
     const capable = Object.entries(runway.RUNWAY_VIDEO_MODELS).filter(([, m]) => (m.ratios || []).includes('1920:1080')).map(([id]) => id);
-    assert.ok(capable.length >= 3, `only ${capable}`);
+    assert.ok(capable.length >= 2, `only ${capable}`);
     for (const m of capable) {
         assert.equal(at(m, 1920, 1080), '1920:1080', `${m} asked 1080p was sent a smaller ratio`);
         assert.equal(at(m, 3840, 2160), '1920:1080', `${m} asked 4K did not get its best`);

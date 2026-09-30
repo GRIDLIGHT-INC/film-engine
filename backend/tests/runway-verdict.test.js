@@ -184,10 +184,11 @@ const RECOMMENDATIONS = [
         probe() {
             // BEHAVIOURAL: two models with different documented windows must
             // clamp the same request differently, or the table is decoration.
+            // Runway's schema: gen4.5 takes 2-10, veo3.1 only 4, 6 or 8.
             const gen45 = build(blockedShotPayload({ model: 'gen4.5', duration_s: 3 })).body;
-            const turbo = build(blockedShotPayload({ model: 'gen4_turbo', duration_s: 3 })).body;
-            if (gen45.duration === turbo.duration) {
-                return `gen4.5 allows 2-10 and gen4_turbo only 5 or 10, but 3s became `
+            const veo31 = build(blockedShotPayload({ model: 'veo3.1', duration_s: 3 })).body;
+            if (gen45.duration === veo31.duration) {
+                return `gen4.5 allows 2-10 and veo3.1 only 4, 6 or 8, but 3s became `
                     + `${gen45.duration}s on both — one policy is being applied to every model`;
             }
             // And a ratio a model does not document must not be sent to it.

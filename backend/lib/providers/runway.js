@@ -107,11 +107,11 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
         deprecatedAlias: 'aleph2_alpha',
         status: 'active', source: RUNWAY_VIDEO_SOURCE,
     },
-    'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '672:1584', '960:960'], creditsPerSecond: 12, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
-    gen4_turbo: { endpoint: 'image_to_video', duration: { min: 5, max: 10, allowed: [5, 10] }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
-    'veo3.1': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
-    'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 5, max: 8, allowed: [5, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
-    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    'gen4.5': { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 12, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    gen4_turbo: { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1': { endpoint: 'image_to_video', duration: { min: 4, max: 8, allowed: [4, 6, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 4, max: 8, allowed: [4, 6, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
+    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 3, max: 15 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
 
     /*
      * MiniMax H3. The reference economics are the reason it is the production
@@ -121,7 +121,9 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
      */
     hailuo3: {
         endpoint: 'image_to_video', duration: { min: 5, max: 15 },
-        ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'],
+        // Aspect NAMES, not pixel sizes: Runway's schema for Hailuo 3 takes
+        // these (and `adaptive`), and refuses 1280:720.
+        ratios: ['16:9', '9:16', '21:9', '4:3', '1:1', '3:4'],
         creditsPerSecond: 10,
         resolutions: { '768P': { creditsPerSecond: 10 }, '2K': { creditsPerSecond: 15 } },
         defaultResolution: '768P',
@@ -150,12 +152,43 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
         minimumCredits: 80, status: 'active', source: RUNWAY_VIDEO_SOURCE,
     },
 
-    seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 30 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
-    gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 5, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
+    seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 3, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
 });
 const KNOWN_VIDEO_MODELS = new Set(Object.keys(RUNWAY_VIDEO_MODELS));
+
+/*
+ * RUNWAY'S OWN SCHEMA, PER MODEL, from its published OpenAPI spec (snapshotted
+ * with its date in video-model-fields.json). The ratios and lengths below were
+ * typed by hand and had drifted from it: a Gen-4.5 ratio Runway refuses
+ * (672:1584), Seedance 2.0 held to 30s where Runway allows 15, Veo 3.1 to 5 or
+ * 8 where it takes 4, 6 or 8, and Hailuo 3 sent pixel ratios where it takes
+ * aspect names. Where the spec names a model it is the authority; the table
+ * keeps what the spec does not carry, which is the price.
+ */
+const RUNWAY_SPEC = (require('./video-model-fields.json').runway || {}).models || {};
+function specOf(model) { return RUNWAY_SPEC[model] || null; }
+/**
+ * The ratios picked AUTOMATICALLY for this model: the priced table's, less any
+ * the spec refuses. Not the spec's whole list: a model priced at its 720p rate
+ * must not be handed a 4K ratio nobody chose. A model whose table holds no
+ * ratio the spec takes (Hailuo 3 takes aspect names) falls to the spec's own.
+ * A ratio CHOSEN on the dialog is checked against the full spec separately.
+ */
+function ratiosOf(model) {
+    const spec = specOf(model);
+    const e = spec && spec.ratio && Array.isArray(spec.ratio.enum)
+        ? spec.ratio.enum.filter(r => /^\d+:\d+$/.test(r)) : null;
+    const policy = RUNWAY_VIDEO_MODELS[model];
+    const table = (policy && policy.ratios && policy.ratios.length) ? policy.ratios : null;
+    if (e && e.length) {
+        const kept = table ? table.filter(r => e.includes(r)) : [];
+        return kept.length ? kept : e;
+    }
+    return table;
+}
 const KNOWN_IMAGE_MODELS = new Set(['gen4_image', 'gen4_image_turbo', 'gemini_2.5_flash']);
 
 function pickModel(requested, known, fallback) {
@@ -266,6 +299,14 @@ function missingKey() {
 }
 
 /** Parse "1280:720" into a numeric aspect. */
+/** A ratio chosen on the dialog, only if this model's own schema takes it. */
+function explicitRatio(value, model) {
+    if (!value) return null;
+    const spec = specOf(model);
+    const e = spec && spec.ratio && spec.ratio.enum;
+    return Array.isArray(e) && e.includes(String(value)) ? String(value) : null;
+}
+
 function ratioAspect(ratio) {
     const [w, h] = String(ratio).split(':').map(Number);
     return h ? w / h : 1;
@@ -280,7 +321,7 @@ function pickRatio(width, height, mode, model) {
     const policy = RUNWAY_VIDEO_MODELS[model];
     const allowed = mode === 'text_to_video'
         ? VIDEO_RATIOS.text_to_video
-        : ((policy && policy.ratios) || VIDEO_RATIOS.image_to_video);
+        : (ratiosOf(model) || (policy && policy.ratios) || VIDEO_RATIOS.image_to_video);
     const w = Number(width);
     const h = Number(height);
     if (!w || !h || w <= 0 || h <= 0) return allowed[0];
@@ -315,10 +356,20 @@ function deliverableFrame(payload) {
         if (Number(p.width) > 0 && Number(p.height) > 0) return { width: Number(p.width), height: Number(p.height) };
         return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1280, height: 720 };
     })();
-    const ratio = pickRatio(asked.width, asked.height, 'image_to_video', model);
-    const [width, height] = String(ratio).split(':').map(Number);
+    const explicit = explicitRatio(p.ratio, model);
+    const ratio = explicit || pickRatio(asked.width, asked.height, 'image_to_video', model);
+    const [rw, rh] = String(ratio).split(':').map(Number);
+    /*
+     * A model that takes an ASPECT NAME (Hailuo 3: 16:9, 4:3...) is sized by its
+     * resolution tier, not by the ratio: 16:9 is a shape, not a 16x9 frame.
+     */
+    if (rw < 100 && rh < 100) {
+        return { width: asked.width, height: asked.height, ratio, model, downgraded: false,
+            why: `Runway sizes ${model} by its resolution tier; the ratio (${ratio}) is only the shape.` };
+    }
+    const [width, height] = [rw, rh];
     const downgraded = Math.max(width, height) < Math.max(asked.width, asked.height);
-    const offered = ((RUNWAY_VIDEO_MODELS[model] || {}).ratios || VIDEO_RATIOS.image_to_video).join(', ');
+    const offered = (ratiosOf(model) || VIDEO_RATIOS.image_to_video).join(', ');
     return { width, height, ratio, model, downgraded,
         why: downgraded ? `Runway ${model} renders at most ${ratio} for this shape (it offers ${offered}); asked ${asked.width}x${asked.height}.` : null };
 }
@@ -334,6 +385,14 @@ function durationForModel(durationS, model) {
     const policy = RUNWAY_VIDEO_MODELS[model] || RUNWAY_VIDEO_MODELS['gen4.5'];
     const raw = Number(durationS);
     const wanted = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DURATION_DEFAULT;
+    const spec = specOf(model);
+    const d = spec && spec.duration;
+    if (d && Array.isArray(d.enum) && d.enum.length) {
+        return d.enum.reduce((best, n) => Math.abs(n - wanted) < Math.abs(best - wanted) ? n : best);
+    }
+    if (d && d.minimum !== undefined && d.maximum !== undefined) {
+        return Math.min(d.maximum, Math.max(d.minimum, wanted));
+    }
     if (Array.isArray(policy.duration.allowed)) {
         return policy.duration.allowed.reduce((best, n) => Math.abs(n - wanted) < Math.abs(best - wanted) ? n : best);
     }
@@ -578,9 +637,26 @@ function buildVideoRequest(payload) {
             // and the pace, which this adapter's own builder does not.
             || p.motion_prompt
             || ((p.motion || p.camera_control) ? buildRunwayMotionPrompt(p) : (p.promptText || p.prompt || '')),
-        ratio: pickRatio(p.width, p.height, mode, model),
+        ratio: (mode === 'image_to_video' && explicitRatio(p.ratio, model)) || pickRatio(p.width, p.height, mode, model),
         duration: durationForModel(p.duration_s !== undefined ? p.duration_s : p.duration, model),
     };
+    /*
+     * WHAT THE DIRECTOR CHOSE ON THE DIALOG, and only where this model's own
+     * schema takes it (lib/model-options.js offers exactly these). Each is
+     * absent from the payload unless chosen, so an ordinary generation builds
+     * byte-identically.
+     */
+    const spec = specOf(model) || {};
+    if (p.duration_auto && spec.duration && spec.duration.auto) body.duration = 'auto';
+    if (p.resolution && spec.resolution && Array.isArray(spec.resolution.enum)) {
+        const hit = spec.resolution.enum.find(r => String(r).toLowerCase() === String(p.resolution).toLowerCase());
+        if (hit) body.resolution = hit;
+    }
+    if (typeof p.audio === 'boolean' && spec.audio) body.audio = p.audio;
+    if (p.output_format && spec.outputFormat && (spec.outputFormat.enum || []).includes(p.output_format)) {
+        body.outputFormat = p.output_format;
+    }
+    if (p.video_negative_prompt && spec.negativePrompt) body.negativePrompt = String(p.video_negative_prompt).slice(0, 1000);
     /*
      * An inline image has a ceiling: Runway documents 5MB ENCODED for a data
      * URI. Above it the documented path is the ephemeral upload endpoint

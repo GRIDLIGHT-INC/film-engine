@@ -138,6 +138,64 @@ function providerConfigFor_(ctx) {
     catch (_) { return {}; }
 }
 
+/*
+ * WHAT A DIRECTOR CHOSE FOR THIS CLIP'S MODEL: length, frame, resolution,
+ * sound, the frame it ends on, output format, seed. The options a model takes
+ * come from lib/model-options.js (the provider's own schema, snapshotted); this
+ * reads them, refuses by name what the model does not take, resolves "Ends on"
+ * to that shot's own board frame, and writes them onto the built payload -- in
+ * the preview and in the purchase alike, so the dialog cannot show one request
+ * and send another.
+ *
+ * It exists because a length chosen for one generation used to reach ONLY the
+ * price estimate: `duration_s` in the body set the number under the button and
+ * the clip was generated at the scene card's length anyway.
+ */
+function videoOptionsFor(ctx, providerId, model, raw) {
+    const mo = require('../lib/model-options');
+    const read = mo.readOptions(providerId, model, raw);
+    let lastFrameUri = null, lastFrameShot = null;
+    const want = read.values.last_frame;
+    if (want) {
+        delete read.values.last_frame;
+        const row = UUID_RE.test(String(want)) ? db.prepare(`SELECT s.id, s.shot_code, sc.project_id FROM film_shots s
+            JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(want) : null;
+        if (!row || row.project_id !== ctx.scene.project_id) {
+            read.refused.push('last_frame: that shot is not in this project');
+        } else {
+            let other = null;
+            try { other = loadShotContext(row.id); } catch (_) { other = null; }
+            if (other && other.initImage) { lastFrameUri = other.initImage; lastFrameShot = row.shot_code; }
+            else read.refused.push(`last_frame: ${row.shot_code} has no storyboard frame yet`);
+        }
+    }
+    return { ...read, lastFrameUri, lastFrameShot, spec: mo.optionsFor(providerId, model) };
+}
+
+/**
+ * Write the chosen options onto the payload, then ask the adapter again what
+ * frame it will deliver: a chosen ratio or resolution changes it, and the
+ * estimate is priced from the delivered frame.
+ */
+function applyChosen(payload, provider, chosen) {
+    require('../lib/model-options').applyVideoOptions(payload, chosen.values, { lastFrameUri: chosen.lastFrameUri });
+    if (chosen.values.ratio || chosen.values.resolution) {
+        payload.delivery = require('../lib/delivery-quality').deliveryDecision(provider, payload);
+    }
+    return payload;
+}
+
+/** Shots in this project with a board frame, for the "Ends on" picker. */
+function framePickerFor(projectId, exceptShotId) {
+    try {
+        return db.prepare(`SELECT s.id, s.shot_code FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id
+            WHERE sc.project_id = ? AND s.id <> ? AND EXISTS (SELECT 1 FROM film_assets a WHERE a.shot_id = s.id
+              AND a.asset_type IN ('keyframe', 'storyboard'))
+            ORDER BY sc.scene_number, s.sort_order, s.shot_code`).all(projectId, exceptShotId)
+            .map(r => ({ id: r.id, label: r.shot_code }));
+    } catch (_) { return []; }
+}
+
 async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
     const { estimateVideoCost } = require('../lib/video-cost');
@@ -167,6 +225,11 @@ async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
     const provider = resolve('video',
         spendContext({ id: ctx.scene && ctx.scene.project_id }, null, null, previewOverride));
 
+    const optModel = (tierChoice && tierChoice.model) || payload.model || (provider && provider.defaultModel) || null;
+    const chosenOptions = videoOptionsFor(ctx, provider && provider.id, optModel,
+        require('../lib/model-options').optionsParam(query));
+    applyChosen(payload, provider, chosenOptions);
+
     /*
      * WHAT THE ADAPTER WILL SEND, not what the payload asked for.
      *
@@ -193,9 +256,10 @@ async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
     const refs = Array.isArray(payload.video_references) ? payload.video_references : [];
     const estimate = estimateVideoCost({
         model: chosen.model || payload.model,
-        resolution: chosen.resolution,
+        resolution: chosenOptions.values.resolution || chosen.resolution,
         frame: payload.delivery && payload.delivery.delivered,
-        durationSeconds: chosen.durationSeconds || payload.duration_s,
+        durationSeconds: chosenOptions.values.duration > 0 ? chosenOptions.values.duration
+            : (chosen.durationSeconds || payload.duration_s),
         imageReferences: refs.filter(r => (r.sourceType || 'image') === 'image').length,
         videoReferenceSeconds: refs.filter(r => r.sourceType === 'video')
             .reduce((n, r) => n + (Number(r.durationSeconds) || 0), 0),
@@ -246,6 +310,7 @@ async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
         warnings.push(`This generator cannot deliver ${delivery.asked}; it will render its best, ${delivery.delivered}. `
             + 'The upscale pass (post) brings it to the delivery size, or pick a generator that reaches it.');
     }
+    for (const r of chosenOptions.refused) warnings.push(`Option not sent — ${r}`);
     if (unverified) {
         warnings.push('This provider cannot report what it will actually send, so the model and '
             + 'length below are what is being ASKED for rather than what will run — unverified.');
@@ -322,6 +387,18 @@ async function previewVideo(res, shotId, previewOverride, tierChoice, query) {
             } catch (_) { return {}; }
         }()),
         seed: payload.seed === undefined ? null : payload.seed,
+        /*
+         * The options THIS model takes, with what is chosen. The dialog draws
+         * them from here, so it offers exactly what this request can carry.
+         */
+        options: chosenOptions.spec ? {
+            ...chosenOptions.spec,
+            values: chosenOptions.values,
+            last_frame: chosenOptions.lastFrameShot ? { shot_code: chosenOptions.lastFrameShot } : null,
+            refused: chosenOptions.refused,
+            frames: framePickerFor(ctx.scene.project_id, shotId),
+        } : { provider: provider && provider.id, model: optModel, controls: [],
+            notes: [`${(provider && provider.id) || 'This provider'} declares no per-generation options here yet.`] },
         warnings,
         meta: meta || null,
         note: 'Nothing was generated and nothing was spent.',
@@ -429,6 +506,17 @@ async function generateVideo(req, res, shotId) {
         model: chosen.model,
     };
     const payload = buildCapabilityPayload('video', ctx).payload;
+    const chosenOptions = videoOptionsFor(ctx, videoProvider && videoProvider.id,
+        chosen.model || payload.model || (videoProvider && videoProvider.defaultModel) || null,
+        require('../lib/model-options').optionsParam(req.body));
+    /*
+     * Refused BEFORE spending, by name: an option the model does not take is a
+     * choice the director believes was honoured and would not be.
+     */
+    if (chosenOptions.refused.length) {
+        return json(res, 400, { error: `Not sent: ${chosenOptions.refused.join('; ')}`, refused: chosenOptions.refused });
+    }
+    applyChosen(payload, videoProvider, chosenOptions);
     /*
      * An edited prompt replaces the composed one WHOLE — the rule an image
      * override already follows. The production graph's shot drawer shows the
@@ -441,9 +529,10 @@ async function generateVideo(req, res, shotId) {
     const videoRefs = Array.isArray(payload.video_references) ? payload.video_references : [];
     const estimate = require('../lib/video-cost').estimateVideoCost({
         model: chosen.model || payload.model,
-        resolution: chosen.resolution,
+        resolution: chosenOptions.values.resolution || chosen.resolution,
         frame: payload.delivery && payload.delivery.delivered,
-        durationSeconds: chosen.durationSeconds || payload.duration_s,
+        durationSeconds: chosenOptions.values.duration > 0 ? chosenOptions.values.duration
+            : (chosen.durationSeconds || payload.duration_s),
         imageReferences: videoRefs.filter(r => (r.sourceType || 'image') === 'image').length,
     });
 
@@ -500,7 +589,10 @@ async function generateVideo(req, res, shotId) {
         // the seed rather than reconstructing them.
         db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?')
             .run(JSON.stringify({ prompt: payload.prompt, seed: payload.seed === undefined ? null : payload.seed,
-                edited_prompt: !!override }), assetId);
+                edited_prompt: !!override,
+                ...(Object.keys(chosenOptions.values).length || chosenOptions.lastFrameShot
+                    ? { options: { ...chosenOptions.values,
+                        ...(chosenOptions.lastFrameShot ? { last_frame: chosenOptions.lastFrameShot } : {}) } } : {}) }), assetId);
         // The newest clip plays, as the newest frame does — a new generation
         // clears the frame pointer for the same reason.
         db.prepare('UPDATE film_shots SET selected_video_asset_id = ? WHERE id = ?').run(assetId, shotId);
@@ -559,6 +651,13 @@ async function generateVideoStream(req, res, shotId) {
     ctx.consistency = consistencyContext;
     ctx.overrides = { seed: consistencyContext.locked_seed };
     const payload = buildCapabilityPayload('video', ctx).payload;
+    const chosenOptions = videoOptionsFor(ctx, videoProvider && videoProvider.id,
+        payload.model || (videoProvider && videoProvider.defaultModel) || null,
+        require('../lib/model-options').optionsParam(req.body));
+    if (chosenOptions.refused.length) {
+        return json(res, 400, { error: `Not sent: ${chosenOptions.refused.join('; ')}`, refused: chosenOptions.refused });
+    }
+    applyChosen(payload, videoProvider, chosenOptions);
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache',

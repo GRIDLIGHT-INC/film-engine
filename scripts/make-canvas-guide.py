@@ -132,8 +132,8 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '20. Flows on the canvas', '21. The Score page', '22. Your own instruments',
          '23. An edit made in Premiere', '24. The final film and its sound', '25. Sending the film to Premiere',
          '26. Delivery quality: the resolution you asked for', '27. Upscaling a clip', '28. Your recorded dialogue in a clip',
-         '29. Backups', '30. Setup: providers, models and keys', '31. Changing a project\'s stage',
-         '32. Good to know'])
+         '29. Backups', '30. Setup: providers, models and keys', '31. A video model\'s own options',
+         '32. Changing a project\'s stage', '33. Good to know'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -769,12 +769,34 @@ bullets([
 ])
 
 # ── 31 ────────────────────────────────────────────────────────────────────
-doc.add_heading('31. Changing a project\'s stage', level=1)
+doc.add_heading('31. A video model\'s own options', level=1)
+p('When you generate a clip, the confirmation shows the options of the model it will run on, for this clip only. '
+  'Change the generator or the model and the options change with it; change an option and the price is worked out again. '
+  'Anything left on Default is what the project would have used: the shot\'s own length, the frame closest to the project\'s.')
+table(['Option', 'What it does', 'Where'], [
+    ['Length', 'Seconds of footage. Seedance 2.5 runs 4–30s; Gen-4.5 2–10s; Veo 3.1 4, 6 or 8s', 'every model'],
+    ['Frame', 'The exact size and shape, from the provider\'s own list (Runway Seedance 2.5 has 18)', 'every model'],
+    ['Resolution', 'The quality tier (Hailuo 3: 768p or 2K). On MuAPI Seedance the model you pick IS the resolution', 'some models'],
+    ['Generate sound', 'The model\'s own soundtrack. On by default at Runway; Film Engine scores the film separately', 'Seedance, Veo on Runway'],
+    ['Ends on', 'Another shot\'s board frame, which the clip arrives at. Your board frame is always the first', 'Seedance, Veo'],
+    ['Output format', 'MP4, ProRes, and the HDR formats: HDR10, HLG, HDR ProRes, EXR', 'Gen-4.5 on Runway'],
+    ['Avoid', 'What should not appear', 'Veo 3.1'],
+    ['Seed', 'Repeat a take as closely as the model allows', 'most models'],
+], widths=[Inches(1.3), Inches(4.0), Inches(1.4)])
+bullets([
+    ('Every option comes from the provider itself: ', 'Runway\'s published specification and MuAPI\'s own answers, dated in the dialog. '
+     'A value a model does not take is refused by name before anything is spent.'),
+    ('HDR: ', 'MuAPI offers none for Seedance 2.5. On Runway it is an output format of Gen-4.5.'),
+    ('Sound on MuAPI: ', 'MuAPI takes no sound switch for Seedance 2.5, so it decides whether the clip has Seedance\'s own sound.'),
+])
+
+# ── 32 ────────────────────────────────────────────────────────────────────
+doc.add_heading('32. Changing a project\'s stage', level=1)
 p('On the project list, click the stage badge on a project (Concept, Script, … Complete). It becomes a dropdown; choose the '
   'stage and it is saved straight away, without opening the project. Settings → Project Settings has the same choice.')
 
-# ── 32 ────────────────────────────────────────────────────────────────────
-doc.add_heading('32. Good to know', level=1)
+# ── 33 ────────────────────────────────────────────────────────────────────
+doc.add_heading('33. Good to know', level=1)
 bullets([
     ('Nothing is overwritten. ', 'Every generation is a new version; you choose which one plays.'),
     ('Red means do it now; amber means not yet. ', '"waiting" work is built on something that is itself being redone.'),

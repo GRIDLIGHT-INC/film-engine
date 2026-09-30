@@ -274,6 +274,11 @@ references, make the picture, show it for approval, upload it. It becomes the
 shot's current frame and the one it replaces is kept as a recoverable version.
 Then `video_preview` shows exactly what a clip would cost before you buy one, and
 `video_generate` buys it — one clip for one shot, from its selected frame.
+The preview's options.controls are what that model lets you choose, read from
+the provider's own schema: length, frame, resolution, sound, the shot whose
+frame the clip ends on (last_frame), output format (Gen-4.5's HDR formats),
+seed. Pass the same options object to both tools; a value the model does not
+take is refused by name and nothing is sent.
 
 On a project whose video runs on the Gridlight gateway, read
 `gridlight_video_capabilities` first. It is free and reads the gateway's own
