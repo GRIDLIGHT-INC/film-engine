@@ -220,6 +220,14 @@ function validateSceneCard(card) {
             if (card.lighting.notes !== undefined && typeof card.lighting.notes !== 'string') {
                 errors.push('lighting.notes must be a string');
             }
+            // A technique and a key side, from lib/lighting's own vocabulary.
+            const { TECHNIQUES, KEY_SIDES } = require('./lighting');
+            if (card.lighting.technique && !TECHNIQUES[card.lighting.technique]) {
+                errors.push(`lighting.technique must be one of: ${Object.keys(TECHNIQUES).join(', ')}`);
+            }
+            if (card.lighting.key_side && !KEY_SIDES.includes(card.lighting.key_side)) {
+                errors.push(`lighting.key_side must be one of: ${KEY_SIDES.join(', ')}`);
+            }
         }
     }
 

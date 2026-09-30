@@ -1331,6 +1331,21 @@ function locationFields(body, locId) {
             values.push(String(body[field]).slice(0, maxLen));
         }
     }
+    // A lighting technique and key side from lib/lighting's own vocabulary;
+    // an unknown one is refused by name rather than stored and ignored.
+    if (body.lighting_technique !== undefined) {
+        const { TECHNIQUES } = require('../lib/lighting');
+        const v = body.lighting_technique ? String(body.lighting_technique) : null;
+        if (v && !TECHNIQUES[v]) return errorOf(`lighting_technique must be one of: ${Object.keys(TECHNIQUES).join(', ')}`);
+        fields.push('lighting_technique = ?');
+        values.push(v);
+    }
+    if (body.lighting_key_side !== undefined) {
+        const v = body.lighting_key_side ? String(body.lighting_key_side) : null;
+        if (v && !['left', 'right'].includes(v)) return errorOf('lighting_key_side must be left or right');
+        fields.push('lighting_key_side = ?');
+        values.push(v);
+    }
     if (body.reference_images !== undefined) {
         fields.push('reference_images = ?');
         values.push(JSON.stringify(body.reference_images));

@@ -300,6 +300,10 @@ function cardVocabulary(req, res) {
         shot_types: VALID_SHOT_TYPES,
         camera_moves: VALID_CAMERA_MOVES,
         lighting: VALID_LIGHTING,
+        // Techniques (a rig: where the lights stand) and the key's side, served
+        // so a picker offers exactly what the card validator accepts.
+        lighting_techniques: require('../lib/lighting').vocabulary().techniques.map(t => ({ id: t.id, label: t.label })),
+        lighting_key_sides: require('../lib/lighting').KEY_SIDES,
         gen_modes: VALID_GEN_MODES,
         sensors: VALID_SENSORS,
     }));

@@ -16382,6 +16382,77 @@ THREE.GLTFLoader = GLTFLoader;
             </div>`;
     }
 
+    /*
+     * LIGHT: a technique (where the lights stand) and a mood (colour and
+     * quantity), staged for THIS shot. The panel says where the lighting now
+     * comes from — staged here, the shot's card, the location, or nothing —
+     * because a shot that says nothing is lit by its location's choice.
+     */
+    // The techniques lib/lighting.js declares, in its order (held equal by tests/lighting.test.js):
+    // the location sheet renders before any vocabulary request could return.
+    const LIGHTING_TECHNIQUE_IDS = Object.freeze(['three-point', 'rembrandt', 'loop', 'butterfly', 'clamshell', 'split', 'broad', 'short', 'backlight', 'silhouette', 'top-light', 'under-light', 'window-motivated', 'practical-motivated', 'high-key', 'low-key', 'chiaroscuro']);
+    const PV_LIGHT = { vocab: null };
+    async function worldLightVocab() {
+        if (PV_LIGHT.vocab) return PV_LIGHT.vocab;
+        try { PV_LIGHT.vocab = await api('/card-vocabulary'); } catch (_) { PV_LIGHT.vocab = { lighting: [], lighting_techniques: [] }; }
+        if (typeof worldConsoleRender === 'function' && state.currentPage === 'previs') worldConsoleRender();
+        return PV_LIGHT.vocab;
+    }
+    function worldLightHtml() {
+        const v = PV_LIGHT.vocab;
+        if (!v) { worldLightVocab(); return '<div class="we-panel"><p class="we-hint">Loading lighting…</p></div>'; }
+        const lit = (WORLD.blocking && WORLD.blocking.lighting) || {};
+        const src = lit.sources || {};
+        const from = id => src[id] ? ` <span class="we-live">from the ${src[id] === 'previs' ? 'Previs stage' : src[id]}</span>` : '';
+        const chip = (fn, label, on, title) =>
+            `<button class="we-shotchip${on ? ' active' : ''}" onclick="${fn}" title="${esc(title || label)}">${esc(label)}</button>`;
+        const tech = (v.lighting_techniques || []).map(t =>
+            chip(`worldLightSet({ technique: ${lit.technique === t.id ? 'null' : `'${t.id}'`} })`, t.label, lit.technique === t.id)).join('');
+        const moods = (v.lighting || []).map(m =>
+            chip(`worldLightSet({ type: ${lit.type === m ? 'null' : `'${m}'`} })`, m.replace(/-/g, ' '), lit.type === m)).join('');
+        const where = lit.location ? esc(lit.location.name) : 'this location';
+        return `
+            <div class="we-panel we-lightpanel">
+              <div class="we-label">LIGHTING <span class="we-live">${lit.technique || lit.type ? '' : 'not set'}</span></div>
+              <div class="we-opgroup">TECHNIQUE${from('technique')}</div>
+              <div class="we-shotchips">${tech}</div>
+              <div class="we-opgroup">KEY LIGHT FROM${from('key_side')}</div>
+              <div class="we-shotchips">
+                ${chip("worldLightSet({ key_side: 'left' })", 'Camera left', lit.key_side === 'left')}
+                ${chip("worldLightSet({ key_side: 'right' })", 'Camera right', lit.key_side !== 'left')}</div>
+              <div class="we-opgroup">MOOD${from('type')}</div>
+              <div class="we-shotchips">${moods}</div>
+              ${lit.notes ? `<p class="we-hint">Note${from('notes')}: ${esc(lit.notes)}</p>` : ''}
+              <div class="we-shotchips">
+                ${chip(`worldLightShow()`, WORLD.showLights === false ? 'Show lights in Look' : 'Lights on in Look', WORLD.showLights !== false)}
+                <button class="we-btn" onclick="worldLightSet(null)" title="Stop staging lighting here: the shot's card, else ${where}, decides">Clear staged</button>
+              </div>
+              <p class="we-hint">Staged here for this shot; <b>Apply</b> writes it to the shot, and the board frame is generated with it.
+              A shot with no lighting of its own takes ${where}'s; the film's general look is the mood board's style.
+              Lights are set from the saved camera, so they stay put while you walk.</p>
+            </div>`;
+    }
+    async function worldLightSet(change) {
+        if (!WORLD.shotId) return;
+        const lit = (WORLD.blocking && WORLD.blocking.lighting) || {};
+        let next = null;
+        if (change) {
+            next = { technique: lit.technique || undefined, type: lit.type || undefined,
+                     key_side: lit.key_side || undefined, notes: (lit.sources && lit.sources.notes === 'previs') ? lit.notes : undefined };
+            for (const [k, val] of Object.entries(change)) { if (val == null) delete next[k]; else next[k] = val; }
+            for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+        }
+        try {
+            await api(`/shots/${WORLD.shotId}/previs/director`, { method: 'PUT',
+                body: JSON.stringify({ lighting: next }) });
+        } catch (err) { return setStatus('Lighting not saved: ' + err.message, true); }
+        await worldRefreshBlocking();
+        worldMeshRenderOnce();
+    }
+    function worldLightShow() { WORLD.showLights = WORLD.showLights === false; worldConsoleRender(); worldMeshRenderOnce(); worldPaintFrame(); }
+    window.worldLightSet = worldLightSet;
+    window.worldLightShow = worldLightShow;
+
     function worldOperateHtml() {
         /*
          * THE AXES ALWAYS RENDER. Hiding them until a camera is saved would
@@ -16707,6 +16778,7 @@ THREE.GLTFLoader = GLTFLoader;
      */
     const PV_TABS = Object.freeze([
         { id: 'camera',  label: 'Camera' },
+        { id: 'light',   label: 'Light' },
         { id: 'direct',  label: 'Direct' },
         { id: 'explore', label: 'Explore' },
         { id: 'scene',   label: 'Scene' },
@@ -16870,6 +16942,7 @@ THREE.GLTFLoader = GLTFLoader;
             <div class="pv-side">
               <div class="pv-tabs">${tabs}</div>
               <div class="pv-tabbody">
+                ${pane('light', worldLightHtml())}
                 ${pane('camera', `
                   ${worldShotHtml()}
                   <div class="we-panel">
@@ -17283,7 +17356,8 @@ THREE.GLTFLoader = GLTFLoader;
             MESHLOOK.scene.background = new T.Color(0x14161a);
             // A soft sky and one sun, so a scene exported without lights still
             // reads; Blender's own lights, when exported, add to these.
-            MESHLOOK.scene.add(new T.HemisphereLight(0xffffff, 0x3a3a3a, 0.9));
+            MESHLOOK.hemi = new T.HemisphereLight(0xffffff, 0x3a3a3a, 0.9);
+            MESHLOOK.scene.add(MESHLOOK.hemi);
             const sun = new T.DirectionalLight(0xffffff, 0.8);
             sun.position.set(5, 10, 7);
             MESHLOOK.scene.add(sun);
@@ -17341,7 +17415,71 @@ THREE.GLTFLoader = GLTFLoader;
         } else {
             worldAimCamera(cam, p, window.THREE);
         }
+        meshLookRig();
         MESHLOOK.renderer.render(MESHLOOK.scene, cam);
+    }
+
+    /*
+     * THE SHOT'S LIGHTING, LIT. The rig the server placed for the technique
+     * (key, fill, rim…) as lights in the Look view, tinted by the mood; the key
+     * casts shadows so the direction reads. While a rig is on, the set's own
+     * exported sun and the viewer's default light step back, and the sky dims
+     * to the mood's ambient: a low-key shot must look dark.
+     */
+    function meshLookRig() {
+        const T = window.THREE;
+        if (!T || !MESHLOOK.scene) return;
+        const lit = WORLD.blocking && WORLD.blocking.lighting;
+        const on = WORLD.showLights !== false && lit && ((lit.rig && lit.rig.length) || lit.mood);
+        const sig = on ? JSON.stringify([lit.rig, lit.mood, (worldCameraPose() || {}).scale]) : 'off';
+        if (MESHLOOK.rigSig === sig) return;
+        MESHLOOK.rigSig = sig;
+        if (MESHLOOK.rig) { MESHLOOK.scene.remove(MESHLOOK.rig); MESHLOOK.rig = null; }
+        const setSetLights = visible => {
+            if (MESHLOOK.root) MESHLOOK.root.traverse(o => { if (o.isLight) o.visible = visible; });
+            if (MESHLOOK.sun) MESHLOOK.sun.visible = visible && !(MESHLOOK.root && meshLookHasSun(MESHLOOK.root));
+        };
+        if (!on) {
+            setSetLights(true);
+            if (MESHLOOK.hemi) { MESHLOOK.hemi.intensity = 0.9; MESHLOOK.hemi.color.set(0xffffff); }
+            if (MESHLOOK.renderer) MESHLOOK.renderer.shadowMap.enabled = false;
+            return;
+        }
+        const f = (worldCameraPose() || {}).scale || 1;
+        const g = new T.Group();
+        g.name = 'rig';
+        MESHLOOK.renderer.shadowMap.enabled = true;
+        for (const l of (lit.rig || [])) {
+            const d = new T.DirectionalLight(new T.Color(l.colour), 1.7 * (l.ratio || 1));
+            d.position.set(l.position[0] * f, l.position[1] * f, l.position[2] * f);
+            d.target.position.set(l.target[0] * f, l.target[1] * f, l.target[2] * f);
+            if (l.role === 'key') {
+                d.castShadow = true;
+                d.shadow.mapSize.set(1024, 1024);
+                const sc = d.shadow.camera;
+                sc.left = -6; sc.right = 6; sc.top = 6; sc.bottom = -6; sc.near = 0.1; sc.far = 30;
+                d.shadow.bias = -0.0005;
+                // A soft source is a blurred shadow.
+                d.shadow.radius = 1 + 6 * (l.soft || 0);
+            }
+            g.add(d); g.add(d.target);
+        }
+        MESHLOOK.scene.add(g);
+        MESHLOOK.rig = g;
+        setSetLights(!(lit.rig && lit.rig.length));
+        if (MESHLOOK.hemi && lit.mood) {
+            MESHLOOK.hemi.intensity = 0.25 + 1.1 * lit.mood.ambient;
+            MESHLOOK.hemi.color.set(lit.mood.colour);
+        }
+        const cast = o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } };
+        if (MESHLOOK.root) MESHLOOK.root.traverse(cast);
+        MESHLOOK.scene.traverse(o => { if (o.parent && o.parent.name === 'staged') o.traverse(cast); });
+    }
+
+    function meshLookHasSun(root) {
+        let has = false;
+        root.traverse(o => { if (o.isDirectionalLight) has = true; });
+        return has;
     }
 
     /*
@@ -17834,6 +17972,11 @@ THREE.GLTFLoader = GLTFLoader;
                     { method: 'PUT', body: JSON.stringify({ subjects: stageSubjects() }), refresh: false });
                 if (r && r.blocking) WORLD.blocking.blocking = r.blocking;
                 setStatus(`Staged ${stageSubjects().length} in the shot`);
+                // The lighting rig is placed on the framing subject: re-read it, repaint without a re-render.
+                try {
+                    const g = await api(`/shots/${WORLD.shotId}/previs`);
+                    if (g && g.lighting) { WORLD.blocking.lighting = g.lighting; worldPaintFrame(); worldMeshRenderOnce(); }
+                } catch (_) { /* the rig catches up on the next load */ }
             } catch (err) { setStatus('Staging not saved: ' + err.message, true); }
         }, 350);
     }
@@ -18060,6 +18203,21 @@ THREE.GLTFLoader = GLTFLoader;
         const f = live ? live.scale : 1;
         WORLD.planXf.f = f;
         stageSubjects().forEach((su, i) => stageDrawFootprint(ctx, su, i === STAGE.sel, X, Z, s, f));
+        // The lighting rig, seen from above: each light, its role, and where it points.
+        const lit = WORLD.blocking && WORLD.blocking.lighting;
+        if (WORLD.showLights !== false && lit && Array.isArray(lit.rig)) {
+            for (const l of lit.rig) {
+                const lx = X(l.position[0] * f), lz = Z(l.position[2] * f);
+                const tx = X(l.target[0] * f), tz = Z(l.target[2] * f);
+                ctx.strokeStyle = 'rgba(255,214,102,0.45)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(lx, lz); ctx.lineTo(tx, tz); ctx.stroke(); ctx.setLineDash([]);
+                ctx.fillStyle = l.colour || '#ffd666';
+                ctx.beginPath(); ctx.arc(lx, lz, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#ffd666'; ctx.lineWidth = 1.5; ctx.stroke();
+                ctx.fillStyle = '#ffd666'; ctx.font = '600 11px -apple-system, sans-serif';
+                ctx.fillText(String(l.role || '').toUpperCase(), lx + 10, lz + 4);
+            }
+        }
     }
 
     /* ── SHOTS IN THE PHASE PANEL ──────────────────────────────────────────
@@ -28345,6 +28503,8 @@ ${fountainText.slice(0, 50000)}`;
             ${ssSection('ls-lighting', 'Lighting default',
                 'How it is lit unless a shot says otherwise.',
                 ssField('lighting_default', l.lighting_default, { placeholder: 'golden-hour rake off the water, lit practicals' })
+                + ssField('lighting_technique', l.lighting_technique, { options: [''].concat(LIGHTING_TECHNIQUE_IDS) })
+                + ssField('lighting_key_side', l.lighting_key_side, { options: ['', 'right', 'left'] })
                 + ssField('time_of_day_default', l.time_of_day_default, { placeholder: 'late afternoon' })
                 + ssField('location_type', l.location_type, { options: ['', 'interior', 'exterior', 'practical', 'stage', 'backlot'] }),
                 ssReach('prompt'))}
@@ -39784,9 +39944,15 @@ ${fountainText.slice(0, 50000)}`;
             <div class="form-group"><label>Must not appear <span class="text-muted">(frame and clip)</span></label>
                 <textarea id="${p}NegPrompt" data-field="generation" rows="2"
                     placeholder="text, watermark, a second car, modern signage"></textarea></div>
-            <div class="form-group"><label>Lighting</label>
+            <div class="form-group"><label>Lighting <span class="text-muted text-sm">mood</span></label>
                 <select id="${p}Lighting"></select>
                 <div class="text-sm text-muted" id="${p}LightingHint"></div></div>
+            <div class="form-group"><label>Lighting technique <span class="text-muted text-sm">where the lights stand</span></label>
+                <select id="${p}LightTechnique"></select>
+                <div class="text-sm text-muted">Blank takes the location's; the film's general look is the style.</div></div>
+            <div class="form-group"><label>Key light from</label>
+                <select id="${p}LightKeySide"><option value="">— the location's, else camera right —</option>
+                    <option value="right">camera right</option><option value="left">camera left</option></select></div>
             <div class="form-group"><label>Camera height <span class="text-muted text-sm">m &mdash; the angle</span></label>
                 <input type="number" step="0.1" min="0" id="${p}HeightM" placeholder="1.6">
                 <div class="text-sm text-muted" id="${p}HeightMHint"></div></div>
@@ -39849,6 +40015,12 @@ ${fountainText.slice(0, 50000)}`;
         shotCardFill(p + 'Lighting', vocab.lighting,
             typeof light === 'string' ? light : light.type, '— from the scene —');
         shotCardFill(p + 'Sensor', vocab.sensors || [], cam.sensor, '— from the film —');
+        if (document.getElementById(p + 'LightTechnique')) {
+            shotCardFill(p + 'LightTechnique', (vocab.lighting_techniques || []).map(t => t.id),
+                typeof light === 'object' ? light.technique : '', '— from the location —');
+            const ks = document.getElementById(p + 'LightKeySide');
+            if (ks) ks.value = (typeof light === 'object' && light.key_side) || '';
+        }
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === undefined || v === null) ? '' : v; };
         set(p + 'Lens', cam.lens);
         set(p + 'HeightM', cam.height_m);
@@ -41608,6 +41780,8 @@ ${fountainText.slice(0, 50000)}`;
             ? { type: SHOT_CARD.card.lighting } : { ...(SHOT_CARD.card.lighting || {}) };
         const set = (obj, key, value) => { if (value) obj[key] = value; else delete obj[key]; };
         set(lighting, 'type', val('shotCardLighting'));
+        set(lighting, 'technique', val('shotCardLightTechnique'));
+        set(lighting, 'key_side', val('shotCardLightKeySide'));
 
         /*
          * Both halves are sent, and they stay two halves. `description` is the

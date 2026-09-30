@@ -44,7 +44,7 @@ const LOCATION_REGIONS = Object.freeze([
         what: 'What it is, in the words that reach every frame shot here.',
     },
     {
-        id: 'lighting', title: 'Lighting default', anchor: 'ls-lighting', reads: ['lighting_default', 'time_of_day_default'],
+        id: 'lighting', title: 'Lighting default', anchor: 'ls-lighting', reads: ['lighting_default', 'lighting_technique', 'lighting_key_side', 'time_of_day_default'],
         what: 'How it is lit unless a shot says otherwise.',
     },
     {
@@ -302,7 +302,7 @@ const DESIGN_FEATURES = Object.freeze([
  * capability that exists on one surface only.
  */
 const FIELDS = Object.freeze({
-    location: ['description', 'lighting_default', 'time_of_day_default', 'atmosphere_notes',
+    location: ['description', 'lighting_default', 'lighting_technique', 'lighting_key_side', 'time_of_day_default', 'atmosphere_notes',
         'sound_notes', 'location_type',
         'description_sections', 'continuity_flags', 'plate_plan', 'orientation_plan'],
     prop: ['description', 'visual_prompt', 'category', 'notes', 'height_m', 'width_m', 'length_m',

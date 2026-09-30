@@ -398,12 +398,47 @@ function validateBlocking(body) {
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
+/*
+ * How this shot is lit, and where each part came from: what is staged in
+ * Previs, else the shot's card, else its location (lib/lighting). The film's
+ * general look is the style preset and is not repeated.
+ */
+function shotLighting(shotId, blocking) {
+    const { resolveLighting } = require('../lib/lighting');
+    const { matchLocation } = require('../lib/shot-references');
+    const row = db.prepare(`SELECT s.scene_card_yaml, sc.location, sc.project_id FROM film_shots s
+        JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?`).get(shotId);
+    if (!row) return null;
+    const card = parse(row.scene_card_yaml || '{}', {});
+    const locations = db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(row.project_id);
+    const location = matchLocation(row.location, locations);
+    const staged = blocking && blocking.director && blocking.director.lighting;
+    const resolved = resolveLighting(staged ? { lighting: staged } : card, location);
+    if (staged) for (const k of Object.keys(resolved.sources)) if (resolved.sources[k] === 'shot') resolved.sources[k] = 'previs';
+    resolved.location = location ? { id: location.id, name: location.name } : null;
+    resolved.card = card.lighting || null;
+    /*
+     * The rig, placed from the SAVED camera and the framing subject — lights
+     * are set for a setup, so walking the camera does not drag them along.
+     */
+    const { rigLights, MOODS, kelvinToHex } = require('../lib/lighting');
+    const cam = blocking && blocking.camera && Array.isArray(blocking.camera.position) ? blocking.camera.position : null;
+    const subs = (blocking && blocking.subjects) || [];
+    const target = subs.find(x => x && x.isTarget) || subs[0];
+    resolved.rig = cam && target && Array.isArray(target.position) ? rigLights(resolved, cam, target.position) : [];
+    const mood = MOODS[resolved.type] || null;
+    resolved.mood = mood ? { kelvin: mood.kelvin, colour: kelvinToHex(mood.kelvin), ambient: mood.ambient, colours: mood.colours || null } : null;
+    return resolved;
+}
+
 function getBlocking(req, res, shotId) {
     const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
+    const blocking = loadBlocking(shotId);
     return json(res, 200, {
         shot_id: shotId,
-        blocking: loadBlocking(shotId),
+        blocking,
+        lighting: shotLighting(shotId, blocking),
         keyframe: shotKeyframe(shotId),
         approval: approvalState(shotId),
         application: applicationState(shotId),
@@ -429,7 +464,7 @@ function putMerged(req, res, shotId, patch) {
     const body = current ? {
         camera: current.camera, stage: current.stage, rig: current.rig, movement: current.movement,
         moves: current.moves, cameraKeys: current.cameraKeys, durationMs: current.durationMs,
-        subjects: current.subjects, ...patch,
+        subjects: current.subjects, director: current.director || undefined, ...patch,
     } : { ...patch };
     return putBlocking(Object.assign({}, req, { body }), res, shotId);
 }
@@ -438,6 +473,30 @@ function putSubjects(req, res, shotId) {
     const subjects = (req.body || {}).subjects;
     if (!Array.isArray(subjects)) return json(res, 400, { error: 'subjects must be an array' });
     return putMerged(req, res, shotId, { subjects });
+}
+
+/*
+ * The director's staged intent (direction, lighting, location view, camera
+ * note), merged field by field: sending the lighting must not erase the
+ * direction. Staged like everything in Previs — Apply writes it to the card.
+ */
+function putDirector(req, res, shotId) {
+    const b = req.body || {};
+    const current = loadBlocking(shotId);
+    const director = { ...((current && current.director) || {}) };
+    for (const k of ['direction', 'lighting', 'location_view', 'camera_note']) {
+        if (b[k] === undefined) continue;
+        if (b[k] === null || b[k] === '') delete director[k]; else director[k] = b[k];
+    }
+    if (b.lighting) {
+        const { TECHNIQUES, MOODS, KEY_SIDES } = require('../lib/lighting');
+        const l = b.lighting;
+        if (typeof l !== 'object') return json(res, 400, { error: 'lighting must be an object' });
+        if (l.technique && !TECHNIQUES[l.technique]) return json(res, 400, { error: `unknown lighting technique '${l.technique}'` });
+        if (l.type && !MOODS[l.type]) return json(res, 400, { error: `unknown lighting mood '${l.type}'` });
+        if (l.key_side && !KEY_SIDES.includes(l.key_side)) return json(res, 400, { error: 'key_side must be left or right' });
+    }
+    return putMerged(req, res, shotId, { director });
 }
 
 /** The move: legs, camera keys and length. The camera and the stage are untouched. */
@@ -1411,6 +1470,10 @@ function handlePrevis(req, res, urlParts) {
         if (urlParts[4] === 'subjects') {
             if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
             return putSubjects(req, res, shotId);
+        }
+        if (urlParts[4] === 'director') {
+            if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
+            return putDirector(req, res, shotId);
         }
         if (urlParts[4] === 'timeline') {
             if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });

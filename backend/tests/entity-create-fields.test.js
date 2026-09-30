@@ -112,6 +112,9 @@ const SHAPED = {
     continuity_states: [{ name: 'unlit', what: 'bulb dead', scene: '3' }],
     keywords: ['diner', 'chrome'],
     reference_images: ['https://example.test/a.png'],
+    // Validated against lib/lighting's vocabulary.
+    lighting_technique: 'rembrandt',
+    lighting_key_side: 'left',
 };
 
 function sampleFor(col) {

@@ -803,14 +803,20 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const d = Number(facets.distance_m);
     if (Number.isFinite(d) && d > 0) add('camera', `camera ${d.toFixed(1)}m from subject`);
 
-    // 6. Lighting
+    // 6. Lighting — the shot's own, else its location's (lib/lighting). The
+    // film's general look is the style preset and is not repeated here.
+    const { resolveLighting, techniquePhrase } = require('./lighting');
+    const lit = resolveLighting(sceneCard, location);
+    const technique = techniquePhrase(lit);
+    if (technique) add('lighting', technique);
     const lightType = sceneCard.lighting && sceneCard.lighting.type;
     if (lightType && LIGHTING_MAP[lightType]) {
         add('lighting', LIGHTING_MAP[lightType]);
     }
-    const lightNotes = sceneCard.lighting && sceneCard.lighting.notes;
-    if (lightNotes) {
-        add('lighting', lightNotes);
+    // The shot's notes, else the location's lighting note — which reached the
+    // location's plates and never a shot filmed there.
+    if (lit.notes) {
+        add('lighting', lit.notes);
     }
 
     // 7. Location context

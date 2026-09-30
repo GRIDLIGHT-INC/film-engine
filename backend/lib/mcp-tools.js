@@ -2714,6 +2714,34 @@ const PRODUCTION_TOOLS = [
         }, required: ['shot_id', 'subjects'],
     },
     {
+        name: 'previs_director',
+        handler: handlePrevis, method: 'PUT',
+        path: a => `/film/shots/${a.shot_id}/previs/director`,
+        body: a => {
+            const b = {};
+            for (const k of ['direction', 'lighting', 'location_view', 'camera_note']) if (a[k] !== undefined) b[k] = a[k];
+            return b;
+        },
+        description:
+            'Stage a shot\'s direction, LIGHTING, location view or camera note in Previs, field by field (null clears one). '
+            + 'FREE, and staged: previs_apply writes it to the scene card, which is what generation reads. lighting is '
+            + '{ technique, type (mood), key_side: left|right, notes }; techniques and moods are in card_vocabulary. '
+            + 'A shot with no lighting of its own takes its location\'s; the film\'s general look is the style preset.',
+        schema: {
+            shot_id: { type: 'string' },
+            direction: { type: ['string', 'null'] },
+            lighting: { type: ['object', 'null'], properties: {
+                technique: { type: 'string', enum: Object.keys(require('./lighting').TECHNIQUES) },
+                type: { type: 'string', enum: Object.keys(require('./lighting').MOODS) },
+                key_side: { type: 'string', enum: ['left', 'right'] },
+                notes: { type: 'string' },
+            } },
+            location_view: { type: ['string', 'null'] },
+            camera_note: { type: ['string', 'null'] },
+        },
+        required: ['shot_id'],
+    },
+    {
         name: 'previs_timeline',
         handler: handlePrevis, method: 'PUT',
         path: a => `/film/shots/${a.shot_id}/previs/timeline`,
@@ -4140,6 +4168,9 @@ const PRODUCTION_TOOLS = [
             location_id: { type: 'string' },
             description: { type: 'string', description: 'What this place looks like, in prompt terms.' },
             lighting_default: { type: 'string', description: 'How it is lit unless a shot says otherwise.' },
+            lighting_technique: { type: 'string', enum: Object.keys(require('./lighting').TECHNIQUES),
+                description: 'The lighting technique every shot here takes unless it names its own (Rembrandt, three-point, window-motivated…). Reaches the prompt and lights Previs.' },
+            lighting_key_side: { type: 'string', enum: ['left', 'right'], description: 'Which side of camera the key light comes from.' },
             time_of_day_default: { type: 'string', description: 'The hour it is shot at unless a scene says otherwise.' },
             atmosphere_notes: { type: 'string', description: 'Weather, haze, season — the standing conditions of the place.' },
             sound_notes: { type: 'string', description: 'How the place SOUNDS. Reaches the ambient bed generated for every scene here.' },

@@ -265,7 +265,11 @@ test('the not-sent marker is on the field, not just in the helper', () => {
     // carries it rather than in the title — the window is the section body.
     assert.ok(/'ls-sound'[\s\S]{0,600}ssReach\('not-sent'\)/.test(loc),
         'the not-sent mark is not on the sound notes, which is the field it is for');
-    assert.ok(/'ls-lighting'[\s\S]{0,600}ssReach\('prompt'\)/.test(loc),
+    // Bounded by the SECTION, not a character window: a window of 600 went out
+    // of range the day the lighting section grew two fields, and reported the
+    // feature broken while it worked.
+    const lightingSection = loc.slice(loc.indexOf("'ls-lighting'"), loc.indexOf('ssSection(', loc.indexOf("'ls-lighting'")));
+    assert.ok(/ssReach\('prompt'\)/.test(lightingSection),
         'lighting is not marked as reaching the prompt');
     assert.ok(/ssReach\('prompt'\)/.test(loc), 'nothing is marked as reaching the prompt');
 
