@@ -16369,11 +16369,11 @@ THREE.GLTFLoader = GLTFLoader;
         const chip = (fn, id, label, on, title) =>
             `<button class="we-shotchip${on ? ' active' : ''}" onclick="${fn}" title="${esc(title || label)}">${esc(label)}</button>`;
         return `
-            <div class="we-panel" data-region="shot">
+            <div class="we-panel we-shotpanel">
               <div class="we-label">SHOT <span class="we-live">${t ? 'on ' + esc(t.name) : 'no subject staged'}</span></div>
               <div class="we-opgroup">FRAMING</div>
               <div class="we-shotchips">${SHOT_FRAMINGS.map(f =>
-                  chip(`worldShotPlace('${f.id}', null)`, f.id, f.short, now.framing === f.id, `${f.label} — about ${f.cover} m of the subject in frame`)).join('')}</div>
+                  chip(`worldShotPlace('${f.id}', null)`, f.id, f.short, now.framing === f.id, f.label)).join('')}</div>
               <div class="we-opgroup">ANGLE</div>
               <div class="we-shotchips">${SHOT_ANGLES.map(a =>
                   chip(`worldShotPlace(null, '${a.id}')`, a.id, a.label, now.angle === a.id)).join('')}
