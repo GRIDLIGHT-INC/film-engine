@@ -207,14 +207,21 @@ test('the walked camera\'s keep is exactly the difference the proposal adds back
     const from = { position: [1, 1.6, 4], rotation: [10, -2, 0], sensorId: 'super35', focalMm: 35 };
     const to = { position: [2.5, 1.2, 1], rotation: [40, 5, 0] };
     const f = 1;
+    // Dolly and truck are the camera's own axes at the pose it started from, so
+    // a world delta is turned into them by that yaw — the page's own formula.
+    const dx = (to.position[0] - from.position[0]) * f, dz = (to.position[2] - from.position[2]) * f;
+    const yaw0 = from.rotation[0] * Math.PI / 180;
     const changes = {
-        truckM: (to.position[0] - from.position[0]) * f, pedestalM: (to.position[1] - from.position[1]) * f,
-        dollyM: (to.position[2] - from.position[2]) * f,
+        truckM: dx * Math.cos(yaw0) - dz * Math.sin(yaw0), pedestalM: (to.position[1] - from.position[1]) * f,
+        dollyM: dx * Math.sin(yaw0) + dz * Math.cos(yaw0),
         panDeg: to.rotation[0] - from.rotation[0], tiltDeg: to.rotation[1] - from.rotation[1], rollDeg: 0,
         focalLengthMm: 50,
     };
     const got = applyProposal(from, { changes }, { scale_factor: f, bounds: { min: [0, 0, 0] } });
     got.position.forEach((n, i) => assert.ok(Math.abs(n - to.position[i]) < 1e-9, `position ${i}`));
+    // And the page sends exactly that conversion.
+    const keepSrc = fnBody('worldWalkKeep');
+    assert.match(keepSrc, /Math\.sin\(yaw0\) \+ d\(2\) \* Math\.cos\(yaw0\)/, 'the keep does not dolly along the camera\'s own axis');
     got.rotation.forEach((n, i) => assert.ok(Math.abs(n - to.rotation[i]) < 1e-9, `rotation ${i}`));
     assert.equal(got.focalMm, 50);
 });
@@ -236,7 +243,7 @@ test('a walked camera and every Camera Operate nudge are proposals the route acc
     const axes = [{ field: 'dollyM', label: 'Dolly', unit: 'm' }];
     const nudge = run('worldNudge', { field: 'dollyM', amount: 0.25, axis: axes[0] });
     assert.deepEqual(cine.validateProposal(nudge, null).errors, [], JSON.stringify(nudge));
-    const keep = run('worldWalkKeep', { d: () => 1, r: () => 5, WORLD: { lens: 35 } });
+    const keep = run('worldWalkKeep', { d: () => 1, r: () => 5, truck: 1, dolly: -1, WORLD: { lens: 35 } });
     assert.deepEqual(cine.validateProposal(keep, null).errors, [], JSON.stringify(keep));
     assert.equal(keep.apply, true);
 });

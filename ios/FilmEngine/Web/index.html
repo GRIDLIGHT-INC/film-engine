@@ -4906,6 +4906,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
   color:#7a7a74; line-height:1.8; }
 .we-opgroup { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px;
   letter-spacing:0.18em; color:#8f8f8a; margin:10px 0 6px; }
+        .we-scrub { display: inline-block; min-width: 58px; padding: 2px 8px; margin-left: auto; border: 1px solid rgba(102,144,255,0.35);
+            border-radius: 4px; background: rgba(102,144,255,0.08); color: #cfd9ff; font: 600 12px ui-monospace, Menlo, monospace;
+            text-align: right; cursor: ew-resize; user-select: none; }
+        .we-scrub:hover { border-color: #6690ff; background: rgba(102,144,255,0.16); }
+        .we-scrub-u { width: 22px; margin-left: 4px; color: #8e8e97; font-size: 11px; }
+        .we-scrub-in { width: 70px; margin-left: auto; font: 600 12px ui-monospace, Menlo, monospace; }
 .we-oprow { display:flex; align-items:center; gap:8px; padding:3px 0; }
 .we-oplabel { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
   color:#c9c9c4; width:110px; }
@@ -15103,7 +15109,7 @@ THREE.GLTFLoader = GLTFLoader;
             const mutated = /^(POST|PUT|PATCH|DELETE)$/.test(String(opts.method || 'GET').toUpperCase());
             if (res.status === 204) { if (mutated && opts.refresh !== false) refreshAfterWrite(); return {}; }
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            if (!res.ok) { const e = new Error(data.error || `HTTP ${res.status}`); e.data = data; e.status = res.status; throw e; }
             // A write that succeeded is on the screen by the time you look up.
             // `refresh: false` is for the few paths that repaint themselves and
             // would otherwise fight a drag or a keystroke; each says why.
@@ -16146,6 +16152,103 @@ THREE.GLTFLoader = GLTFLoader;
         { group: 'ROTATION',    field: 'rollDeg',    label: 'Roll',     step: 2,    unit: '°' },
     ]);
 
+    /*
+     * THE VALUES ARE THE CONTROLS. Each is a number you drag sideways to change
+     * (Shift finer, Alt coarser) or double-click to type, as in a 3D
+     * application; the step buttons stay for a precise nudge. A drag moves the
+     * camera live and is kept when it is let go, through the same validated
+     * proposal as everything else, so a camera inside a wall is refused.
+     */
+    const OPERATE_SCRUB = Object.freeze([
+        { id: 'distance', label: 'Distance to subject', unit: 'm', rate: 0.01, fmt: 2 },
+        { id: 'height',   label: 'Height above floor',  unit: 'm', rate: 0.005, fmt: 2 },
+        { id: 'side',     label: 'Side to side (truck)', unit: 'm', rate: 0.01, fmt: 2 },
+        { id: 'pan',      label: 'Pan (left +)',        unit: '°', rate: 0.25, fmt: 1 },
+        { id: 'tilt',     label: 'Tilt (up +)',         unit: '°', rate: 0.2,  fmt: 1 },
+        { id: 'roll',     label: 'Roll',                unit: '°', rate: 0.2,  fmt: 1 },
+        { id: 'lens',     label: 'Lens',                unit: 'mm', rate: 0.2, fmt: 0, min: 8, max: 300 },
+    ]);
+
+    function worldOperateScale() {
+        const f = Number(WORLD.version && WORLD.version.scale_factor);
+        return Number.isFinite(f) && f > 0 ? f : 1;
+    }
+    /** The framing subject, in the camera's stored units. */
+    function worldOperateSubject() {
+        const subs = stageSubjects();
+        const t = subs.find(s => s.isTarget) || subs[0];
+        return t && Array.isArray(t.position) ? t.position : null;
+    }
+    function worldOperateCamera() {
+        return (WALK.on && worldWalkCamera())
+            || (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null;
+    }
+    function worldOperateValue(id) {
+        const c = worldOperateCamera();
+        const k = worldOperateScale();
+        if (id === 'lens') return WORLD.lens || (c && c.focalMm) || 35;
+        if (!c || !Array.isArray(c.position)) return null;
+        const r = c.rotation || [0, 0, 0];
+        if (id === 'pan') return r[0] || 0;
+        if (id === 'tilt') return r[1] || 0;
+        if (id === 'roll') return r[2] || 0;
+        if (id === 'side') return c.position[0] * k;
+        if (id === 'height') {
+            const floor = WORLD.geometry && WORLD.geometry.bounds && Array.isArray(WORLD.geometry.bounds.min)
+                ? WORLD.geometry.bounds.min[1] : 0;
+            return c.position[1] * k - floor;
+        }
+        if (id === 'distance') {
+            const t = worldOperateSubject();
+            if (!t) return null;
+            return Math.hypot((c.position[0] - t[0]) * k, (c.position[2] - t[2]) * k);
+        }
+        return null;
+    }
+
+    /** Move the (walking) camera by a change in one value. */
+    function worldOperateApply(id, delta) {
+        if (!delta) return;
+        if (id === 'lens') return worldOperateLens(Math.max(8, Math.min(300, worldOperateValue('lens') + delta)));
+        worldWalkEnsure();
+        const c = worldWalkCamera();
+        if (!c) return;
+        const k = worldOperateScale();
+        const yaw = (c.rotation[0] || 0) * Math.PI / 180;
+        if (id === 'pan' || id === 'tilt' || id === 'roll') {
+            const i = { pan: 0, tilt: 1, roll: 2 }[id];
+            c.rotation[i] = (c.rotation[i] || 0) + delta;
+            if (id === 'tilt') c.rotation[1] = Math.max(-85, Math.min(85, c.rotation[1]));
+        } else if (id === 'height') {
+            c.position[1] += delta / k;
+        } else if (id === 'side') {
+            c.position[0] += Math.cos(yaw) * delta / k; c.position[2] -= Math.sin(yaw) * delta / k;
+        } else if (id === 'distance') {
+            // Farther from the subject is backward along the camera's own axis.
+            c.position[0] += Math.sin(yaw) * delta / k; c.position[2] += Math.cos(yaw) * delta / k;
+        }
+        WALK.moved = true;
+        worldWalkRepaint();
+    }
+
+    /*
+     * A LENS CHANGE, AND IN MAINTAIN-SIZE A DOLLY WITH IT. Maintain size worked
+     * out a new distance and moved nothing, so the button looked broken. The
+     * subject keeps its size when the distance scales with the focal length,
+     * which is the dolly-zoom.
+     */
+    function worldOperateLens(mm) {
+        const before = worldOperateValue('lens');
+        WORLD.lens = Math.round(mm * 10) / 10;
+        worldWalkEnsure();
+        if (WORLD.mode === 'maintain' && before > 0) {
+            const d = worldOperateValue('distance');
+            if (d != null) worldOperateApply('distance', d * (WORLD.lens / before) - d);
+        }
+        WALK.moved = true;
+        worldWalkRepaint();
+    }
+
     function worldOperateHtml() {
         /*
          * THE AXES ALWAYS RENDER. Hiding them until a camera is saved would
@@ -16153,28 +16256,86 @@ THREE.GLTFLoader = GLTFLoader;
          * way to move the camera at all, and a nudge IS meaningful there: the
          * route builds the proposal from the shot's blocking and validates it
          * either way.
-         *
-         * The step is shown on the BUTTON and the unit on the LABEL, so the
-         * panel carries no value that looks like a measurement of this shot.
-         * A control's own step is not state, and rendering it as "0.25m"
-         * beside real distances is how the two become indistinguishable.
          */
+        const scrubs = OPERATE_SCRUB.map(a => {
+            const v = worldOperateValue(a.id);
+            return `<div class="we-oprow">
+                <span class="we-oplabel">${esc(a.label)}</span>
+                <span class="we-scrub" data-scrub="${a.id}" title="Drag sideways to change (Shift finer, Alt coarser); double-click to type"
+                      >${v == null ? '—' : v.toFixed(a.fmt)}</span><span class="we-scrub-u">${esc(a.unit)}</span>
+              </div>`;
+        }).join('');
+        // Directions named in words: "−0.25" said nothing about which way.
+        const words = { dollyM: ['in', 'out'], truckM: ['left', 'right'], pedestalM: ['down', 'up'],
+                        panDeg: ['right', 'left'], tiltDeg: ['down', 'up'], rollDeg: ['−', '+'] };
         const groups = ['TRANSLATION', 'ROTATION'].map(g => `
-                <div class="we-opgroup">${g}</div>
-                ${OPERATE_AXES.filter(a => a.group === g).map(a => `
-                  <div class="we-oprow">
+                <div class="we-opgroup">${g} · STEP</div>
+                ${OPERATE_AXES.filter(a => a.group === g).map(a => {
+                    const [lo, hi] = words[a.field] || ['−', '+'];
+                    // A negative dolly is forward (camera-local −Z), so "in" sends the negative step.
+                    return `<div class="we-oprow">
                     <span class="we-oplabel">${esc(a.label)} (${esc(a.unit)})</span>
-                    <button class="we-btn" onclick="worldNudge('${a.field}', ${-a.step})">&minus;${a.step}</button>
-                    <button class="we-btn" onclick="worldNudge('${a.field}', ${a.step})">+${a.step}</button>
-                  </div>`).join('')}`).join('');
+                    <button class="we-btn" onclick="worldNudge('${a.field}', ${-a.step})">${lo} ${a.step}</button>
+                    <button class="we-btn" onclick="worldNudge('${a.field}', ${a.step})">${hi} ${a.step}</button>
+                  </div>`; }).join('')}`).join('');
         return `
             <div class="we-panel" data-region="camera-operate">
               <div class="we-label">CAMERA OPERATE</div>
+              ${scrubs}
               ${groups}
               <p class="we-hint">Every move is checked against the geometry before it is kept.
-              Exact X / Y / Z lives in Advanced.</p>
+              Scroll in the view to dolly, drag to look, right-drag to slide.</p>
             </div>`;
     }
+
+    const SCRUB = { drag: null };
+    document.addEventListener('pointerdown', e => {
+        const el = e.target && e.target.closest && e.target.closest('.we-scrub');
+        if (!el || state.currentPage !== 'previs') return;
+        const a = OPERATE_SCRUB.find(x => x.id === el.dataset.scrub);
+        if (!a) return;
+        SCRUB.drag = { a, el, x: e.clientX, moved: false };
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+    });
+    window.addEventListener('pointermove', e => {
+        const g = SCRUB.drag;
+        if (!g) return;
+        const dx = e.clientX - g.x;
+        if (!dx) return;
+        g.x = e.clientX;
+        const rate = g.a.rate * (e.shiftKey ? 0.2 : e.altKey ? 5 : 1);
+        worldOperateApply(g.a.id, dx * rate);
+        g.moved = true;
+        const v = worldOperateValue(g.a.id);
+        document.querySelectorAll(`.we-scrub[data-scrub="${g.a.id}"]`).forEach(n => { n.textContent = v == null ? '—' : v.toFixed(g.a.fmt); });
+    });
+    window.addEventListener('pointerup', () => {
+        const g = SCRUB.drag;
+        if (!g) return;
+        SCRUB.drag = null;
+        document.body.style.cursor = '';
+        if (g.moved) worldWalkKeep();
+    });
+    document.addEventListener('dblclick', e => {
+        const el = e.target && e.target.closest && e.target.closest('.we-scrub');
+        if (!el) return;
+        const a = OPERATE_SCRUB.find(x => x.id === el.dataset.scrub);
+        const cur = worldOperateValue(a.id);
+        if (!a || cur == null) return;
+        const input = document.createElement('input');
+        input.type = 'number'; input.step = 'any'; input.value = cur.toFixed(a.fmt); input.className = 'we-scrub-in';
+        el.replaceWith(input); input.focus(); input.select();
+        let done = false;
+        const commit = ok => {
+            if (done) return; done = true;
+            const v = Number(input.value);
+            if (ok && Number.isFinite(v) && v !== cur) { worldOperateApply(a.id, v - cur); worldWalkKeep(); }
+            else worldConsoleRender();
+        };
+        input.addEventListener('keydown', ev => { if (ev.key === 'Enter') commit(true); if (ev.key === 'Escape') commit(false); });
+        input.addEventListener('blur', () => commit(true));
+    });
 
     /** A nudge is a PROPOSAL, validated like every other camera change. */
     async function worldNudge(field, amount) {
@@ -16751,7 +16912,8 @@ THREE.GLTFLoader = GLTFLoader;
     function worldCameraPose(camOverride) {
         const f = Number(WORLD.version && WORLD.version.scale_factor);
         const k = Number.isFinite(f) && f > 0 ? f : 1;
-        const staged = camOverride
+        const preview = camOverride ? null : worldPreviewCamera();
+        const staged = camOverride || preview
             || (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null;
         const cam = (staged && Array.isArray(staged.position))
             ? Object.assign({}, staged, { position: staged.position.map(n => n * k) })
@@ -16759,7 +16921,7 @@ THREE.GLTFLoader = GLTFLoader;
         if (!cam || !Array.isArray(cam.position)) return null;
         const target = Array.isArray(cam.target)
             ? cam.target : previsAim({ position: cam.position, rotation: cam.rotation || [0, 0, 0] });
-        const focal = camOverride ? (camOverride.focalMm || WORLD.lens) : (WORLD.lens || cam.focalMm || 35);
+        const focal = (camOverride || preview) ? ((camOverride || preview).focalMm || WORLD.lens) : (WORLD.lens || cam.focalMm || 35);
         return { eye: cam.position, target, roll: (cam.rotation && cam.rotation[2]) || 0,
                  vDeg: worldFovFor(focal).vDeg, hDeg: worldFovFor(focal).hDeg, scale: k };
     }
@@ -17108,6 +17270,7 @@ THREE.GLTFLoader = GLTFLoader;
      * cannot be moved. Nothing is kept until "Use this camera".
      */
     function worldWalkEnsure() {
+        WORLD.previewT = null;
         if (WALK.on) return;
         const b = WORLD.blocking && WORLD.blocking.blocking;
         const saved = b && b.camera && Array.isArray(b.camera.position) ? b.camera : null;
@@ -17228,10 +17391,15 @@ THREE.GLTFLoader = GLTFLoader;
         }
         const d = i => (c.position[i] - WALK.from.position[i]) * f;
         const r = i => (c.rotation[i] || 0) - (WALK.from.rotation[i] || 0);
+        // Dolly and truck are the camera's OWN axes, read at the pose it started
+        // from: a world-axis delta would dolly sideways for a camera facing east.
+        const yaw0 = (WALK.from.rotation[0] || 0) * Math.PI / 180;
+        const dolly = d(0) * Math.sin(yaw0) + d(2) * Math.cos(yaw0);
+        const truck = d(0) * Math.cos(yaw0) - d(2) * Math.sin(yaw0);
         const proposal = {
             rationale: 'Walked to in Previs and chosen by eye.',
             changes: {
-                truckM: +d(0).toFixed(3), pedestalM: +d(1).toFixed(3), dollyM: +d(2).toFixed(3),
+                truckM: +truck.toFixed(3), pedestalM: +d(1).toFixed(3), dollyM: +dolly.toFixed(3),
                 panDeg: +r(0).toFixed(2), tiltDeg: +r(1).toFixed(2), rollDeg: +r(2).toFixed(2),
                 focalLengthMm: WORLD.lens,
             },
@@ -17242,7 +17410,10 @@ THREE.GLTFLoader = GLTFLoader;
             WALK.on = false; WALK.from = null; WALK.moved = false;
             setStatus('Camera kept on the shot. Apply it to the shot, then generate the board frame from it.');
         } catch (err) {
-            return setStatus('That camera was refused: ' + err.message, true);
+            // Say why — "cannot be shot" alone sends the director hunting.
+            const why = err.data && Array.isArray(err.data.failures)
+                ? err.data.failures.map(f => f.detail || f.check).join('; ') : '';
+            return setStatus('That camera was refused: ' + (why || err.message) + ' — press "Put it back" or move it again.', true);
         }
         await worldRefreshBlocking();
     }
@@ -17944,6 +18115,8 @@ THREE.GLTFLoader = GLTFLoader;
         WORLD.moves = b && Array.isArray(b.moves) ? b.moves.slice() : [];
         WORLD.keys = b && Array.isArray(b.cameraKeys) ? b.cameraKeys.map(k => Object.assign({}, k)) : [];
         WORLD.durationMs = b && b.durationMs > 0 ? b.durationMs : (WORLD.durationMs || 4000);
+        // The lens is the saved camera's: the console showed its own 35mm over a 24mm shot.
+        if (b && b.camera && Number(b.camera.focalMm) > 0) WORLD.lens = Number(b.camera.focalMm);
     }
 
     /*
@@ -17971,8 +18144,43 @@ THREE.GLTFLoader = GLTFLoader;
         setStatus(`Key ${WORLD.keys.length} at ${Math.round(t * 100)}% — move the camera and the playhead, then add the next`);
     }
 
+    /*
+     * THE PLAYHEAD POSES THE CAMERA. It moved a line over the timeline and left
+     * the picture where it was, so Play Move showed nothing about the move.
+     * The pose is read from the path the server sampled from the keys or legs,
+     * and it is a preview: moving the camera by hand ends it.
+     */
+    function worldPoseAtT(t) {
+        const b = WORLD.blocking && WORLD.blocking.blocking;
+        const path = b && Array.isArray(b.path) ? b.path.filter(k => Array.isArray(k.position)) : [];
+        if (path.length < 2) return null;
+        const T = Math.max(0, Math.min(1, t));
+        let i = 0;
+        while (i < path.length - 2 && (path[i + 1].t == null ? (i + 1) / (path.length - 1) : path[i + 1].t) < T) i++;
+        const a = path[i], c = path[i + 1];
+        const ta = a.t == null ? i / (path.length - 1) : a.t, tc = c.t == null ? (i + 1) / (path.length - 1) : c.t;
+        const f = tc > ta ? (T - ta) / (tc - ta) : 0;
+        const lerp = (x, y) => x + (y - x) * f;
+        const ang = (x, y) => x + ((((y - x) % 360) + 540) % 360 - 180) * f;
+        const ra = a.rotation || [0, 0, 0], rc = c.rotation || ra;
+        return {
+            position: a.position.map((v, k) => lerp(v, c.position[k])),
+            rotation: ra.map((v, k) => ang(v, rc[k])),
+            focalMm: lerp(a.focalMm || WORLD.lens || 35, c.focalMm || a.focalMm || WORLD.lens || 35),
+        };
+    }
+
+    function worldPreviewCamera() {
+        if (WORLD.previewT == null || WALK.on) return null;
+        return worldPoseAtT(WORLD.previewT);
+    }
+
     function worldSeekTo(t) {
         WORLD.t = Math.max(0, Math.min(1, Number(t) || 0));
+        WORLD.previewT = worldPoseAtT(WORLD.t) ? WORLD.t : null;
+        worldPaintFrame();
+        if (typeof worldMeshRenderOnce === 'function') worldMeshRenderOnce();
+        if (typeof worldSplatRenderOnce === 'function') worldSplatRenderOnce();
         worldDrawPath();
         const heads = document.querySelectorAll('.we-playhead');
         for (const h of heads) h.style.left = Math.round(WORLD.t * 100) + '%';
@@ -18143,6 +18351,10 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     function worldSetLens(mm) {
+        if (WORLD.shotId && WORLD.blocking && WORLD.blocking.blocking) {
+            worldOperateLens(mm);
+            return worldWalkKeep();
+        }
         const next = worldApplyLens(
             { focalMm: WORLD.lens, distanceM: WORLD.distanceM || 10,
               occupancy: WORLD.occupancy || 0.3, pinned: WORLD.pinned, mode: WORLD.mode }, mm);
@@ -18182,7 +18394,8 @@ THREE.GLTFLoader = GLTFLoader;
          * picked the empty object, the painter found no position and returned
          * in silence. A camera is only a camera when it has somewhere to be.
          */
-        const staged = (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null;
+        const preview = worldPreviewCamera();
+        const staged = preview || (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null;
         /*
          * ONE SPACE, AND IT IS THE MESH'S.
          *
@@ -18202,7 +18415,7 @@ THREE.GLTFLoader = GLTFLoader;
             : worldDefaultCamera(geo);
         if (!cam || !Array.isArray(cam.position)) return;
 
-        const fov = worldFovFor(WORLD.lens || cam.focalMm || 35);
+        const fov = worldFovFor((preview && preview.focalMm) || WORLD.lens || cam.focalMm || 35);
         const view = previsFrameView ? previsFrameView(canvas) : previsFullView(canvas);
         const eye = cam.position;
         /*

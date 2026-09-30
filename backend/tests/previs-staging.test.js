@@ -271,3 +271,32 @@ test('the mouse moves the camera like a 3D application, and the plan zooms and p
     assert.ok(Math.abs(before[0] - after[0]) < 1e-9 && Math.abs(before[1] - after[1]) < 1e-9, 'zoom moved the floor under the cursor');
     void s;
 });
+
+test('dolly and truck move along the camera\'s own axes, whichever way it faces', () => {
+    const { applyProposal } = require('../lib/cinematography');
+    const world = { scale_factor: 1, bounds: { min: [0, 0, 0] } };
+    // Facing east (yaw -90 turns right from north): "in" (negative dolly) is +X.
+    const east = applyProposal({ position: [0, 1.6, 0], rotation: [-90, 0, 0], focalMm: 35, sensorId: 'super35' },
+        { changes: { dollyM: -1 } }, world);
+    assert.ok(Math.abs(east.position[0] - 1) < 1e-9 && Math.abs(east.position[2]) < 1e-9, `dolly in facing east went to ${east.position}`);
+    // Facing north, a positive truck is to the right: +X.
+    const north = applyProposal({ position: [0, 1.6, 0], rotation: [0, 0, 0], focalMm: 35, sensorId: 'super35' },
+        { changes: { truckM: 1 } }, world);
+    assert.ok(Math.abs(north.position[0] - 1) < 1e-9, 'truck right facing north is not +X');
+});
+
+test('Camera Operate: every value is a drag-to-change number, the lens dolly-zooms, the playhead poses the camera', () => {
+    const scrubSrc = HTML.slice(HTML.indexOf('const OPERATE_SCRUB'), HTML.indexOf(']);', HTML.indexOf('const OPERATE_SCRUB')));
+    for (const id of ['distance', 'height', 'side', 'pan', 'tilt', 'roll', 'lens']) {
+        assert.ok(scrubSrc.includes(`id: '${id}'`), `no draggable ${id}`);
+    }
+    const op = pageFn('worldOperateHtml');
+    assert.ok(/data-scrub/.test(op), 'the values are not rendered as draggable numbers');
+    assert.ok(/'in', 'out'/.test(op), 'the dolly buttons do not say which way they go');
+    assert.ok(/WORLD\.mode === 'maintain'/.test(pageFn('worldOperateLens')), 'maintain-size moves no camera');
+    assert.ok(/worldOperateLens/.test(pageFn('worldSetLens')), 'a lens button bypasses the dolly-zoom');
+    assert.ok(/worldPoseAtT/.test(pageFn('worldSeekTo')), 'the playhead does not pose the camera');
+    const pose = pageFn('worldCameraPose');
+    assert.ok(/worldPreviewCamera\(\)/.test(pose), 'the Look and Plan views ignore the playhead');
+    assert.ok(/worldPreviewCamera\(\)/.test(pageFn('worldPaintGeometry')), 'the Geometry view ignores the playhead');
+});

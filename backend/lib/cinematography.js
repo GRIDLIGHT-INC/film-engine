@@ -254,12 +254,21 @@ function applyProposal(camera, proposal, world, opts) {
     if (ch.pedestalM !== undefined) {
         const u = units(ch.pedestalM); if (u === null) return null; pos[1] += u;
     }
-    // Camera-local: -Z is forward, so a negative dolly moves toward the subject.
+    /*
+     * CAMERA-LOCAL, read at the camera's yaw before this proposal turns it:
+     * -Z is forward, so a negative dolly moves toward what it is looking at,
+     * and a positive truck moves to its own right. They were added to world Z
+     * and X, which is only "forward" for a camera facing due north — a camera
+     * turned to the east dollied sideways.
+     */
+    const yaw = (Number(rot[0]) || 0) * Math.PI / 180;
     if (ch.dollyM !== undefined) {
-        const u = units(ch.dollyM); if (u === null) return null; pos[2] += u;
+        const u = units(ch.dollyM); if (u === null) return null;
+        pos[0] += Math.sin(yaw) * u; pos[2] += Math.cos(yaw) * u;
     }
     if (ch.truckM !== undefined) {
-        const u = units(ch.truckM); if (u === null) return null; pos[0] += u;
+        const u = units(ch.truckM); if (u === null) return null;
+        pos[0] += Math.cos(yaw) * u; pos[2] -= Math.sin(yaw) * u;
     }
 
     if (ch.panDeg !== undefined) rot[0] += Number(ch.panDeg);
