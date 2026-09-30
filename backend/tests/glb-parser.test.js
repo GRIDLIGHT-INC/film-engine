@@ -160,3 +160,24 @@ test('an accessor cannot allocate beyond the uploaded binary data', () => {
 test('a cyclic scene graph is rejected instead of recursing forever', () => {
     assert.throws(() => glb.parseGlb(buildGlb({ cyclic: true })), /cyclic/i);
 });
+
+test('a light or material extension is read through; compression is still refused by name', () => {
+    const { parseGlb } = require('../lib/glb-parser');
+    const withRequired = (ext) => {
+        const glb = Buffer.from(require('fs').readFileSync(require('path').join(__dirname, '..', 'assets', 'previs-library', 'people', 'man.glb')));
+        const jl = glb.readUInt32LE(12);
+        const json = JSON.parse(glb.toString('utf8', 20, 20 + jl));
+        json.extensionsRequired = [ext]; json.extensionsUsed = [ext];
+        let jb = Buffer.from(JSON.stringify(json));
+        if (jb.length % 4) jb = Buffer.concat([jb, Buffer.alloc(4 - (jb.length % 4), 0x20)]);
+        const rest = glb.subarray(20 + jl);
+        const h = Buffer.alloc(12); h.write('glTF', 0); h.writeUInt32LE(2, 4); h.writeUInt32LE(12 + 8 + jb.length + rest.length, 8);
+        const jc = Buffer.alloc(8); jc.writeUInt32LE(jb.length, 0); jc.write('JSON', 4);
+        return Buffer.concat([h, jc, jb, rest]);
+    };
+    for (const ext of ['KHR_lights_punctual', 'KHR_materials_emissive_strength', 'KHR_texture_transform']) {
+        assert.ok(parseGlb(withRequired(ext)).triangles.length > 0, `${ext} changes no geometry and must not refuse the model`);
+    }
+    assert.throws(() => parseGlb(withRequired('KHR_draco_mesh_compression')), /Draco-compressed/);
+    assert.throws(() => parseGlb(withRequired('EXT_meshopt_compression')), /meshopt/);
+});

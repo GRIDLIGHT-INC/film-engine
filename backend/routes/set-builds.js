@@ -57,7 +57,7 @@ async function handleSetBuilds(req, res, urlParts, query) {
             return b ? json(res, 200, b) : json(res, 404, { error: 'Set build not found' });
         }
         if (urlParts[3] === 'finish' && req.method === 'POST') {
-            return json(res, 200, await setBuild.finishAttempt(buildId));
+            return json(res, 200, await setBuild.finishAttempt(buildId, { style: body.style }));
         }
         if (urlParts[3] === 'files' && urlParts[4] && req.method === 'GET') {
             const name = urlParts[4];

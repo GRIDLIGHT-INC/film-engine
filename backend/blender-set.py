@@ -24,6 +24,8 @@ job = json.load(open(sys.argv[sys.argv.index('--') + 1]))
 L = job['layout']
 OUT = job['out_dir']
 MODE = job['mode']
+STYLE = job.get('style', 'clean')
+ASSETS = job.get('assets', {})
 os.makedirs(OUT, exist_ok=True)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -226,6 +228,47 @@ for ti, ST in enumerate(L.get('stairs', [])):
         rbox(f"{ST.get('name') or f'Stair {ti + 1}'} step {i + 1}", sx + dx * u, sy + dy * u, sz,
              ST['width'], tread, (i + 1) * riser, yaw, sm)
 
+# ── library and project models, fitted to a real size ──────────────────────
+def place_asset(ob, nm, cx, cy, cz):
+    """Import a GLB, join it, fit its bounds to `size` (width x, depth y, height z),
+    stand its base centre at (cx, cy, cz) and turn it to `yaw` (0 faces north)."""
+    from mathutils import Vector, Matrix
+    key = f"lib:{ob['asset']}" if ob.get('asset') else f"model:{ob['asset_id']}"
+    spec = ASSETS[key]
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=spec['path'])
+    new = [o for o in bpy.data.objects if o not in before]
+    meshes = [o for o in new if o.type == 'MESH']
+    for o in new:
+        if o.type != 'MESH':
+            bpy.data.objects.remove(o, do_unlink=True)
+    if not meshes:
+        return None
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    if len(meshes) > 1:
+        bpy.ops.object.join()
+    o = bpy.context.view_layer.objects.active
+    o.name = nm
+    vs = [v.co for v in o.data.vertices]
+    lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
+    hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
+    size = ob.get('size') or spec['size']
+    dims = hi - lo
+    sx, sy, sz = (size[0] / max(dims.x, 1e-6), size[1] / max(dims.y, 1e-6), size[2] / max(dims.z, 1e-6))
+    base = Vector(((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z))
+    # glTF models face -Z, which the importer turns into +Y: yaw 0 already faces north.
+    m = (Matrix.Translation((cx, cy, cz)) @ Matrix.Rotation(math.radians(ob.get('yaw', 0)), 4, 'Z')
+         @ Matrix.Diagonal((sx, sy, sz, 1)) @ Matrix.Translation(-base))
+    o.data.transform(m)
+    o.matrix_world = Matrix.Identity(4)
+    return o
+
+
 # ── objects ─────────────────────────────────────────────────────────────────
 for ob in L.get('objects', []):
     rep = ob.get('repeat') or {}
@@ -248,6 +291,8 @@ for ob in L.get('objects', []):
             o = bpy.context.object
             o.name = nm
             o.data.materials.append(m)
+        elif ob['shape'] == 'asset':
+            place_asset(ob, nm, cx, cy, cz)
         elif ob['shape'] == 'sphere':
             r = ob['radius']
             bpy.ops.mesh.primitive_uv_sphere_add(radius=r, location=(cx, cy, cz + r), segments=24, ring_count=12)
@@ -275,11 +320,30 @@ for c in L['cameras']:
         o.rotation_euler = (math.radians(90 + c.get('pitch', 0)), math.radians(c.get('roll', 0)), math.radians(c.get('yaw', 0)))
     cams.append((o, plate))
 
-sun = bpy.data.lights.new('Sun', 'SUN')
-sun.energy = 3
-so = bpy.data.objects.new('Sun', sun)
-sc.collection.objects.link(so)
-so.rotation_euler = (math.radians(60), 0, math.radians(200))
+# ── light that follows the location: a sun through the windows, by time of day ─
+LIGHT = L.get('light') or {}
+ELEVATION = {'morning': 18, 'midday': 60, 'afternoon': 35, 'evening': 9, 'night': None}
+FROM = {'north': 0, 'west': 90, 'south': 180, 'east': -90}
+elev = ELEVATION.get(LIGHT.get('time_of_day', 'afternoon'), 35)
+if elev is not None:
+    sun = bpy.data.lights.new('Sun', 'SUN')
+    sun.energy = 3.0
+    sun.angle = math.radians(2)
+    if LIGHT.get('time_of_day') == 'evening':
+        sun.color = (1.0, 0.78, 0.55)
+    so = bpy.data.objects.new('Sun', sun)
+    sc.collection.objects.link(so)
+    # The light travels AWAY from the side it comes in from.
+    az = math.radians(FROM.get(LIGHT.get('sun_from', 'south'), 180))
+    so.rotation_euler = (math.radians(90 - elev), 0, az)
+else:
+    for k, (x, y) in enumerate([(0, 0)]):
+        lamp = bpy.data.lights.new('Night lamp', 'POINT')
+        lamp.energy = 400
+        lamp.color = (1.0, 0.8, 0.6)
+        lo_ = bpy.data.objects.new('Night lamp', lamp)
+        sc.collection.objects.link(lo_)
+        lo_.location = (x, y, 2.4)
 
 
 # ── projection ──────────────────────────────────────────────────────────────
@@ -363,6 +427,56 @@ def project():
     return stats
 
 
+def sample_palette():
+    """The clean look: every object one flat colour, the median of what the plates
+    show on the faces they see, unoccluded. An object no plate sees keeps the
+    colour its layout gave it. A patterned floor keeps its pattern."""
+    import numpy as np
+    dg = bpy.context.evaluated_depsgraph_get()
+    pixels = {}
+    for cam, plate in cams:
+        img = bpy.data.images.load(plate['path'])
+        arr = np.empty(img.size[0] * img.size[1] * 4, dtype=np.float32)
+        img.pixels.foreach_get(arr)
+        pixels[cam.name] = (arr.reshape(img.size[1], img.size[0], 4), img.size[0], img.size[1])
+    out = {}
+    for o in [o for o in sc.objects if o.type == 'MESH']:
+        if len(o.data.materials) != 1:
+            continue
+        mw = o.matrix_world
+        samples = []
+        for p in o.data.polygons:
+            c = mw @ p.center
+            n = (mw.to_3x3() @ p.normal).normalized()
+            for cam, plate in cams:
+                set_res(plate)
+                d = c - cam.matrix_world.translation
+                if -n.dot(d.normalized()) < 0.15:
+                    continue
+                v = world_to_camera_view(sc, cam, c)
+                if not (0.02 <= v.x <= 0.98 and 0.02 <= v.y <= 0.98 and v.z > 0):
+                    continue
+                hit, loc, *_ = sc.ray_cast(dg, cam.matrix_world.translation, d.normalized(), distance=d.length + 0.05)
+                if hit and (loc - c).length > 0.06:
+                    continue
+                px, w, h = pixels[cam.name]
+                samples.append(px[min(h - 1, int(v.y * h)), min(w - 1, int(v.x * w)), :3])
+        if len(samples) < 3:
+            continue
+        col = np.median(np.array(samples), axis=0)
+        base = o.data.materials[0]
+        m = bpy.data.materials.new('Sampled ' + o.name)
+        m.use_nodes = True
+        b = next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+        bb = next(n for n in base.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+        b.inputs['Base Color'].default_value = (*col, 1)
+        b.inputs['Roughness'].default_value = bb.inputs['Roughness'].default_value
+        m.diffuse_color = (*col, 1)
+        o.data.materials[0] = m
+        out[o.name] = [round(float(x), 3) for x in col]
+    return out
+
+
 result = {'mode': MODE, 'renders': {}, 'objects': len([o for o in sc.objects if o.type == 'MESH'])}
 if MODE == 'render':
     sc.render.engine = 'BLENDER_WORKBENCH'
@@ -380,13 +494,16 @@ if MODE == 'render':
         result['renders'][plate['view']] = path
 elif MODE == 'export':
     densify()
-    result['faces'] = project()
+    if STYLE == 'painted':
+        result['faces'] = project()
+    else:
+        result['palette'] = sample_palette()
     glb = os.path.join(OUT, 'set.glb')
     bpy.ops.object.select_all(action='DESELECT')
     for o in sc.objects:
-        o.select_set(o.type == 'MESH')
+        o.select_set(o.type in ('MESH', 'LIGHT'))
     bpy.ops.export_scene.gltf(filepath=glb, export_format='GLB', use_selection=True, export_yup=True,
-                              export_apply=True, export_cameras=False, export_lights=False,
+                              export_apply=True, export_cameras=False, export_lights=True,
                               export_draco_mesh_compression_enable=False)
     result['glb'] = glb
     blend = os.path.join(OUT, 'set.blend')

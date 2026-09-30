@@ -172,7 +172,13 @@ function parseGlb(input) {
         EXT_meshopt_compression:
             'this model uses meshopt compression. Re-export it uncompressed and import it again',
     };
-    for (const ext of json.extensionsRequired || []) {
+    // Extensions that change how a model LOOKS, never where its triangles are:
+    // lights, materials, texture transforms. Blender marks the lights extension
+    // required when a set is exported with its sun, and refusing it would refuse
+    // a set for carrying the light Previs is meant to plan with.
+    const geometryNeutral = ext => ext === 'KHR_lights_punctual' || ext === 'KHR_texture_transform'
+        || ext === 'KHR_materials_unlit' || /^KHR_materials_/.test(ext) || ext === 'EXT_texture_webp';
+    for (const ext of (json.extensionsRequired || []).filter(e => !geometryNeutral(e))) {
         const help = REQUIRED_EXTENSION_HELP[ext];
         throw new Error(`glb: ${help || `this model requires the ${ext} extension, which previs cannot read. `
             + 'Re-export it as plain glTF 2.0 binary'}`);

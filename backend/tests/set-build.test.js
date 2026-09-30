@@ -115,7 +115,8 @@ test('the vocabulary the brief tells, the validator accepts and the script build
         assert.ok(told.includes(shape), `the brief does not tell the agent about the ${shape} shape`);
         assert.ok(SCRIPT.includes(`ob['shape'] == '${shape}'`), `the Blender script cannot build a ${shape}`);
         const one = layout({ objects: [shape === 'box' ? { name: 'x', shape, at: [0, 3, 0], size: [1, 1, 1] }
-            : { name: 'x', shape, at: [0, 3, 0], radius: 0.3, height: 1 }] });
+            : shape === 'asset' ? { name: 'x', shape, asset: 'chair', at: [0, 3, 0] }
+                : { name: 'x', shape, at: [0, 3, 0], radius: 0.3, height: 1 }] });
         assert.deepEqual(setBuild.validateLayout(one, ['default', 'south']), [], `a valid ${shape} is refused`);
     }
     for (const side of setBuild.WALL_SIDES) {
@@ -240,13 +241,16 @@ test('an attempt is built headless, compared against its plates, and finished in
         const asset = db.prepare('SELECT * FROM film_assets WHERE id = ?').get(done.data.asset_id);
         assert.equal(JSON.parse(asset.metadata).kind, 'model_3d', 'the set is kept as a 3D model asset');
         assert.ok(fs.existsSync(asset.file_path));
-        assert.ok(done.data.faces.default > 0 && done.data.faces.south > 0, 'both plates were projected onto the set');
+        assert.equal(done.data.faces.style, 'clean', 'the clean previz look is the default');
+        assert.ok(done.data.faces.palette_objects > 0, 'clean surfaces take their colour from what the plates show');
 
         const again = await call('POST', `/film/set-builds/${r.data.id}/finish`);
         assert.equal(again.status, 409, 'finishing twice would put the same set into the world twice');
 
         // A second finished attempt is the NEXT version of the same world.
-        const next = await call('POST', `/film/set-builds/${second.data.id}/finish`);
+        assert.equal((await call('POST', `/film/set-builds/${second.data.id}/finish`, { style: 'glossy' })).status, 400);
+        const next = await call('POST', `/film/set-builds/${second.data.id}/finish`, { style: 'painted' });
+        assert.ok(next.data.faces.default > 0 && next.data.faces.south > 0, 'painted: both plates are projected onto the set');
         assert.equal(next.data.world.id, world.id);
         assert.equal(next.data.version.version, 2);
     });

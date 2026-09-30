@@ -76,6 +76,7 @@ film-engine/
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
 │   │   ├── set-builds.js       # A location's set built in Blender from its plates: brief, attempts, comparison sheets, finish
+│   │   ├── previs-library.js   # The Previs library over HTTP: free low-poly furniture and people, and their GLBs
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
@@ -281,6 +282,7 @@ film-engine/
 │   │   ├── providers/magnific.js # Magnific video upscale: creative, turbo, precision and Topaz-via-Magnific, sized by tier to the delivery
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
 │   │   ├── set-build.js         # The agent writes the room from the plates; Blender builds, renders beside the plates, projects and exports it, free
+│   │   ├── previs-library.js    # 140 CC0 low-poly furniture pieces and four people of our own, each at a real size read from its file
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
 │   │   ├── cinematography.js    # Facts out, proposal in, validated — the engine never decides
@@ -642,6 +644,7 @@ film-engine/
 │       ├── video-model-options.test.js # Every video model's options offered from its provider's schema, each reaching the request, refused by name outside it, through the preview and the paid call
 │       ├── world-blender-import.test.js # A Blender GLB as the next world version, in metres: walked in Previs, the camera kept through the validated proposal, applied to the card
 │       ├── set-build.test.js   # One layout vocabulary told, accepted and built; refused by field; built headless, compared per plate, finished into a world and a 3D asset
+│       ├── previs-library.test.js # Every library model parses at a real size; people face north; a child has a child's proportions; CC0 kept
 │       ├── generation-options.test.js # Any connected provider on every generate dialog, its own options each reaching the request, applied at the funnel only to its own provider
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
@@ -4051,6 +4054,10 @@ A world used to come from one place, a paid Marble reconstruction. It can now be
 
 **A house is not one box.** The first vocabulary described one rectangular room, which fits a diner and not a split-level house. `STRUCTURE` is now room (optional), **walls** (segments anywhere, standing at any level, each with its own doors and windows measured along it), **slabs** (a floor at any height) and **stairs** (steps rising in a direction). A layout needs at least one. A camera may also carry a **rotation** matrix instead of yaw, pitch and roll, for a camera solved from video by structure-from-motion rather than placed by eye.
 
+**Clean by default, painted on request.** *"Texturing it looks horrible… this is for previz, not an actual shot."* Projecting the plates looks right from where they were taken and smeared from anywhere else, which is the opposite of what a set you walk through is for. `finish` now takes `style`: **clean** (the default) gives every surface one flat colour, the median of what the plates show on the faces they see unoccluded, so the set still reads as that place from every angle; **painted** projects the plates as before. A patterned floor keeps its pattern, and a surface no plate sees keeps its layout colour. The layout's `light` (`time_of_day`, `sun_from`) places a sun through the windows, or a warm lamp at night, and it travels in the GLB (`KHR_lights_punctual`). The GLB reader now lets through extensions that cannot move a triangle (lights, materials, texture transforms) and still refuses compression by name.
+
+**Furniture and people are library models, not boxes** (`lib/previs-library.js`, `GET /previs-library[?category=]`, `GET /previs-library/:id/file`). 140 pieces of Kenney's Furniture Kit (CC0, public domain, its licence kept beside it) and four people made here by `scripts/make-previs-people.py`: a man (1.78 m), a woman (1.65 m), a boy and a girl of about eight (1.28 m, 1.26 m). A person is a skeleton in real proportions with a body grown over it by Blender's skin modifier, smoothed once and reduced to about 1,200 faces, with a nose and ears so the facing reads; clothing is flat colour by the nearest bone, and a child's head is larger for its height, as a child's is. Kenney's units are not metres and not consistent (a door is 1.01, a chair 0.47), and one rule fits them: native × 2.0. Every size is read from the file. A layout places one with `shape: 'asset'`, `asset` (a library id) or `asset_id` (one of the project's own 3D models, such as a Meshy creature), `at`, `yaw` and an optional measured `size` it is fitted to. `tests/previs-library.test.js` holds every model to parsing, the people to their heights and to facing north, and the licence to being present.
+
 **What a phone video gives, measured on The Lodgers house** (90 s, iPhone 17 Pro ultra-wide, 4K): structure-from-motion (COLMAP, CPU) solves 257 of 269 frames, and the iPhone has already removed the lens distortion (about a 97° field). But it solves them as **six unconnected pieces**, broken at every doorway, stair and quick turn, and exhaustive matching does not join them: the walk goes one way, so no frame of the lower office ever sees what the main floor saw. The camera path inside a piece is exact; the sparse points are too thin to trace walls from. For a multi-room location the capture that gives geometry is a LiDAR scan (the iPhone Pro has the sensor), imported as a GLB; a video to be solved must look back across every transition.
 
 Measured on The Glass Harbour diner, from nothing but its two usable plates: 18 seconds to build and compare, 5 to finish, 32,498 triangles, 6.6 × 3.2 × 11.0 m. The east plate got no camera, because it disagrees with the other two about the room. Marble stays for now; removing it touches the world capability across a dozen registries, and is worth doing once this path has proven itself on more than one location.
@@ -6712,6 +6719,7 @@ node --test backend/tests/video-model-options.test.js
 node --test backend/tests/generation-options.test.js
 node --test backend/tests/world-blender-import.test.js
 node --test backend/tests/set-build.test.js
+node --test backend/tests/previs-library.test.js
 node --test backend/tests/topaz-upscale.test.js
 node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/setup-models.test.js

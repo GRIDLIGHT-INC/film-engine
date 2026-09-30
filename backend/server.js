@@ -124,6 +124,7 @@ const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
 const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds');
 const { handleSetBuilds, LOCATION_TAILS: SET_BUILD_TAILS } = require('./routes/set-builds');
+const { handlePrevisLibrary } = require('./routes/previs-library');
 const approvalGuard = require('./lib/approval-guard');
 const { handleApprovals } = require('./routes/approvals');
 const { handleFrameHandles } = require('./routes/frame-handles');
@@ -991,6 +992,8 @@ const server = http.createServer(async (req, res) => {
          * A handler that exists and is never reached looks exactly like a
          * missing feature: the /film/locations/:id trap that already cost once.
          */
+        // The Previs library: free low-poly furniture and people.
+        if (parts[1] === 'previs-library') return handlePrevisLibrary(req, res, parts, query);
         // A location's set, built in Blender from its plates. Before the
         // /film/locations/:id catch-all, which would otherwise swallow it.
         if (parts[1] === 'set-builds'

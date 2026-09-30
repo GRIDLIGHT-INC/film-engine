@@ -66,7 +66,13 @@ const SCRIPT = path.join(__dirname, '..', 'blender-set.py');
 
 // ── the layout vocabulary ───────────────────────────────────────────────────
 
-const SHAPES = Object.freeze(['box', 'cylinder', 'sphere']);
+const SHAPES = Object.freeze(['box', 'cylinder', 'sphere', 'asset']);
+// How a finished set looks. 'clean' is the previz default: every surface one
+// flat colour, SAMPLED from the plates where a plate sees it, so the set reads
+// as that place from every angle without the smear a projection leaves on any
+// angle the photographs did not take. 'painted' projects the plates on.
+const STYLES = Object.freeze(['clean', 'painted']);
+const TIMES_OF_DAY = Object.freeze(['morning', 'midday', 'afternoon', 'evening', 'night']);
 const WALL_SIDES = Object.freeze(['north', 'south', 'east', 'west']);
 const OPENING_KINDS = Object.freeze(['window', 'door', 'gap']);
 // The parts of a layout that make up the BUILDING. A single room is one; a
@@ -89,6 +95,11 @@ const LAYOUT_SCHEMA = Object.freeze({
         + '(for anything that is not one box-shaped room: interior walls, split levels, L-shaped plans)',
     slabs: '[{ name, x0, x1, y0, y1, z (the TOP of the floor), thickness (default 0.2), color, '
         + "pattern: 'plain'|'checker', colors, tile }] (a floor or ceiling at any level; leave a gap where a stair comes up)",
+    light: `{ time_of_day: ${TIMES_OF_DAY.join('|')}, sun_from: north|south|east|west (the side the sun comes in from) }`,
+    assets: 'An object with shape: asset is a model placed at real size: `asset` names an entry of the Previs library '
+        + '(GET /film/previs-library: 140 low-poly furniture pieces and four people) or `asset_id` names one of this '
+        + 'project\'s 3D models. `at` is where its base centre stands, `yaw` which way it faces (0 north), and `size` '
+        + '[width, depth, height] fits it to what you measured (default: its library size).',
     stairs: '[{ name, at: [x, y, z] (the bottom of the first step, centre of its front edge), yaw (the direction you '
         + 'climb: 0 north, 90 west, 180 south, -90 east), width, rise (total height), run (total length), steps, color }]',
     openings: `[{ wall: ${WALL_SIDES.join('|')}, kind: ${OPENING_KINDS.join('|')}, from, to (along the wall, `
@@ -193,6 +204,14 @@ function validateLayout(layout, plateViews) {
         if (o.shape === 'box' && !(Array.isArray(o.size) && o.size.length === 3 && o.size.every(v => num(v) && v > 0))) {
             errors.push(`${at}.size must be [width, depth, height], each above 0`);
         }
+        if (o.shape === 'asset') {
+            if (!o.asset && !o.asset_id) errors.push(`${at} needs asset (a library id) or asset_id (a project 3D model)`);
+            else if (o.asset && !require('./previs-library').get(o.asset)) errors.push(`${at}.asset '${o.asset}' is not in the Previs library`);
+            if (o.size != null && !(Array.isArray(o.size) && o.size.length === 3 && o.size.every(v => num(v) && v > 0))) {
+                errors.push(`${at}.size must be [width, depth, height], each above 0`);
+            }
+            if (o.yaw != null && !num(o.yaw)) errors.push(`${at}.yaw must be degrees`);
+        }
         if (o.shape === 'cylinder' && !(num(o.radius) && o.radius > 0 && num(o.height) && o.height > 0)) errors.push(`${at} needs radius and height above 0`);
         if (o.shape === 'sphere' && !(num(o.radius) && o.radius > 0)) errors.push(`${at} needs a radius above 0`);
         if (o.color != null && !HEX.test(o.color)) errors.push(`${at}.color must be #rrggbb`);
@@ -204,6 +223,10 @@ function validateLayout(layout, plateViews) {
     });
     if (expanded > LIMITS.objects) errors.push(`${expanded} objects after repeats; the ceiling is ${LIMITS.objects}`);
 
+    if (L.light != null) {
+        if (L.light.time_of_day != null && !TIMES_OF_DAY.includes(L.light.time_of_day)) errors.push(`light.time_of_day must be one of ${TIMES_OF_DAY.join(', ')}`);
+        if (L.light.sun_from != null && !WALL_SIDES.includes(L.light.sun_from)) errors.push(`light.sun_from must be one of ${WALL_SIDES.join(', ')}`);
+    }
     const cams = L.cameras || [];
     if (!cams.length) errors.push('cameras: at least one plate camera is required, or nothing can be held against a plate');
     const seen = new Set();
@@ -274,6 +297,8 @@ const INSTRUCTIONS = [
         + 'pitch, lens), then the geometry. Render again. Two or three attempts is normal.',
     'When the blends line up, call set_build_finish with that attempt. It projects the plates onto the set, '
         + 'makes it the next version of the location\'s world, and keeps it as a 3D model asset.',
+    'Furniture, fixtures and people are library models (shape: asset), not boxes: pick the nearest entry by '
+        + 'category and give it the size you measured. A box is the fallback for anything the library does not have.',
     'Model only what a camera will see and a shot will be framed against. Anything you cannot place from the '
         + 'plates is better left out than guessed: a surface nobody photographed stays its plain colour.',
 ];
@@ -295,6 +320,8 @@ function brief(locationId, opts = {}) {
         schema: LAYOUT_SCHEMA,
         limits: LIMITS,
         instructions: INSTRUCTIONS,
+        // What can be placed as shape: asset, at its real size.
+        library: require('./previs-library').list().map(e => ({ id: e.id, category: e.category, size_m: e.size_m })),
         last_attempt: last ? { id: last.id, attempt: last.attempt, status: last.status,
             layout: JSON.parse(last.layout_json) } : null,
         cost: 'Free. Blender runs on this machine.',
@@ -302,6 +329,41 @@ function brief(locationId, opts = {}) {
         // The pictures themselves, for an agent that has to LOOK at them.
         ...(opts.withImages ? { images: plates.map(p => ({ data_uri: fileDataUri(p.path), label: `plate: ${p.view}` })) } : {}),
     };
+}
+
+/**
+ * Every asset object resolved to a file and a size, for the job. A project 3D
+ * model must belong to the project and exist on disk; its default size is its
+ * own, read from the file, since a generated mesh has no library size.
+ */
+function resolveAssets(layout, projectId) {
+    const lib = require('./previs-library');
+    const out = {};
+    const errors = [];
+    (layout.objects || []).forEach((o, i) => {
+        if (o.shape !== 'asset') return;
+        const key = o.asset ? `lib:${o.asset}` : `model:${o.asset_id}`;
+        if (out[key]) return;
+        if (o.asset) {
+            const e = lib.get(o.asset);
+            out[key] = { path: e.file, size: e.size_m, y_up: true };
+            return;
+        }
+        const row = db().prepare('SELECT * FROM film_assets WHERE id = ? AND project_id = ?').get(o.asset_id, projectId);
+        let kind = null;
+        try { kind = row && JSON.parse(row.metadata || '{}').kind; } catch (_) { kind = null; }
+        if (!row || !/^model_/.test(kind || '') || !row.file_path || !fs.existsSync(row.file_path)) {
+            errors.push(`objects[${i}].asset_id '${o.asset_id}' is not one of this project's 3D models on disk`);
+            return;
+        }
+        let size = null;
+        try {
+            const g = require('./glb-parser').parseGlb(fs.readFileSync(row.file_path));
+            size = [g.size[0], g.size[2], g.size[1]];
+        } catch (err) { errors.push(`objects[${i}]: that 3D model cannot be read (${err.message})`); return; }
+        out[key] = { path: row.file_path, size, y_up: true };
+    });
+    return { assets: out, errors };
 }
 
 // ── running Blender ─────────────────────────────────────────────────────────
@@ -395,11 +457,13 @@ async function renderAttempt(locationId, layout, opts = {}) {
     const attempt = (d.prepare('SELECT MAX(attempt) a FROM film_set_builds WHERE location_id = ?').get(locationId).a || 0) + 1;
     const outDir = buildDir(location.project_id, id);
     const used = plates.filter(p => layout.cameras.some(c => c.plate === p.view));
+    const resolved = resolveAssets(layout, location.project_id);
+    if (resolved.errors.length) { const e = new Error(`Layout refused: ${resolved.errors[0]}`); e.status = 400; e.errors = resolved.errors; throw e; }
     d.prepare(`INSERT INTO film_set_builds (id, project_id, location_id, attempt, layout_json, note, status, out_dir)
                VALUES (?, ?, ?, ?, ?, ?, 'rendered', ?)`)
         .run(id, location.project_id, locationId, attempt, JSON.stringify(layout), opts.note || null, outDir);
     try {
-        const result = await runBlender({ mode: 'render', layout, out_dir: outDir, plates: used });
+        const result = await runBlender({ mode: 'render', layout, out_dir: outDir, plates: used, assets: resolved.assets });
         const renders = {};
         for (const p of used) {
             const r = result.renders[p.view];
@@ -439,7 +503,9 @@ function worldForLocation(location) {
  * attempt may finish; a failed one has nothing to project, and finishing twice
  * would put the same set into the world twice.
  */
-async function finishAttempt(buildId) {
+async function finishAttempt(buildId, opts = {}) {
+    const style = opts.style || 'clean';
+    if (!STYLES.includes(style)) { const e = new Error(`style must be one of ${STYLES.join(', ')}`); e.status = 400; throw e; }
     const d = db();
     const row = d.prepare('SELECT * FROM film_set_builds WHERE id = ?').get(buildId);
     if (!row) { const e = new Error('Set build not found'); e.status = 404; throw e; }
@@ -448,14 +514,16 @@ async function finishAttempt(buildId) {
     const found = platesFor(row.location_id);
     const layout = JSON.parse(row.layout_json);
     const used = found.plates.filter(p => layout.cameras.some(c => c.plate === p.view));
-    const result = await runBlender({ mode: 'export', layout, out_dir: row.out_dir, plates: used });
+    const resolved = resolveAssets(layout, row.project_id);
+    if (resolved.errors.length) { const e = new Error(resolved.errors[0]); e.status = 409; throw e; }
+    const result = await runBlender({ mode: 'export', style, layout, out_dir: row.out_dir, plates: used, assets: resolved.assets });
     const glb = fs.readFileSync(result.glb);
 
     const world = worldForLocation(found.location);
     const worlds = require('./worlds');
     const version = worlds.importVersion(d, world.id, {
         glb, source: 'blender',
-        reason: `Set build attempt ${row.attempt}: built in Blender from ${used.map(p => p.view).join(', ')} plates`,
+        reason: `Set build attempt ${row.attempt} (${style}): built in Blender from ${used.map(p => p.view).join(', ')} plates`,
         caption: row.note || null,
     });
     const asset = require('./media-imports').importMedia('three-d-model', {
@@ -464,6 +532,7 @@ async function finishAttempt(buildId) {
         data: `data:model/gltf-binary;base64,${glb.toString('base64')}`,
         locationId: row.location_id,
     });
+    result.faces = Object.assign({ style }, result.faces || {}, result.palette ? { palette_objects: Object.keys(result.palette).length } : {});
     d.prepare(`UPDATE film_set_builds SET status = 'finished', faces_json = ?, world_version_id = ?, asset_id = ?,
                finished_at = datetime('now') WHERE id = ?`)
         .run(JSON.stringify(result.faces || {}), version.id, asset.asset_id, buildId);
@@ -477,5 +546,5 @@ async function finishAttempt(buildId) {
 
 module.exports = {
     resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, getBuild, listBuilds,
-    LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, LIMITS, INSTRUCTIONS, SCRIPT,
+    LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, STYLES, TIMES_OF_DAY, LIMITS, INSTRUCTIONS, SCRIPT, resolveAssets,
 };
