@@ -69,6 +69,10 @@ const SCRIPT = path.join(__dirname, '..', 'blender-set.py');
 const SHAPES = Object.freeze(['box', 'cylinder', 'sphere']);
 const WALL_SIDES = Object.freeze(['north', 'south', 'east', 'west']);
 const OPENING_KINDS = Object.freeze(['window', 'door', 'gap']);
+// The parts of a layout that make up the BUILDING. A single room is one; a
+// house with split levels is walls anywhere, floors at every level and the
+// stairs between them. At least one must be present.
+const STRUCTURE = Object.freeze(['room', 'walls', 'slabs', 'stairs']);
 const LIMITS = Object.freeze({ room_m: [1, 200], height_m: [1.5, 40], objects: 3000, lens_mm: [8, 300] });
 
 /**
@@ -78,18 +82,28 @@ const LIMITS = Object.freeze({ room_m: [1, 200], height_m: [1.5, 40], objects: 3
  */
 const LAYOUT_SCHEMA = Object.freeze({
     units: 'metres. Blender axes: x east, y north, z up. The floor is z = 0.',
-    room: '{ x0, x1, y0, y1, height, wall_color, ceiling_color, ceiling (bool, default true), open_walls: [side], '
-        + "floor: { pattern: 'plain'|'checker', colors: ['#hex', '#hex'], tile } }",
+    room: 'OPTIONAL, one box-shaped room: { x0, x1, y0, y1, height, wall_color, ceiling_color, ceiling (bool, default true), '
+        + "open_walls: [side], floor: { pattern: 'plain'|'checker', colors: ['#hex', '#hex'], tile } }",
+    walls: '[{ name, from: [x, y], to: [x, y], z0 (the floor it stands on, default 0), height, thickness (default 0.12), '
+        + 'color, openings: [{ kind: window|door|gap, at (metres from `from` to the opening\'s near edge), width, sill, top, mullions }] }] '
+        + '(for anything that is not one box-shaped room: interior walls, split levels, L-shaped plans)',
+    slabs: '[{ name, x0, x1, y0, y1, z (the TOP of the floor), thickness (default 0.2), color, '
+        + "pattern: 'plain'|'checker', colors, tile }] (a floor or ceiling at any level; leave a gap where a stair comes up)",
+    stairs: '[{ name, at: [x, y, z] (the bottom of the first step, centre of its front edge), yaw (the direction you '
+        + 'climb: 0 north, 90 west, 180 south, -90 east), width, rise (total height), run (total length), steps, color }]',
     openings: `[{ wall: ${WALL_SIDES.join('|')}, kind: ${OPENING_KINDS.join('|')}, from, to (along the wall, `
         + 'in that axis\'s own coordinate: x for north/south, y for east/west), sill, top, mullions, frame_color, glass_color }]',
     objects: `[{ name, shape: ${SHAPES.join('|')}, at: [x, y, z] (the BASE centre: z is where it stands), `
         + 'size: [width_x, depth_y, height_z] for a box, radius + height for a cylinder, radius for a sphere, '
         + "yaw (box only, degrees), color: '#hex', rough, metal, repeat: { count, step: [dx, dy, dz] } }]",
     cameras: '[{ plate: the plate view it stands for, position: [x, y, z], yaw (degrees; 0 looks north, '
-        + '90 looks west, 180 south, -90 east), pitch (degrees, negative looks down), roll, lens (mm on a 36mm-wide sensor) }]',
+        + '90 looks west, 180 south, -90 east), pitch (degrees, negative looks down), roll, lens (mm on a 36mm-wide sensor), '
+        + 'rotation (optional 3x3 camera-to-world matrix, rows, Blender camera axes: it replaces yaw/pitch/roll when a '
+        + 'camera was solved from video rather than placed by eye) }]',
 });
 
 const HEX = /^#[0-9a-f]{6}$/i;
+const PT2 = v => Array.isArray(v) && v.length === 2 && v.every(n => typeof n === 'number' && Number.isFinite(n));
 const num = v => typeof v === 'number' && Number.isFinite(v);
 
 /**
@@ -101,23 +115,25 @@ const num = v => typeof v === 'number' && Number.isFinite(v);
 function validateLayout(layout, plateViews) {
     const errors = [];
     const L = layout || {};
-    const R = L.room;
-    if (!R || typeof R !== 'object') return ['room is required'];
-    for (const k of ['x0', 'x1', 'y0', 'y1', 'height']) if (!num(R[k])) errors.push(`room.${k} must be a number`);
-    if (!errors.length) {
+    if (!STRUCTURE.some(k => k === 'room' ? L.room : (Array.isArray(L[k]) && L[k].length))) {
+        return [`a layout needs a building: at least one of ${STRUCTURE.join(', ')}`];
+    }
+    const R = L.room || null;
+    if (R) for (const k of ['x0', 'x1', 'y0', 'y1', 'height']) if (!num(R[k])) errors.push(`room.${k} must be a number`);
+    if (R && !errors.length) {
         const w = R.x1 - R.x0, d = R.y1 - R.y0;
         if (w < LIMITS.room_m[0] || w > LIMITS.room_m[1]) errors.push(`room width (x1 - x0 = ${w}) must be ${LIMITS.room_m.join('–')} m`);
         if (d < LIMITS.room_m[0] || d > LIMITS.room_m[1]) errors.push(`room depth (y1 - y0 = ${d}) must be ${LIMITS.room_m.join('–')} m`);
         if (R.height < LIMITS.height_m[0] || R.height > LIMITS.height_m[1]) errors.push(`room.height must be ${LIMITS.height_m.join('–')} m`);
     }
-    for (const k of ['wall_color', 'ceiling_color']) if (R[k] != null && !HEX.test(R[k])) errors.push(`room.${k} must be #rrggbb`);
-    if (R.floor) {
+    if (R) for (const k of ['wall_color', 'ceiling_color']) if (R[k] != null && !HEX.test(R[k])) errors.push(`room.${k} must be #rrggbb`);
+    if (R && R.floor) {
         const cols = R.floor.colors || (R.floor.color ? [R.floor.color] : []);
         cols.forEach((c, i) => { if (!HEX.test(c)) errors.push(`room.floor.colors[${i}] must be #rrggbb`); });
         if (R.floor.pattern && !['plain', 'checker'].includes(R.floor.pattern)) errors.push("room.floor.pattern must be 'plain' or 'checker'");
         if (R.floor.pattern === 'checker' && !(num(R.floor.tile) && R.floor.tile >= 0.05)) errors.push('a checker floor needs room.floor.tile of at least 0.05 m');
     }
-    (R.open_walls || []).forEach(s => { if (!WALL_SIDES.includes(s)) errors.push(`room.open_walls: '${s}' is not a wall`); });
+    ((R && R.open_walls) || []).forEach(s => { if (!WALL_SIDES.includes(s)) errors.push(`room.open_walls: '${s}' is not a wall`); });
 
     (L.openings || []).forEach((o, i) => {
         const at = `openings[${i}]`;
@@ -127,6 +143,45 @@ function validateLayout(layout, plateViews) {
         if (o.sill != null && !num(o.sill)) errors.push(`${at}.sill must be a number`);
         if (o.top != null && !num(o.top)) errors.push(`${at}.top must be a number`);
         if (num(o.sill) && num(o.top) && o.top <= o.sill) errors.push(`${at}.top must be above its sill`);
+    });
+
+    if ((L.openings || []).length && !R) errors.push('openings belong to a room; with walls, put each opening on its wall');
+
+    (L.walls || []).forEach((w, i) => {
+        const at = `walls[${i}]${w && w.name ? ` (${w.name})` : ''}`;
+        if (!PT2(w.from) || !PT2(w.to)) { errors.push(`${at} needs from and to as [x, y]`); return; }
+        const len = Math.hypot(w.to[0] - w.from[0], w.to[1] - w.from[1]);
+        if (len < 0.05) errors.push(`${at} is shorter than 5 cm`);
+        if (!(num(w.height) && w.height > 0 && w.height <= LIMITS.height_m[1])) errors.push(`${at}.height must be above 0`);
+        if (w.z0 != null && !num(w.z0)) errors.push(`${at}.z0 must be a number`);
+        if (w.thickness != null && !(num(w.thickness) && w.thickness > 0 && w.thickness < 2)) errors.push(`${at}.thickness must be 0–2 m`);
+        if (w.color != null && !HEX.test(w.color)) errors.push(`${at}.color must be #rrggbb`);
+        (w.openings || []).forEach((o, j) => {
+            const oa = `${at}.openings[${j}]`;
+            if (!OPENING_KINDS.includes(o.kind)) errors.push(`${oa}.kind must be one of ${OPENING_KINDS.join(', ')}`);
+            if (!(num(o.at) && o.at >= 0 && num(o.width) && o.width > 0 && o.at + o.width <= len + 1e-6)) {
+                errors.push(`${oa} must sit inside the wall: 0 ≤ at, at + width ≤ ${len.toFixed(2)} m`);
+            }
+            if (num(o.sill) && num(o.top) && o.top <= o.sill) errors.push(`${oa}.top must be above its sill`);
+            if (num(o.top) && o.top > w.height + 1e-6) errors.push(`${oa}.top is above the wall`);
+        });
+    });
+    (L.slabs || []).forEach((sl, i) => {
+        const at = `slabs[${i}]${sl && sl.name ? ` (${sl.name})` : ''}`;
+        for (const k of ['x0', 'x1', 'y0', 'y1', 'z']) if (!num(sl[k])) errors.push(`${at}.${k} must be a number`);
+        if (num(sl.x0) && num(sl.x1) && sl.x1 <= sl.x0) errors.push(`${at} needs x0 < x1`);
+        if (num(sl.y0) && num(sl.y1) && sl.y1 <= sl.y0) errors.push(`${at} needs y0 < y1`);
+        if (sl.color != null && !HEX.test(sl.color)) errors.push(`${at}.color must be #rrggbb`);
+        (sl.colors || []).forEach((c, j) => { if (!HEX.test(c)) errors.push(`${at}.colors[${j}] must be #rrggbb`); });
+        if (sl.pattern === 'checker' && !(num(sl.tile) && sl.tile >= 0.05)) errors.push(`${at}: a checker slab needs tile of at least 0.05 m`);
+    });
+    (L.stairs || []).forEach((st, i) => {
+        const at = `stairs[${i}]${st && st.name ? ` (${st.name})` : ''}`;
+        if (!Array.isArray(st.at) || st.at.length !== 3 || !st.at.every(num)) errors.push(`${at}.at must be [x, y, z]`);
+        for (const k of ['width', 'rise', 'run']) if (!(num(st[k]) && st[k] > 0)) errors.push(`${at}.${k} must be above 0`);
+        if (!(Number.isInteger(st.steps) && st.steps >= 1 && st.steps <= 60)) errors.push(`${at}.steps must be a whole number 1–60`);
+        if (st.yaw != null && !num(st.yaw)) errors.push(`${at}.yaw must be degrees`);
+        if (st.color != null && !HEX.test(st.color)) errors.push(`${at}.color must be #rrggbb`);
     });
 
     let expanded = 0;
@@ -158,6 +213,10 @@ function validateLayout(layout, plateViews) {
         if (seen.has(c.plate)) errors.push(`${at}: plate '${c.plate}' already has a camera`);
         seen.add(c.plate);
         if (!Array.isArray(c.position) || c.position.length !== 3 || !c.position.every(num)) errors.push(`${at}.position must be [x, y, z]`);
+        if (c.rotation != null && !(Array.isArray(c.rotation) && c.rotation.length === 3
+            && c.rotation.every(r => Array.isArray(r) && r.length === 3 && r.every(num)))) {
+            errors.push(`${at}.rotation must be a 3x3 matrix (rows), camera-to-world, Blender camera axes`);
+        }
         for (const k of ['yaw', 'pitch', 'roll']) if (c[k] != null && !num(c[k])) errors.push(`${at}.${k} must be degrees`);
         if (c.lens != null && !(num(c.lens) && c.lens >= LIMITS.lens_mm[0] && c.lens <= LIMITS.lens_mm[1])) errors.push(`${at}.lens must be ${LIMITS.lens_mm.join('–')} mm`);
     });
@@ -418,5 +477,5 @@ async function finishAttempt(buildId) {
 
 module.exports = {
     resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, getBuild, listBuilds,
-    LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, LIMITS, INSTRUCTIONS, SCRIPT,
+    LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, LIMITS, INSTRUCTIONS, SCRIPT,
 };

@@ -132,11 +132,38 @@ test('the vocabulary the brief tells, the validator accepts and the script build
     assert.match(SCRIPT, /o\['kind'\] == 'door'/);
 });
 
+test('a house is walls, slabs and stairs: told, accepted and built, with room optional', () => {
+    const told = JSON.stringify(setBuild.LAYOUT_SCHEMA);
+    for (const part of setBuild.STRUCTURE) assert.ok(told.includes(part), `the brief does not tell the agent about ${part}`);
+    for (const part of ['walls', 'slabs', 'stairs']) {
+        assert.ok(SCRIPT.includes(`L.get('${part}', [])`), `the Blender script does not build ${part}`);
+    }
+    const house = {
+        walls: [{ name: 'Hall', from: [0, 0], to: [5, 0], z0: 1.4, height: 2.5,
+            openings: [{ kind: 'door', at: 1, width: 0.9, top: 2.1 }, { kind: 'window', at: 3, width: 1.2, sill: 0.9, top: 2.2 }] }],
+        slabs: [{ name: 'Upper floor', x0: 0, x1: 5, y0: 0, y1: 4, z: 1.4 }],
+        stairs: [{ name: 'Half flight', at: [1, -2, 0], yaw: 0, width: 0.9, rise: 1.4, run: 2.2, steps: 8 }],
+        cameras: [{ plate: 'default', position: [2, 2, 3], rotation: [[1, 0, 0], [0, 0, -1], [0, 1, 0]] }],
+    };
+    assert.deepEqual(setBuild.validateLayout(house, ['default']), [], 'a split-level house with no room is refused');
+    const bad = (over, want) => {
+        const errs = setBuild.validateLayout(Object.assign({}, house, over), ['default']);
+        assert.ok(errs.some(e => want.test(e)), `expected ${want}; got ${JSON.stringify(errs)}`);
+    };
+    bad({ walls: [{ from: [0, 0], to: [2, 0], height: 2.5, openings: [{ kind: 'door', at: 1.5, width: 0.9 }] }] }, /must sit inside the wall/);
+    bad({ walls: [{ from: [0, 0], height: 2.5 }] }, /needs from and to/);
+    bad({ slabs: [{ x0: 2, x1: 1, y0: 0, y1: 1, z: 0 }] }, /x0 < x1/);
+    bad({ stairs: [{ at: [0, 0, 0], width: 0.9, rise: 1, run: 2, steps: 0 }] }, /steps must be/);
+    bad({ cameras: [{ plate: 'default', position: [0, 0, 1], rotation: [[1, 0], [0, 1]] }] }, /3x3 matrix/);
+    assert.ok(setBuild.validateLayout({ cameras: house.cameras }, ['default'])[0].includes('needs a building'));
+    assert.match(SCRIPT, /c\.get\('rotation'\)/, 'a camera solved from video must be placed by its own rotation');
+});
+
 test('a layout is refused by field before Blender runs', () => {
     const views = ['default', 'south'];
     assert.deepEqual(setBuild.validateLayout(layout(), views), []);
     const refusals = [
-        [{ room: undefined }, /room is required/],
+        [{ room: undefined }, /needs a building/],
         [{ room: { x0: 0, x1: 0.2, y0: 0, y1: 5, height: 3 } }, /room width/],
         [{ room: { x0: 0, x1: 4, y0: 0, y1: 5, height: 3, wall_color: 'red' } }, /wall_color must be #rrggbb/],
         [{ openings: [{ wall: 'up', kind: 'window', from: 0, to: 1 }] }, /openings\[0\]\.wall/],

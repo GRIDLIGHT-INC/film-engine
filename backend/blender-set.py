@@ -67,44 +67,72 @@ def box(name, x0, x1, y0, y1, z0, z1, m):
     return o
 
 
-# ── the room ────────────────────────────────────────────────────────────────
-R = L['room']
-x0, x1, y0, y1, H = R['x0'], R['x1'], R['y0'], R['y1'], R['height']
-T = 0.1
-wall_m = mat(R.get('wall_color', '#c8b89a'))
-ceil_m = mat(R.get('ceiling_color', '#d8cbb0'))
-floor = R.get('floor', {}) or {}
+def rbox(name, cx, cy, cz0, length, thick, height, angle, m):
+    """A box `length` along a direction at `angle` radians from +x, standing on cz0.
+    The rotation is applied into the mesh, so the projection sees plain world coordinates."""
+    if length <= 1e-4 or thick <= 1e-4 or height <= 1e-4:
+        return None
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(cx, cy, cz0 + height / 2))
+    o = bpy.context.object
+    o.name = name
+    o.scale = (length, thick, height)
+    o.rotation_euler = (0, 0, angle)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    o.data.materials.append(m)
+    return o
 
-bpy.ops.mesh.primitive_plane_add(size=1, location=((x0 + x1) / 2, (y0 + y1) / 2, 0))
-fl = bpy.context.object
-fl.name = 'Floor'
-fl.scale = (x1 - x0, y1 - y0, 1)
-bpy.ops.object.transform_apply(scale=True)
-fcols = floor.get('colors') or [floor.get('color', '#8a8278')]
-fl.data.materials.append(mat(fcols[0], 0.35))
-if floor.get('pattern') == 'checker' and len(fcols) > 1:
-    tile = float(floor.get('tile', 0.3))
-    cuts = int(max(x1 - x0, y1 - y0) / tile)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.subdivide(number_cuts=max(1, cuts))
-    bpy.ops.object.mode_set(mode='OBJECT')
-    fl.data.materials.append(mat(fcols[1], 0.35))
-    for p in fl.data.polygons:
-        i = int(math.floor((p.center.x - x0) / tile))
-        j = int(math.floor((p.center.y - y0) / tile))
-        p.material_index = (i + j) % 2
-if R.get('ceiling', True):
-    box('Ceiling', x0, x1, y0, y1, H, H + T, ceil_m)
+
+def floor_plane(name, fx0, fx1, fy0, fy1, z, spec, thickness=0.0):
+    cols = spec.get('colors') or [spec.get('color', '#8a8278')]
+    if thickness > 0:
+        box(name + ' slab', fx0, fx1, fy0, fy1, z - thickness, z - 0.002, mat(cols[0], 0.5))
+    bpy.ops.mesh.primitive_plane_add(size=1, location=((fx0 + fx1) / 2, (fy0 + fy1) / 2, z))
+    fl = bpy.context.object
+    fl.name = name
+    fl.scale = (fx1 - fx0, fy1 - fy0, 1)
+    bpy.ops.object.transform_apply(scale=True)
+    fl.data.materials.append(mat(cols[0], 0.35))
+    if spec.get('pattern') == 'checker' and len(cols) > 1:
+        tile = float(spec.get('tile', 0.3))
+        cuts = int(max(fx1 - fx0, fy1 - fy0) / tile)
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.subdivide(number_cuts=max(1, cuts))
+        bpy.ops.object.mode_set(mode='OBJECT')
+        fl.data.materials.append(mat(cols[1], 0.35))
+        for p in fl.data.polygons:
+            i = int(math.floor((p.center.x - fx0) / tile))
+            j = int(math.floor((p.center.y - fy0) / tile))
+            p.material_index = (i + j) % 2
+    return fl
+
+
+# ── the room (optional: one box-shaped room) ────────────────────────────────
+R = L.get('room')
+T = 0.1
+if R:
+    x0, x1, y0, y1, H = R['x0'], R['x1'], R['y0'], R['y1'], R['height']
+    wall_m = mat(R.get('wall_color', '#c8b89a'))
+    ceil_m = mat(R.get('ceiling_color', '#d8cbb0'))
+    floor_plane('Floor', x0, x1, y0, y1, 0, R.get('floor', {}) or {})
+    if R.get('ceiling', True):
+        box('Ceiling', x0, x1, y0, y1, H, H + T, ceil_m)
 
 # A wall runs along one axis; an opening is [from, to] along it and [sill, top]
 # up it. The wall is cut around its openings rather than boolean-subtracted,
 # so the geometry stays simple quads the projection can texture.
 WALLS = {
-    'north': dict(axis='x', lo=x0, hi=x1, fixed=(y1, y1 + T)),
-    'south': dict(axis='x', lo=x0, hi=x1, fixed=(y0 - T, y0)),
-    'east': dict(axis='y', lo=y0, hi=y1, fixed=(x1, x1 + T)),
-    'west': dict(axis='y', lo=y0, hi=y1, fixed=(x0 - T, x0)),
+    'north': dict(axis='x', lo='x0', hi='x1', fixed=('y1', +1)),
+    'south': dict(axis='x', lo='x0', hi='x1', fixed=('y0', -1)),
+    'east': dict(axis='y', lo='y0', hi='y1', fixed=('x1', +1)),
+    'west': dict(axis='y', lo='y0', hi='y1', fixed=('x0', -1)),
 }
+
+
+def room_wall(side):
+    spec = WALLS[side]
+    edge = R[spec['fixed'][0]]
+    fixed = (edge, edge + T) if spec['fixed'][1] > 0 else (edge - T, edge)
+    return dict(axis=spec['axis'], lo=R[spec['lo']], hi=R[spec['hi']], fixed=fixed)
 
 
 def wall_piece(name, w, a, b, z0, z1, m, inset=0.0):
@@ -117,7 +145,8 @@ def wall_piece(name, w, a, b, z0, z1, m, inset=0.0):
 
 
 openings = L.get('openings', [])
-for side, w in WALLS.items():
+for side in (WALLS if R else []):
+    w = room_wall(side)
     if side in (R.get('open_walls') or []):
         continue
     mine = sorted([o for o in openings if o['wall'] == side], key=lambda o: o['from'])
@@ -140,6 +169,62 @@ for side, w in WALLS.items():
             wall_piece(f'{side} door {k}', w, a, b, 0, top, frame_m, inset=0.02)
         cursor = b
     wall_piece(f'{side} wall pier end', w, cursor, w['hi'], 0, H, wall_m)
+
+# ── free walls: anywhere, at any level, each with its own openings ─────────
+for wi, W in enumerate(L.get('walls', [])):
+    ax, ay = W['from']
+    bx, by = W['to']
+    length = math.hypot(bx - ax, by - ay)
+    ang = math.atan2(by - ay, bx - ax)
+    ux, uy = (bx - ax) / length, (by - ay) / length
+    z0 = W.get('z0', 0.0)
+    h = W['height']
+    th = W.get('thickness', 0.12)
+    wm = mat(W.get('color', '#c8c4bc'))
+    nm = W.get('name') or f'Wall {wi + 1}'
+
+    def piece(label, a, b, pz0, pz1, m, thick=None):
+        if b - a <= 1e-4 or pz1 - pz0 <= 1e-4:
+            return
+        mid = (a + b) / 2
+        rbox(f'{nm} {label}', ax + ux * mid, ay + uy * mid, z0 + pz0, b - a, thick or th, pz1 - pz0, ang, m)
+
+    cursor = 0.0
+    for k, o in enumerate(sorted(W.get('openings', []), key=lambda o: o['at'])):
+        a, b = o['at'], o['at'] + o['width']
+        piece(f'pier {k}', cursor, a, 0, h, wm)
+        sill, top = o.get('sill', 0.0), o.get('top', h)
+        piece(f'below {k}', a, b, 0, sill, wm)
+        piece(f'above {k}', a, b, top, h, wm)
+        fm = mat(o.get('frame_color', '#e8e4dc'))
+        if o['kind'] == 'window':
+            piece(f'window {k} glass', a, b, sill, top, mat(o.get('glass_color', '#dfe8ec'), 0.05), thick=0.02)
+            n = int(o.get('mullions', 0))
+            for m_ in range(1, n + 1):
+                xm = a + m_ * (b - a) / (n + 1)
+                piece(f'window {k} mullion {m_}', xm - 0.03, xm + 0.03, sill, top, fm, thick=th + 0.01)
+        elif o['kind'] == 'door':
+            piece(f'door {k}', a, b, 0, top, fm, thick=0.04)
+        cursor = b
+    piece('pier end', cursor, length, 0, h, wm)
+
+# ── slabs: a floor or ceiling at any level ─────────────────────────────────
+for si, SL in enumerate(L.get('slabs', [])):
+    floor_plane(SL.get('name') or f'Slab {si + 1}', SL['x0'], SL['x1'], SL['y0'], SL['y1'], SL['z'],
+                SL, thickness=SL.get('thickness', 0.2))
+
+# ── stairs: solid steps rising in the direction of yaw ─────────────────────
+for ti, ST in enumerate(L.get('stairs', [])):
+    yaw = math.radians(ST.get('yaw', 0))
+    dx, dy = -math.sin(yaw), math.cos(yaw)        # yaw 0 climbs north, 90 west
+    sx, sy, sz = ST['at']
+    n = ST['steps']
+    tread, riser = ST['run'] / n, ST['rise'] / n
+    sm = mat(ST.get('color', '#b07a45'), 0.4)
+    for i in range(n):
+        u = (i + 0.5) * tread
+        rbox(f"{ST.get('name') or f'Stair {ti + 1}'} step {i + 1}", sx + dx * u, sy + dy * u, sz,
+             ST['width'], tread, (i + 1) * riser, yaw, sm)
 
 # ── objects ─────────────────────────────────────────────────────────────────
 for ob in L.get('objects', []):
@@ -182,7 +267,12 @@ for c in L['cameras']:
     o = bpy.data.objects.new('Plate camera ' + c['plate'], cam)
     sc.collection.objects.link(o)
     o.location = c['position']
-    o.rotation_euler = (math.radians(90 + c.get('pitch', 0)), math.radians(c.get('roll', 0)), math.radians(c.get('yaw', 0)))
+    if c.get('rotation'):
+        # A camera solved from video: its own camera-to-world rotation, exactly.
+        from mathutils import Matrix
+        o.rotation_euler = Matrix(c['rotation']).to_euler()
+    else:
+        o.rotation_euler = (math.radians(90 + c.get('pitch', 0)), math.radians(c.get('roll', 0)), math.radians(c.get('yaw', 0)))
     cams.append((o, plate))
 
 sun = bpy.data.lights.new('Sun', 'SUN')
