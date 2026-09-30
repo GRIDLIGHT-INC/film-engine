@@ -684,7 +684,7 @@ test('every GLB refusal names a remedy, and reaches the page', () => {
     const CASES = [
         { name: 'draco', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['KHR_draco_mesh_compression'], meshes: [{ primitives: [] }] }) },
         { name: 'meshopt', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['EXT_meshopt_compression'], meshes: [{ primitives: [] }] }) },
-        { name: 'unknown required extension', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['KHR_materials_variants'], meshes: [{ primitives: [] }] }) },
+        { name: 'unknown required extension', bytes: glb({ asset: { version: '2.0' }, extensionsRequired: ['KHR_mesh_quantization'], meshes: [{ primitives: [] }] }) },
         { name: 'external .bin', bytes: glb({ asset: { version: '2.0' }, meshes: [{ primitives: [] }] }, null) },
         { name: 'no meshes', bytes: glb({ asset: { version: '2.0' }, meshes: [] }) },
     ];

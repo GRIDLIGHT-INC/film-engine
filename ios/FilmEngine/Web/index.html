@@ -5135,6 +5135,25 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .we-tile-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .fe-panel-shots { flex:1.4; min-height:0; overflow-y:auto; padding:8px; border-top:1px solid rgba(255,255,255,0.07); }
 .fe-panel-shotlist { display:flex; flex-direction:column; gap:3px; }
+/* Room for the frame: the left, right and bottom panels fold away, Previs only. */
+body.pv-hide-left { --fe-panel:0px; }
+body.pv-hide-left .fe-panel, body.pv-hide-left .pv-rail { display:none !important; }
+body.pv-hide-right .pv-side { display:none !important; }
+body.pv-hide-right .pv-grid { grid-template-columns:150px minmax(0,1fr) !important; }
+body.pv-hide-right.pv-shots-in-panel .pv-grid, body.pv-hide-right.pv-hide-left .pv-grid { grid-template-columns:minmax(0,1fr) !important; }
+body.pv-hide-left:not(.pv-hide-right) .pv-grid { grid-template-columns:minmax(0,1fr) 360px !important; }
+body.pv-hide-bottom .pv-move, body.pv-hide-bottom .status-bar { display:none !important; }
+body.pv-hide-bottom .pv-console { height:calc(100vh - 150px); }
+.pv-folds { display:inline-flex; gap:2px; }
+.pv-stagebar { left:10px; right:10px; bottom:10px; top:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; pointer-events:auto; }
+.pv-stagebar:empty { display:none; }
+.pv-stage-name { height:28px; min-width:220px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; padding:0 8px; }
+.stage-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; max-height:52vh; overflow-y:auto; margin:10px 0; }
+.stage-item { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:#1d1d20; color:#ddd; cursor:pointer; text-align:left; }
+.stage-item:hover { border-color:#6690ff; } .stage-item span { font-size:11px; opacity:.6; }
+.stage-cat { grid-column:1/-1; font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.6; margin-top:6px; }
+.pv-fold { min-width:30px; }
+.pv-fold.pv-folded { opacity:.5; }
 body.pv-shots-in-panel .pv-rail { display:none; }
 body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 /* ── camera movement ─────────────────────────────────────────────────────── */
@@ -16519,6 +16538,8 @@ THREE.GLTFLoader = GLTFLoader;
             <button class="pv-btn" onclick="worldCheckExport()">Handover <span id="weExportState">—</span></button>
             ${worldRegionOn('create-spatial-world') ? '<button class="pv-btn" onclick="worldOpenCreate()">New world</button>' : ''}
             <button class="pv-btn" onclick="setBuildOpen()" title="Build this location's set in Blender from its plates. Free.">Build set</button>
+            <span class="pv-folds">${PV_FOLDS.map(f => `<button class="pv-btn pv-fold${pvFolded(f.id) ? ' pv-folded' : ''}" data-fold="${f.id}"
+                onclick="pvToggleFold('${f.id}')" title="${esc(f.tip)}">${f.icon}</button>`).join('')}</span>
           </div>
           ${worldDecisionsHtml()}
           <div class="pv-grid">
@@ -16538,6 +16559,7 @@ THREE.GLTFLoader = GLTFLoader;
                   <span class="we-live" id="weCamSpec"></span>
                 </div>
                 <div class="pv-float pv-walkbar" id="weWalkBar">${worldWalkBarHtml()}</div>
+                <div class="pv-float pv-stagebar" id="pvStageBar"></div>
                 <div class="pv-float pv-float-r">
                   <button class="pv-btn" onclick="worldToggleOverlayMenu()">Overlays · <span id="weOvCount">0</span></button>
                   ${worldRegionOn('match-reference-composition')
@@ -16614,6 +16636,19 @@ THREE.GLTFLoader = GLTFLoader;
     window.addEventListener('resize', () => {
         if (state.currentPage === 'previs' && document.getElementById('pvView')) {
             worldFitFrame(); worldPaintFrame(); worldDrawPath();
+            // The 3D views sized themselves when they opened; a fold or a
+            // window resize must resize them too, or they draw at the old size.
+            const frame = document.getElementById('weFrame');
+            const box = frame && frame.getBoundingClientRect();
+            if (box && box.width > 2) {
+                for (const v of [MESHLOOK, SPLAT]) {
+                    if (!v.renderer || !v.camera) continue;
+                    v.renderer.setSize(Math.round(box.width), Math.round(box.height), false);
+                    v.camera.aspect = box.width / Math.max(1, box.height);
+                    v.camera.updateProjectionMatrix();
+                }
+                if (MESHLOOK.renderer) worldMeshRenderOnce();
+            }
         }
     });
 
@@ -16886,6 +16921,27 @@ THREE.GLTFLoader = GLTFLoader;
      */
     const MESHLOOK = { canvas: null, renderer: null, scene: null, camera: null, url: null, root: null, error: null };
 
+    /**
+     * Blender exports its lights in physical units (a sun of strength 3 is
+     * 2049 lux; a 100 W lamp is about 432 cd), and this renderer's lights are
+     * not physical, so read as they come every set is pure white. Each is put
+     * back into the units it was authored in (lux / 683 is Blender's W/m²,
+     * cd × 4π / 683 its watts), then scaled to this renderer's range. Returns
+     * whether the scene brought its own sun, which then replaces ours.
+     */
+    function meshLookLights(root) {
+        let hasSun = false;
+        root.traverse(o => {
+            if (!o.isLight) return;
+            if (o.isDirectionalLight) { hasSun = true; o.intensity = Math.min(2.5, (o.intensity / 683) * 0.45); }
+            else if (o.isPointLight || o.isSpotLight) {
+                o.intensity = Math.min(3, (o.intensity * 16 * Math.PI * Math.PI / 683) / 60);
+                o.decay = 2;
+            }
+        });
+        return hasSun;
+    }
+
     function worldMeshStop() { if (MESHLOOK.canvas) MESHLOOK.canvas.style.display = 'none'; }
 
     function worldMeshCanvas() {
@@ -16934,6 +16990,7 @@ THREE.GLTFLoader = GLTFLoader;
             const sun = new T.DirectionalLight(0xffffff, 0.8);
             sun.position.set(5, 10, 7);
             MESHLOOK.scene.add(sun);
+            MESHLOOK.sun = sun;
             MESHLOOK.camera = new T.PerspectiveCamera(40, 16 / 9, 0.02, 2000);
         }
         const box = frame.getBoundingClientRect();
@@ -16950,6 +17007,8 @@ THREE.GLTFLoader = GLTFLoader;
                 // The same scale the painter applies on read (1 for a scene in metres).
                 MESHLOOK.root.scale.setScalar(info.scale_factor || 1);
                 MESHLOOK.scene.add(MESHLOOK.root);
+                MESHLOOK.sun.visible = !meshLookLights(MESHLOOK.root);
+                STAGE.lookSig = null; stageSyncLook();
                 const n = document.getElementById('pvModeNote');
                 if (n) n.textContent = MESH_MODE_NOTES[worldViewMode()] || '';
                 worldMeshRenderOnce();
@@ -16958,6 +17017,7 @@ THREE.GLTFLoader = GLTFLoader;
                 if (n) n.textContent = 'The scene did not load: ' + ((err && err.message) || err);
             });
         } else if (note) note.textContent = MESH_MODE_NOTES[vm] || '';
+        stageSyncLook();
         worldMeshRenderOnce();
     }
 
@@ -17188,14 +17248,317 @@ THREE.GLTFLoader = GLTFLoader;
      * reads dark, the counter and booths mid, the walls bright. Then the cast
      * where they are staged, and every camera as the wedge it actually sees.
      */
+    /* ── STAGING: people, furniture and your own models, placed in the set ──
+     *
+     * "Low-poly man, woman, children of both genders, and I can move them in
+     * the previz… and position the monsters I generate in Meshy."
+     *
+     * The Plan view is where things are placed: each subject is drawn as its
+     * real footprint with an arrow for the way it faces. Click to select, drag
+     * to move, drag the round handle (or Q / E) to turn, Delete to remove. The
+     * Look view draws the same subjects as their real low-poly models. Every
+     * change is saved through the subjects-only route, so the camera, its keys
+     * and the director's notes are never touched by staging.
+     */
+    const STAGE = { sel: null, drag: null, timer: null, library: null, gltf: {}, lookSig: null };
+
+    function stageSubjects() {
+        if (!WORLD.blocking) WORLD.blocking = {};
+        if (!WORLD.blocking.blocking) WORLD.blocking.blocking = {};
+        if (!Array.isArray(WORLD.blocking.blocking.subjects)) WORLD.blocking.blocking.subjects = [];
+        return WORLD.blocking.blocking.subjects;
+    }
+    function stageYaw(su) { return ((su.rotationDeg || [])[1] || 0) * Math.PI / 180; }
+    function stageSize(su) {
+        const d = { human: [0.5, 1.7, 0.3], cube: [1, 1, 1], sphere: [1, 1, 1], mesh: [1, 1.8, 1], imageplane: [1, 1.7, 0.02] };
+        return Array.isArray(su.sizeM) ? su.sizeM : (d[su.kind] || [1, 1, 1]);
+    }
+    /** The footprint's corners and the turning handle, in plan pixels. yaw 0 faces north (-Z, the top). */
+    function stageShape(su, X, Z, f) {
+        const [w, , d] = stageSize(su);
+        const t = stageYaw(su);
+        const px = su.position[0], pz = su.position[2];
+        const rx = Math.cos(t), rz = -Math.sin(t);          // the subject's right
+        const bx = Math.sin(t), bz = Math.cos(t);           // its back
+        const pt = (lx, lz) => [X((px + lx * rx + lz * bx) * f), Z((pz + lx * rz + lz * bz) * f)];
+        return {
+            corners: [pt(-w / 2, -d / 2), pt(w / 2, -d / 2), pt(w / 2, d / 2), pt(-w / 2, d / 2)],
+            centre: pt(0, 0), nose: pt(0, -d / 2), handle: pt(0, -d / 2 - 0.45),
+        };
+    }
+    function stageColour(su) {
+        if (su.model && su.model.asset_id) return '#a58ad8';
+        if (su.kind === 'human' || (su.model && ['man', 'woman', 'boy', 'girl'].includes(su.model.library))) return '#d98a5f';
+        if (su.model && su.model.library) return '#bda47c';
+        return '#8e8e97';
+    }
+    function stageDrawFootprint(ctx, su, selected, X, Z, s, f) {
+        if (!Array.isArray(su.position)) return;
+        const g = stageShape(su, X, Z, f);
+        const col = stageColour(su);
+        ctx.beginPath();
+        g.corners.forEach(([x, z], k) => (k ? ctx.lineTo(x, z) : ctx.moveTo(x, z)));
+        ctx.closePath();
+        ctx.fillStyle = col + (selected ? 'cc' : '88'); ctx.fill();
+        ctx.lineWidth = selected ? 2.5 : 1.5; ctx.strokeStyle = selected ? '#ffffff' : col; ctx.stroke();
+        // which way it faces
+        ctx.beginPath(); ctx.moveTo(g.centre[0], g.centre[1]); ctx.lineTo(g.nose[0], g.nose[1]);
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+        if (selected) {
+            ctx.beginPath(); ctx.arc(g.handle[0], g.handle[1], 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff'; ctx.fill();
+        }
+        if (su.isTarget) { ctx.beginPath(); ctx.arc(g.centre[0], g.centre[1], 4, 0, Math.PI * 2); ctx.fillStyle = '#6690ff'; ctx.fill(); }
+        if (su.name) {
+            ctx.fillStyle = '#f3e3d6'; ctx.font = '600 12px -apple-system, sans-serif';
+            ctx.fillText(String(su.name), g.centre[0] + 10, g.centre[1] + 4);
+        }
+    }
+    function stageHit(px, pz) {
+        const xf = WORLD.planXf;
+        if (!xf) return null;
+        const subs = stageSubjects();
+        if (STAGE.sel != null && subs[STAGE.sel]) {
+            const h = stageShape(subs[STAGE.sel], xf.X, xf.Z, xf.f).handle;
+            if (Math.hypot(px - h[0], pz - h[1]) < 10) return { i: STAGE.sel, turn: true };
+        }
+        const [wx, wz] = xf.inv(px, pz).map(v => v / (xf.f || 1));
+        for (let i = subs.length - 1; i >= 0; i--) {
+            const su = subs[i];
+            if (!Array.isArray(su.position)) continue;
+            const [w, , d] = stageSize(su);
+            const t = stageYaw(su), dx = wx - su.position[0], dz = wz - su.position[2];
+            const lx = dx * Math.cos(t) - dz * Math.sin(t), lz = dx * Math.sin(t) + dz * Math.cos(t);
+            const pad = 6 / (xf.s * (xf.f || 1));
+            if (Math.abs(lx) <= w / 2 + pad && Math.abs(lz) <= d / 2 + pad) return { i, turn: false };
+        }
+        return null;
+    }
+    function stageBindPlan() {
+        const c = document.getElementById('weFrameCanvas');
+        if (!c || c.dataset.stageBound) return;
+        c.dataset.stageBound = '1';
+        c.addEventListener('mousedown', e => {
+            if (worldViewMode() !== 'plan') return;
+            const r = c.getBoundingClientRect();
+            const px = e.clientX - r.left, pz = e.clientY - r.top;
+            const hit = stageHit(px, pz);
+            STAGE.sel = hit ? hit.i : null;
+            if (hit) {
+                const su = stageSubjects()[hit.i];
+                const [wx, wz] = WORLD.planXf.inv(px, pz).map(v => v / (WORLD.planXf.f || 1));
+                STAGE.drag = { i: hit.i, turn: hit.turn, ox: wx - su.position[0], oz: wz - su.position[2], moved: false };
+                e.preventDefault();
+            }
+            stageRenderBar(); worldPaintFrame();
+        });
+        window.addEventListener('mousemove', e => {
+            const g = STAGE.drag;
+            if (!g || !WORLD.planXf) return;
+            const r = c.getBoundingClientRect();
+            const [wx, wz] = WORLD.planXf.inv(e.clientX - r.left, e.clientY - r.top).map(v => v / (WORLD.planXf.f || 1));
+            const su = stageSubjects()[g.i];
+            if (!su) return;
+            if (g.turn) {
+                // Face the cursor; yaw 0 is north (-Z), turning left is positive.
+                let deg = Math.atan2(-(wx - su.position[0]), -(wz - su.position[2])) * 180 / Math.PI;
+                if (!e.altKey) deg = Math.round(deg / 15) * 15;
+                su.rotationDeg = [0, deg, 0];
+            } else {
+                su.position = [wx - g.ox, su.position[1] || 0, wz - g.oz];
+            }
+            g.moved = true;
+            worldPaintFrame();
+        });
+        window.addEventListener('mouseup', () => {
+            const g = STAGE.drag;
+            STAGE.drag = null;
+            if (g && g.moved) stageSave();
+        });
+    }
+    document.addEventListener('keydown', e => {
+        if (state.currentPage !== 'previs' || worldViewMode() !== 'plan' || STAGE.sel == null) return;
+        const t = e.target && e.target.tagName;
+        if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+        const subs = stageSubjects();
+        const su = subs[STAGE.sel];
+        if (!su) return;
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            subs.splice(STAGE.sel, 1); STAGE.sel = null; e.preventDefault(); stageSave();
+        } else if (e.key === 'q' || e.key === 'e') {
+            const step = (e.shiftKey ? 45 : 15) * (e.key === 'q' ? 1 : -1);
+            su.rotationDeg = [0, ((su.rotationDeg || [])[1] || 0) + step, 0]; stageSave();
+        } else return;
+        stageRenderBar(); worldPaintFrame();
+    });
+
+    /** Save the whole list, a moment after the last change, touching nothing else. */
+    function stageSave() {
+        clearTimeout(STAGE.timer);
+        stageSyncLook();
+        STAGE.timer = setTimeout(async () => {
+            if (!WORLD.shotId) return setStatus('Pick a shot to stage in', true);
+            try {
+                // refresh: false — the plan repaints itself, and a reload mid-drag would drop the piece being moved.
+                const r = await api(`/shots/${WORLD.shotId}/previs/subjects`,
+                    { method: 'PUT', body: JSON.stringify({ subjects: stageSubjects() }), refresh: false });
+                if (r && r.blocking) WORLD.blocking.blocking = r.blocking;
+                setStatus(`Staged ${stageSubjects().length} in the shot`);
+            } catch (err) { setStatus('Staging not saved: ' + err.message, true); }
+        }, 350);
+    }
+
+    function stageRenderBar() {
+        const bar = document.getElementById('pvStageBar');
+        if (!bar) return;
+        const plan = worldViewMode() === 'plan';
+        const su = STAGE.sel != null ? stageSubjects()[STAGE.sel] : null;
+        bar.innerHTML = !plan ? '' : `
+            <button class="pv-btn pv-primary" onclick="stageOpenAdd()">＋ Add people, furniture or a model</button>
+            ${su ? `<input class="pv-stage-name" value="${esc(su.name || '')}" placeholder="Name (named subjects reach the prompt)"
+                        onchange="stageRename(this.value)">
+                <button class="pv-btn" onclick="stageTurn(15)" title="Turn left 15° (Q)">↺</button>
+                <button class="pv-btn" onclick="stageTurn(-15)" title="Turn right 15° (E)">↻</button>
+                <button class="pv-btn${su.isTarget ? ' pv-amber' : ''}" onclick="stageTarget()" title="Frame the shot on this subject">Frame on</button>
+                <button class="pv-btn" onclick="stageRemove()" title="Remove (Delete)">Remove</button>`
+                : '<span class="pv-dim">Click a subject to select it · drag to move · drag the white dot or Q/E to turn</span>'}`;
+    }
+    function stageRename(v) { const su = stageSubjects()[STAGE.sel]; if (su) { su.name = String(v || '').trim(); stageSave(); worldPaintFrame(); } }
+    function stageTurn(deg) { const su = stageSubjects()[STAGE.sel]; if (su) { su.rotationDeg = [0, ((su.rotationDeg || [])[1] || 0) + deg, 0]; stageSave(); worldPaintFrame(); } }
+    function stageTarget() {
+        const subs = stageSubjects(); const su = subs[STAGE.sel];
+        if (!su) return;
+        const on = !su.isTarget; subs.forEach(o => { delete o.isTarget; }); if (on) su.isTarget = true;
+        stageSave(); stageRenderBar(); worldPaintFrame();
+    }
+    function stageRemove() { const subs = stageSubjects(); if (STAGE.sel != null) { subs.splice(STAGE.sel, 1); STAGE.sel = null; stageSave(); stageRenderBar(); worldPaintFrame(); } }
+
+    async function stageOpenAdd(tab) {
+        if (!STAGE.library) {
+            try { STAGE.library = await api('/previs-library'); } catch (err) { return setStatus(err.message, true); }
+        }
+        let models = [];
+        try {
+            const r = await api(`/projects/${state.currentProject.id}/assets?type=other`);
+            models = (r.assets || r || []).map(a => {
+                let m = a.metadata; try { m = typeof m === 'string' ? JSON.parse(m) : (m || {}); } catch (_) { m = {}; }
+                return /^model_/.test(m.kind || '') ? { id: a.id, label: m.subject_name || a.file_name } : null;
+            }).filter(Boolean);
+        } catch (_) { models = []; }
+        const t = tab || 'people';
+        const entries = STAGE.library.entries || [];
+        const item = (label, sub, onclick) => `<button class="stage-item" onclick="${onclick}"><b>${esc(label)}</b><span>${esc(sub)}</span></button>`;
+        const size = e => e.size_m.map(v => v.toFixed(2)).join(' × ') + ' m';
+        let body = '';
+        if (t === 'people') body = entries.filter(e => e.category === 'people').map(e => item(e.label, size(e), `stageAdd('lib', '${e.id}')`)).join('');
+        else if (t === 'models') body = models.length ? models.map(m => item(m.label, 'this project', `stageAdd('model', '${m.id}')`)).join('')
+            : '<p class="pv-dim">No 3D models in this project yet. Make one in the design section (Meshy) or upload a .glb.</p>';
+        else {
+            const cats = STAGE.library.categories.filter(c => c !== 'people');
+            body = cats.map(c => {
+                const es = entries.filter(e => e.category === c);
+                return es.length ? `<div class="stage-cat">${esc(c)}</div>` + es.map(e => item(e.label, size(e), `stageAdd('lib', '${e.id}')`)).join('') : '';
+            }).join('');
+        }
+        const tabBtn = (id, label) => `<button class="pv-tab${t === id ? ' active' : ''}" onclick="stageOpenAdd('${id}')">${label}</button>`;
+        showModalHtml('stageAddModal', `
+            <h3>Stage in this shot</h3>
+            <div class="pv-tabs">${tabBtn('people', 'People')}${tabBtn('furniture', 'Furniture')}${tabBtn('models', 'Your 3D models')}</div>
+            <div class="stage-grid">${body}</div>
+            <p class="text-sm text-muted">Placed a few metres in front of the camera, at real size. Move and turn it on the Plan view.</p>
+            <div class="btn-row"><button class="btn btn-secondary" onclick="closeModal('stageAddModal')">Close</button></div>`);
+        showModal('stageAddModal');
+    }
+    async function stageAdd(source, id) {
+        if (source === 'lib' && !STAGE.library) {
+            try { STAGE.library = await api('/previs-library'); } catch (err) { return setStatus(err.message, true); }
+        }
+        const subs = stageSubjects();
+        const live = worldCameraPose();
+        const f = (live && live.scale) || 1;
+        let at = [0, 0, 0], yaw = 0;
+        if (live) {
+            const dx = live.target[0] - live.eye[0], dz = live.target[2] - live.eye[2];
+            const n = Math.hypot(dx, dz) || 1;
+            at = [(live.eye[0] + dx / n * 2.5) / f, 0, (live.eye[2] + dz / n * 2.5) / f];
+            yaw = Math.atan2(dx, dz) * 180 / Math.PI;       // turned to face the camera
+        }
+        let su;
+        if (source === 'lib') {
+            const e = (STAGE.library.entries || []).find(x => x.id === id);
+            const [w, d, h] = e.size_m;
+            const person = e.category === 'people';
+            const n = subs.filter(o => o.model && o.model.library === id).length;
+            su = { kind: person ? 'human' : 'mesh', name: e.label.split(',')[0] + (n ? ' ' + (n + 1) : ''),
+                   model: { library: id }, sizeM: [w, h, d], position: at, rotationDeg: [0, person ? yaw : 0, 0] };
+        } else {
+            su = { kind: 'mesh', name: '', model: { asset_id: id }, sizeM: [1, 1.8, 1], position: at, rotationDeg: [0, yaw, 0], fitToModel: true };
+        }
+        subs.push(su);
+        STAGE.sel = subs.length - 1;
+        closeModal('stageAddModal');
+        if (worldViewMode() !== 'plan') worldSetViewMode('plan');
+        stageRenderBar(); worldPaintFrame(); stageSave();
+    }
+
+    /** The staged subjects as their real models, in the Look view's own scene. */
+    function stageSyncLook() {
+        const T = window.THREE;
+        if (!T || !MESHLOOK.scene || !T.GLTFLoader) return;
+        const subs = stageSubjects();
+        const sig = JSON.stringify(subs.map(s => [s.kind, s.model, s.position, s.rotationDeg, s.sizeM]));
+        if (sig === STAGE.lookSig) return;
+        STAGE.lookSig = sig;
+        const old = MESHLOOK.scene.getObjectByName('staged');
+        if (old) MESHLOOK.scene.remove(old);
+        const group = new T.Group(); group.name = 'staged';
+        MESHLOOK.scene.add(group);
+        const f = (worldCameraPose() || {}).scale || 1;
+        const place = (obj, su) => {
+            const box = new T.Box3().setFromObject(obj);
+            const dim = box.getSize(new T.Vector3());
+            const want = stageSize(su);
+            const holder = new T.Group();
+            obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+            holder.add(obj);
+            // A project model keeps its own proportions (fitted by height); a
+            // library entry is stretched to the size it was placed at.
+            if (su.fitToModel) holder.scale.setScalar(dim.y > 0 ? want[1] / dim.y : 1);
+            else holder.scale.set(want[0] / Math.max(dim.x, 1e-6), want[1] / Math.max(dim.y, 1e-6), want[2] / Math.max(dim.z, 1e-6));
+            holder.scale.multiplyScalar(f);
+            holder.position.set(su.position[0] * f, (su.position[1] || 0) * f, su.position[2] * f);
+            holder.rotation.y = stageYaw(su);
+            group.add(holder);
+        };
+        for (const su of subs) {
+            if (!Array.isArray(su.position)) continue;
+            const m = su.model || (su.kind === 'human' ? { library: 'man' } : null);
+            if (!m) {
+                const geo = su.kind === 'sphere' ? new T.SphereGeometry(0.5, 16, 12) : new T.BoxGeometry(1, 1, 1);
+                place(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0x9a9aa2 })), su);
+                continue;
+            }
+            const url = mediaUrl(m.library ? `/film/previs-library/${m.library}/file` : `/film/models/${m.asset_id}/file`);
+            if (!STAGE.gltf[url]) STAGE.gltf[url] = new Promise((res, rej) => new T.GLTFLoader().load(url, g => res(g.scene), undefined, rej));
+            STAGE.gltf[url].then(scene => {
+                if (STAGE.lookSig !== sig) return;
+                place(scene.clone(true), su);
+                worldMeshRenderOnce();
+            }).catch(() => { /* a model that will not load is simply not drawn */ });
+        }
+        worldMeshRenderOnce();
+    }
+
     function worldPaintPlan(ctx, c) {
-        const geo = WORLD.geometry;
+        const hasGeo = !!(WORLD.geometry && Array.isArray(WORLD.geometry.vertices) && WORLD.geometry.vertices.length);
+        // With no world yet, people and furniture can still be staged on a
+        // plain twelve-metre floor rather than on nothing.
+        const geo = hasGeo ? WORLD.geometry : { vertices: [], bounds: { min: [-6, 0, -6], max: [6, 3, 6] }, scale_state: 'SCALE CALIBRATED' };
         ctx.fillStyle = '#0f0f12';
         ctx.fillRect(0, 0, c.width, c.height);
-        if (!geo || !Array.isArray(geo.vertices) || !geo.vertices.length) {
+        if (!hasGeo) {
             ctx.fillStyle = '#8e8e97'; ctx.font = '13px -apple-system, sans-serif';
-            ctx.fillText('No collider for this world yet — the plan is drawn from it.', 20, 30);
-            return;
+            ctx.fillText('No set for this world yet — stage on an empty floor, or build the set first.', 20, 30);
         }
         const b = geo.bounds || {};
         const min = b.min || [Infinity, Infinity, Infinity], max = b.max || [-Infinity, -Infinity, -Infinity];
@@ -17206,6 +17569,8 @@ THREE.GLTFLoader = GLTFLoader;
         const s = Math.min(sx, sz);
         const ox = (c.width - (max[0] - min[0]) * s) / 2, oz = (c.height - (max[2] - min[2]) * s) / 2;
         const X = x => ox + (x - min[0]) * s, Z = z => oz + (z - min[2]) * s;
+        // Kept, so a click can be turned back into a place on the floor.
+        WORLD.planXf = { X, Z, s, inv: (px, pz) => [min[0] + (px - ox) / s, min[2] + (pz - oz) / s] };
 
         const cell = Math.max(2, Math.round(Math.min(c.width, c.height) / 160));
         const cols = Math.ceil(c.width / cell), rows = Math.ceil(c.height / cell);
@@ -17257,14 +17622,8 @@ THREE.GLTFLoader = GLTFLoader;
         const live = worldCameraPose();
         if (live) wedge(live, '#6690ff', 'rgba(102,144,255,0.16)', 'CAMERA');
         const f = live ? live.scale : 1;
-        const subjects = (WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.subjects) || [];
-        for (const su of subjects) {
-            if (!Array.isArray(su.position)) continue;
-            const x = X(su.position[0] * f), z = Z(su.position[2] * f);
-            ctx.beginPath(); ctx.arc(x, z, 7, 0, Math.PI * 2); ctx.fillStyle = '#d98a5f'; ctx.fill();
-            ctx.strokeStyle = '#0f0f12'; ctx.lineWidth = 2; ctx.stroke();
-            if (su.name) { ctx.fillStyle = '#f0c3a8'; ctx.font = '600 12px -apple-system, sans-serif'; ctx.fillText(String(su.name).toUpperCase(), x + 10, z + 4); }
-        }
+        WORLD.planXf.f = f;
+        stageSubjects().forEach((su, i) => stageDrawFootprint(ctx, su, i === STAGE.sel, X, Z, s, f));
     }
 
     /* ── SHOTS IN THE PHASE PANEL ──────────────────────────────────────────
@@ -17274,7 +17633,38 @@ THREE.GLTFLoader = GLTFLoader;
      * the Plan pages while the one-screen console is open, removed the moment
      * it is not — the panel is shared by every page.
      */
+    /*
+     * Folding the panels away, for more frame. Three independent folds, the
+     * panels on each side of the view; remembered per browser, applied only
+     * while Previs is open (the app's left panel is shared by every page and
+     * must come back the moment you leave).
+     */
+    const PV_FOLDS = [
+        { id: 'left', icon: '◧', tip: 'Hide or show the left panel (the shot list)' },
+        { id: 'right', icon: '◨', tip: 'Hide or show the right panel (Camera, Direct, Explore, Scene)' },
+        { id: 'bottom', icon: '⬓', tip: 'Hide or show the bottom bar (the move timeline)' },
+    ];
+    function pvFolds() {
+        try { return JSON.parse(localStorage.getItem('pv_folds') || '{}') || {}; } catch (_) { return {}; }
+    }
+    function pvFolded(id) { return !!pvFolds()[id]; }
+    function pvApplyFolds(page) {
+        const on = page === 'previs';
+        const f = pvFolds();
+        for (const { id } of PV_FOLDS) document.body.classList.toggle('pv-hide-' + id, on && !!f[id]);
+    }
+    function pvToggleFold(id) {
+        const f = pvFolds();
+        f[id] = !f[id];
+        try { localStorage.setItem('pv_folds', JSON.stringify(f)); } catch (_) { /* per-browser convenience only */ }
+        pvApplyFolds(state.currentPage);
+        document.querySelectorAll(`.pv-fold[data-fold="${id}"]`).forEach(b => b.classList.toggle('pv-folded', !!f[id]));
+        // The frame, the painters and the 3D views all size from their host.
+        requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    }
+
     function worldSyncPanelShots(page) {
+        pvApplyFolds(page);
         const panel = document.querySelector('.fe-panel');
         let box = document.getElementById('fePanelShots');
         const want = page === 'previs' && worldEngineOn() && worldFlagOn('previs_console') && !!panel;
@@ -17772,7 +18162,11 @@ THREE.GLTFLoader = GLTFLoader;
         const ctx = c.getContext('2d');
         ctx.clearRect(0, 0, c.width, c.height);
         const viewMode = worldViewMode();
-        if (viewMode === 'plan') { worldPaintPlan(ctx, c); worldSplatSync(); return; }
+        c.style.pointerEvents = viewMode === 'plan' ? 'auto' : '';
+        stageBindPlan();
+        if (viewMode === 'plan') { worldPaintPlan(ctx, c); worldSplatSync(); stageRenderBar(); return; }
+        const bar = document.getElementById('pvStageBar');
+        if (bar && bar.innerHTML) bar.innerHTML = '';
         if (viewMode === 'geo' || viewMode === 'depth') worldPaintGeometry(ctx, c, viewMode === 'depth' ? 'depth' : undefined);
         worldSplatSync();
         const st = WORLD.overlays || {};

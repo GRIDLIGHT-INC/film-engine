@@ -993,7 +993,7 @@ const server = http.createServer(async (req, res) => {
          * missing feature: the /film/locations/:id trap that already cost once.
          */
         // The Previs library: free low-poly furniture and people.
-        if (parts[1] === 'previs-library') return handlePrevisLibrary(req, res, parts, query);
+        if (parts[1] === 'previs-library') return await handlePrevisLibrary(req, res, parts, query);
         // A location's set, built in Blender from its plates. Before the
         // /film/locations/:id catch-all, which would otherwise swallow it.
         if (parts[1] === 'set-builds'

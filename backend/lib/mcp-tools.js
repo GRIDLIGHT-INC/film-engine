@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleSetBuilds } = require('../routes/set-builds');
+const { handlePrevisLibrary } = require('../routes/previs-library');
 const { handleBackups } = require('../routes/backups');
 const { handlePostProduction } = require('../routes/post-production');
 const { handleAppSettings } = require('../routes/app-settings');
@@ -2697,6 +2698,34 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id', 'shot_type'],
     },
     {
+        name: 'previs_stage',
+        handler: handlePrevis, method: 'PUT',
+        path: a => `/film/shots/${a.shot_id}/previs/subjects`,
+        body: a => ({ subjects: a.subjects }),
+        description:
+            'Place, move, turn or remove the people, furniture and models staged in a shot, and nothing else: the '
+            + 'camera, its keys and the director\'s notes are kept. FREE. Each subject: { kind: human|mesh|cube|sphere|'
+            + 'imageplane, name, position: [x, y, z] (y up, metres in a calibrated world), rotationDeg: [0, yaw, 0] '
+            + '(0 faces north, -Z), sizeM: [width, height, depth], model: { library } or { asset_id } }. Send the '
+            + 'WHOLE list: what is left out is removed. Only NAMED subjects reach a prompt.',
+        schema: {
+            shot_id: { type: 'string' },
+            subjects: { type: 'array', description: 'The complete list of staged subjects.' },
+        }, required: ['shot_id', 'subjects'],
+    },
+    {
+        name: 'previs_library',
+        handler: handlePrevisLibrary, method: 'GET',
+        path: a => a.category ? `/film/previs-library?category=${encodeURIComponent(a.category)}` : '/film/previs-library',
+        description:
+            'The Previs library, FREE: 140 low-poly furniture pieces (CC0) and four people (a man, a woman, a boy and '
+            + 'a girl, at real heights), each with its category and its real size in metres [width, depth, height]. '
+            + 'Stage one with previs_stage (model: { library: id }) or build it into a set with set_build_render '
+            + '(shape: asset).',
+        schema: { category: { type: 'string', description: 'people, living, dining, kitchen, bedroom, bathroom, office, lighting, decor, structure, other' } },
+        required: [],
+    },
+    {
         name: 'previs_set',
         handler: handlePrevis, method: 'PUT',
         description: 'Save staged blocking and director intent for a shot: camera optics/position, subjects, stage, rig, movement, plus director {direction,location_view,lighting,camera_note}. This is exploratory and does NOT change the Shot Board until previs_apply. Preview freely with previs_to_storyboard before committing.',
@@ -2709,7 +2738,7 @@ const PRODUCTION_TOOLS = [
             stage: { type: 'object' },
             rig: { type: 'string' },
             movement: { type: 'string' },
-            subjects: { type: 'array', description: 'Staged objects: figures, boxes, image cards. Only NAMED objects reach a prompt — an unnamed object is scaffolding and is not sent to generation, so name anything the frame should contain.' },
+            subjects: { type: 'array', description: 'Staged objects: figures, boxes, image cards, models. Only NAMED objects reach a prompt — an unnamed object is scaffolding and is not sent to generation, so name anything the frame should contain. A mesh or human may carry model: { library } (a Previs library id: previs_library) or { asset_id } (one of this project\'s 3D models), drawn at its real size.' },
             director: { type: 'object', description: '{ direction, location_view, lighting:{type,notes}, camera_note }. Saved as staged intent; apply explicitly.' },
         },
         required: ['shot_id'],

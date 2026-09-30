@@ -351,6 +351,17 @@ function validateBlocking(body) {
         if (obj.name !== undefined && typeof obj.name !== 'string') {
             errors.push(`subjects[${i}].name must be a string naming a character or prop`);
         }
+        // WHICH model a staged figure is: a Previs library entry (people and
+        // furniture) or one of the project's own 3D models (a Meshy creature).
+        // Ownership of an asset_id is checked where the shot's project is known.
+        if (obj.model !== undefined) {
+            const m = obj.model || {};
+            if (!['mesh', 'human'].includes(obj.kind)) errors.push(`subjects[${i}].model belongs on a mesh or human`);
+            if (!!m.library === !!m.asset_id) errors.push(`subjects[${i}].model needs exactly one of library or asset_id`);
+            else if (m.library && !require('../lib/previs-library').get(m.library)) {
+                errors.push(`subjects[${i}].model.library '${m.library}' is not in the Previs library`);
+            }
+        }
     });
 
     // One subject, or none. Two things claiming to be what the shot is of makes
@@ -400,6 +411,23 @@ function getBlocking(req, res, shotId) {
     });
 }
 
+/**
+ * Only the staged objects change: what the Plan view saves when something is
+ * placed, moved, turned or removed. Everything else is read back and written
+ * through the one writer, so the camera keys survive and the path re-samples
+ * (an orbit centres on its subject).
+ */
+function putSubjects(req, res, shotId) {
+    const current = loadBlocking(shotId);
+    const subjects = (req.body || {}).subjects;
+    if (!Array.isArray(subjects)) return json(res, 400, { error: 'subjects must be an array' });
+    const body = current ? {
+        camera: current.camera, stage: current.stage, rig: current.rig, movement: current.movement,
+        moves: current.moves, cameraKeys: current.cameraKeys, durationMs: current.durationMs, subjects,
+    } : { subjects };
+    return putBlocking(Object.assign({}, req, { body }), res, shotId);
+}
+
 function putBlocking(req, res, shotId, internal) {
     const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
     if (!shot) return json(res, 404, { error: 'Shot not found' });
@@ -409,6 +437,15 @@ function putBlocking(req, res, shotId, internal) {
     // forging the from-card path that records a blocking as applied.
     const body = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => !key.startsWith('_')));
     const { errors, warnings } = validateBlocking(body);
+    const projectId = (db.prepare('SELECT sc.project_id FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id WHERE s.id = ?').get(shotId) || {}).project_id;
+    (Array.isArray(body.subjects) ? body.subjects : []).forEach((o, i) => {
+        const id = o && o.model && o.model.asset_id;
+        if (!id) return;
+        const row = db.prepare('SELECT metadata FROM film_assets WHERE id = ? AND project_id = ?').get(id, projectId);
+        let kind = null;
+        try { kind = row && JSON.parse(row.metadata || '{}').kind; } catch (_) { kind = null; }
+        if (!/^model_/.test(kind || '')) errors.push(`subjects[${i}].model.asset_id is not one of this project's 3D models`);
+    });
     if (errors.length) return json(res, 400, { error: 'Invalid blocking', errors });
 
     const base = defaultBlocking();
@@ -1342,6 +1379,10 @@ function handlePrevis(req, res, urlParts) {
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify(track));
+        }
+        if (urlParts[4] === 'subjects') {
+            if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
+            return putSubjects(req, res, shotId);
         }
         if (urlParts[4] === 'from-card') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
