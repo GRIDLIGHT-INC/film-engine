@@ -103,11 +103,11 @@ test('a placeholder cannot be stored as a credential', async () => {
      * something legitimate.
      */
     for (const bad of ['k', 'abc', '1234567']) {
-        const r = await put('bfl', { api_key: bad });
+        const r = await put('openai', { api_key: bad });
         assert.strictEqual(r.status, 400, `"${bad}" was accepted as an API key`);
         assert.match(r.body.error, /does not look like an API key/);
     }
-    const stored = db.prepare("SELECT api_key FROM film_provider_credentials WHERE provider = 'bfl'").get();
+    const stored = db.prepare("SELECT api_key FROM film_provider_credentials WHERE provider = 'openai'").get();
     assert.ok(!stored, 'a refused key was written anyway');
 });
 

@@ -37,7 +37,7 @@
 const { CAPABILITIES } = require('./providers/base');
 
 /** Units an adapter may meter in. A unit outside this list cannot be priced. */
-// 'megapixel' is here because FLUX.2 genuinely bills that way: a 4MP frame
+// 'megapixel' is here because some image APIs genuinely bill that way: a 4MP frame
 // costs four times a 1MP one, and pricing it per image would under-report every
 // large board by exactly that factor. A unit is added when a provider bills in
 // it, never to make a number fit.
@@ -264,28 +264,6 @@ const RATE_BOOK = {
     },
 
     /*
-     * Black Forest Labs — FLUX.2.
-     *
-     * Billed PER MEGAPIXEL rather than per image, which is why the rate carries
-     * a megapixel unit: a 4MP frame genuinely costs four times a 1MP one, and
-     * pricing per image would under-report every large board by that factor.
-     * Klein is the exception and is quoted flat per image.
-     */
-    'bfl:image': {
-        unit: 'megapixel', native_unit: 'megapixel', native_per_unit: 1,
-        usd_per_native: 0.03,
-        models: {
-            'flux-2-klein': { unit: 'image', native_unit: 'image', usd_per_native: 0.015 },
-            'flux-2-flex':  { usd_per_native: 0.02 },
-            'flux-2-pro':   { usd_per_native: 0.03 },   // editing with references: $0.045/MP
-            'flux-2-max':   { usd_per_native: 0.045 },
-        },
-        source: 'https://bfl.ai/pricing',
-        checked: '2026-08-25',
-        note: 'FLUX.2 Pro $0.03/MP generating, $0.045/MP when editing with reference images. Klein 4B from $0.014 and 9B $0.015 per image. API usage includes commercial rights.',
-    },
-
-    /*
      * Seedance 2.5, via MuAPI.
      *
      * Per SECOND, and the resolution multiplies it fivefold from 720p to 4K —
@@ -440,10 +418,17 @@ const RATE_BOOK = {
              * request would suggest.
              */
             'aleph2':       { native_per_unit: 28, minimum_native: 56 },
+            // Wired 2026-09-30, at each model's default tier; the tier actually
+            // sent is priced from the model's own resolutions in runway.js.
+            'grok_imagine_1_5':      { native_per_unit: 16 },
+            'wan3':                  { native_per_unit: 10 },
+            'wan3_prime':            { native_per_unit: 14 },
+            'h3_max':                { native_per_unit: 8 },
+            'gemini_omni_flash_1.1': { native_per_unit: 10 },
         },
         source: 'https://docs.dev.runwayml.com/guides/pricing/',
-        checked: '2026-08-22',
-        note: 'aleph2 is 28 credits/second of SOURCE with a 56-credit minimum, verified first-party in backend/tests/fixtures/aleph-contract.json. gen4.5 is 12 credits/second — a 5s clip is $0.60. gen3a_turbo and veo3 are not in the published table; they inherit their tier and are flagged as inferred.',
+        checked: '2026-09-30',
+        note: 'aleph2 is 28 credits/second of SOURCE with a 56-credit minimum, verified first-party in backend/tests/fixtures/aleph-contract.json. gen4.5 is 12 credits/second — a 5s clip is $0.60. gen3a_turbo and veo3 are not in the published table; they inherit their tier and are flagged as inferred. Grok Imagine 1.5 is 10/16/29 at 480p/720p/1080p plus 1 per image or audio reference; Wan 3 is 5/10/20; Wan 3 Prime 6.8/14/28; H3 Max 5/8 at 480p/768p; Gemini Omni Flash 1.1 is 3.4/10/15/30 at 360p/720p/1080p/4K plus 1 per reference image and 1 per second of input.',
         inferred_models: ['gen3a_turbo', 'veo3'],
     },
     'runway:image': {

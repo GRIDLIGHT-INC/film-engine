@@ -217,7 +217,9 @@ const RECOMMENDATIONS = [
                  * entry with neither does not.
                  */
                 const shapes = (Array.isArray(m.ratios) && m.ratios.length)
-                    || (Array.isArray(m.targetAspectRatios) && m.targetAspectRatios.length);
+                    || (Array.isArray(m.targetAspectRatios) && m.targetAspectRatios.length)
+                    // Sized by its resolution field: the shape follows the picture.
+                    || (m.sizedBy === 'resolution' && m.resolutions && Object.keys(m.resolutions).length);
                 if (!shapes) gaps.push(`${id}: no ratio or targetAspectRatio list`);
                 if (!(m.creditsPerSecond > 0)) gaps.push(`${id}: no credit rate`);
             }

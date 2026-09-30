@@ -27,7 +27,6 @@ const { CAPABILITIES } = require('./providers/base');
 /** Each adapter's own builder, so the report shows the real request. */
 const REQUEST_BUILDERS = {
     google: m => ({ image: m.buildImageRequest }),
-    bfl: m => ({ image: m.buildImageRequest }),
     meshy: m => ({ image: m.buildImageRequest }),
     openai: m => ({ image: m.buildImageRequest, llm: m.buildLLMRequest }),
     runway: m => ({ image: m.buildImageRequest, video: m.buildVideoRequest }),
@@ -41,7 +40,7 @@ const REQUEST_BUILDERS = {
 };
 
 const MODULE_FOR = {
-    google: 'google-image', bfl: 'bfl-image', openai: 'openai-image',
+    google: 'google-image', openai: 'openai-image',
     meshy: 'meshy', runway: 'runway', seedance: 'seedance',
     elevenlabs: 'elevenlabs', anthropic: 'anthropic', gridlight: 'gridlight-adapter',
 };

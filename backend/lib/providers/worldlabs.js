@@ -277,6 +277,7 @@ function meterWorldLabs(capability, payload, result) {
 
 const adapter = {
     id: 'worldlabs',
+    label: 'World Labs',
     name: 'World Labs Marble',
     capabilities: ['world'],
     /*

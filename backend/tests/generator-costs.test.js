@@ -90,11 +90,15 @@ test('a price is converted to the work unit it is being compared against', () =>
     const uhd = compareGenerators('image', { frame: { width: 3840, height: 2160 } });
     const find = (r, unit) => r.rows.find(x => x.unit === unit && !x.self_hosted);
 
+    // No registered provider bills per megapixel since Black Forest Labs was
+    // removed (2026-09-30); the conversion itself is pinned above, and this
+    // holds the table to it the day one is added again.
     const mpHd = find(hd, 'megapixel');
     const mpUhd = find(uhd, 'megapixel');
-    assert.ok(mpHd && mpUhd, 'no per-megapixel provider in the comparison to check against');
-    assert.ok(mpUhd.usd_per_work > mpHd.usd_per_work * 3.9,
-        'a 4K frame is 4x the megapixels and must cost about 4x from a per-MP provider');
+    if (mpHd && mpUhd) {
+        assert.ok(mpUhd.usd_per_work > mpHd.usd_per_work * 3.9,
+            'a 4K frame is 4x the megapixels and must cost about 4x from a per-MP provider');
+    }
 
     const imgHd = find(hd, 'image');
     const imgUhd = find(uhd, 'image');

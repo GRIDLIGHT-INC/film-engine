@@ -56,7 +56,6 @@ const generating = () => providers.list().filter(a => typeof a.generate === 'fun
  */
 const RUNNING = {
     runway: { status: 'RUNNING', progress: 0.5 },
-    bfl: { status: 'Pending', progress: 0.5 },
     muapi: { status: 'processing', progress: 50 },
     seedance: { status: 'processing', progress: 50 },
     meshy: { status: 'IN_PROGRESS', progress: 50 },
@@ -66,7 +65,6 @@ const RUNNING = {
 };
 const FINISHED = {
     runway: { status: 'FAILED', failure: 'stub' },
-    bfl: { status: 'Error' },
     muapi: { status: 'failed', error: 'stub' },
     seedance: { status: 'failed', error: 'stub' },
     meshy: { status: 'FAILED', task_error: { message: 'stub' } },
@@ -76,7 +74,6 @@ const FINISHED = {
 };
 const FIXTURES = {
     runway: { cap: 'video', payload: { prompt: 'a quiet street at dusk', init_image: 'data:image/png;base64,iVBORw0KGgo=', duration: 5 } },
-    bfl: { cap: 'image', payload: { prompt: 'a quiet street at dusk' } },
     muapi: { cap: 'image', payload: { prompt: 'a quiet street at dusk' } },
     seedance: { cap: 'video', payload: { prompt: 'a quiet street at dusk', init_image: 'https://example.com/a.png', duration: 5 } },
     meshy: { cap: 'model3d', payload: { prompt: 'a wooden chair', refine: false } },

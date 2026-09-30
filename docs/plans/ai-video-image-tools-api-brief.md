@@ -59,7 +59,6 @@ Almost every tool on the page can be driven by API. Most of them are already one
 | seedance | topaz-video-upscale |
 | muapi | nano-banana-pro |
 | muapi | nano-banana-2 |
-| bfl | flux-2-pro |
 | meshy | gpt-image-2 |
 | google | gemini-3-pro-image |
 

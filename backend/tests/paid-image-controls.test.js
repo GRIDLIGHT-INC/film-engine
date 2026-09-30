@@ -288,7 +288,7 @@ test('a per-generation provider choice really changes the adapter, for image AND
     const id = crypto2.randomUUID();
     db.prepare('INSERT INTO film_projects (id, title, provider_config) VALUES (?, ?, ?)')
         .run(id, 'override probe', '{}');
-    for (const p of ['runway', 'seedance', 'meshy', 'google', 'bfl', 'openai']) {
+    for (const p of ['runway', 'seedance', 'meshy', 'google', 'openai']) {
         db.prepare(`INSERT INTO film_provider_credentials (provider, api_key, meta) VALUES (?, 'k', '{}')
                     ON CONFLICT(provider) DO UPDATE SET api_key = excluded.api_key`).run(p);
     }
@@ -297,7 +297,7 @@ test('a per-generation provider choice really changes the adapter, for image AND
 
     // Image choices reach every image vendor: Nano Banana Pro is the default
     // when nothing is chosen, not a lock on what may be chosen.
-    for (const [cap, choices] of [['video', ['runway', 'seedance']], ['image', ['meshy', 'google', 'bfl', 'openai']]]) {
+    for (const [cap, choices] of [['video', ['runway', 'seedance']], ['image', ['meshy', 'google', 'openai']]]) {
         for (const choice of choices) {
             assert.strictEqual(resolveWith(cap, { [cap]: choice }), choice,
                 `choosing ${choice} for one ${cap} generation resolved somewhere else`);

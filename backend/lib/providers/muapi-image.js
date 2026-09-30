@@ -371,6 +371,10 @@ const muapiImageAdapter = {
     id: 'muapi',
     kind: 'generator',
     label: 'MuAPI (Nano Banana images)',
+    // One MuAPI account: this adapter runs on the key stored for Seedance when it
+    // has none of its own, so Setup shows ONE key for the account.
+    account: 'MuAPI',
+    sharesKeyWith: 'seedance',
     requiresKey: true,
     capabilities: ['image'],
 

@@ -129,6 +129,10 @@ function getCatalog(res) {
             id: a.id,
             kind: a.kind,
             label: a.label || a.id,
+            // The ACCOUNT a key belongs to, and the adapter whose key this one
+            // runs on: Setup shows one key per account, covering every adapter on it.
+            account: a.account || String(a.label || a.id).replace(/\s*\(.*\)\s*$/, ''),
+            sharesKeyWith: a.sharesKeyWith || null,
             capabilities: a.capabilities || [],
             requiresKey: !!a.requiresKey,
             connection: a.connection || null, // { instructions, fields?, oauth? } — what the user must provide

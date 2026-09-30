@@ -65,12 +65,11 @@ const IMAGE_TIERS = Object.freeze({
         label: 'Draft',
         why: 'Cheap variations and thumbnails — for exploring a composition before committing to it. '
             + 'Exploration has to be cheap, or nobody explores and every idea costs a finished frame.',
-        // BFL leads: Klein is $0.015 against Meshy's $0.060 for nano-banana —
-        // four times cheaper, and cheap is the entire purpose of this tier. A
-        // 13-shot board drafts for $0.20 instead of $0.78.
-        order: ['bfl', 'meshy', 'google', 'openai', 'gridlight'],
+        // Black Forest Labs led here until it was removed (2026-09-30); Meshy's
+        // nano-banana is the cheapest vendor left for this tier.
+        order: ['meshy', 'google', 'openai', 'gridlight'],
         models: Object.freeze({
-            bfl: 'flux-2-klein', meshy: 'nano-banana', google: 'gemini-3.1-flash-lite-image',
+            meshy: 'nano-banana', google: 'gemini-3.1-flash-lite-image',
         }),
     }),
     standard: Object.freeze({
@@ -89,9 +88,9 @@ const IMAGE_TIERS = Object.freeze({
          * Meshy stays next in line: it is what this board has been generating
          * on, and it is the fallback when no Google key is present.
          */
-        order: ['muapi', 'google', 'meshy', 'bfl', 'openai', 'runway', 'gridlight'],
+        order: ['muapi', 'google', 'meshy', 'openai', 'runway', 'gridlight'],
         models: Object.freeze({
-            google: 'gemini-3.1-flash-image', meshy: 'nano-banana-2', bfl: 'flux-2-pro',
+            google: 'gemini-3.1-flash-image', meshy: 'nano-banana-2',
         }),
     }),
     precision: Object.freeze({
@@ -108,9 +107,9 @@ const IMAGE_TIERS = Object.freeze({
          * camera change at once, which is exactly the work edit-mode handles
          * worst. Meshy stays next in line for when the Google key is absent.
          */
-        order: ['google', 'meshy', 'bfl', 'openai', 'gridlight'],
+        order: ['google', 'meshy', 'openai', 'gridlight'],
         models: Object.freeze({
-            google: 'gemini-3-pro-image', meshy: 'nano-banana-pro', bfl: 'flux-2-max',
+            google: 'gemini-3-pro-image', meshy: 'nano-banana-pro',
         }),
     }),
 });

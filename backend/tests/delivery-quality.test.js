@@ -80,7 +80,9 @@ test('Runway uses a model\'s 1080p ratio when the project asks for 1080p, and it
     assert.ok(capable.length >= 2, `only ${capable}`);
     for (const m of capable) {
         assert.equal(at(m, 1920, 1080), '1920:1080', `${m} asked 1080p was sent a smaller ratio`);
-        assert.equal(at(m, 3840, 2160), '1920:1080', `${m} asked 4K did not get its best`);
+        // Its best for this shape: 1080p on most, 4K where the model lists it (Gemini Omni Flash 1.1).
+        const best = runway.RUNWAY_VIDEO_MODELS[m].ratios.includes('3840:2160') ? '3840:2160' : '1920:1080';
+        assert.equal(at(m, 3840, 2160), best, `${m} asked 4K did not get its best`);
         assert.equal(at(m, 1280, 720), '1280:720', `${m} asked 720p was sent more than asked`);
         assert.equal(at(m, 1080, 1920), '1080:1920', `${m} vertical 1080p lost its size`);
     }

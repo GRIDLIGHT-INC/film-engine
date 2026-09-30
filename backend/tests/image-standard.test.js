@@ -30,7 +30,7 @@ function credential(id) {
     db.prepare(`INSERT OR REPLACE INTO film_provider_credentials (provider, api_key, meta, updated_at)
         VALUES (?, 'test-key-not-a-real-one', '{}', datetime('now'))`).run(id);
 }
-for (const id of ['muapi', 'google', 'meshy', 'bfl', 'openai', 'runway']) credential(id);
+for (const id of ['muapi', 'google', 'meshy', 'openai', 'runway']) credential(id);
 
 test('every vendor the standard names is a registered image adapter that sells the model', () => {
     for (const [id, model] of Object.entries(std.STANDARD_MODELS)) {
@@ -140,7 +140,7 @@ test('with nothing chosen a refusal walks only to another vendor of the same mod
 
 test('a chosen provider outside the standard is never walked away from', () => {
     const { imageProviderChain } = require('../lib/image-fallback');
-    for (const id of ['bfl', 'openai', 'runway']) {
+    for (const id of ['openai', 'runway']) {
         const ids = imageProviderChain({ image: id }).map(a => a.id);
         assert.deepStrictEqual(ids, [id], `chose ${id}; a refusal would walk to ${ids.slice(1).join(', ')}`);
     }

@@ -55,7 +55,9 @@ function ratesFor(model, resolution) {
     const m = RUNWAY_VIDEO_MODELS[String(model || '').trim()];
     if (!m) return null;
     const label = String(resolution || m.defaultResolution || '').trim();
-    const tier = (m.resolutions && (m.resolutions[label] || m.resolutions[m.defaultResolution])) || {};
+    // Case-blind: Runway's schema says 768p where the rate card says 768P.
+    const key = m.resolutions && Object.keys(m.resolutions).find(k => k.toLowerCase() === label.toLowerCase());
+    const tier = (m.resolutions && (m.resolutions[key] || m.resolutions[m.defaultResolution])) || {};
     return {
         model: m,
         resolution: label || null,

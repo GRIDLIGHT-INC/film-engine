@@ -14,6 +14,8 @@ const OFFICIAL_IMAGE_TO_VIDEO = [
     // different rates, and renaming 2.0 would have silently repriced every
     // estimate already made against it.
     'hailuo3', 'seedance2_5',
+    // Wired Sep 2026, the five the parity brief named as missing.
+    'grok_imagine_1_5', 'wan3', 'wan3_prime', 'h3_max', 'gemini_omni_flash_1.1',
     /*
      * The first VIDEO-TO-VIDEO model. The constant is still named for what it
      * held when every entry was image-to-video, and the endpoint assertion
@@ -37,8 +39,11 @@ test('every currently documented Runway video model has an explicit safe policy'
          * targetAspectRatio enum, so demanding a ratios list there would force a
          * second copy of a field the provider is retiring. Either satisfies it.
          */
+        // A model Runway sizes by its RESOLUTION field takes no ratio: the shape
+        // follows the picture, and its tiers are the policy.
         assert.ok((Array.isArray(policy.ratios) && policy.ratios.length)
-            || (Array.isArray(policy.targetAspectRatios) && policy.targetAspectRatios.length),
+            || (Array.isArray(policy.targetAspectRatios) && policy.targetAspectRatios.length)
+            || (policy.sizedBy === 'resolution' && policy.resolutions && Object.keys(policy.resolutions).length),
             `${id}: no ratio or targetAspectRatio policy`);
         assert.ok(Number(policy.creditsPerSecond) > 0, `${id}: no cost policy`);
         assert.ok(policy.status && policy.source, `${id}: deprecation/evidence is unstated`);

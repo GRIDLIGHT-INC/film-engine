@@ -108,7 +108,7 @@ const PREFERRED_WHEN_CONFIGURED = {
      * cycle — so it is written out and pinned by assertion instead, the same
      * arrangement flow-seed has with PIPELINE_STEPS.
      */
-    image: ['muapi', 'google', 'meshy', 'bfl', 'openai'],
+    image: ['muapi', 'google', 'meshy', 'openai'],
     // Seedance 2.5 for footage. Runway's gen4.5 takes TWO keyframes, first and
     // last, which has been the ceiling on "generate this sequence from these
     // pictures"; Seedance's omni-reference workflow takes thirty. Runway stays

@@ -111,7 +111,8 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
     gen4_turbo: { endpoint: 'image_to_video', duration: { min: 2, max: 10 }, ratios: ['1280:720', '1584:672', '1104:832', '720:1280', '832:1104', '960:960'], creditsPerSecond: 5, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
     'veo3.1': { endpoint: 'image_to_video', duration: { min: 4, max: 8, allowed: [4, 6, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 40, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
     'veo3.1_fast': { endpoint: 'image_to_video', duration: { min: 4, max: 8, allowed: [4, 6, 8] }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-audio', source: RUNWAY_VIDEO_SOURCE },
-    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 3, max: 15 }, ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920'], creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    // Sized by its resolution field: Runway's schema has no ratio for it (the shape follows the picture).
+    happyhorse_1_0: { endpoint: 'image_to_video', duration: { min: 3, max: 15 }, ratios: [], sizedBy: 'resolution', resolutions: { '720p': { creditsPerSecond: 15 }, '1080p': { creditsPerSecond: 30 } }, defaultResolution: '720p', creditsPerSecond: 15, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
 
     /*
      * MiniMax H3. The reference economics are the reason it is the production
@@ -155,6 +156,59 @@ const RUNWAY_VIDEO_MODELS = Object.freeze({
     seedance2: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 36, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
     seedance2_fast: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 29, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
     seedance2_mini: { endpoint: 'image_to_video', duration: { min: 4, max: 15 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 16, imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 64, status: 'active-720p-rate', source: RUNWAY_VIDEO_SOURCE },
+    /*
+     * THE FIVE WIRED 2026-09-30, from Runway's pricing page and its OpenAPI
+     * schema (video-model-fields.json). Resolution-sized models (Grok, H3 Max)
+     * take no ratio field at all: the shape follows the board frame and the
+     * tier is the `resolution` field. Wan 3 and Gemini Omni Flash 1.1 are sized
+     * by ratio, and the tier is read off the ratio's short edge.
+     */
+    grok_imagine_1_5: {
+        label: 'Grok Imagine 1.5', endpoint: 'image_to_video', duration: { min: 1, max: 15 },
+        ratios: [], sizedBy: 'resolution',
+        creditsPerSecond: 16,
+        resolutions: { '480p': { creditsPerSecond: 10 }, '720p': { creditsPerSecond: 16 }, '1080p': { creditsPerSecond: 29 } },
+        defaultResolution: '720p',
+        imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 1,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+    wan3: {
+        label: 'Wan 3', endpoint: 'image_to_video', duration: { min: 2, max: 30 },
+        ratios: ['1280:720', '720:1280', '1104:832', '832:1104', '960:960', '1920:1080', '1080:1920', '832:480', '480:832'],
+        creditsPerSecond: 10,
+        resolutions: { '480p': { creditsPerSecond: 5 }, '720p': { creditsPerSecond: 10 }, '1080p': { creditsPerSecond: 20 } },
+        defaultResolution: '720p',
+        imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+    wan3_prime: {
+        label: 'Wan 3 Prime', endpoint: 'image_to_video', duration: { min: 2, max: 30 },
+        ratios: ['1280:720', '720:1280', '1104:832', '832:1104', '960:960', '1920:1080', '1080:1920', '832:480', '480:832'],
+        creditsPerSecond: 14,
+        resolutions: { '480p': { creditsPerSecond: 6.8 }, '720p': { creditsPerSecond: 14 }, '1080p': { creditsPerSecond: 28 } },
+        defaultResolution: '720p',
+        imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+    h3_max: {
+        label: 'MiniMax H3 Max', endpoint: 'image_to_video', duration: { min: 5, max: 15 },
+        ratios: [], sizedBy: 'resolution',
+        creditsPerSecond: 8,
+        resolutions: { '480p': { creditsPerSecond: 5 }, '768p': { creditsPerSecond: 8 } },
+        defaultResolution: '768p',
+        imageReferenceCredits: 0, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
+    'gemini_omni_flash_1.1': {
+        label: 'Gemini Omni Flash 1.1', endpoint: 'image_to_video', duration: { min: 3, max: 10 },
+        ratios: ['1280:720', '720:1280', '1920:1080', '1080:1920', '640:360', '360:640', '3840:2160', '2160:3840'],
+        creditsPerSecond: 10,
+        resolutions: { '360p': { creditsPerSecond: 3.4 }, '720p': { creditsPerSecond: 10 },
+            '1080p': { creditsPerSecond: 15 }, '4k': { creditsPerSecond: 30 } },
+        defaultResolution: '720p',
+        imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 1, audioReferenceCredits: 0,
+        minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE,
+    },
     gemini_omni_flash: { endpoint: 'image_to_video', duration: { min: 3, max: 10 }, ratios: ['1280:720', '720:1280'], creditsPerSecond: 10, firstFrameCredits: 1, imageReferenceCredits: 1, videoReferenceCreditsPerSecond: 0, audioReferenceCredits: 0, minimumCredits: 0, status: 'active', source: RUNWAY_VIDEO_SOURCE },
 });
 const KNOWN_VIDEO_MODELS = new Set(Object.keys(RUNWAY_VIDEO_MODELS));
@@ -299,6 +353,39 @@ function missingKey() {
 }
 
 /** Parse "1280:720" into a numeric aspect. */
+/**
+ * THE TIER A RESOLUTION-FIELD MODEL IS ASKED FOR, in the schema's own spelling.
+ *
+ * Chosen on the dialog, that choice. Otherwise the delivery rule every video
+ * adapter follows: the largest tier at or below the frame asked for, else the
+ * model's best (a downgrade, and deliverableFrame says so). Never above the ask:
+ * a tier nobody asked for is a bill nobody expected. Null when the model has
+ * no resolution field, so nothing is sent.
+ */
+function tierEdge(label) {
+    const k = /^(\d+(?:\.\d+)?)\s*k$/i.exec(label);
+    if (k) return Math.round(Number(k[1]) * 1024 * 9 / 16);
+    const p = /^(\d+)\s*p$/i.exec(label);
+    return p ? Number(p[1]) : 0;
+}
+function resolutionTier(model, askedShort, explicit) {
+    const spec = specOf(model);
+    const e = spec && spec.resolution && Array.isArray(spec.resolution.enum) ? spec.resolution.enum : null;
+    if (!e) return null;
+    if (explicit) {
+        const hit = e.find(r => String(r).toLowerCase() === String(explicit).toLowerCase());
+        if (hit) return hit;
+    }
+    // One spelling per tier (the schema lists 768p and 768P): the lower-case one.
+    const tiers = [...new Set(e.map(r => String(r).toLowerCase()))]
+        .map(l => ({ l, e: tierEdge(l) })).filter(t => t.e > 0).sort((a, b) => a.e - b.e);
+    if (!tiers.length) return null;
+    const short = Number(askedShort) || 720;
+    const fit = tiers.filter(t => t.e <= short).pop() || tiers[0];
+    const want = short >= tiers[tiers.length - 1].e ? tiers[tiers.length - 1] : fit;
+    return e.find(r => String(r).toLowerCase() === want.l) || want.l;
+}
+
 /** A ratio chosen on the dialog, only if this model's own schema takes it. */
 function explicitRatio(value, model) {
     if (!value) return null;
@@ -356,6 +443,21 @@ function deliverableFrame(payload) {
         if (Number(p.width) > 0 && Number(p.height) > 0) return { width: Number(p.width), height: Number(p.height) };
         return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1280, height: 720 };
     })();
+    /*
+     * A model sized by a RESOLUTION FIELD (Grok, H3 Max, HappyHorse, Hailuo 3):
+     * the frame is the tier, in the shape of what was asked.
+     */
+    const tier = resolutionTier(model, Math.min(asked.width, asked.height), p.resolution);
+    const spec = specOf(model);
+    if (tier && (!spec.ratio || !(spec.ratio.enum || []).some(r => /^\d{3,}:\d{3,}$/.test(r)))) {
+        const short = tierEdge(String(tier));
+        const scale = short / Math.min(asked.width, asked.height);
+        const even = n => Math.max(2, Math.round(n / 2) * 2);
+        const width = even(asked.width * scale), height = even(asked.height * scale);
+        const downgraded = short < Math.min(asked.width, asked.height);
+        return { width, height, ratio: `${width}:${height}`, resolution: tier, model, downgraded,
+            why: downgraded ? `Runway ${model} renders at most ${tier}; asked ${asked.width}x${asked.height}.` : null };
+    }
     const explicit = explicitRatio(p.ratio, model);
     const ratio = explicit || pickRatio(asked.width, asked.height, 'image_to_video', model);
     const [rw, rh] = String(ratio).split(':').map(Number);
@@ -648,10 +750,18 @@ function buildVideoRequest(payload) {
      */
     const spec = specOf(model) || {};
     if (p.duration_auto && spec.duration && spec.duration.auto) body.duration = 'auto';
-    if (p.resolution && spec.resolution && Array.isArray(spec.resolution.enum)) {
-        const hit = spec.resolution.enum.find(r => String(r).toLowerCase() === String(p.resolution).toLowerCase());
-        if (hit) body.resolution = hit;
+    /*
+     * A model with a resolution field is ASKED for a tier: the one chosen, else
+     * the delivery rule's. Leaving it out let Runway pick its own default while
+     * the estimate priced another tier.
+     */
+    {
+        const w = Number(p.width) || 1280, h = Number(p.height) || 720;
+        const tier = resolutionTier(model, Math.min(w, h), p.resolution);
+        if (tier) body.resolution = tier;
     }
+    // A model whose schema has no ratio field (the shape follows the picture) is sent none.
+    if (specOf(model) && !spec.ratio && mode === 'image_to_video') delete body.ratio;
     if (typeof p.audio === 'boolean' && spec.audio) body.audio = p.audio;
     if (p.output_format && spec.outputFormat && (spec.outputFormat.enum || []).includes(p.output_format)) {
         body.outputFormat = p.output_format;

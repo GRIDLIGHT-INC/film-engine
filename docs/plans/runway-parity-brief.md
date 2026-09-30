@@ -4,7 +4,7 @@
 
 ### Executive Summary
 
-Runway's API has **65 operations**, and Film Engine's Runway adapter reaches **6 of the 49 paths** they sit on. The model registry trails the spec by **5 video models**. And the adapter declares a two-frame keyframe ceiling for *every* model, while only **8 of 16** image-to-video models accept a last frame. Those that do not include the default (`gen4.5`), the draft tier (`gen4_turbo`) or the production tier (`hailuo3`). So the gap to parity is mostly **plumbing to an account we would already pay for**, not new product: uploads, the full request body, finishing, and performance capture. The one live defect is the keyframe ceiling.
+Runway's API has **65 operations**, and Film Engine's Runway adapter reaches **6 of the 49 paths** they sit on. The model registry trailed the spec by five video models, wired on 30 September; it now trails it by **0 video models**. And the adapter declares a two-frame keyframe ceiling for *every* model, while only **8 of 16** image-to-video models accept a last frame. Those that do not include the default (`gen4.5`), the draft tier (`gen4_turbo`) or the production tier (`hailuo3`). So the gap to parity is mostly **plumbing to an account we would already pay for**, not new product: uploads, the full request body, finishing, and performance capture. The one live defect is the keyframe ceiling.
 
 ### Key Themes
 

@@ -5485,6 +5485,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 #page-settings .set-keys { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
 #page-settings .set-key { display:flex; flex-direction:column; gap:8px; padding:14px; border-radius:10px; background:var(--gl-bg-elevated); border:1px solid var(--gl-border-subtle); min-width:0; }
 #page-settings .set-key label { margin:0; font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#page-settings .set-empty-note { padding:16px 18px; border-radius:10px; background:var(--gl-bg-elevated); border:1px solid var(--gl-border-subtle); font-size:14px; line-height:1.55; color:var(--gl-text-secondary); max-width:760px; }
 #page-settings .set-key-serves { font-size:12px; color:var(--gl-text-muted); line-height:1.4; }
 #page-settings .set-pill { flex-shrink:0; font-size:11px; font-weight:500; padding:3px 9px; border-radius:999px; background:rgba(255,255,255,.07); color:var(--gl-text-secondary); white-space:nowrap; }
 #page-settings .set-pill.ok { background:rgba(79,211,156,.14); color:var(--gl-success); }
@@ -30457,9 +30458,24 @@ ${fountainText.slice(0, 50000)}`;
             // Connection rows: providers that need a key, OAuth connect, or config fields.
             const keyIsSet = p => (!!(p.credentials && (p.credentials.set || p.credentials.connected)) && !(p.credentials && p.credentials.suspect))
                 || !!p.enabled;
-            // Set ones first, so what is missing is the second thing you read, not lost in the middle.
-            const needsSetup = (catalog.providers || []).filter(p => p.requiresKey || p.connection)
-                .sort((a, b) => (keyIsSet(b) - keyIsSet(a)) || String(a.label).localeCompare(String(b.label)));
+            /*
+             * ONE TILE PER ACCOUNT, named for the account and listing every
+             * capability its key covers. An adapter that runs on another's key
+             * (MuAPI images on the key stored for Seedance) folds into that tile
+             * rather than showing a second box for the same key.
+             */
+            const all = (catalog.providers || []).filter(p => p.requiresKey || p.connection);
+            const ids = new Set(all.map(p => p.id));
+            const needsSetup = all.filter(p => !(p.sharesKeyWith && ids.has(p.sharesKeyWith)))
+                .map(p => {
+                    const riders = all.filter(r => r.sharesKeyWith === p.id);
+                    if (!riders.length) return p;
+                    const caps = [...new Set([...(p.capabilities || []), ...riders.flatMap(r => r.capabilities || [])])];
+                    return { ...p, capabilities: caps };
+                })
+                // Set ones first, so what is missing is the second thing you read, not lost in the middle.
+                .sort((a, b) => (keyIsSet(b) - keyIsSet(a)) || String(a.account || a.label).localeCompare(String(b.account || b.label)));
+            const keyName = p => p.account || String(p.label || p.id).replace(/\s*\(.*\)\s*$/, '');
             const countEl = document.getElementById('providerKeyCount');
             if (countEl) countEl.textContent = needsSetup.length ? `${needsSetup.filter(keyIsSet).length} of ${needsSetup.length} set` : '';
             // What a key is FOR, in the words the provider section uses.
@@ -30489,7 +30505,7 @@ ${fountainText.slice(0, 50000)}`;
                             </div>
                         </details>` : '';
                     return `<div class="set-key">
-                        <label>${esc(p.label)} ${status}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}
+                        <label>${esc(keyName(p))} ${status}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="btn btn-primary btn-sm" onclick="connectProviderOAuth('${esc(p.id)}')">${connected ? 'Reconnect' : 'Connect ' + esc(p.label.split(' ')[0])}</button>
                             ${connected ? '<button class="btn btn-danger btn-sm" onclick="disconnectProvider(\'' + esc(p.id) + '\')">Disconnect</button>' : ''}
@@ -30512,7 +30528,7 @@ ${fountainText.slice(0, 50000)}`;
                         </div>`;
                     }).join('');
                     return `<div class="set-key">
-                        <label>${esc(p.label)}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}${fieldsHtml}
+                        <label>${esc(keyName(p))}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}${fieldsHtml}
                         <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save</button>
                     </div>`;
                 }
@@ -30530,7 +30546,7 @@ ${fountainText.slice(0, 50000)}`;
                 const helpUrl = conn && conn.helpUrl;
                 const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="' + esc((conn && conn.instructions) || 'Opens the provider\'s key page') + '">Get key &#8599;</a>' : '';
                 return `<div class="set-key">
-                    <label title="${esc((conn && conn.instructions) || '')}">${esc(p.label)} ${status}</label>
+                    <label title="${esc((conn && conn.instructions) || '')}">${esc(keyName(p))} ${status}</label>
                     ${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}
                     <input type="password" id="provkey-${esc(p.id)}" placeholder="${c.set ? 'Replace key' : 'Enter API key'}">
                     <div class="set-key-btns">
@@ -30543,7 +30559,7 @@ ${fountainText.slice(0, 50000)}`;
 
             // Per-capability provider selectors (needs a current project).
             if (!state.currentProject) {
-                mapEl.innerHTML = '<p class="text-sm text-muted">Open a project to choose providers per capability.</p>';
+                mapEl.innerHTML = '<div class="set-empty-note"><strong>No project is open.</strong> Which provider and model make each kind of thing is chosen per project: open one from the project list, then come back here. API keys, below in the list, work without a project.</div>';
                 return;
             }
             const proj = await api('/projects/' + state.currentProject.id + '/providers');

@@ -987,6 +987,7 @@ const seedanceAdapter = {
     // account key that also reaches the Nano Banana image adapter, and a label
     // naming ByteDance is why it was pasted twice under two names.
     label: 'MuAPI (Seedance 2.5 video)',
+    account: 'MuAPI',
     requiresKey: true,
     capabilities: ['video', 'post'],
 
