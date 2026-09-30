@@ -4906,6 +4906,11 @@ table, .render-table { border-radius:12px; overflow:hidden; }
   color:#7a7a74; line-height:1.8; }
 .we-opgroup { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px;
   letter-spacing:0.18em; color:#8f8f8a; margin:10px 0 6px; }
+        .we-shotchips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
+        .we-shotchip { padding: 4px 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; background: transparent;
+            color: #c9c9d1; font: 600 11px -apple-system, sans-serif; cursor: pointer; }
+        .we-shotchip:hover { border-color: #6690ff; }
+        .we-shotchip.active { border-color: #5fd3c4; color: #5fd3c4; background: rgba(95,211,196,0.08); }
         .we-scrub { display: inline-block; min-width: 58px; padding: 2px 8px; margin-left: auto; border: 1px solid rgba(102,144,255,0.35);
             border-radius: 4px; background: rgba(102,144,255,0.08); color: #cfd9ff; font: 600 12px ui-monospace, Menlo, monospace;
             text-align: right; cursor: ew-resize; user-select: none; }
@@ -16249,6 +16254,134 @@ THREE.GLTFLoader = GLTFLoader;
         worldWalkRepaint();
     }
 
+    /*
+     * THE SHOT, IN THE WORDS A CREW USES. Framing is how much of the subject
+     * the frame holds; angle is where the camera sits relative to the eyes.
+     * They are two axes — the scene card's single shot_type cannot say "a
+     * low-angle wide", this can — and the lens stays the finer control: a
+     * framing is solved as a DISTANCE for the lens you have, on the framing
+     * subject, keeping the side you are shooting it from. Kept on the shot
+     * through the same validated proposal as every other camera change.
+     */
+    const SHOT_FRAMINGS = Object.freeze([
+        { id: 'ews', label: 'Extreme wide', short: 'EWS', cover: 8.0,  aim: 0.50 },
+        { id: 'ws',  label: 'Wide',         short: 'WS',  cover: 3.2,  aim: 0.50 },
+        { id: 'fs',  label: 'Full',         short: 'FS',  cover: 2.1,  aim: 0.52 },
+        { id: 'mws', label: 'Medium wide (cowboy)', short: 'MWS', cover: 1.35, aim: 0.66 },
+        { id: 'ms',  label: 'Medium',       short: 'MS',  cover: 0.95, aim: 0.74 },
+        { id: 'mcu', label: 'Medium close-up', short: 'MCU', cover: 0.62, aim: 0.83 },
+        { id: 'cu',  label: 'Close-up',     short: 'CU',  cover: 0.40, aim: 0.90 },
+        { id: 'ecu', label: 'Extreme close-up', short: 'ECU', cover: 0.16, aim: 0.93 },
+    ]);
+    // Camera height as a share of the subject's height, and where it looks.
+    const SHOT_ANGLES = Object.freeze([
+        { id: 'eye',      label: 'Eye level',      h: 0.94 },
+        { id: 'shoulder', label: 'Shoulder',       h: 0.82 },
+        { id: 'hip',      label: 'Hip',            h: 0.55 },
+        { id: 'knee',     label: 'Knee',           h: 0.28 },
+        { id: 'ground',   label: "Ground (worm's eye)", m: 0.15 },
+        { id: 'low',      label: 'Low angle',      h: 0.45, lookUp: true },
+        { id: 'high',     label: 'High angle',     h: 1.35 },
+        { id: 'overhead', label: "Overhead (bird's eye)", over: true },
+    ]);
+
+    function worldShotSubject() {
+        const subs = stageSubjects();
+        const t = subs.find(s => s.isTarget) || subs[0];
+        if (!t || !Array.isArray(t.position)) return null;
+        const k = worldOperateScale();
+        const h = Array.isArray(t.sizeM) ? Number(t.sizeM[1]) || 1.7 : 1.7;
+        return { name: t.name || 'subject', x: t.position[0] * k, y: (t.position[1] || 0) * k, z: t.position[2] * k, h };
+    }
+
+    /** What the camera frames now, named: the nearest framing by coverage at the subject. */
+    function worldShotNow() {
+        const c = worldOperateCamera(), t = worldShotSubject();
+        if (!c || !t || !Array.isArray(c.position)) return {};
+        const k = worldOperateScale();
+        const d = Math.hypot(c.position[0] * k - t.x, c.position[2] * k - t.z);
+        const v = worldFovFor(WORLD.lens || c.focalMm || 35).vDeg * Math.PI / 180;
+        const cover = 2 * d * Math.tan(v / 2);
+        let best = null;
+        for (const f of SHOT_FRAMINGS) {
+            const e = Math.abs(Math.log(cover / f.cover));
+            if (!best || e < best.e) best = { id: f.id, e };
+        }
+        const camH = c.position[1] * k - t.y;
+        let angle = null, bestA = Infinity;
+        for (const a of SHOT_ANGLES) {
+            if (a.over) continue;
+            const ah = a.m != null ? a.m : a.h * t.h;
+            const e = Math.abs(ah - camH);
+            if (e < bestA) { bestA = e; angle = a.id; }
+        }
+        if ((c.rotation || [])[1] < -60) angle = 'overhead';
+        return { framing: best && best.id, angle, dutch: Math.abs((c.rotation || [])[2] || 0) > 5, cover };
+    }
+
+    /*
+     * Place the camera for a framing and an angle. Either may be left as it is
+     * (null keeps what the camera already has). Distance along the current
+     * bearing from the subject, height from the angle, and the camera aimed
+     * at the framing's point on the subject — the face for a close-up, the
+     * middle of the body for a full shot.
+     */
+    function worldShotPlace(framingId, angleId, dutch) {
+        const t = worldShotSubject();
+        if (!t) return setStatus('Stage the subject first (Plan → + Add people), and mark who the shot is on', true);
+        worldWalkEnsure();
+        const c = worldWalkCamera();
+        if (!c) return;
+        const k = worldOperateScale();
+        const now = worldShotNow();
+        const F = SHOT_FRAMINGS.find(f => f.id === (framingId || now.framing)) || SHOT_FRAMINGS[4];
+        const A = SHOT_ANGLES.find(a => a.id === (angleId || now.angle)) || SHOT_ANGLES[0];
+        const v = worldFovFor(WORLD.lens || c.focalMm || 35).vDeg * Math.PI / 180;
+        const dist = (F.cover / 2) / Math.tan(v / 2);
+        const aimY = t.y + F.aim * t.h;
+        let cx = c.position[0] * k, cz = c.position[2] * k;
+        let bx = cx - t.x, bz = cz - t.z;
+        const bl = Math.hypot(bx, bz) || 1;
+        bx /= bl; bz /= bl;
+        let camY, px, pz;
+        if (A.over) {
+            // Straight down from above, pulled back a little so the frame is not all scalp.
+            camY = t.y + t.h + Math.max(1.5, dist);
+            px = t.x + bx * 0.3; pz = t.z + bz * 0.3;
+        } else {
+            camY = t.y + (A.m != null ? A.m : A.h * t.h);
+            px = t.x + bx * dist; pz = t.z + bz * dist;
+        }
+        const horiz = Math.hypot(t.x - px, t.z - pz) || 1e-6;
+        const yaw = Math.atan2(-(t.x - px), -(t.z - pz)) * 180 / Math.PI;
+        const tilt = A.over ? -85 : Math.atan2(aimY - camY, horiz) * 180 / Math.PI;
+        c.position = [px / k, camY / k, pz / k];
+        const roll = dutch === undefined ? ((c.rotation || [])[2] || 0) : (dutch ? 15 : 0);
+        c.rotation = [yaw, Math.max(-85, Math.min(85, tilt)), roll];
+        WALK.moved = true;
+        worldWalkRepaint();
+        worldWalkKeep();
+    }
+
+    function worldShotHtml() {
+        const now = worldShotNow();
+        const t = worldShotSubject();
+        const chip = (fn, id, label, on, title) =>
+            `<button class="we-shotchip${on ? ' active' : ''}" onclick="${fn}" title="${esc(title || label)}">${esc(label)}</button>`;
+        return `
+            <div class="we-panel" data-region="shot">
+              <div class="we-label">SHOT <span class="we-live">${t ? 'on ' + esc(t.name) : 'no subject staged'}</span></div>
+              <div class="we-opgroup">FRAMING</div>
+              <div class="we-shotchips">${SHOT_FRAMINGS.map(f =>
+                  chip(`worldShotPlace('${f.id}', null)`, f.id, f.short, now.framing === f.id, `${f.label} — about ${f.cover} m of the subject in frame`)).join('')}</div>
+              <div class="we-opgroup">ANGLE</div>
+              <div class="we-shotchips">${SHOT_ANGLES.map(a =>
+                  chip(`worldShotPlace(null, '${a.id}')`, a.id, a.label, now.angle === a.id)).join('')}
+                  ${chip(`worldShotPlace(null, null, ${now.dutch ? 'false' : 'true'})`, 'dutch', 'Dutch', now.dutch, 'Tilt the horizon 15°')}</div>
+              <p class="we-hint">Framing is solved for the lens below; change the lens to go granular. Keeps the side you shoot from.</p>
+            </div>`;
+    }
+
     function worldOperateHtml() {
         /*
          * THE AXES ALWAYS RENDER. Hiding them until a camera is saved would
@@ -16519,6 +16652,7 @@ THREE.GLTFLoader = GLTFLoader;
             </div>
             <div class="we-right">
               ${worldRegionOn('spatial-world') ? worldSpatialHtml(world, version) : ''}
+              ${worldShotHtml()}
               <div class="we-panel">
                 <div class="we-label">LENS <span class="we-live" id="weLensNow">${WORLD.lens}mm</span></div>
                 <div class="we-lenses">${lenses}</div>
@@ -16737,6 +16871,7 @@ THREE.GLTFLoader = GLTFLoader;
               <div class="pv-tabs">${tabs}</div>
               <div class="pv-tabbody">
                 ${pane('camera', `
+                  ${worldShotHtml()}
                   <div class="we-panel">
                     <div class="we-label">LENS <span class="we-live" id="weLensNow">${WORLD.lens}mm</span></div>
                     <div class="we-lenses">${lenses}</div>

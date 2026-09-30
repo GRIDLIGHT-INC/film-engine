@@ -300,3 +300,25 @@ test('Camera Operate: every value is a drag-to-change number, the lens dolly-zoo
     assert.ok(/worldPreviewCamera\(\)/.test(pose), 'the Look and Plan views ignore the playhead');
     assert.ok(/worldPreviewCamera\(\)/.test(pageFn('worldPaintGeometry')), 'the Geometry view ignores the playhead');
 });
+
+test('the SHOT panel names framing and angle as a crew does, and both are on the Camera tab', () => {
+    const fr = HTML.slice(HTML.indexOf('const SHOT_FRAMINGS'), HTML.indexOf(']);', HTML.indexOf('const SHOT_FRAMINGS')));
+    for (const s of ['EWS', 'WS', 'FS', 'MWS', 'MS', 'MCU', 'CU', 'ECU']) assert.ok(fr.includes(`short: '${s}'`), `no ${s}`);
+    const covers = [...fr.matchAll(/cover: ([\d.]+)/g)].map(m => Number(m[1]));
+    assert.deepEqual([...covers].sort((a, b) => b - a), covers, 'framings are not ordered wide to tight');
+    const an = HTML.slice(HTML.indexOf('const SHOT_ANGLES'), HTML.indexOf(']);', HTML.indexOf('const SHOT_ANGLES')));
+    for (const a of ['eye', 'shoulder', 'hip', 'knee', 'ground', 'low', 'high', 'overhead']) assert.ok(an.includes(`id: '${a}'`), `no ${a} angle`);
+    assert.equal((HTML.match(/\$\{worldShotHtml\(\)\}/g) || []).length, 2, 'the SHOT panel is not on both camera layouts');
+    const place = pageFn('worldShotPlace');
+    assert.ok(/Math\.tan\(v \/ 2\)/.test(place), 'framing is not solved from the lens');
+    assert.ok(/worldWalkKeep\(\)/.test(place), 'a framing is not kept on the shot');
+});
+
+test('a camera looking up at a face is not refused because the feet are behind it', () => {
+    const { validateCamera } = require('../lib/camera-validate');
+    const blocking = { subjects: [{ name: 'Woman', isTarget: true, position: [0, 0, -1], sizeM: [0.5, 1.65, 0.3] }] };
+    const cam = { position: [0, 0.7, -0.5], rotation: [0, 60, 0], focalMm: 24, sensorId: 'super35' };
+    const out = validateCamera(cam, null, blocking);
+    const failures = (out.failures || out.errors || []).map(f => f.check || f);
+    assert.ok(!failures.includes('subject_behind_camera'), JSON.stringify(out));
+});

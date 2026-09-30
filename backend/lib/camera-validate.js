@@ -56,7 +56,8 @@ function aimVector(rotation) {
 /** The axis-aligned box a staged subject occupies, standing on its position. */
 function boxOf(subject) {
     const p = subject.position || [0, 0, 0];
-    const s = subject.size || [0.5, 1.7, 0.3];
+    // A staged subject carries sizeM (width, height, depth); `size` is the older name.
+    const s = subject.size || subject.sizeM || [0.5, 1.7, 0.3];
     return {
         min: [p[0] - s[0] / 2, p[1], p[2] - s[2] / 2],
         max: [p[0] + s[0] / 2, p[1] + s[1], p[2] + s[2] / 2],
@@ -167,7 +168,14 @@ function validateCamera(camera, world, blocking, opts) {
         }
     }
     if (target) {
-        const toSubject = sub(target.position || [0, 0, 0], eye);
+        /*
+         * The subject's CENTRE, not its feet. A low camera looking up at a
+         * face has the feet behind its image plane and the person squarely in
+         * frame; testing the feet refused every low-angle close-up.
+         */
+        const tb = boxOf(target);
+        const centre = [(tb.min[0] + tb.max[0]) / 2, (tb.min[1] + tb.max[1]) / 2, (tb.min[2] + tb.max[2]) / 2];
+        const toSubject = sub(centre, eye);
         const along = dot(toSubject, aim);
 
         // 2 · the subject is behind the lens
@@ -183,7 +191,7 @@ function validateCamera(camera, world, blocking, opts) {
         // 5 · something solid between the camera and the subject
         for (const s of subjects) {
             if (s === target) continue;
-            if (segmentHitsBox(eye, target.position || [0, 0, 0], boxOf(s))) {
+            if (segmentHitsBox(eye, centre, boxOf(s))) {
                 failures.push({ check: 'occluded',
                     detail: `${s.name || 'a subject'} stands between the camera and ${target.name || 'the subject'}` });
                 break;
