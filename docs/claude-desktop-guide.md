@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**417 tools, 83 families.** Everything the app can do, you can ask for in a
+**418 tools, 83 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -338,12 +338,13 @@ frame that has the scene right, and the next shots are generated **from** it.
 
 `previs_get` · `previs_set` · `previs_solve` · `previs_from_card` ·
 `previs_apply` · `previs_approve` · `previs_lock` · `previs_unlock` ·
-`previs_to_storyboard` · `shot_motion` · `previs_stage` · `previs_library`
+`previs_to_storyboard` · `shot_motion` · `previs_stage` · `previs_library` · `previs_timeline`
 
 `previs_library` lists the free people (a man, a woman, a boy, a girl) and 140
 low-poly furniture pieces, each at its real size; `previs_stage` places, moves,
 turns or removes them, or one of the project's own 3D models such as a Meshy
-creature, and keeps the camera exactly as it was. Both are free.
+creature, and keeps the camera exactly as it was. `previs_timeline` sets the move
+(legs, camera keys, length) and keeps the camera and the people. All three are free.
 
 Block a shot in 3D — lens, height, distance, movement, named staging, direction,
 background view and lighting — then `previs_apply` commits those staged choices

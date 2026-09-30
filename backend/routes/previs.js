@@ -417,15 +417,43 @@ function getBlocking(req, res, shotId) {
  * through the one writer, so the camera keys survive and the path re-samples
  * (an orbit centres on its subject).
  */
-function putSubjects(req, res, shotId) {
+/*
+ * A PARTIAL save, over the blocking as it stands. A PUT of /previs rebuilds the
+ * whole blocking from defaults, so a caller that only meant to move a person or
+ * add a camera key, and sent only that, reset the camera to its default and
+ * wiped everything else staged. Both partial routes re-send what is there and
+ * replace only the fields they own.
+ */
+function putMerged(req, res, shotId, patch) {
     const current = loadBlocking(shotId);
-    const subjects = (req.body || {}).subjects;
-    if (!Array.isArray(subjects)) return json(res, 400, { error: 'subjects must be an array' });
     const body = current ? {
         camera: current.camera, stage: current.stage, rig: current.rig, movement: current.movement,
-        moves: current.moves, cameraKeys: current.cameraKeys, durationMs: current.durationMs, subjects,
-    } : { subjects };
+        moves: current.moves, cameraKeys: current.cameraKeys, durationMs: current.durationMs,
+        subjects: current.subjects, ...patch,
+    } : { ...patch };
     return putBlocking(Object.assign({}, req, { body }), res, shotId);
+}
+
+function putSubjects(req, res, shotId) {
+    const subjects = (req.body || {}).subjects;
+    if (!Array.isArray(subjects)) return json(res, 400, { error: 'subjects must be an array' });
+    return putMerged(req, res, shotId, { subjects });
+}
+
+/** The move: legs, camera keys and length. The camera and the stage are untouched. */
+function putTimeline(req, res, shotId) {
+    const b = req.body || {};
+    const patch = {};
+    if (b.moves !== undefined) {
+        if (!Array.isArray(b.moves)) return json(res, 400, { error: 'moves must be an array' });
+        patch.moves = b.moves;
+        // The single movement is derived from the legs again, unless named.
+        patch.movement = b.movement || undefined;
+    }
+    if (b.cameraKeys !== undefined) patch.cameraKeys = b.cameraKeys;
+    if (b.durationMs !== undefined) patch.durationMs = b.durationMs;
+    if (!Object.keys(patch).length) return json(res, 400, { error: 'send moves, cameraKeys or durationMs' });
+    return putMerged(req, res, shotId, patch);
 }
 
 function putBlocking(req, res, shotId, internal) {
@@ -1383,6 +1411,10 @@ function handlePrevis(req, res, urlParts) {
         if (urlParts[4] === 'subjects') {
             if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
             return putSubjects(req, res, shotId);
+        }
+        if (urlParts[4] === 'timeline') {
+            if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
+            return putTimeline(req, res, shotId);
         }
         if (urlParts[4] === 'from-card') {
             if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });

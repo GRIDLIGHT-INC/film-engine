@@ -2714,6 +2714,30 @@ const PRODUCTION_TOOLS = [
         }, required: ['shot_id', 'subjects'],
     },
     {
+        name: 'previs_timeline',
+        handler: handlePrevis, method: 'PUT',
+        path: a => `/film/shots/${a.shot_id}/previs/timeline`,
+        body: a => {
+            const b = {};
+            if (a.moves !== undefined) b.moves = a.moves;
+            if (a.camera_keys !== undefined) b.cameraKeys = a.camera_keys;
+            if (a.duration_ms !== undefined) b.durationMs = a.duration_ms;
+            return b;
+        },
+        description:
+            'Set a shot\'s camera MOVE and nothing else: its legs (moves: [{ movement, weight, ease }]), its authored '
+            + 'camera keys (camera_keys: [{ t: 0..1, position: [x, y, z], rotation: [yaw, pitch, roll] in degrees, '
+            + 'focalMm }]) and its length (duration_ms). FREE. The camera, the people staged and the director\'s notes '
+            + 'are kept; send the whole list of whatever you change.',
+        schema: {
+            shot_id: { type: 'string' },
+            moves: { type: 'array', items: { type: 'object' } },
+            camera_keys: { type: 'array', items: { type: 'object' } },
+            duration_ms: { type: 'number' },
+        },
+        required: ['shot_id'],
+    },
+    {
         name: 'previs_library',
         handler: handlePrevisLibrary, method: 'GET',
         path: a => a.category ? `/film/previs-library?category=${encodeURIComponent(a.category)}` : '/film/previs-library',

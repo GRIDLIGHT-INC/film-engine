@@ -207,3 +207,67 @@ test('the page offers all three sources, and a staged figure is drawn in Look at
     assert.ok(/stageSyncLook\(\)/.test(pageFn('worldMeshSync')), 'Look does not refresh its staged figures');
     assert.ok(/previs\/subjects/.test(pageFn('stageSave')), 'the page does not save through the subjects route');
 });
+
+test('saving the move keeps the camera and the people: the timeline has its own partial save', async () => {
+    const { shotId } = makeShot();
+    const camera = { position: [0.25, 1.55, -0.7], rotation: [0, -4, 0], focalMm: 24 };
+    assert.equal((await call('PUT', `/film/shots/${shotId}/previs`, { camera, subjects: [person()] })).status, 200);
+    const keys = [{ t: 0, position: [0.25, 1.55, -0.7], rotation: [0, -4, 0], focalMm: 24 },
+                  { t: 1, position: [0.25, 1.55, -2], rotation: [10, -4, 0], focalMm: 24 }];
+    const r = await call('PUT', `/film/shots/${shotId}/previs/timeline`,
+        { moves: [{ movement: 'dolly-in', weight: 1 }], cameraKeys: keys, durationMs: 3000 });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const b = r.data.blocking;
+    assert.deepEqual(b.camera.position, [0.25, 1.55, -0.7], 'the timeline save moved the camera');
+    assert.deepEqual(b.subjects.map(s => s.name), ['Woman'], 'the timeline save wiped the staged people');
+    assert.equal(b.cameraKeys.length, 2);
+    assert.equal(b.moves[0].movement, 'dolly-in');
+    assert.notEqual(b.movement, 'static', 'the single movement is derived again (from the keys, which win over the legs)');
+    assert.equal(b.durationMs, 3000);
+    // And the reverse: moving people keeps the keys.
+    const s2 = await call('PUT', `/film/shots/${shotId}/previs/subjects`, { subjects: [person({ name: 'Boy', model: { library: 'boy' } })] });
+    assert.equal(s2.data.blocking.cameraKeys.length, 2, 'staging dropped the camera keys');
+    assert.equal((await call('PUT', `/film/shots/${shotId}/previs/timeline`, {})).status, 400);
+    assert.equal((await call('POST', `/film/shots/${shotId}/previs/timeline`, { moves: [] })).status, 405);
+    const t = await callTool('previs_timeline', { shot_id: shotId, camera_keys: [] });
+    assert.ok(!isFailure(t), JSON.stringify(t));
+});
+
+test('the page saves the move through the timeline route, loads it back, and keys the camera being looked through', () => {
+    const save = pageFn('worldTimelineSave');
+    assert.ok(/previs\/timeline/.test(save) && /cameraKeys/.test(save) && /durationMs/.test(save), 'the timeline is not saved through its own route');
+    assert.ok(!/camera:\s*WORLD\.camera/.test(save), 'the timeline still sends a camera');
+    const add = pageFn('worldAddKey');
+    assert.ok(!/WORLD\.camera\b(?!\s*\(|Pose)/.test(add), 'a key still reads WORLD.camera, which nothing sets');
+    assert.ok(/worldWalkCamera\(\)/.test(add), 'a key is not the camera being looked through');
+    assert.ok(/cameraKeys/.test(pageFn('worldHydrateMove')), 'the saved keys are not loaded back');
+    const calls = (HTML.match(/worldHydrateMove\(\)/g) || []).length;
+    assert.ok(calls >= 2, 'the move is hydrated on too few loads');
+});
+
+test('the mouse moves the camera like a 3D application, and the plan zooms and pans', () => {
+    for (const ev of ["'wheel'", "'pointerdown'", "'pointermove'"]) {
+        assert.ok(new RegExp(`addEventListener\\(${ev}`).test(HTML), `no ${ev} listener`);
+    }
+    const ensure = pageFn('worldWalkEnsure');
+    assert.ok(/WALK\.on = true/.test(ensure), 'a gesture does not start walking by itself');
+    assert.ok(!/worldConsoleRender\(\)/.test(ensure), 'starting a walk mid-gesture re-renders the canvas under the drag');
+    const view = pageFn('worldGestureView');
+    assert.ok(/'plan'/.test(view) && /'pano'/.test(view), 'the 3D gestures would fight the plan and the 360° view');
+    // Zoom about the cursor keeps the floor point under it.
+    const zoomSrc = pageFn('planZoomAt');
+    const PLANVIEW = { zoom: 1, cx: null, cz: null };
+    let s = 50, cx = 0, cz = 0;
+    const WORLD = { planXf: null };
+    const paint = () => { const zs = 50 * PLANVIEW.zoom; const ccx = PLANVIEW.cx ?? cx, ccz = PLANVIEW.cz ?? cz;
+        WORLD.planXf = { s: zs, zoom: PLANVIEW.zoom, w: 800, h: 600, cx: ccx, cz: ccz,
+            inv: (px, pz) => [ccx + (px - 400) / zs, ccz + (pz - 300) / zs] }; };
+    paint();
+    const planZoomAt = new Function('WORLD', 'PLANVIEW', 'worldPaintFrame', `${zoomSrc}; return planZoomAt;`)(WORLD, PLANVIEW, paint);
+    const before = WORLD.planXf.inv(600, 150);
+    planZoomAt(600, 150, 2);
+    const after = WORLD.planXf.inv(600, 150);
+    assert.equal(PLANVIEW.zoom, 2);
+    assert.ok(Math.abs(before[0] - after[0]) < 1e-9 && Math.abs(before[1] - after[1]) < 1e-9, 'zoom moved the floor under the cursor');
+    void s;
+});

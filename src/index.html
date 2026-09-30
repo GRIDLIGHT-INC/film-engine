@@ -16088,6 +16088,7 @@ THREE.GLTFLoader = GLTFLoader;
         WORLD.blocking = null;
         WORLD.pin = null;
         try { WORLD.blocking = await api(`/shots/${shotId}/previs`); } catch (_) { /* never blocked */ }
+        worldHydrateMove();
         try { WORLD.pin = await api(`/shots/${shotId}/world`); } catch (_) { /* never pinned */ }
         // The world pinned to THIS shot: the old stage loaded it on selection,
         // and without it the console named one shot over another's geometry.
@@ -16461,6 +16462,7 @@ THREE.GLTFLoader = GLTFLoader;
     async function worldRefreshBlocking() {
         if (!WORLD.shotId) return;
         try { WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`); } catch (_) { /* keep what we had */ }
+        worldHydrateMove();
         worldConsoleRender();
     }
 
@@ -16959,8 +16961,6 @@ THREE.GLTFLoader = GLTFLoader;
                     SPLAT.look.yaw -= dx * 0.25;
                     SPLAT.look.pitch = Math.max(-80, Math.min(80, SPLAT.look.pitch + dy * 0.2));
                     worldMeshRenderOnce();
-                } else if (WALK.on) {
-                    worldWalkTurn(-dx * 0.2, -dy * 0.15);
                 }
             });
             c.addEventListener('pointerup', () => { drag = null; });
@@ -17101,6 +17101,67 @@ THREE.GLTFLoader = GLTFLoader;
         const bar = document.getElementById('weWalkBar');
         if (bar) bar.innerHTML = worldWalkBarHtml();
     }
+
+    /*
+     * Walking starts by itself the moment the camera is moved with the mouse:
+     * a gesture that needed a button pressed first read as a camera that
+     * cannot be moved. Nothing is kept until "Use this camera".
+     */
+    function worldWalkEnsure() {
+        if (WALK.on) return;
+        const b = WORLD.blocking && WORLD.blocking.blocking;
+        const saved = b && b.camera && Array.isArray(b.camera.position) ? b.camera : null;
+        WALK.on = true;
+        WALK.from = saved
+            ? { position: saved.position.slice(), rotation: (saved.rotation || [0, 0, 0]).slice(), saved: true }
+            : { position: [0, 0, 0], rotation: [0, 0, 0], saved: false };
+        worldWalkCamera();
+        // Repaint only the walk bar and the button: a full console render would
+        // rebuild the canvas the gesture is on and drop the drag.
+        const btn = document.querySelector('[onclick="worldWalkToggle()"]');
+        if (btn) { btn.classList.add('pv-amber'); btn.textContent = 'Walking'; }
+    }
+
+    /*
+     * The 3D views take the mouse the way a 3D application does. Delegated
+     * from the document, so the console re-rendering its frame cannot unbind
+     * it. Plan and 360° keep their own gestures.
+     *   wheel            dolly forward / back (Shift: faster)
+     *   drag             look around (pan / tilt)
+     *   right- or Shift-drag   slide sideways and up / down (truck / pedestal)
+     */
+    const CAMGESTURE = { drag: null };
+    function worldGestureView(target) {
+        if (state.currentPage !== 'previs' || !target || !target.closest) return false;
+        if (!target.closest('#weFrame')) return false;
+        if (target.closest('.pv-float, .pv-btn, button, input, select, textarea')) return false;
+        const vm = worldViewMode();
+        return vm !== 'plan' && vm !== 'pano' && !!WORLD.shotId;
+    }
+    document.addEventListener('wheel', e => {
+        if (!worldGestureView(e.target)) return;
+        e.preventDefault();
+        worldWalkEnsure();
+        const m = (e.shiftKey ? 1.0 : 0.25) * Math.max(-3, Math.min(3, -e.deltaY / 100));
+        worldWalkStep(m, 0, 0);
+    }, { passive: false });
+    document.addEventListener('pointerdown', e => {
+        if (!worldGestureView(e.target)) return;
+        CAMGESTURE.drag = { x: e.clientX, y: e.clientY, slide: e.button === 2 || e.shiftKey };
+        e.preventDefault();
+    });
+    document.addEventListener('contextmenu', e => { if (worldGestureView(e.target)) e.preventDefault(); });
+    window.addEventListener('pointermove', e => {
+        const g = CAMGESTURE.drag;
+        if (!g) return;
+        const dx = e.clientX - g.x, dy = e.clientY - g.y;
+        if (!dx && !dy) return;
+        g.x = e.clientX; g.y = e.clientY;
+        worldWalkEnsure();
+        if (g.slide) worldWalkStep(0, -dx * 0.01, dy * 0.01);
+        else worldWalkTurn(-dx * 0.2, -dy * 0.15);
+    });
+    window.addEventListener('pointerup', () => { CAMGESTURE.drag = null; });
 
     function worldWalkTurn(yawDeg, pitchDeg) {
         const c = worldWalkCamera();
@@ -17334,6 +17395,25 @@ THREE.GLTFLoader = GLTFLoader;
         }
         return null;
     }
+    /* The plan's own view: zoom about the cursor, drag empty floor to pan. */
+    const PLANVIEW = { key: null, zoom: 1, cx: null, cz: null, pan: null };
+
+    function planZoomAt(px, pz, factor) {
+        const xf = WORLD.planXf;
+        if (!xf) return;
+        const [wx, wz] = xf.inv(px, pz);
+        const fitS = xf.s / (xf.zoom || 1);
+        PLANVIEW.zoom = Math.max(0.25, Math.min(40, (xf.zoom || 1) * factor));
+        const sNew = fitS * PLANVIEW.zoom;
+        // Keep the floor point under the cursor where it is.
+        PLANVIEW.cx = wx - (px - xf.w / 2) / sNew;
+        PLANVIEW.cz = wz - (pz - xf.h / 2) / sNew;
+        worldPaintFrame();
+    }
+
+    function planFit() { PLANVIEW.zoom = 1; PLANVIEW.cx = null; PLANVIEW.cz = null; worldPaintFrame(); }
+    window.planFit = planFit;
+
     function stageBindPlan() {
         const c = document.getElementById('weFrameCanvas');
         if (!c || c.dataset.stageBound) return;
@@ -17349,10 +17429,52 @@ THREE.GLTFLoader = GLTFLoader;
                 const [wx, wz] = WORLD.planXf.inv(px, pz).map(v => v / (WORLD.planXf.f || 1));
                 STAGE.drag = { i: hit.i, turn: hit.turn, ox: wx - su.position[0], oz: wz - su.position[2], moved: false };
                 e.preventDefault();
+            } else {
+                // The camera itself: its dot moves it, and anywhere else on its
+                // wedge turns it to face the cursor. Both are a walk, kept with
+                // "Use this camera". Empty floor pans the plan.
+                const live = worldCameraPose();
+                const xf = WORLD.planXf;
+                if (live && xf) {
+                    const ex = xf.X(live.eye[0]), ez = xf.Z(live.eye[2]);
+                    if (Math.hypot(px - ex, pz - ez) < 12) STAGE.camDrag = { turn: e.shiftKey };
+                }
+                if (!STAGE.camDrag) PLANVIEW.pan = { x: e.clientX, y: e.clientY };
+                e.preventDefault();
             }
             stageRenderBar(); worldPaintFrame();
         });
+        c.addEventListener('wheel', e => {
+            if (worldViewMode() !== 'plan') return;
+            e.preventDefault();
+            const r = c.getBoundingClientRect();
+            planZoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+        }, { passive: false });
+        c.addEventListener('dblclick', e => { if (worldViewMode() === 'plan' && !stageHit(e.offsetX, e.offsetY)) planFit(); });
         window.addEventListener('mousemove', e => {
+            if (PLANVIEW.pan && WORLD.planXf) {
+                const xf = WORLD.planXf;
+                PLANVIEW.cx = xf.cx - (e.clientX - PLANVIEW.pan.x) / xf.s;
+                PLANVIEW.cz = xf.cz - (e.clientY - PLANVIEW.pan.y) / xf.s;
+                PLANVIEW.pan = { x: e.clientX, y: e.clientY };
+                return worldPaintFrame();
+            }
+            if (STAGE.camDrag && WORLD.planXf) {
+                const r = c.getBoundingClientRect();
+                const [wx, wz] = WORLD.planXf.inv(e.clientX - r.left, e.clientY - r.top);
+                worldWalkEnsure();
+                const cam = worldWalkCamera();
+                if (!cam) return;
+                const k = WORLD.planXf.f || 1;
+                if (STAGE.camDrag.turn) {
+                    // Aim at the cursor; yaw 0 looks north (-Z), turning left is positive.
+                    const ex = cam.position[0] * k, ez = cam.position[2] * k;
+                    cam.rotation[0] = Math.atan2(-(wx - ex), -(wz - ez)) * 180 / Math.PI;
+                } else {
+                    cam.position = [wx / k, cam.position[1], wz / k];
+                }
+                return worldWalkRepaint();
+            }
             const g = STAGE.drag;
             if (!g || !WORLD.planXf) return;
             const r = c.getBoundingClientRect();
@@ -17371,6 +17493,8 @@ THREE.GLTFLoader = GLTFLoader;
             worldPaintFrame();
         });
         window.addEventListener('mouseup', () => {
+            PLANVIEW.pan = null;
+            STAGE.camDrag = null;
             const g = STAGE.drag;
             STAGE.drag = null;
             if (g && g.moved) stageSave();
@@ -17566,11 +17690,17 @@ THREE.GLTFLoader = GLTFLoader;
         const pad = 28;
         const sx = (c.width - pad * 2) / Math.max(1e-6, max[0] - min[0]);
         const sz = (c.height - pad * 2) / Math.max(1e-6, max[2] - min[2]);
-        const s = Math.min(sx, sz);
-        const ox = (c.width - (max[0] - min[0]) * s) / 2, oz = (c.height - (max[2] - min[2]) * s) / 2;
-        const X = x => ox + (x - min[0]) * s, Z = z => oz + (z - min[2]) * s;
+        // Fitted to the set, then the view's own zoom and centre (wheel, drag).
+        const fit = Math.min(sx, sz);
+        const pv = PLANVIEW;
+        if (pv.key !== WORLD.shotId) { pv.key = WORLD.shotId; pv.zoom = 1; pv.cx = null; pv.cz = null; }
+        const s = fit * pv.zoom;
+        const cx = pv.cx != null ? pv.cx : (min[0] + max[0]) / 2;
+        const cz = pv.cz != null ? pv.cz : (min[2] + max[2]) / 2;
+        const X = x => c.width / 2 + (x - cx) * s, Z = z => c.height / 2 + (z - cz) * s;
         // Kept, so a click can be turned back into a place on the floor.
-        WORLD.planXf = { X, Z, s, inv: (px, pz) => [min[0] + (px - ox) / s, min[2] + (pz - oz) / s] };
+        WORLD.planXf = { X, Z, s, cx, cz, w: c.width, h: c.height, zoom: pv.zoom,
+                         inv: (px, pz) => [cx + (px - c.width / 2) / s, cz + (pz - c.height / 2) / s] };
 
         const cell = Math.max(2, Math.round(Math.min(c.width, c.height) / 160));
         const cols = Math.ceil(c.width / cell), rows = Math.ceil(c.height / cell);
@@ -17804,21 +17934,41 @@ THREE.GLTFLoader = GLTFLoader;
         worldConsoleRender();
     }
 
-    /** Snapshot the camera as it stands now, at the playhead. */
+    /*
+     * The move as saved: legs, keys and length come from the shot's blocking.
+     * They were held only in the page, so a reload showed an empty timeline and
+     * the next save wrote that emptiness back over what the shot had.
+     */
+    function worldHydrateMove() {
+        const b = WORLD.blocking && WORLD.blocking.blocking;
+        WORLD.moves = b && Array.isArray(b.moves) ? b.moves.slice() : [];
+        WORLD.keys = b && Array.isArray(b.cameraKeys) ? b.cameraKeys.map(k => Object.assign({}, k)) : [];
+        WORLD.durationMs = b && b.durationMs > 0 ? b.durationMs : (WORLD.durationMs || 4000);
+    }
+
+    /*
+     * Snapshot the camera as it stands now — the one being looked through,
+     * walked or saved — at the playhead. It read a WORLD.camera nothing ever
+     * set, so every key was the default pose, outside the set.
+     */
     function worldAddKey() {
-        const cam = (WORLD.camera || {});
+        const cam = worldWalkCamera() || ((WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera) || null);
+        if (!cam || !Array.isArray(cam.position)) return setStatus('Open a shot with a camera first', true);
+        const t = WORLD.t || 0;
         const key = {
-            t: WORLD.t || 0,
-            position: (cam.position || [0, 1.6, 8]).slice(),
+            t,
+            position: cam.position.slice(),
             rotation: (cam.rotation || [0, 0, 0]).slice(),
             focalMm: WORLD.lens || cam.focalMm || 35,
             // The persisted unit is always degrees — a radian/degree confusion
             // at this boundary silently rewrites every authored move.
             rotationUnit: 'degrees',
         };
-        WORLD.keys = (WORLD.keys || []).concat([key]).sort((a, b) => a.t - b.t);
+        // A key at the same moment replaces the one there, rather than stacking.
+        WORLD.keys = (WORLD.keys || []).filter(k => Math.abs((k.t || 0) - t) > 1e-3).concat([key]).sort((a, b) => a.t - b.t);
         worldTimelineSave();
         worldConsoleRender();
+        setStatus(`Key ${WORLD.keys.length} at ${Math.round(t * 100)}% — move the camera and the playhead, then add the next`);
     }
 
     function worldSeekTo(t) {
@@ -17899,15 +18049,25 @@ THREE.GLTFLoader = GLTFLoader;
     async function worldTimelineSave() {
         if (!WORLD.shotId) return;
         try {
-            await api(`/shots/${WORLD.shotId}/previs`, {
+            // The timeline route replaces the move and nothing else. The whole
+            // /previs PUT rebuilt the blocking from defaults, so saving a key
+            // put the camera back at its default and wiped the staged people.
+            // refresh: false — the timeline repaints itself; a reload would drop an unsaved walk.
+            const out = await api(`/shots/${WORLD.shotId}/previs/timeline`, {
                 method: 'PUT',
+                refresh: false,
                 body: JSON.stringify({
-                    camera: WORLD.camera || {},
                     moves: WORLD.moves || [],
-                    camera_keys: WORLD.keys || [],
-                    duration_ms: WORLD.durationMs || 4000,
+                    cameraKeys: WORLD.keys || [],
+                    durationMs: WORLD.durationMs || 4000,
                 }),
             });
+            if (out && out.blocking) {
+                // A key added mid-walk must not snap the camera back to the saved one.
+                const walked = WALK.on && WORLD.blocking && WORLD.blocking.blocking && WORLD.blocking.blocking.camera;
+                WORLD.blocking = Object.assign({}, WORLD.blocking || {}, { blocking: out.blocking });
+                if (walked) WORLD.blocking.blocking.camera = walked;
+            }
         } catch (err) { setStatus(err.message, true); }
     }
 
