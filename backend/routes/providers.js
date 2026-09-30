@@ -332,41 +332,38 @@ function setProjectProviders(req, res, projectId) {
     const tier = String(incoming.image_quality || '').toLowerCase();
     if (IMAGE_TIERS[tier]) clean.image_quality = tier;
     else if (tier === 'auto') clean.image_quality = 'auto';
-    // The Advanced escape hatch: a specific model on the chosen provider.
-    if (typeof incoming.image_model === 'string') {
-        // Present but blank means "stop pinning a model" — ignoring it would
-        // make the Advanced field impossible to undo once used.
-        const m = incoming.image_model.trim();
-        if (!m) delete clean.image_model;
-        else {
-            /*
-             * A PINNED MODEL IS CHECKED AGAINST THE PROVIDER THAT WOULD RUN IT.
-             *
-             * This was free text. A typo — a trailing space, `nanobanana-pro`,
-             * a model belonging to a different provider — was stored, sent, and
-             * silently ignored: every image adapter here falls back to its own
-             * default rather than refusing, and Meshy's default is its most
-             * expensive model. So the failure is invisible AND costs three
-             * times what the director thought they had chosen.
-             *
-             * Checked against whichever provider this project would actually
-             * use, since a model only means anything relative to one.
-             */
-            const target = clean.image || providers.resolveId('image', clean);
-            const adapter = providers.get(target);
-            // Checked for the IMAGE capability specifically -- an adapter that
-            // also serves video must not have its clip models accepted here.
-            const known = adapter ? providers.modelIdsFor(adapter, 'image') : null;
-            if (known && !known.includes(m)) {
-                return json(res, 400, {
-                    error: `${target} does not offer a model called "${m}"`,
-                    provider: target,
-                    available_models: known,
-                    hint: 'Leave the model blank to let the quality tier choose.',
-                });
-            }
-            clean.image_model = m.slice(0, 80);
+    /*
+     * A MODEL PER CAPABILITY, pinned beside the provider.
+     *
+     * `image_model` was the only one, so a director could choose which company
+     * made a clip or a cue and never which of its models. Every capability now
+     * takes `<capability>_model`: present but blank stops pinning; otherwise it
+     * is CHECKED against the provider that would run it, because an unknown
+     * name reaches most adapters as their own default (on Meshy its dearest
+     * model) and the failure is invisible.
+     */
+    for (const cap of CAPABILITIES) {
+        // Not the LLM: the reasoning is the connected agent's, so a model
+        // pinned here would be a setting that reaches nothing.
+        if (cap === 'llm') continue;
+        const key = `${cap}_model`;
+        if (typeof incoming[key] !== 'string') continue;
+        const m = incoming[key].trim();
+        if (!m) { delete clean[key]; continue; }
+        const target = clean[cap] || providers.resolveId(cap, clean);
+        const adapter = providers.get(target);
+        // Checked for THIS capability: an adapter serving several must not have
+        // another capability's models accepted here.
+        const known = adapter ? providers.modelIdsFor(adapter, cap) : null;
+        if (known && !known.includes(m)) {
+            return json(res, 400, {
+                error: `${target} does not offer a ${cap} model called "${m}"`,
+                provider: target, capability: cap,
+                available_models: known,
+                hint: cap === 'image' ? 'Leave the model blank to let the quality tier choose.' : 'Leave the model blank to use the provider\'s default.',
+            });
         }
+        clean[key] = m.slice(0, 80);
     }
 
     db.prepare('UPDATE film_projects SET provider_config = ?, updated_at = datetime(\'now\') WHERE id = ?')

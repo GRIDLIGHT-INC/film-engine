@@ -554,6 +554,26 @@ function modelIdsFor(adapterOrId, capability) {
     return ids.length ? ids : null;
 }
 
+/**
+ * The model a project pinned for a capability, if the provider that will run it
+ * offers that model; otherwise null.
+ *
+ * A pin (`video_model`, `music_model`, …) is saved in Setup beside the
+ * provider. It only means anything relative to the provider it was chosen for,
+ * so a pin that the resolving provider does not offer is ignored rather than
+ * sent — an unknown name reaches most adapters as their own default, which is
+ * a different (often dearer) model than anybody chose.
+ */
+function pinnedModelFor(capability, projectConfig, adapterOrId) {
+    const cfg = projectConfig || {};
+    const want = cfg[`${capability}_model`];
+    if (typeof want !== 'string' || !want.trim()) return null;
+    const adapter = adapterOrId ? (typeof adapterOrId === 'string' ? get(adapterOrId) : adapterOrId)
+        : get(resolveId(capability, cfg));
+    const offered = adapter ? modelIdsFor(adapter, capability) : null;
+    return offered && offered.includes(want.trim()) ? want.trim() : null;
+}
+
 function unavailableAdapter(capability) {
     const hosted = list()
         .filter(a => a.id !== DEFAULT_PROVIDER && (a.capabilities || []).includes(capability))
@@ -709,6 +729,22 @@ function withJobRecording_(adapter, capability, projectConfig) {
 
     const wrapped = Object.create(adapter);
     wrapped.generate = async (cap, payload, opts) => {
+        /*
+         * THE PROJECT'S PINNED MODEL, applied once for every capability.
+         *
+         * Setup lets a project pin a model per capability. Every route builds
+         * its own payload, so reading the pin at each of them is how three of
+         * nine end up honouring it. Here, at the one funnel: a payload that
+         * names no model gets the pinned one, when this adapter offers it. A
+         * model the caller named (a per-generation choice, a tier, the house
+         * image standard) is never overwritten.
+         */
+        try {
+            if (payload && typeof payload === 'object' && !Array.isArray(payload) && !payload.model) {
+                const pinned = pinnedModelFor(cap || capability, cfg, adapter);
+                if (pinned) payload.model = pinned;
+            }
+        } catch (_) { /* a pin that cannot be read never blocks a generation */ }
         const o = Object.assign({}, opts || {});
         let jobId = open(cap, o);
         /*
@@ -890,5 +926,5 @@ function resolveCatalogModel(capability, modelId) {
 }
 
 module.exports = {
-    modelsFor, modelIdsFor, catalogModelIds, resolveCatalogModel,
+    modelsFor, modelIdsFor, pinnedModelFor, catalogModelIds, resolveCatalogModel,
     firstConfigured, resolveIdWithReason, resolutionOf, resolutionReport, describeResolution, accountDefaultFor, refreshAccountDefaults, register, get, list, resolve, resolveId, resolveGenerator, metered, withJobRecording: withJobRecording_, isProviderConfigured, defaultProviderConfig, localGatewayEnabled, refreshLocalGateway, PREFERRED_WHEN_CONFIGURED, CAPABILITIES };

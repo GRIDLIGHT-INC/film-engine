@@ -264,26 +264,92 @@ function planUpscale(shot, scene, body) {
     if (!source) return { error: b.asset_id ? 'That clip is not a clip of this shot.' : 'This shot has no clip to upscale yet.', status: b.asset_id ? 404 : 400 };
     const model = String(b.model || '');
     const muapi = !!UPSCALERS[model];
+    // A Topaz model (Starlight, Astra, Proteus) routes this call to Topaz's own
+    // API the way a MuAPI upscaler routes it to MuAPI.
+    const TOPAZ = require('../lib/providers/topaz');
+    const topaz = !!TOPAZ.MODELS[model];
+    // And a Magnific upscaler to Magnific's API.
+    const MAGNIFIC = require('../lib/providers/magnific');
+    const magnific = !!MAGNIFIC.MODELS[model];
     const measured = require('../lib/ffmpeg').inspectMedia(source.file_path);
+    let bytes = null;
+    try { bytes = require('fs').statSync(source.file_path).size; } catch (_) { bytes = null; }
     const payload = {
         ...buildPostPayload('upscale', source, scene.project_id, b),
-        ...(muapi ? { model } : {}),
+        ...(muapi || topaz || magnific ? { model } : {}),
         source_video: source.file_path,
         target_resolution: b.target_resolution || project.target_resolution || '1920x1080',
         source_width: measured.ok ? measured.width : null,
         source_height: measured.ok ? measured.height : null,
         source_seconds: measured.ok && Number(measured.durationSeconds) > 0 ? Number(measured.durationSeconds) : null,
+        source_fps: measured.ok && Number(measured.fps) > 0 ? Number(measured.fps) : null,
+        source_bytes: bytes,
     };
-    const provider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene, muapi ? { post: 'seedance' } : null));
+    // Astra 2 takes creative controls; only the fields Topaz documents travel.
+    if (topaz) for (const k of ['sharpness', 'creativity', 'realism', 'sharp', 'prompt']) if (b[k] !== undefined && b[k] !== '') payload[k] = b[k];
+    if (magnific) for (const k of ['creativity', 'sharpen', 'smart_grain', 'fps_boost', 'flavor', 'strength', 'enhancement_model', 'noise', 'target_fps']) if (b[k] !== undefined && b[k] !== '') payload[k] = b[k];
+    const pin = topaz ? { post: 'topaz' } : magnific ? { post: 'magnific' } : muapi ? { post: 'seedance' } : null;
+    const provider = resolveGenerator('post', spendContext({ id: scene.project_id }, shot, scene, pin));
     let request = null, why = null;
     if (provider && provider.id === 'seedance') {
         try { request = require('../lib/providers/seedance').buildPostRequest(payload); } catch (err) { why = err.message; }
+    } else if (provider && provider.id === 'topaz') {
+        try { request = TOPAZ.buildVideoRequest(payload); } catch (err) { why = err.message; }
+    } else if (provider && provider.id === 'magnific') {
+        try { request = MAGNIFIC.buildVideoRequest(payload); } catch (err) { why = err.message; }
     }
     const warnings = [];
+    if (topaz && !require('../lib/providers').isProviderConfigured('topaz')) {
+        warnings.push('Topaz has no API key on this machine yet. Add it under Setup, AI providers, before running this upscale.');
+    }
+    if (magnific && !require('../lib/providers').isProviderConfigured('magnific')) {
+        warnings.push('Magnific has no API key on this machine yet. Add it under Setup, AI providers, before running this upscale.');
+    }
     if (!measured.ok) warnings.push(`The clip could not be measured (${measured.reason || 'unreadable'}), so the factor and the price are guesses.`);
     if (request && request.note) warnings.push(request.note);
     if (why) warnings.push(why);
-    return { project, source, measured, payload, provider, request, warnings, model: muapi ? model : (payload.model || null) };
+    return { project, source, measured, payload, provider, request, warnings, model: (muapi || topaz || magnific) ? model : (payload.model || null) };
+}
+
+/**
+ * Every upscaler this clip can go to, each priced FOR THIS CLIP.
+ *
+ * MuAPI's are its catalogue figure per second of source; Topaz's are its own
+ * credit table at the output size this clip would reach. Topaz rows say
+ * whether a key is set, so an unconfigured one is offered with the reason
+ * rather than hidden.
+ */
+function upscalerMenu(plan) {
+    const { UPSCALERS } = require('../lib/providers/seedance');
+    const TOPAZ = require('../lib/providers/topaz');
+    const secs = Number(plan.payload.source_seconds) || 0;
+    const topazReady = require('../lib/providers').isProviderConfigured('topaz');
+    const muapi = Object.entries(UPSCALERS).map(([id, u]) => ({
+        id, label: u.label, provider: 'muapi', usd_per_second: u.usdPerSecond, inferred_price: true,
+        estimated_usd: secs ? Math.round(u.usdPerSecond * secs * 100) / 100 : null, configured: true,
+    }));
+    const topaz = Object.entries(TOPAZ.MODELS).map(([id, m]) => {
+        const req = TOPAZ.buildVideoRequest({ ...plan.payload, model: id });
+        return {
+            id, label: `${m.label} (Topaz)`, provider: 'topaz', note: m.why,
+            usd_per_second: secs && req.estimated_usd != null ? Math.round(req.estimated_usd / secs * 1000) / 1000 : null,
+            estimated_usd: req.estimated_usd, estimated_credits: req.estimated_credits, reaches: req.reaches,
+            inferred_price: false, configured: topazReady,
+            why_unavailable: topazReady ? null : 'No Topaz API key on this machine yet (Setup, AI providers).',
+        };
+    });
+    const MAGNIFIC = require('../lib/providers/magnific');
+    const magnificReady = require('../lib/providers').isProviderConfigured('magnific');
+    const magnific = Object.entries(MAGNIFIC.MODELS).map(([id, m]) => {
+        const req = MAGNIFIC.buildVideoRequest({ ...plan.payload, model: id });
+        return {
+            id, label: m.label, provider: 'magnific', note: m.why,
+            usd_per_second: secs && req.estimated_usd != null ? Math.round(req.estimated_usd / secs * 1000) / 1000 : null,
+            estimated_usd: req.estimated_usd, reaches: req.reaches, inferred_price: true, configured: magnificReady,
+            why_unavailable: magnificReady ? null : 'No Magnific API key on this machine yet (Setup, AI providers).',
+        };
+    });
+    return [...muapi, ...topaz, ...magnific];
 }
 
 function previewUpscale(res, shotId, query) {
@@ -303,12 +369,13 @@ function previewUpscale(res, shotId, query) {
             measured: plan.measured.ok ? `${plan.measured.width}x${plan.measured.height}` : null,
             seconds: plan.payload.source_seconds },
         target: plan.payload.target_resolution,
-        sends: r ? { url: r.url.replace(/^https?:\/\/[^/]+/, ''), body: { ...r.body, video_url: '(the clip, uploaded to MuAPI first)' } } : null,
+        sends: r ? { url: r.url.replace(/^https?:\/\/[^/]+/, ''),
+            body: plan.provider && ['topaz', 'magnific'].includes(plan.provider.id) ? r.body : { ...r.body, video_url: '(the clip, uploaded to MuAPI first)' } } : null,
         reaches: r && r.reaches ? r.reaches : null,
         estimated_usd: r ? r.estimated_usd : null,
         estimate_unknown_why: r ? r.estimate_unknown_why : 'This provider does not quote its upscale here.',
         warnings: plan.warnings,
-        upscalers: Object.entries(UPSCALERS).map(([id, u]) => ({ id, label: u.label, usd_per_second: u.usdPerSecond, inferred_price: true })),
+        upscalers: upscalerMenu(plan),
         prompt: '',
     });
 }

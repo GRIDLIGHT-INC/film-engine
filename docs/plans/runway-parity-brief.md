@@ -21,7 +21,7 @@ Runway's API has **65 operations**, and Film Engine's Runway adapter reaches **6
   | Camera Control | previs and the motion compiler |
   | Multi-shot | sequences and `generate-native` |
 
-- **Two capabilities have no real hosted provider, and Runway has one for each.** `lipsync` is served only by the Gridlight gateway, which does not implement it; Runway has `act_two` on `character_performance`. `post` is served by Seedance for upscale only; Runway has `video_upscale`, `enhance_frame_rate` and `video_to_hdr`.
+- **Two capabilities have no real hosted provider, and Runway has one for each.** `lipsync` is served only by the Gridlight gateway, which does not implement it; Runway has `act_two` on `character_performance`. `post` is served for upscale only, by Seedance (MuAPI), Topaz and Magnific; Runway has `video_upscale`, `enhance_frame_rate` and `video_to_hdr`.
 - **An account is a wallet decision.** Web-plan and API credits are separate and non-transferable. Runway's generation MCP spends *web* credits and returns media to the chat. Film Engine's pipeline needs an *API* org.
 - **Moderation costs money on Runway.** A moderated generation is charged, `SAFETY.INPUT.*` is not refunded, and repeats can suspend the account. The image fallback chain's *"a refusal is a condition to route around"* rule is correct across providers and dangerous within one.
 

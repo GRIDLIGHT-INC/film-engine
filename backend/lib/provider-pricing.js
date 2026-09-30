@@ -356,6 +356,56 @@ const RATE_BOOK = {
             + 'is charged.',
     },
 
+    /*
+     * TOPAZ, PRICED IN ITS OWN CREDITS.
+     *
+     * Topaz bills credits per frame of OUTPUT, at a rate that depends on the
+     * model and the output size (1080p or 4K). The adapter's meter turns a clip
+     * into equivalent 1080p/30fps seconds of source, so one row per model — its
+     * credits for such a second — prices every size. A credit is $0.12 on the
+     * Starter plan, the ceiling; $0.10 Developer, $0.08 Scale. An install on a
+     * cheaper plan corrects usd_per_native in film_provider_rates.
+     */
+    'topaz:post': {
+        unit: 'second', native_unit: 'credit', native_per_unit: 30 / 26.0417, usd_per_native: 0.12,
+        models: {
+            'slp-2.6': { native_per_unit: 30 / 26.0417 },   // 26.04 frames per credit at 1080p
+            'slf-3':   { native_per_unit: 30 / 26.0417 },
+            'ast-2':   { native_per_unit: 30 / 10 },        // 10 frames per credit at 1080p
+            'prob-4':  { native_per_unit: 30 / 150 },       // 2 credits per 10s at 1080p
+        },
+        source: 'https://developer.topazlabs.com/getting-started/model-pricing',
+        checked: '2026-09-30',
+        note: 'Credits per frame of output: Starlight Precise 2.6 and Fast 3 26.04 frames/credit at 1080p and 11.92 at 4K; Astra 2 10 and 6; Proteus about 150 and 50. A 10s 1080p clip on Starlight Precise is about 12 credits ($1.44 on Starter). Credits: $0.12 Starter, $0.10 Developer, $0.08 Scale (topazlabs.com/api).',
+    },
+
+    /*
+     * MAGNIFIC, PER FRAME OF OUTPUT, BY TIER.
+     *
+     * Magnific does not publish its per-frame API rate; Runway resells the
+     * creative video upscaler at $0.007 a frame at 720p/1k, $0.009 at 2k and
+     * $0.012 at 4k, the best public figure, so every row is INFERRED. The meter
+     * reports 30fps-equivalent seconds with the tier on the model id
+     * (`magnific-video-upscaler@4k`), so a frame price prices every clip.
+     */
+    'magnific:post': {
+        unit: 'second', native_unit: 'frame', native_per_unit: 30, usd_per_native: 0.012,
+        models: (() => {
+            const perFrame = { '720p': 0.007, '1k': 0.007, '2k': 0.009, '4k': 0.012 };
+            const out = {};
+            for (const m of ['magnific-video-upscaler', 'magnific-video-upscaler-turbo',
+                'magnific-video-upscaler-precision', 'magnific-video-upscaler-topaz']) {
+                out[m] = { usd_per_native: perFrame['4k'] };
+                for (const [tier, usd] of Object.entries(perFrame)) out[`${m}@${tier}`] = { usd_per_native: usd };
+            }
+            return out;
+        })(),
+        inferred: true,
+        source: 'https://docs.dev.runwayml.com/guides/pricing/',
+        checked: '2026-09-30',
+        note: 'Magnific bills API credits per frame of output and publishes no per-frame figure. These are Runway\'s resale prices for Magnific\'s creative video upscaler: $0.007/frame at 720p and 1k, $0.009 at 2k, $0.012 at 4k. A 10s 24fps clip to 4K is about $2.88. Correct them in the rate overrides once your Magnific invoice says otherwise.',
+    },
+
     'openai:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.042,
@@ -569,7 +619,17 @@ function rateFor(provider, capability, model, overrides) {
         ? Math.max(rate.components.input, rate.components.output)
         : (rate.native_per_unit || 1) * (rate.usd_per_native || 0);
 
-    rate.inferred = Array.isArray(base.inferred_models) && base.inferred_models.includes(model);
+    /*
+     * INFERRED IS SAID THREE WAYS, and all three count: a model named in the
+     * entry's inferred_models, a model row carrying its own `inferred: true`,
+     * or a whole entry marked inferred (a provider that publishes no rate at
+     * all). Reading only the list silently dropped the other two, so a guessed
+     * price reported itself as published. A rate the install stored itself is
+     * a measured one, and is never inferred.
+     */
+    const listed = Array.isArray(base.inferred_models) && base.inferred_models.includes(model);
+    const installed = override && Object.keys(override).length > 0;
+    rate.inferred = !installed && (listed || (perModel && perModel.inferred === true) || base.inferred === true);
     return rate;
 }
 

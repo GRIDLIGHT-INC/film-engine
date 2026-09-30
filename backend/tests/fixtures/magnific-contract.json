@@ -1,0 +1,19 @@
+{
+  "checked": "2026-09-30",
+  "source": "https://docs.magnific.com/llms-full.txt (Video Upscaler, Video Upscaler Precision, Video Upscaler Topaz, Upload files); an unauthenticated POST /v1/ai/video-upscaler answers 401, so fields are from the docs, not a probe",
+  "auth_header": "x-magnific-api-key",
+  "upload": {
+    "request": { "method": "POST", "path": "/v1/ai/uploads/request-url", "body": "files[{content_type}]" },
+    "returns": ["file_id", "upload_url", "headers", "expires_in", "asset_url", "asset_url_expires_in"],
+    "video_types": ["video/mp4", "video/webm", "video/quicktime"],
+    "max_bytes": 1073741824
+  },
+  "task_statuses": ["CREATED", "IN_PROGRESS", "COMPLETED", "FAILED"],
+  "resolutions": ["720p", "1k", "2k", "4k"],
+  "endpoints": {
+    "magnific-video-upscaler": { "path": "/v1/ai/video-upscaler", "params": ["video", "creativity", "resolution", "fps_boost", "sharpen", "smart_grain", "flavor", "webhook_url"] },
+    "magnific-video-upscaler-turbo": { "path": "/v1/ai/video-upscaler/turbo", "params": ["video", "creativity", "resolution", "fps_boost", "sharpen", "smart_grain", "flavor", "webhook_url"] },
+    "magnific-video-upscaler-precision": { "path": "/v1/ai/video-upscaler-precision", "params": ["video", "resolution", "fps_boost", "sharpen", "smart_grain", "strength", "webhook_url"] },
+    "magnific-video-upscaler-topaz": { "path": "/v1/ai/video-upscaler-topaz", "params": ["video", "enhancement_model", "resolution", "target_fps", "frame_interpolation", "noise", "webhook_url"] }
+  }
+}

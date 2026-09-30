@@ -132,7 +132,8 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '20. Flows on the canvas', '21. The Score page', '22. Your own instruments',
          '23. An edit made in Premiere', '24. The final film and its sound', '25. Sending the film to Premiere',
          '26. Delivery quality: the resolution you asked for', '27. Upscaling a clip', '28. Your recorded dialogue in a clip',
-         '29. Backups', '30. Good to know'])
+         '29. Backups', '30. Setup: providers, models and keys', '31. Changing a project\'s stage',
+         '32. Good to know'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -695,18 +696,30 @@ bullets([
 # ── 27 ────────────────────────────────────────────────────────────────────
 doc.add_heading('27. Upscaling a clip', level=1)
 p('Right-click a shot or one of its clip versions on the canvas and choose "Upscale…" (on the Video Shots page it is the '
-  'Upscale button). The confirmation measures the clip, names the step that reaches the delivery size, and lets you pick the '
-  'MuAPI upscaler with its price:')
-table(['Upscaler', 'What it does', 'Listed price'], [
-    ['Topaz video upscale (default)', '2x or 4x', '$0.08'],
-    ['AI video upscaler', 'to 1080p, 2K or 4K', '$0.03'],
-    ['AI video upscaler Pro', 'to 1080p, 2K or 4K, finer', '$0.24'],
-    ['FLUX.3 video upscaler', 'prompted, 2x to 4x', '$1.43'],
-], widths=[Inches(2.3), Inches(2.6), Inches(1.8)])
+  'Upscale button). The confirmation measures the clip, names the size it will reach, and lets you pick the upscaler, '
+  'each priced for this clip. They come from three places:')
+table(['Upscaler', 'Where', 'What it does'], [
+    ['Topaz video upscale (default)', 'MuAPI', '2x or 4x; about $0.08 a second'],
+    ['AI video upscaler / Pro', 'MuAPI', 'to 1080p, 2K or 4K'],
+    ['FLUX.3 video upscaler', 'MuAPI', 'prompted, 2x to 4x'],
+    ['Starlight Precise 2.6', 'Topaz', 'the best finish for generated footage, to 4K; about $1.44 for 10s at 1080p'],
+    ['Starlight Fast 3', 'Topaz', 'the same quality, up to four times faster, same price'],
+    ['Astra 2', 'Topaz', 'creative: adds new detail, can be steered with a prompt'],
+    ['Proteus', 'Topaz', 'precision: keeps the picture as it is; cheapest'],
+    ['Magnific Video Upscaler / Turbo', 'Magnific', 'creative: creativity and flavor (vivid or natural)'],
+    ['Magnific Video Upscaler Precision', 'Magnific', 'faithful: a strength that blends original and upscale'],
+    ['Topaz Starlight via Magnific', 'Magnific', 'Starlight on a Magnific account, for those without a Topaz key'],
+], widths=[Inches(2.2), Inches(0.9), Inches(3.6)])
 bullets([
-    ('Prices ', 'are MuAPI\'s own list, which gives no unit; Film Engine counts them per second of the clip, which errs high.'),
+    ('Topaz and Magnific need their own API key ', '(Settings, AI providers and models). Until one is set their upscalers are '
+     'listed, greyed out, with the reason.'),
+    ('Prices: ', 'MuAPI lists its prices without a unit, so they are counted per second of the clip, which errs high. Topaz '
+     'prices come from its own credit table ($0.12 a credit on the Starter plan) at the size the clip reaches. Magnific '
+     'publishes no per-frame rate, so its prices are the ones Runway resells it at.'),
     ('The result ', 'is a new version that keeps its sound and becomes the clip that plays. The original stays.'),
-    ('The clip is uploaded to MuAPI first, ', 'for free, and only then enlarged.'),
+    ('The clip is uploaded first, ', 'for free, to whichever service does the work, and only then enlarged.'),
+    ('Cancel: ', 'Topaz really stops (work not yet processed is refunded); MuAPI and Magnific cannot be stopped, so '
+     'cancelling there means you stop waiting and the result can still be collected.'),
 ])
 
 # ── 28 ────────────────────────────────────────────────────────────────────
@@ -739,7 +752,29 @@ bullets([
 ])
 
 # ── 30 ────────────────────────────────────────────────────────────────────
-doc.add_heading('30. Good to know', level=1)
+doc.add_heading('30. Setup: providers, models and keys', level=1)
+p('Settings is one screen now: "AI providers and models" across the top, and every other setting in columns beside each '
+  'other. Longer explanations sit behind a small "Why" you can open.')
+bullets([
+    ('Image quality ', '(the row of buttons above the table): Draft, Standard, Precision or Auto. It chooses the image provider '
+     'and model when neither is pinned below.'),
+    ('Provider and model per capability: ', 'one row each for images, video, music, voice, sound effects, ambience, lip-sync, '
+     'post (upscaling), 3D and worlds. Pick the provider, then the model: the model menu lists only what that provider offers. '
+     '"Automatic" uses the provider already in use (named in the menu); "Default" lets the provider, or for images the quality '
+     'tier, choose. Save providers and models to keep it.'),
+    ('A model you pin is used for every generation of that kind ', 'in this project, unless you pick a different one in a '
+     'generation\'s own confirmation. A model the provider does not offer is refused when you save, with the list it does offer.'),
+    ('Text / LLM has no model menu: ', 'the connected agent (Claude or ChatGPT Desktop) is the model.'),
+    ('API keys ', '(on the right) are entered once for this Mac and shared by every project. "Get key" opens the provider\'s page.'),
+])
+
+# ── 31 ────────────────────────────────────────────────────────────────────
+doc.add_heading('31. Changing a project\'s stage', level=1)
+p('On the project list, click the stage badge on a project (Concept, Script, … Complete). It becomes a dropdown; choose the '
+  'stage and it is saved straight away, without opening the project. Settings → Project Settings has the same choice.')
+
+# ── 32 ────────────────────────────────────────────────────────────────────
+doc.add_heading('32. Good to know', level=1)
 bullets([
     ('Nothing is overwritten. ', 'Every generation is a new version; you choose which one plays.'),
     ('Red means do it now; amber means not yet. ', '"waiting" work is built on something that is itself being redone.'),
@@ -747,7 +782,7 @@ bullets([
     ('One shot, one sequence. ', 'Wiring a shot into a second sequence asks to move it.'),
     ('A cut generates nothing. ', 'Only joins that move make clips.'),
     ('Hold stops spending, not the film. ', 'A held shot is still in Playback, the export and the master.'),
-    ('Cancel is honest. ', 'Only Runway stops at the provider; elsewhere you stop waiting and the job can still be billed and collected.'),
+    ('Cancel is honest. ', 'Runway and Topaz stop at the provider; elsewhere you stop waiting and the job can still be billed and collected.'),
     ('The final film uses what is selected. ', 'The conform joins each shot\'s selected clip in running order with the '
      'dialogue, score and ambience where Playback plays them.'),
     ('Previs decisions are read here, changed in Previs. ', 'The Shot drawer shows them; "Open in Previs" to change them.'),

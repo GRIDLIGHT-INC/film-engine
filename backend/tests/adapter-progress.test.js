@@ -33,6 +33,13 @@ const { db, generateId } = require('../db/database');
 const providers = require('../lib/providers');
 
 const PROJECT = generateId();
+process.env.TOPAZ_API_KEY = process.env.TOPAZ_API_KEY || 'test-key-123456';
+process.env.TOPAZ_POLL_INTERVAL_MS = '5';
+process.env.MAGNIFIC_API_KEY = process.env.MAGNIFIC_API_KEY || 'test-key-123456';
+process.env.MAGNIFIC_POLL_INTERVAL_MS = '5';
+const TOPAZ_CLIP = path.join(process.env.FILM_DATA_DIR || os.tmpdir(), 'topaz-progress-clip.mp4');
+fs.mkdirSync(path.dirname(TOPAZ_CLIP), { recursive: true });
+fs.writeFileSync(TOPAZ_CLIP, Buffer.alloc(2048, 1));
 db.prepare("INSERT INTO film_projects (id, title) VALUES (?, 'Adapter progress')").run(PROJECT);
 const cfg = () => { const c = {}; Object.defineProperty(c, '__project_id', { value: PROJECT, enumerable: false }); return c; };
 const lastRow = () => db.prepare('SELECT * FROM film_generation_jobs WHERE project_id = ? ORDER BY rowid DESC LIMIT 1').get(PROJECT);
@@ -54,6 +61,8 @@ const RUNNING = {
     seedance: { status: 'processing', progress: 50 },
     meshy: { status: 'IN_PROGRESS', progress: 50 },
     worldlabs: { done: false, metadata: { progress: 0.5 } },
+    topaz: { status: 'processing', progress: 50 },
+    magnific: { data: { task_id: 't1', status: 'IN_PROGRESS' } },
 };
 const FINISHED = {
     runway: { status: 'FAILED', failure: 'stub' },
@@ -62,6 +71,8 @@ const FINISHED = {
     seedance: { status: 'failed', error: 'stub' },
     meshy: { status: 'FAILED', task_error: { message: 'stub' } },
     worldlabs: { done: true, error: { message: 'stub' } },
+    topaz: { status: 'failed', message: 'stub' },
+    magnific: { data: { task_id: 't1', status: 'FAILED' } },
 };
 const FIXTURES = {
     runway: { cap: 'video', payload: { prompt: 'a quiet street at dusk', init_image: 'data:image/png;base64,iVBORw0KGgo=', duration: 5 } },
@@ -71,6 +82,12 @@ const FIXTURES = {
     meshy: { cap: 'model3d', payload: { prompt: 'a wooden chair', refine: false } },
     worldlabs: { cap: 'world', payload: { prompt: 'a quiet street', images: [] } },
     gridlight: { cap: 'video', payload: { prompt: 'a quiet street at dusk' } },
+    // Topaz uploads the clip itself, so the fixture is a real file on disk and
+    // the measured facts the upscale route would hand it.
+    topaz: { cap: 'post', payload: { model: 'slp-2.6', source_video: TOPAZ_CLIP, source_width: 1280, source_height: 720,
+        source_seconds: 2, source_fps: 24, target_resolution: '1920x1080' } },
+    magnific: { cap: 'post', payload: { model: 'magnific-video-upscaler-precision', source_video: TOPAZ_CLIP,
+        source_seconds: 2, source_fps: 24, target_resolution: '1920x1080' } },
 };
 
 function stubFetch(id) {
@@ -81,7 +98,8 @@ function stubFetch(id) {
             json: async () => body, text: async () => JSON.stringify(body), arrayBuffer: async () => Buffer.from(JSON.stringify(body)) });
         if (method !== 'GET') {
             return json({ id: 't1', request_id: 't1', result: 't1', polling_url: 'https://poll.example/t1',
-                operation_id: 'op1', done: false });
+                operation_id: 'op1', done: false, requestId: 't1', urls: ['https://upload.example/t1'], uploadId: 'u1',
+                data: { task_id: 't1', status: 'CREATED' }, files: [{ upload_url: 'https://upload.example/m1', asset_url: 'https://asset.example/m1' }] });
         }
         polls += 1;
         return json(polls === 1 ? RUNNING[id] : FINISHED[id]);

@@ -5432,6 +5432,46 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
   .pg-lanes, .pg-transport label { display:none; }
   .pg-header .pg-chips, .pg-meta { display:none; }
 }
+
+/* ── SETUP: one screen, full width ─────────────────────────────────────────
+   The providers card spans the page (capability table beside the keys); every
+   other card packs into as many columns as the width allows, so most settings
+   are visible without scrolling. Long explanations sit behind "Why". */
+#page-settings .set-grid { display:flex; flex-direction:column; gap:14px; }
+#page-settings .set-card { margin:0 !important; max-width:none !important; min-width:0; }
+#page-settings .set-cols { column-width: 380px; column-gap: 14px; }
+#page-settings .set-cols > .set-card { break-inside: avoid; display:block; margin-bottom:14px !important; }
+#page-settings .set-cols > .set-card.hidden { display:none; }
+#page-settings .set-prov { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:20px; align-items:start; }
+@media (max-width: 1100px) { #page-settings .set-prov { grid-template-columns:minmax(0,1fr); } }
+#page-settings .set-h4 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--gl-text-muted); margin:0 0 8px; }
+#page-settings .set-h4 span { text-transform:none; letter-spacing:0; font-size:12px; }
+#page-settings .set-why { margin-top:4px; }
+#page-settings .set-why > summary { cursor:pointer; font-size:11px; color:var(--gl-text-muted); list-style:none; display:inline-block; }
+#page-settings .set-why > summary::before { content:'ⓘ '; }
+#page-settings .set-why[open] > summary { margin-bottom:4px; }
+#page-settings .form-group { margin-bottom:10px; }
+#page-settings .set-cap-table { width:100%; border-collapse:collapse; font-size:13px; }
+#page-settings .set-cap-table th { text-align:left; font-size:11px; font-weight:600; color:var(--gl-text-muted); text-transform:uppercase; letter-spacing:.06em; padding:4px 6px; border-bottom:1px solid var(--gl-border-subtle); }
+#page-settings .set-cap-table td { padding:5px 6px; border-bottom:1px solid var(--gl-border-subtle); vertical-align:middle; }
+#page-settings .set-cap-table td:first-child { white-space:nowrap; font-weight:600; width:1%; }
+#page-settings .set-cap-table select { width:100%; min-width:0; padding:5px 8px; font-size:13px; }
+#page-settings .set-cap-table .set-cap-note { font-size:11px; color:var(--gl-text-muted); margin-top:2px; }
+#page-settings .set-cap-table .set-cap-warn { font-size:11px; color:#d9a441; margin-top:2px; }
+#page-settings .set-tiers { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+#page-settings .set-tiers .fe-tier { flex:1 1 150px; text-align:left; padding:8px 10px; line-height:1.3; white-space:normal; }
+#page-settings .set-keys { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
+#page-settings .set-key { display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr) auto; gap:6px; align-items:center; }
+#page-settings .set-key label { margin:0; font-size:12px; font-weight:600; }
+#page-settings .set-key .tag { font-size:10px; }
+#page-settings .set-key input { min-width:0; padding:5px 8px; font-size:13px; }
+#page-settings .set-key .set-key-btns { display:flex; gap:4px; }
+@media (max-width: 700px) { #page-settings .set-key { grid-template-columns:minmax(0,1fr); } }
+
+/* The project list's stage: a badge that opens a dropdown. */
+.project-stage-btn { cursor:pointer; border:0; font:inherit; font-size:11px; }
+.project-stage-btn:hover { filter:brightness(1.2); }
+.project-stage-select { font-size:12px; padding:4px 6px; border-radius:6px; max-width:160px; }
 </style>
 </head>
 <body>
@@ -7082,403 +7122,410 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 
         <div class="page" id="page-settings">
             <div class="page-header"><h2>Settings</h2></div>
-            <div class="card" style="max-width:500px;">
-                <h3 class="mb-8">Backend Connection</h3>
-                <div class="form-group">
-                    <label>API URL</label>
-                    <input type="text" id="settingsApiUrl" placeholder="http://localhost:3100">
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveSettings()">Save</button>
-                    <button class="btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
-                </div>
-            </div>
-            <div class="card mt-16" style="max-width:500px;">
-                <h3 class="mb-8">Local endpoints</h3>
-                <div class="form-group">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                        <input type="checkbox" id="settingsGridlight" style="width:auto;margin:0;"
-                               onchange="saveGridlightEnabled()">
-                        <span>Use the local Gridlight endpoints</span>
-                    </label>
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        Off by default. Gridlight needs no API key, so while it was always on it read as
-                        &ldquo;ready&rdquo; whether or not anything was listening on the port &mdash; and it is the
-                        fallback every capability drops to. Until you switch it on, nothing resolves to it, and
-                        a capability it is the only provider for says <em>nothing serves this</em> rather than
-                        failing at generation time.
-                    </p>
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;" id="gridlightServes"></p>
-                </div>
-            </div>
-
-            <div class="card mt-16" style="max-width:500px;">
-                <h3 class="mb-8">Production graph</h3>
-                <div class="form-group">
-                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                        <input type="checkbox" id="settingsProductionGraph" style="width:auto;margin:0;"
-                               onchange="saveProductionGraphFlag()">
-                        <span>Show Production as one graph</span>
-                    </label>
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        Shots, sequences, sound and every version on one canvas, with a drawer for each and the
-                        cut playing underneath. Off, Production is its separate pages. The Score workspace stays
-                        in the menu either way, and every old page is still reachable by its address.
-                    </p>
-                </div>
-            </div>
-            <div class="card mt-16" style="max-width:500px;">
-                <h3 class="mb-8">You</h3>
-                <div class="form-group">
-                    <label>Author</label>
-                    <input type="text" id="settingsAuthor" placeholder="Your name">
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        The written-by credit on every screenplay title page and every Final Draft export.
-                        Set once here rather than retyped per project &mdash; it fills a blank author and never
-                        overwrites one, so a screenplay written by someone else keeps their name.
-                    </p>
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveAppSettings()">Save</button>
-                </div>
-            </div>
-            <!--
-                WHERE THE FILES ARE. A project's folder, what is in it, and the
-                one action that changes it: a move, which relocates the files
-                AND repoints every record — never a field you edit, because a
-                folder typed here with the files left behind is a project whose
-                every plate reads "unavailable".
-            -->
-            <!--
-                TWO QUESTIONS, TWO CARDS: where the project that is OPEN keeps
-                its files (and moving them), and where NEW projects go. One card
-                held both, and which field answered which was a guess.
-            -->
-            <div class="card mt-16" style="max-width:640px;" id="settingsFolderCard">
-                <h3 class="mb-8" id="settingsFolderTitle">Where this project is saved</h3>
-                <div id="settingsFolderInfo" class="text-sm text-muted">Open a project to see where its files are.</div>
-                <div class="form-group mt-8" id="settingsFolderMoveRow" style="display:none;">
-                    <label>Move this project to</label>
-                    <div style="display:flex;gap:6px;">
-                        <input type="text" id="settingsFolderMoveTo" placeholder="~/Film Engine" style="flex:1;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsFolderMoveTo')">Browse&hellip;</button>
-                        <button type="button" class="btn btn-primary btn-sm" id="settingsFolderMoveBtn" onclick="moveProjectFolder()">Move</button>
-                    </div>
-                    <span class="text-sm text-muted">A folder for this film is made inside the one you pick. Every file moves and every record follows it; nothing is regenerated.</span>
-                </div>
-            </div>
-            <div class="card mt-16" style="max-width:640px;" id="settingsNewProjectsFolderCard">
-                <h3 class="mb-8">Where new projects are saved</h3>
-                <div class="form-group">
-                    <div style="display:flex;gap:6px;">
-                        <input type="text" id="settingsProjectsRoot" placeholder="~/Film Engine" style="flex:1;" onchange="saveProjectsRoot()">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsProjectsRoot', saveProjectsRoot)">Browse&hellip;</button>
-                    </div>
-                    <span class="text-sm text-muted">The default offered when you start a new project &mdash; each one gets its own folder inside this one. Changing it does not move any project that already exists.</span>
-                </div>
-            </div>
-            <!--
-                BACKUPS TO A FOLDER YOU CHOOSE. Per person: somebody this app is
-                shared with sets their own folder here, and their snapshots go in
-                a sub-folder named for them and their machine.
-            -->
-            <div class="card mt-16" style="max-width:640px;" id="settingsBackupCard">
-                <h3 class="mb-8">Backups</h3>
-                <div class="form-group">
-                    <label>Back up to</label>
-                    <div style="display:flex;gap:6px;">
-                        <input type="text" id="settingsBackupDir" placeholder="e.g. ~/Dropbox/Film Engine Backups" style="flex:1;" onchange="saveBackupSettings()">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsBackupDir', saveBackupSettings)">Browse&hellip;</button>
-                    </div>
-                    <span class="text-sm text-muted">A Dropbox, Google Drive or NAS folder works. Each person's snapshots go in their own sub-folder, so several people can share one folder. Blank turns scheduled backups off.</span>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Every (hours)</label>
-                        <input type="number" id="settingsBackupEvery" min="0" step="1" placeholder="6" onchange="saveBackupSettings()">
-                    </div>
-                    <div class="form-group">
-                        <label>Keep</label>
-                        <input type="number" id="settingsBackupKeep" min="1" step="1" placeholder="28" onchange="saveBackupSettings()">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label style="display:flex;gap:8px;align-items:center;">
-                        <input type="checkbox" id="settingsBackupProjects" onchange="saveBackupSettings()">
-                        Also save each project as JSON beside the snapshot
-                    </label>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="runBackupNow()">Back up now</button>
-                    <span class="text-sm text-muted" id="settingsBackupStatus"></span>
-                </div>
-            </div>
-            <div class="card mt-16" style="max-width:500px;" id="settingsProjectCard">
-                <h3 class="mb-8">Project Settings</h3>
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" id="settingsTitle" data-field="title">
-                </div>
-                <div class="form-group">
-                    <label>Logline</label>
-                    <textarea id="settingsLogline" data-field="logline" rows="2"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Genre</label>
-                    <input type="text" id="settingsGenre" data-field="genre">
-                </div>
-                <!--
-                  THE STYLE PRESET, which had no control anywhere in the app.
-                  It is appended to EVERY image prompt in the production, and the
-                  only ways to set it were the mood board's Apply look (which
-                  COMPOSES it, so it cannot be hand-corrected) and curl. So the
-                  single string that decides how every frame looks could not be
-                  read or edited by the person responsible for it — and this is
-                  the field that once put a flayed quadruped in an establishing
-                  shot whose card reads "Empty, ordinary, still."
-                -->
-                <!--
-                    Commercial mode. A spot is a job for a client on a campaign,
-                    and both group the spend: spend_report rolls up by client,
-                    which is contribution margin per creative. Blank on a film,
-                    which is what every project here is until somebody says
-                    otherwise.
-                -->
-                <div class="form-group">
-                    <label>Client</label>
-                    <input type="text" id="settingsClient" data-field="client" maxlength="200"
-                           placeholder="Who the spot is for — blank for a film">
-                </div>
-                <div class="form-group">
-                    <label>Campaign</label>
-                    <input type="text" id="settingsCampaign" data-field="campaign" maxlength="200"
-                           placeholder="Which campaign this spot belongs to">
-                </div>
-                <div class="form-group">
-                    <label>Spot runtime (seconds)</label>
-                    <input type="number" id="settingsTargetDuration" data-field="target_duration_ms"
-                           min="0" step="0.1" placeholder="0 — no target">
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        The length this spot is <strong>bought</strong> at. A conform that misses it by
-                        more than a frame <strong>refuses</strong> rather than trimming &mdash; a :30 that
-                        arrives at 31.4s is rejected by the station, and one at 29.6s has paid for airtime
-                        it did not use. Leave it at 0 for a film, which runs as long as it runs.
-                    </p>
-                </div>
-                <div class="form-group">
-                    <label>Brand kit</label>
-                    <select id="settingsBrand" data-field="brand_id"></select>
-                    <p class="text-sm text-muted" style="margin-top:6px;">
-                        Kits live in <strong>Brand</strong> and outlive this project.
-                    </p>
-                </div>
-
-                <div class="form-group">
-                    <label>Style preset &mdash; the look every frame is generated in</label>
-                    <textarea id="settingsStylePreset" data-field="style_preset" rows="3"
-                              placeholder="anamorphic, teal and amber, wet streets, heavy grain"></textarea>
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        Appended to <strong>every</strong> image prompt in this project, including the
-                        reference plates. Describe a <em>look</em> &mdash; lenses, grade, light, texture.
-                        Naming a <em>subject</em> here draws it in every frame, whatever the shot is about.
-                        The mood board composes this for you; editing it here overwrites what it wrote.
-                    </p>
-                    <div id="settingsStyleWarning"></div>
-                </div>
-                <div class="form-group">
-                    <label>Draft video while working</label>
-                    <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
-                        <input type="checkbox" id="settingsVideoDraft" data-field="video_draft">
-                        <span>Generate clips at the provider's smallest raster, and finish at delivery size later</span>
-                    </label>
-                    <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
-                        Most generated clips are thrown away, so paying delivery rates for them is the
-                        largest avoidable cost here. The floor is the <em>model's</em>, not a setting:
-                        on Seedance that is 480p and roughly a fifth of the price; on Runway the
-                        smallest ratio is 720p, so drafting there makes the request honest rather than
-                        cheaper. Turn it off to generate at delivery size from the start.
-                    </p>
-                </div>
-                <div class="form-group">
-                    <label>Status</label>
-                    <select id="settingsStatus" data-field="status">
-                        <option value="concept">Concept</option>
-                        <option value="script">Script</option>
-                        <option value="pre-production">Pre-Production</option>
-                        <option value="storyboard">Storyboard</option>
-                        <option value="production">Production</option>
-                        <option value="post-production">Post-Production</option>
-                        <option value="review">Review</option>
-                        <option value="export">Export</option>
-                        <option value="complete">Complete</option>
-                    </select>
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" onclick="saveProjectSettings()">Save Project</button>
-                    <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
-                </div>
-            </div>
-            <!-- FILM-138: Technical Project Settings -->
-            <div class="card mt-16" style="max-width:600px;" id="settingsTechnicalCard">
-                <h3 class="mb-8">Technical Settings</h3>
-                <p class="text-sm text-muted mb-16">Resolution, frame rate, color space, and delivery format for NLE exports.</p>
-                <div class="form-group">
-                    <label>Delivery Preset</label>
-                    <select id="settingsDeliveryPreset" onchange="applyDeliveryPreset(this.value)">
-                        <option value="">Custom</option>
-                        <option value="theatrical_dcp">Theatrical DCP</option>
-                        <option value="imax">IMAX</option>
-                        <option value="streaming_hd">Streaming HD</option>
-                        <option value="streaming_4k">Streaming 4K</option>
-                        <option value="social_media">Social Media</option>
-                        <option value="broadcast">Broadcast</option>
-                        <option value="spot_broadcast_na">Spot — NA broadcast / CTV</option>
-                        <option value="spot_broadcast_uk">Spot — UK/AU broadcast</option>
-                        <option value="spot_social">Spot — social</option>
-                    </select>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                    <div class="form-group">
-                        <label>Aspect Ratio</label>
-                        <select id="settingsAspectRatio" onchange="onAspectRatioChange(this.value)">
-                            <option value="16:9">16:9 Standard HD/UHD</option>
-                            <option value="2.39:1">2.39:1 Anamorphic Scope</option>
-                            <option value="2.35:1">2.35:1 Panavision Scope</option>
-                            <option value="1.85:1">1.85:1 Flat Widescreen</option>
-                            <option value="1.43:1">1.43:1 IMAX Full Frame</option>
-                            <option value="1.90:1">1.90:1 IMAX Digital</option>
-                            <option value="4:3">4:3 Academy</option>
-                            <option value="9:16">9:16 Vertical/Mobile</option>
-                            <option value="1:1">1:1 Square</option>
-                            <option value="2:1">2:1 Univisium (Netflix)</option>
-                            <option value="2.76:1">2.76:1 Ultra Panavision 70</option>
-                            <option value="custom">Custom</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="customAspectGroup" style="display:none;">
-                        <label>Custom Ratio</label>
-                        <input type="text" id="settingsAspectCustom" placeholder="e.g. 2.20:1">
-                    </div>
-                    <div class="form-group">
-                        <label>Resolution</label>
-                        <select id="settingsResolution">
-                            <option value="1280x720">720p (1280x720)</option>
-                            <option value="1920x1080">1080p (1920x1080)</option>
-                            <option value="2048x1080" selected>2K DCI (2048x1080)</option>
-                            <option value="3840x2160">4K UHD (3840x2160)</option>
-                            <option value="4096x2160">4K DCI (4096x2160)</option>
-                            <option value="5632x4096">IMAX 5.6K (5632x4096)</option>
-                            <option value="7680x4320">8K (7680x4320)</option>
-                            <option value="12288x8640">IMAX 12K (12288x8640)</option>
-                        </select>
-                        <div class="hint" style="font-size:11px;opacity:.7;margin-top:4px;">Every image is generated at this size — boards, plates, turnarounds and angle explorations — in its own shape. Nano Banana Pro tops out at 4K, so larger settings are generated at 4K.</div>
-                    </div>
-                    <div class="form-group">
-                        <label>Frame Rate</label>
-                        <select id="settingsFps">
-                            <option value="23.976">23.976 fps</option>
-                            <option value="24" selected>24 fps (Film)</option>
-                            <option value="25">25 fps (PAL)</option>
-                            <option value="29.97">29.97 fps (NTSC DF)</option>
-                            <option value="30">30 fps</option>
-                            <option value="48">48 fps (HFR)</option>
-                            <option value="60">60 fps</option>
-                            <option value="120">120 fps</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Color Space</label>
-                        <select id="settingsColorSpace">
-                            <option value="sRGB">sRGB</option>
-                            <option value="Rec.709" selected>Rec.709</option>
-                            <option value="DCI-P3">DCI-P3</option>
-                            <option value="Rec.2020">Rec.2020</option>
-                            <option value="ACES">ACES</option>
-                        </select>
-                    </div>
-                    <!--
-                        THE DELIVERY CODEC AND AUDIO LAYOUT. They decide how the
-                        film's delivery master is encoded, beside the working
-                        master (lib/delivery-quality.js). A preset sets them.
-                    -->
-                    <div class="form-group">
-                        <label>Delivery codec</label>
-                        <select id="settingsDeliveryCodec">
-                            <option value="">H.264 (the working master)</option>
-                            <option value="h264">H.264</option>
-                            <option value="h265">H.265 / HEVC</option>
-                            <option value="prores_422_proxy">ProRes 422 Proxy</option>
-                            <option value="prores_422_lt">ProRes 422 LT</option>
-                            <option value="prores_422">ProRes 422</option>
-                            <option value="prores_422_hq">ProRes 422 HQ</option>
-                            <option value="prores_4444">ProRes 4444</option>
-                            <option value="dnxhr_hq">DNxHR HQ</option>
-                            <option value="jpeg2000">JPEG 2000 (for a DCP)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Delivery audio</label>
-                        <select id="settingsDeliveryAudio">
-                            <option value="2">Stereo</option>
-                            <option value="6">5.1</option>
-                            <option value="8">7.1</option>
-                            <option value="12">12.0 (IMAX)</option>
-                        </select>
-                    </div>
-                </div>
-                <!--
-                    DRAFTING IS OPT-IN. Off, every generator is asked for the
-                    delivery size above and gives its best when it cannot reach
-                    it; the video confirmation and the delivery check say when a
-                    clip comes back smaller. On, clips are asked at the model's
-                    cheapest size and reach delivery through the upscale pass.
-                -->
-                <div class="form-group">
-                    <label style="display:flex;gap:8px;align-items:center;">
-                        <input type="checkbox" id="settingsDraftVideo">
-                        Draft video — generate clips at the model's cheapest size and upscale at the end
-                    </label>
-                    <div class="text-sm text-muted">Off (the default): every clip is asked at the delivery resolution above; a generator that cannot render it gives its best, and the Delivery check on the Export page names any clip that came back smaller.</div>
-                </div>
-                <div class="form-group">
-                    <label>Timecode Start</label>
-                    <input type="text" id="settingsTimecodeStart" placeholder="01:00:00:00" value="01:00:00:00" style="max-width:200px;font-family:monospace;">
-                </div>
-                <!-- Aspect Ratio Preview -->
-                <div style="margin-top:12px;">
-                    <label class="text-sm text-muted">Preview</label>
-                    <div id="aspectPreview" style="margin-top:6px;width:200px;height:112px;border:2px solid var(--gl-brand-pink);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;background:rgba(233,30,99,0.05);">
-                        <span class="text-sm text-muted" id="aspectPreviewLabel">16:9</span>
-                    </div>
-                </div>
-                <div class="btn-row" style="margin-top:16px;">
-                    <button class="btn btn-primary" onclick="saveTechnicalSettings()">Save Technical Settings</button>
-                </div>
-            </div>
+            <div class="set-grid">
 
             <!-- AI Providers (Phase 1: multi-provider layer) -->
-            <div class="card mt-16" style="max-width:560px;" id="settingsProvidersCard">
-                <h3 class="mb-8">AI Providers</h3>
-                <p class="text-sm text-muted mb-16">Keys are kept on the server and never sent back to the browser.</p>
+            <div class="card set-card set-wide" id="settingsProvidersCard">
+                <h3 class="mb-8">AI providers and models</h3>
                 <!--
                   WHICH HALF OF THIS PAGE IS GLOBAL.
-                  Both halves lived here under one heading, and the lower one
-                  needs a project open — so the whole panel read as
-                  project-scoped and a key entered once looked like it might
-                  need entering again per film. It never did: keys are stored
-                  by provider with no project column at all. Said outright,
-                  because the ambiguity cost an afternoon of re-entering.
+                  Keys are stored by provider with no project column at all, so a
+                  key entered once serves every film; the provider and model
+                  choices beside them belong to the open project. Said on the
+                  card, because the ambiguity cost an afternoon of re-entering.
                 -->
-                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
-                    API Keys <span class="text-sm" style="text-transform:none;letter-spacing:0;">(shared by every project on this machine &mdash; enter once)</span>
-                </h4>
-                <div id="providerCredentials" class="mb-16"></div>
-                <h4 class="mb-8" style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--gl-text-muted);">
-                    Provider per capability <span class="text-sm" style="text-transform:none;letter-spacing:0;">(this project only &mdash; the keys above are shared)</span>
-                </h4>
-                <div id="providerCapabilityMap"></div>
-                <div class="btn-row" style="margin-top:16px;">
-                    <button class="btn btn-primary" onclick="saveProviderConfig()">Save Providers</button>
+                <div class="set-prov">
+                    <div class="set-prov-map">
+                        <h4 class="set-h4">
+                            Provider and model per capability <span>(this project only &mdash; the keys are shared)</span>
+                        </h4>
+                        <div id="providerCapabilityMap"></div>
+                        <div class="btn-row" style="margin-top:12px;">
+                            <button class="btn btn-primary" onclick="saveProviderConfig()">Save providers and models</button>
+                        </div>
+                    </div>
+                    <div class="set-prov-keys">
+                        <h4 class="set-h4">
+                            API keys <span>(shared by every project on this machine &mdash; enter once; kept on the server, never sent back)</span>
+                        </h4>
+                        <div id="providerCredentials"></div>
+                    </div>
+                </div>
+            </div>
+                <div class="set-cols">
+                <div class="card set-card" id="settingsProjectCard">
+                    <h3 class="mb-8">Project Settings</h3>
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="settingsTitle" data-field="title">
+                    </div>
+                    <div class="form-group">
+                        <label>Logline</label>
+                        <textarea id="settingsLogline" data-field="logline" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Genre</label>
+                        <input type="text" id="settingsGenre" data-field="genre">
+                    </div>
+                    <!--
+                      THE STYLE PRESET, which had no control anywhere in the app.
+                      It is appended to EVERY image prompt in the production, and the
+                      only ways to set it were the mood board's Apply look (which
+                      COMPOSES it, so it cannot be hand-corrected) and curl. So the
+                      single string that decides how every frame looks could not be
+                      read or edited by the person responsible for it — and this is
+                      the field that once put a flayed quadruped in an establishing
+                      shot whose card reads "Empty, ordinary, still."
+                    -->
+                    <!--
+                        Commercial mode. A spot is a job for a client on a campaign,
+                        and both group the spend: spend_report rolls up by client,
+                        which is contribution margin per creative. Blank on a film,
+                        which is what every project here is until somebody says
+                        otherwise.
+                    -->
+                    <div class="form-group">
+                        <label>Client</label>
+                        <input type="text" id="settingsClient" data-field="client" maxlength="200"
+                               placeholder="Who the spot is for — blank for a film">
+                    </div>
+                    <div class="form-group">
+                        <label>Campaign</label>
+                        <input type="text" id="settingsCampaign" data-field="campaign" maxlength="200"
+                               placeholder="Which campaign this spot belongs to">
+                    </div>
+                    <div class="form-group">
+                        <label>Spot runtime (seconds)</label>
+                        <input type="number" id="settingsTargetDuration" data-field="target_duration_ms"
+                               min="0" step="0.1" placeholder="0 — no target">
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            The length this spot is <strong>bought</strong> at. A conform that misses it by
+                            more than a frame <strong>refuses</strong> rather than trimming &mdash; a :30 that
+                            arrives at 31.4s is rejected by the station, and one at 29.6s has paid for airtime
+                            it did not use. Leave it at 0 for a film, which runs as long as it runs.
+                        </p></details>
+                    </div>
+                    <div class="form-group">
+                        <label>Brand kit</label>
+                        <select id="settingsBrand" data-field="brand_id"></select>
+                        <p class="text-sm text-muted" style="margin-top:6px;">
+                            Kits live in <strong>Brand</strong> and outlive this project.
+                        </p>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Style preset &mdash; the look every frame is generated in</label>
+                        <textarea id="settingsStylePreset" data-field="style_preset" rows="3"
+                                  placeholder="anamorphic, teal and amber, wet streets, heavy grain"></textarea>
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            Appended to <strong>every</strong> image prompt in this project, including the
+                            reference plates. Describe a <em>look</em> &mdash; lenses, grade, light, texture.
+                            Naming a <em>subject</em> here draws it in every frame, whatever the shot is about.
+                            The mood board composes this for you; editing it here overwrites what it wrote.
+                        </p></details>
+                        <div id="settingsStyleWarning"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Draft video while working</label>
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+                            <input type="checkbox" id="settingsVideoDraft" data-field="video_draft">
+                            <span>Generate clips at the provider's smallest raster, and finish at delivery size later</span>
+                        </label>
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            Most generated clips are thrown away, so paying delivery rates for them is the
+                            largest avoidable cost here. The floor is the <em>model's</em>, not a setting:
+                            on Seedance that is 480p and roughly a fifth of the price; on Runway the
+                            smallest ratio is 720p, so drafting there makes the request honest rather than
+                            cheaper. Turn it off to generate at delivery size from the start.
+                        </p></details>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="settingsStatus" data-field="status">
+                            <option value="concept">Concept</option>
+                            <option value="script">Script</option>
+                            <option value="pre-production">Pre-Production</option>
+                            <option value="storyboard">Storyboard</option>
+                            <option value="production">Production</option>
+                            <option value="post-production">Post-Production</option>
+                            <option value="review">Review</option>
+                            <option value="export">Export</option>
+                            <option value="complete">Complete</option>
+                        </select>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="saveProjectSettings()">Save Project</button>
+                        <button class="btn btn-danger" onclick="deleteCurrentProject()">Delete Project</button>
+                    </div>
+                </div>
+                <!-- FILM-138: Technical Project Settings -->
+                <div class="card set-card" id="settingsTechnicalCard">
+                    <h3 class="mb-8">Technical Settings</h3>
+                    <p class="text-sm text-muted mb-16">Resolution, frame rate, color space, and delivery format for NLE exports.</p>
+                    <div class="form-group">
+                        <label>Delivery Preset</label>
+                        <select id="settingsDeliveryPreset" onchange="applyDeliveryPreset(this.value)">
+                            <option value="">Custom</option>
+                            <option value="theatrical_dcp">Theatrical DCP</option>
+                            <option value="imax">IMAX</option>
+                            <option value="streaming_hd">Streaming HD</option>
+                            <option value="streaming_4k">Streaming 4K</option>
+                            <option value="social_media">Social Media</option>
+                            <option value="broadcast">Broadcast</option>
+                            <option value="spot_broadcast_na">Spot — NA broadcast / CTV</option>
+                            <option value="spot_broadcast_uk">Spot — UK/AU broadcast</option>
+                            <option value="spot_social">Spot — social</option>
+                        </select>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div class="form-group">
+                            <label>Aspect Ratio</label>
+                            <select id="settingsAspectRatio" onchange="onAspectRatioChange(this.value)">
+                                <option value="16:9">16:9 Standard HD/UHD</option>
+                                <option value="2.39:1">2.39:1 Anamorphic Scope</option>
+                                <option value="2.35:1">2.35:1 Panavision Scope</option>
+                                <option value="1.85:1">1.85:1 Flat Widescreen</option>
+                                <option value="1.43:1">1.43:1 IMAX Full Frame</option>
+                                <option value="1.90:1">1.90:1 IMAX Digital</option>
+                                <option value="4:3">4:3 Academy</option>
+                                <option value="9:16">9:16 Vertical/Mobile</option>
+                                <option value="1:1">1:1 Square</option>
+                                <option value="2:1">2:1 Univisium (Netflix)</option>
+                                <option value="2.76:1">2.76:1 Ultra Panavision 70</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="customAspectGroup" style="display:none;">
+                            <label>Custom Ratio</label>
+                            <input type="text" id="settingsAspectCustom" placeholder="e.g. 2.20:1">
+                        </div>
+                        <div class="form-group">
+                            <label>Resolution</label>
+                            <select id="settingsResolution">
+                                <option value="1280x720">720p (1280x720)</option>
+                                <option value="1920x1080">1080p (1920x1080)</option>
+                                <option value="2048x1080" selected>2K DCI (2048x1080)</option>
+                                <option value="3840x2160">4K UHD (3840x2160)</option>
+                                <option value="4096x2160">4K DCI (4096x2160)</option>
+                                <option value="5632x4096">IMAX 5.6K (5632x4096)</option>
+                                <option value="7680x4320">8K (7680x4320)</option>
+                                <option value="12288x8640">IMAX 12K (12288x8640)</option>
+                            </select>
+                            <div class="hint" style="font-size:11px;opacity:.7;margin-top:4px;">Every image is generated at this size — boards, plates, turnarounds and angle explorations — in its own shape. Nano Banana Pro tops out at 4K, so larger settings are generated at 4K.</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Frame Rate</label>
+                            <select id="settingsFps">
+                                <option value="23.976">23.976 fps</option>
+                                <option value="24" selected>24 fps (Film)</option>
+                                <option value="25">25 fps (PAL)</option>
+                                <option value="29.97">29.97 fps (NTSC DF)</option>
+                                <option value="30">30 fps</option>
+                                <option value="48">48 fps (HFR)</option>
+                                <option value="60">60 fps</option>
+                                <option value="120">120 fps</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Color Space</label>
+                            <select id="settingsColorSpace">
+                                <option value="sRGB">sRGB</option>
+                                <option value="Rec.709" selected>Rec.709</option>
+                                <option value="DCI-P3">DCI-P3</option>
+                                <option value="Rec.2020">Rec.2020</option>
+                                <option value="ACES">ACES</option>
+                            </select>
+                        </div>
+                        <!--
+                            THE DELIVERY CODEC AND AUDIO LAYOUT. They decide how the
+                            film's delivery master is encoded, beside the working
+                            master (lib/delivery-quality.js). A preset sets them.
+                        -->
+                        <div class="form-group">
+                            <label>Delivery codec</label>
+                            <select id="settingsDeliveryCodec">
+                                <option value="">H.264 (the working master)</option>
+                                <option value="h264">H.264</option>
+                                <option value="h265">H.265 / HEVC</option>
+                                <option value="prores_422_proxy">ProRes 422 Proxy</option>
+                                <option value="prores_422_lt">ProRes 422 LT</option>
+                                <option value="prores_422">ProRes 422</option>
+                                <option value="prores_422_hq">ProRes 422 HQ</option>
+                                <option value="prores_4444">ProRes 4444</option>
+                                <option value="dnxhr_hq">DNxHR HQ</option>
+                                <option value="jpeg2000">JPEG 2000 (for a DCP)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Delivery audio</label>
+                            <select id="settingsDeliveryAudio">
+                                <option value="2">Stereo</option>
+                                <option value="6">5.1</option>
+                                <option value="8">7.1</option>
+                                <option value="12">12.0 (IMAX)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!--
+                        DRAFTING IS OPT-IN. Off, every generator is asked for the
+                        delivery size above and gives its best when it cannot reach
+                        it; the video confirmation and the delivery check say when a
+                        clip comes back smaller. On, clips are asked at the model's
+                        cheapest size and reach delivery through the upscale pass.
+                    -->
+                    <div class="form-group">
+                        <label style="display:flex;gap:8px;align-items:center;">
+                            <input type="checkbox" id="settingsDraftVideo">
+                            Draft video — generate clips at the model's cheapest size and upscale at the end
+                        </label>
+                        <div class="text-sm text-muted">Off (the default): every clip is asked at the delivery resolution above; a generator that cannot render it gives its best, and the Delivery check on the Export page names any clip that came back smaller.</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Timecode Start</label>
+                        <input type="text" id="settingsTimecodeStart" placeholder="01:00:00:00" value="01:00:00:00" style="max-width:200px;font-family:monospace;">
+                    </div>
+                    <!-- Aspect Ratio Preview -->
+                    <div style="margin-top:12px;">
+                        <label class="text-sm text-muted">Preview</label>
+                        <div id="aspectPreview" style="margin-top:6px;width:200px;height:112px;border:2px solid var(--gl-brand-pink);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;background:rgba(233,30,99,0.05);">
+                            <span class="text-sm text-muted" id="aspectPreviewLabel">16:9</span>
+                        </div>
+                    </div>
+                    <div class="btn-row" style="margin-top:16px;">
+                        <button class="btn btn-primary" onclick="saveTechnicalSettings()">Save Technical Settings</button>
+                    </div>
+                </div>
+                <!--
+                    WHERE THE FILES ARE. A project's folder, what is in it, and the
+                    one action that changes it: a move, which relocates the files
+                    AND repoints every record — never a field you edit, because a
+                    folder typed here with the files left behind is a project whose
+                    every plate reads "unavailable".
+                -->
+                <!--
+                    TWO QUESTIONS, TWO CARDS: where the project that is OPEN keeps
+                    its files (and moving them), and where NEW projects go. One card
+                    held both, and which field answered which was a guess.
+                -->
+                <div class="card set-card" id="settingsFolderCard">
+                    <h3 class="mb-8" id="settingsFolderTitle">Where this project is saved</h3>
+                    <div id="settingsFolderInfo" class="text-sm text-muted">Open a project to see where its files are.</div>
+                    <div class="form-group mt-8" id="settingsFolderMoveRow" style="display:none;">
+                        <label>Move this project to</label>
+                        <div style="display:flex;gap:6px;">
+                            <input type="text" id="settingsFolderMoveTo" placeholder="~/Film Engine" style="flex:1;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsFolderMoveTo')">Browse&hellip;</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="settingsFolderMoveBtn" onclick="moveProjectFolder()">Move</button>
+                        </div>
+                        <span class="text-sm text-muted">A folder for this film is made inside the one you pick. Every file moves and every record follows it; nothing is regenerated.</span>
+                    </div>
+                </div>
+                <div class="card set-card" id="settingsNewProjectsFolderCard">
+                    <h3 class="mb-8">Where new projects are saved</h3>
+                    <div class="form-group">
+                        <div style="display:flex;gap:6px;">
+                            <input type="text" id="settingsProjectsRoot" placeholder="~/Film Engine" style="flex:1;" onchange="saveProjectsRoot()">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsProjectsRoot', saveProjectsRoot)">Browse&hellip;</button>
+                        </div>
+                        <span class="text-sm text-muted">The default offered when you start a new project &mdash; each one gets its own folder inside this one. Changing it does not move any project that already exists.</span>
+                    </div>
+                </div>
+                <!--
+                    BACKUPS TO A FOLDER YOU CHOOSE. Per person: somebody this app is
+                    shared with sets their own folder here, and their snapshots go in
+                    a sub-folder named for them and their machine.
+                -->
+                <div class="card set-card" id="settingsBackupCard">
+                    <h3 class="mb-8">Backups</h3>
+                    <div class="form-group">
+                        <label>Back up to</label>
+                        <div style="display:flex;gap:6px;">
+                            <input type="text" id="settingsBackupDir" placeholder="e.g. ~/Dropbox/Film Engine Backups" style="flex:1;" onchange="saveBackupSettings()">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('settingsBackupDir', saveBackupSettings)">Browse&hellip;</button>
+                        </div>
+                        <span class="text-sm text-muted">A Dropbox, Google Drive or NAS folder works. Each person's snapshots go in their own sub-folder, so several people can share one folder. Blank turns scheduled backups off.</span>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Every (hours)</label>
+                            <input type="number" id="settingsBackupEvery" min="0" step="1" placeholder="6" onchange="saveBackupSettings()">
+                        </div>
+                        <div class="form-group">
+                            <label>Keep</label>
+                            <input type="number" id="settingsBackupKeep" min="1" step="1" placeholder="28" onchange="saveBackupSettings()">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex;gap:8px;align-items:center;">
+                            <input type="checkbox" id="settingsBackupProjects" onchange="saveBackupSettings()">
+                            Also save each project as JSON beside the snapshot
+                        </label>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="runBackupNow()">Back up now</button>
+                        <span class="text-sm text-muted" id="settingsBackupStatus"></span>
+                    </div>
+                </div>
+                <div class="card set-card" id="settingsYouCard">
+                    <h3 class="mb-8">You</h3>
+                    <div class="form-group">
+                        <label>Author</label>
+                        <input type="text" id="settingsAuthor" placeholder="Your name">
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            The written-by credit on every screenplay title page and every Final Draft export.
+                            Set once here rather than retyped per project &mdash; it fills a blank author and never
+                            overwrites one, so a screenplay written by someone else keeps their name.
+                        </p></details>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="saveAppSettings()">Save</button>
+                    </div>
+                </div>
+                <div class="card set-card" id="settingsConnectionCard">
+                    <h3 class="mb-8">Backend Connection</h3>
+                    <div class="form-group">
+                        <label>API URL</label>
+                        <input type="text" id="settingsApiUrl" placeholder="http://localhost:3100">
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+                        <button class="btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
+                    </div>
+                </div>
+                <div class="card set-card" id="settingsLocalCard">
+                    <h3 class="mb-8">Local endpoints</h3>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="settingsGridlight" style="width:auto;margin:0;"
+                                   onchange="saveGridlightEnabled()">
+                            <span>Use the local Gridlight endpoints</span>
+                        </label>
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            Off by default. Gridlight needs no API key, so while it was always on it read as
+                            &ldquo;ready&rdquo; whether or not anything was listening on the port &mdash; and it is the
+                            fallback every capability drops to. Until you switch it on, nothing resolves to it, and
+                            a capability it is the only provider for says <em>nothing serves this</em> rather than
+                            failing at generation time.
+                        </p></details>
+                        <p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;" id="gridlightServes"></p>
+                    </div>
+                </div>
+
+                <div class="card set-card" id="settingsGraphCard">
+                    <h3 class="mb-8">Production graph</h3>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="settingsProductionGraph" style="width:auto;margin:0;"
+                                   onchange="saveProductionGraphFlag()">
+                            <span>Show Production as one graph</span>
+                        </label>
+                        <details class="set-why"><summary>Why</summary><p class="text-sm text-muted" style="margin-top:6px;line-height:1.5;">
+                            Shots, sequences, sound and every version on one canvas, with a drawer for each and the
+                            cut playing underneath. Off, Production is its separate pages. The Score workspace stays
+                            in the menu either way, and every old page is still reachable by its address.
+                        </p></details>
+                    </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -18253,13 +18300,57 @@ THREE.GLTFLoader = GLTFLoader;
                             <p>${esc(p.logline || 'No logline')}</p>
                             <div class="project-meta">${p.genre ? esc(p.genre) + ' &middot; ' : ''}${new Date(p.created_at).toLocaleDateString()}</div>
                         </div>
-                        <span class="badge ${p.status}">${p.status.replace(/-/g, ' ')}</span>
+                        <span class="project-stage" onclick="event.stopPropagation()">
+                            <button type="button" class="badge ${esc(p.status)} project-stage-btn" id="stagebtn-${p.id}"
+                                onclick="event.stopPropagation(); openStagePicker('${p.id}')" title="Change this project's stage">${esc(p.status.replace(/-/g, ' '))} &#9662;</button>
+                        </span>
                         <button class="project-delete-btn" onclick="event.stopPropagation(); deleteProjectById('${p.id}', '${esc(p.title).replace(/'/g, "\\'")}')" title="Delete project">&times;</button>
                     </div>
                 `).join('');
             }
             setStatus(state.projects.length + ' project(s)');
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /*
+     * THE STAGE, CHANGED WHERE IT IS READ.
+     *
+     * A project's stage showed on the list and could only be changed by
+     * opening the project and finding Settings. Clicking the badge now swaps
+     * it for a dropdown of the stages; choosing one saves it at once. The list
+     * of stages is the Settings page's own (#settingsStatus), which the server
+     * holds to the same set, so the two cannot offer different stages.
+     */
+    function projectStages() {
+        const sel = document.getElementById('settingsStatus');
+        return sel ? [...sel.options].map(o => ({ id: o.value, label: o.textContent })) : [];
+    }
+    function openStagePicker(projectId) {
+        const btn = document.getElementById('stagebtn-' + projectId);
+        const p = (state.projects || []).find(x => x.id === projectId);
+        if (!btn || !p) return;
+        const sel = document.createElement('select');
+        sel.className = 'project-stage-select';
+        sel.id = 'stagesel-' + projectId;
+        sel.setAttribute('aria-label', 'Stage for ' + p.title);
+        sel.innerHTML = projectStages().map(s => `<option value="${esc(s.id)}"${s.id === p.status ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+        sel.onclick = e => e.stopPropagation();
+        sel.onchange = () => setProjectStage(projectId, sel.value);
+        sel.onblur = () => { if (sel.isConnected && sel.value === p.status) loadProjects(); };
+        btn.replaceWith(sel);
+        sel.focus();
+    }
+    async function setProjectStage(projectId, status) {
+        try {
+            await api('/projects/' + projectId, { method: 'PUT', body: JSON.stringify({ status }) });
+            const p = (state.projects || []).find(x => x.id === projectId);
+            if (p) p.status = status;
+            if (state.currentProject && state.currentProject.id === projectId) state.currentProject.status = status;
+            setStatus('Stage saved: ' + status.replace(/-/g, ' '));
+        } catch (err) {
+            setStatus('Could not change the stage: ' + err.message);
+        }
+        loadProjects();
     }
 
     /**
@@ -30270,6 +30361,7 @@ ${fountainText.slice(0, 50000)}`;
 
             // Connection rows: providers that need a key, OAuth connect, or config fields.
             const needsSetup = (catalog.providers || []).filter(p => p.requiresKey || p.connection);
+            credEl.className = 'set-keys';
             credEl.innerHTML = needsSetup.length ? needsSetup.map(p => {
                 const c = p.credentials || { set: false, fields: {} };
                 const conn = p.connection || null;
@@ -30320,20 +30412,20 @@ ${fountainText.slice(0, 50000)}`;
                     </div>`;
                 }
 
-                // 3) Single API-key providers (OpenAI, ElevenLabs).
-                // A stored placeholder must not wear the same green badge as a
-                // working key: "set ••••k" is what let six providers look
-                // configured until a 401 arrived mid-generation.
+                // 3) Single API-key providers. One compact row each: name and
+                // state, the key box, the buttons. A stored placeholder must not
+                // wear the same green badge as a working key: "set ••••k" is
+                // what let six providers look configured until a 401 arrived.
                 const status = c.suspect
-                    ? '<span class="tag" style="background:var(--gl-warning);">stored value is too short to be a key</span>'
+                    ? '<span class="tag" style="background:var(--gl-warning);">too short to be a key</span>'
                     : c.set ? '<span class="tag" style="background:var(--gl-success,#166534);">set ••••' + esc(c.last4 || '') + '</span>'
                     : '<span class="tag">not set</span>';
                 const helpUrl = conn && conn.helpUrl;
-                const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="Opens the provider\'s key page">Get key &#8599;</a>' : '';
-                return `<div class="form-group">
-                    <label>${esc(p.label)} ${status}</label>${instr}
-                    <div style="display:flex;gap:6px;">
-                        <input type="password" id="provkey-${esc(p.id)}" placeholder="Enter API key" style="flex:1;">
+                const getKeyBtn = helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(helpUrl) + '" target="_blank" rel="noopener" title="' + esc((conn && conn.instructions) || 'Opens the provider\'s key page') + '">Get key &#8599;</a>' : '';
+                return `<div class="set-key">
+                    <label title="${esc((conn && conn.instructions) || '')}">${esc(p.label)} ${status}</label>
+                    <input type="password" id="provkey-${esc(p.id)}" placeholder="${c.set ? 'Replace key' : 'Enter API key'}">
+                    <div class="set-key-btns">
                         ${getKeyBtn}
                         <button class="btn btn-secondary btn-sm" onclick="saveProviderKey('${esc(p.id)}')">Save</button>
                         ${c.set ? '<button class="btn btn-danger btn-sm" onclick="clearProviderKey(\'' + esc(p.id) + '\')">Clear</button>' : ''}
@@ -30378,106 +30470,113 @@ ${fountainText.slice(0, 50000)}`;
              */
             const tiers = proj.image_tiers || [];
             const currentTier = proj.image_quality || 'standard';
+            // Image quality: the three tiers as one row of choices, saved on the
+            // click. Each says what it would ACTUALLY use here, so a tier whose
+            // preferred provider holds no key does not promise a model we
+            // cannot run.
             const tierHtml = !tiers.length ? '' : `
-                <div class="form-group" style="margin-bottom:18px;">
-                    <label style="margin:0 0 8px;display:block;">Image quality</label>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;flex-direction:column;">
-                        ${tiers.map(t => `
-                            <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'} fe-tier"
-                                onclick="pickImageTier('${esc(t.id)}')" id="tierbtn-${esc(t.id)}"
-                                style="flex:1 1 100%;text-align:left;padding:11px 13px;
-                                       display:block;line-height:1.35;white-space:normal;${t.available ? '' : 'opacity:.55;'}">
-                                <div style="font-weight:600;">${esc(t.label)}</div>
-                                <div class="text-sm" style="opacity:.8;margin-top:3px;font-weight:400;">${esc(t.why)}</div>
-                                <div class="text-sm" style="opacity:.6;margin-top:4px;font-weight:400;">
-                                    ${t.usd_per_image != null ? '<strong>$' + t.usd_per_image.toFixed(3) + '</strong> per image &middot; ' : ''}${esc(t.reason)}
-                                </div>
-                            </button>`).join('')}
-                    </div>
-                    <input type="hidden" id="provImageQuality" value="${esc(currentTier)}">
-                    ${(proj.config && proj.config.image) ? `
-                        <div class="text-sm" style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.05);">
-                            This project pins its image provider to <code>${esc(proj.config.image)}</code>
-                            under Advanced, so the tiers above choose which of
-                            <strong>its</strong> models to use rather than which company.
-                            ${proj.config.image_model
-                                ? `A specific model is also pinned (<code>${esc(proj.config.image_model)}</code>),
-                                   which overrides the tier entirely — clear it to let quality decide again.`
-                                : 'Clear the provider to compare across providers.'}
-                        </div>` : ''}
-                    <div class="text-sm text-muted" style="margin-top:8px;">
-                        Auto is available too — it reads the request and lifts to Precision when a frame
-                        has to reconcile several references or edit an existing shot.
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="pickImageTier('auto')"
-                            style="margin-left:6px;">${currentTier === 'auto' ? '✓ Auto is on' : 'Use Auto'}</button>
-                    </div>
-                </div>`;
+                <div class="set-tiers" title="Image quality: the tier chooses the provider and model when neither is pinned below.">
+                    ${tiers.map(t => `
+                        <button type="button" class="btn ${t.id === currentTier ? '' : 'btn-secondary'} fe-tier"
+                            onclick="pickImageTier('${esc(t.id)}')" id="tierbtn-${esc(t.id)}"
+                            style="${t.available ? '' : 'opacity:.55;'}" title="${esc(t.why || '')} ${esc(t.reason || '')}">
+                            <div style="font-weight:600;font-size:13px;">${esc(t.label)}</div>
+                            <div class="text-sm" style="opacity:.75;font-weight:400;">${t.usd_per_image != null ? '$' + t.usd_per_image.toFixed(3) + ' per image' : esc(t.reason || '')}</div>
+                        </button>`).join('')}
+                    <button type="button" class="btn ${currentTier === 'auto' ? '' : 'btn-secondary'} fe-tier" onclick="pickImageTier('auto')"
+                        title="Auto reads each request and lifts to Precision when a frame has to reconcile several references or edit an existing shot.">
+                        <div style="font-weight:600;font-size:13px;">${currentTier === 'auto' ? '✓ ' : ''}Auto</div>
+                        <div class="text-sm" style="opacity:.75;font-weight:400;">picks per request</div>
+                    </button>
+                </div>
+                <input type="hidden" id="provImageQuality" value="${esc(currentTier)}">`;
 
             // Which project these controls were built from — read by
             // saveProviderConfig before it writes anything.
             const stamp = `<input type="hidden" id="providerPanelProject" value="${esc(proj.project_id || (state.currentProject && state.currentProject.id) || '')}">`;
 
             /*
-             * WHO CHOSE THIS, said where the choice is made.
-             *
-             * "Automatic" and a pinned provider can resolve to the SAME vendor,
-             * and the select looks identical either way. A project that lost its
-             * `image` pin mid-session went on generating happily against a
-             * different company's account and reported nothing until that
-             * company's billing rejected it. The provider name never changes;
-             * only who chose it does.
+             * WHO CHOSE THIS, said where the choice is made. "Automatic" and a
+             * pinned provider can resolve to the SAME vendor; only who chose it
+             * differs, and a lost pin went on billing another company's account
+             * until its billing refused.
              */
-            const providerFallbackNote = (proj, cap) => {
+            const fallbackNote = cap => {
                 const r = (proj.resolution || {})[cap];
                 if (!r || !r.provider || r.explicit) return '';
-                return '<div class="text-sm" style="margin-top:4px;color:#d9a441;">⚠ '
-                    + esc(r.note) + ' — spend goes to that vendor, on whichever account holds its key.</div>';
+                return '<div class="set-cap-warn">⚠ ' + esc(r.note) + ' — spend goes to that vendor.</div>';
             };
-
-            const advanced = caps.map(cap => {
+            _providerModelMenus = {};
+            const rows = caps.map(cap => {
                 const opts = supportsCap(cap);
                 if (opts.length === 0) return '';
-                // What was PINNED, which is not the same as what resolved. Showing
-                // the resolved provider as if it were selected made every
-                // capability look pinned, so nothing could be handed back to
-                // automatic — and the tier advice pointed at an impossible action.
+                // What was PINNED, which is not the same as what resolved.
                 const pinned = (proj.config && proj.config[cap]) || '';
-                return `<div class="form-group" style="display:flex;align-items:center;gap:10px;">
-                    <label style="flex:0 0 110px;margin:0;">${esc(capabilityLabels[cap] || cap)}</label>
-                    <div style="flex:1;">
-                    <select id="provcap-${esc(cap)}" style="width:100%;">
-                        <option value=""${pinned ? '' : ' selected'}>Automatic${cap === 'image' ? ' — the quality tier decides' : ''}</option>
-                        ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === pinned ? ' selected' : '') + '>' + esc(o.label) + (o.id === proj.effective[cap] && !pinned ? ' (in use)' : '') + '</option>').join('')}
-                    </select>
-                    ${capabilityHelp[cap] ? '<div class="text-sm text-muted" style="margin-top:4px;">' + esc(capabilityHelp[cap]) + '</div>' : ''}
-                    ${providerFallbackNote(proj, cap)}
-                    </div>
-                </div>`;
+                const gen = (proj.generation || {})[cap];
+                // Every provider's own model list for THIS capability, so the
+                // model menu follows the provider picked beside it.
+                _providerModelMenus[cap] = {};
+                ((gen && gen.providers) || []).forEach(p => { _providerModelMenus[cap][p.id] = { models: p.models || [], default_model: p.default_model || null }; });
+                const pinnedModel = (proj.config && proj.config[cap + '_model']) || '';
+                return `<tr>
+                    <td>${esc(capabilityLabels[cap] || cap)}${capabilityHelp[cap] ? '<div class="set-cap-note" style="font-weight:400;">' + esc(capabilityHelp[cap]) + '</div>' : ''}</td>
+                    <td>
+                        <select id="provcap-${esc(cap)}" onchange="refreshModelMenu('${esc(cap)}')">
+                            <option value=""${pinned ? '' : ' selected'}>Automatic${cap === 'image' ? ' (quality tier)' : ''}${proj.effective && proj.effective[cap] ? ' → ' + esc(proj.effective[cap]) : ''}</option>
+                            ${opts.map(o => '<option value="' + esc(o.id) + '"' + (o.id === pinned ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('')}
+                        </select>
+                        ${fallbackNote(cap)}
+                    </td>
+                    <td>
+                        ${cap === 'llm'
+                            ? '<div class="set-cap-note">The connected agent (Claude or ChatGPT Desktop) is the model.</div>'
+                            : `<select id="provmodel-${esc(cap)}" data-pinned="${esc(pinnedModel)}" data-effective="${esc((proj.effective && proj.effective[cap]) || '')}"></select>`}
+                    </td>
+                </tr>`;
             }).join('');
 
-            // The escape hatch, deliberately closed by default. A director who
-            // has learned that one model handles their subject must be able to
-            // say so — a table that cannot be overridden is a reason to stop
-            // using tiers at all.
-            mapEl.innerHTML = tierHtml + `
-                <details style="margin-top:6px;">
-                    <summary style="cursor:pointer;font-weight:600;">Advanced — choose providers and models directly</summary>
-                    <div style="margin-top:12px;">
-                        ${stamp}${advanced}
-                        <div class="form-group" style="display:flex;align-items:center;gap:10px;">
-                            <label style="flex:0 0 110px;margin:0;">Image model</label>
-                            <div style="flex:1;">
-                                <input id="provImageModel" type="text" style="width:100%;"
-                                    placeholder="leave blank to let the quality tier choose"
-                                    value="${esc((proj.config && proj.config.image_model) || '')}">
-                                <div class="text-sm text-muted" style="margin-top:4px;">
-                                    Overrides the tier's model. Blank is the normal case.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </details>`;
+            mapEl.innerHTML = tierHtml + stamp + `
+                <table class="set-cap-table">
+                    <thead><tr><th>Capability</th><th>Provider</th><th>Model</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                ${(proj.config && proj.config.image_model) ? '<div class="set-cap-note" style="margin-top:6px;">A pinned image model overrides the quality tier; set it back to Default to let quality decide again.</div>' : ''}`;
+            caps.forEach(cap => { if (document.getElementById('provmodel-' + cap)) refreshModelMenu(cap); });
         } catch (err) { credEl.innerHTML = '<p class="text-sm text-muted">Providers unavailable: ' + esc(err.message) + '</p>'; }
+    }
+
+    /*
+     * THE MODEL MENU FOLLOWS THE PROVIDER.
+     *
+     * A model only means anything relative to a provider, so the menu lists
+     * the models of whichever provider is picked beside it — or, on Automatic,
+     * of the provider that would actually run. "Default" leaves the choice to
+     * the provider (or, for images, the quality tier). A pinned model the
+     * provider does not offer is shown and flagged rather than dropped, so a
+     * saved choice never disappears silently.
+     */
+    let _providerModelMenus = {};
+    function refreshModelMenu(cap) {
+        const sel = document.getElementById('provmodel-' + cap);
+        const prov = document.getElementById('provcap-' + cap);
+        if (!sel || !prov) return;
+        const pid = prov.value || sel.dataset.effective || '';
+        const menu = (_providerModelMenus[cap] || {})[pid] || { models: [] };
+        // After the first draw a provider change keeps the model only if the
+        // new provider offers it; the saved pin is shown (flagged) once, so a
+        // choice the provider no longer offers is visible rather than lost.
+        const first = !sel.dataset.rendered;
+        let pinned = first ? (sel.dataset.pinned || '') : (sel.value || '');
+        const models = menu.models || [];
+        let known = models.some(m => m.id === pinned);
+        if (!first && pinned && !known) { pinned = ''; known = false; }
+        sel.dataset.rendered = '1';
+        const deflt = cap === 'image' ? 'Default (quality tier)' : (menu.default_model ? `Default (${menu.default_model})` : 'Default');
+        sel.innerHTML = `<option value="">${esc(deflt)}</option>`
+            + models.map(m => `<option value="${esc(m.id)}"${m.id === pinned ? ' selected' : ''}>${esc(m.label && m.label !== m.id ? m.label + ' · ' + m.id : m.id)}</option>`).join('')
+            + (pinned && !known ? `<option value="${esc(pinned)}" selected>${esc(pinned)} (not offered by ${esc(pid || 'this provider')})</option>` : '');
+        sel.disabled = !models.length && !pinned;
+        sel.title = models.length ? '' : `${pid || 'This provider'} offers no model choice for this.`;
     }
 
     function pickImageTier(tier) {
@@ -30611,8 +30710,13 @@ ${fountainText.slice(0, 50000)}`;
         // like it worked while reaching no generation.
         const q = document.getElementById('provImageQuality');
         if (q && q.value) config.image_quality = q.value;
-        const m = document.getElementById('provImageModel');
-        if (m) config.image_model = m.value.trim();
+        // A model per capability. Sent for every capability that has a menu,
+        // blank meaning "stop pinning": the route checks each against the
+        // provider that would run it and refuses a model it does not offer.
+        caps.forEach(cap => {
+            const ms = document.getElementById('provmodel-' + cap);
+            if (ms && !ms.disabled) config[cap + '_model'] = ms.value.trim();
+        });
         try {
             await api('/projects/' + state.currentProject.id + '/providers', { method: 'PUT', body: JSON.stringify({ config }) });
             setStatus('Provider settings saved');
@@ -34927,32 +35031,54 @@ ${fountainText.slice(0, 50000)}`;
     const UPSCALE_DEFAULT_MODEL = 'topaz-video-upscale';
     function upscalePlanHtml(d) {
         const secs = Number((d.source || {}).seconds) || 0;
-        const rows = (d.upscalers || []).map(u => `<option value="${esc(u.id)}" data-rate="${u.usd_per_second}"
-            ${u.id === (d.model || UPSCALE_DEFAULT_MODEL) ? 'selected' : ''}>${esc(u.label)} &middot; $${Number(u.usd_per_second).toFixed(2)}/s</option>`).join('');
+        const chosen = d.model || UPSCALE_DEFAULT_MODEL;
+        // Grouped by who does the work: MuAPI's resold upscalers and Topaz's own
+        // Starlight/Astra/Proteus. Each is priced FOR THIS CLIP by the server; a
+        // Topaz model with no key is shown, disabled, with the reason.
+        const opt = u => {
+            const usd = u.estimated_usd != null ? u.estimated_usd : (secs ? u.usd_per_second * secs : null);
+            const price = usd != null ? ` · about $${Number(usd).toFixed(2)}` : (u.usd_per_second != null ? ` · $${Number(u.usd_per_second).toFixed(2)}/s` : '');
+            return `<option value="${esc(u.id)}" data-usd="${usd != null ? usd : ''}" data-note="${esc(u.note || '')}"
+                ${u.configured === false ? 'disabled' : ''} ${u.id === chosen ? 'selected' : ''}>${esc(u.label)}${price}${u.configured === false ? ' (no key)' : ''}</option>`;
+        };
+        const ups = d.upscalers || [];
+        const group = (prov, label) => {
+            const rows = ups.filter(u => (u.provider || 'muapi') === prov);
+            return rows.length ? `<optgroup label="${esc(label)}">${rows.map(opt).join('')}</optgroup>` : '';
+        };
+        const missingKeys = ['topaz', 'magnific'].filter(pv => ups.some(u => u.provider === pv && u.configured === false));
         return `<div class="text-sm" style="line-height:1.6;">
             <div><strong>${esc(d.shot_code || '')}</strong> &middot; ${esc((d.source || {}).file_name || '')}
               &middot; measured ${esc((d.source || {}).measured || 'unmeasured')}${secs ? ` &middot; ${secs.toFixed(1)}s` : ''}</div>
-            <div>Delivery ${esc(d.target || '')}${d.reaches ? ` &middot; this reaches ${d.reaches}px on the long edge` : ''}</div>
-            <div class="form-group" style="margin-top:8px;"><label>Upscaler (MuAPI)</label>
-              <select id="upscaleModel" onchange="upscaleCostLine(${secs})">${rows}</select></div>
+            <div>Delivery ${esc(d.target || '')}${d.reaches ? ` &middot; this reaches ${esc(String(d.reaches))}` : ''}</div>
+            <div class="form-group" style="margin-top:8px;"><label>Upscaler</label>
+              <select id="upscaleModel" onchange="upscaleCostLine(${secs})">${group('muapi', 'MuAPI')}${group('topaz', 'Topaz Labs')}${group('magnific', 'Magnific')}</select></div>
             <div id="upscaleCost">${secs ? '' : esc(d.estimate_unknown_why || '')}</div>
-            <div class="text-muted">MuAPI lists these prices without a unit; they are read per second of the clip, which errs high. The result becomes this shot's selected clip; the original is kept.</div>
+            <div id="upscaleNote" class="text-muted"></div>
+            ${missingKeys.length ? `<div class="text-muted">${missingKeys.map(k => k === 'topaz' ? 'Topaz' : 'Magnific').join(' and ')} upscalers need an API key: Setup, AI providers.</div>` : ''}
+            <div class="text-muted">MuAPI lists its prices without a unit, so they are read per second of the clip, which errs high. Topaz prices come from its own credit table at the size this clip reaches; Magnific publishes no per-frame rate, so its prices are Runway's resale figures. The result becomes this shot's selected clip; the original is kept.</div>
             ${(d.warnings || []).map(w => `<div style="color:var(--warning,#b8860b);">${esc(w)}</div>`).join('')}
           </div>`;
     }
     function upscaleCostLine(secs) {
         const sel = document.getElementById('upscaleModel');
         const box = document.getElementById('upscaleCost');
-        if (!sel || !box || !secs) return;
-        const rate = Number(sel.selectedOptions[0].dataset.rate) || 0;
-        box.innerHTML = `About <strong>$${(rate * secs).toFixed(2)}</strong> for ${secs.toFixed(1)}s`;
+        const note = document.getElementById('upscaleNote');
+        if (!sel || !sel.selectedOptions[0]) return;
+        const o = sel.selectedOptions[0];
+        if (note) note.textContent = o.dataset.note || '';
+        if (!box) return;
+        const usd = Number(o.dataset.usd);
+        box.innerHTML = o.dataset.usd !== '' && Number.isFinite(usd)
+            ? `About <strong>$${usd.toFixed(2)}</strong>${secs ? ` for ${secs.toFixed(1)}s` : ''}`
+            : '';
     }
     function confirmUpscale(shotId, assetId, send) {
         const q = `?model=${encodeURIComponent(UPSCALE_DEFAULT_MODEL)}${assetId ? '&asset_id=' + encodeURIComponent(assetId) : ''}`;
         return confirmPaidImage({
             capability: 'post',
             title: 'Upscale this clip',
-            note: 'Costs credits on MuAPI. The clip is enlarged to the project\'s delivery size; nothing is re-generated.',
+            note: 'Costs credits on MuAPI, Topaz or Magnific, whichever upscaler you pick. The clip is enlarged to the project\'s delivery size; nothing is re-generated.',
             previewUrl: `/shots/${shotId}/post/upscale/preview${q}`,
             describe: d => { setTimeout(() => upscaleCostLine(Number((d.source || {}).seconds) || 0), 0); return upscalePlanHtml(d); },
             armable: d => d.can_generate !== false,

@@ -114,7 +114,7 @@ test('the preview is free, measures the SELECTED clip and sizes the upscale to t
         assert.ok(r.json.estimated_usd > 0, 'so the price is known');
         assert.equal(r.json.sends.body.upscale_factor, 4, '640 needs 4x to pass 3840... and 4x is the most, so it is named');
         assert.ok(r.json.warnings.some(w => /short of 3840/.test(w)), 'a shortfall is said');
-        assert.ok(r.json.upscalers.length === Object.keys(UPSCALERS).length);
+        assert.equal(r.json.upscalers.filter(u => u.provider === 'muapi').length, Object.keys(UPSCALERS).length);
         assert.equal(calls, 0);
     } finally { global.fetch = real; }
 });

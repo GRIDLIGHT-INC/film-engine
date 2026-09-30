@@ -84,15 +84,32 @@ function videoTierOf(req, query) {
 }
 
 /** What the tier contributes, without overriding anything explicitly asked for. */
-function applyTier(tier, req, query) {
+function applyTier(tier, req, query, pinned) {
     const src = { ...(query || {}), ...((req && req.body) || {}) };
     return {
-        // `video_model` is what the MCP tools send; see videoOverrideOf.
-        model: src.model || src.video_model || tier.preferredModel || undefined,
+        // `video_model` is what the MCP tools send; see videoOverrideOf. The
+        // project's pinned model (Setup) outranks the tier's preference: a
+        // default that beats a deliberate choice is worse than no default.
+        model: src.model || src.video_model || pinned || tier.preferredModel || undefined,
         durationSeconds: Number(src.duration_s) || tier.durationSeconds || undefined,
         resolution: src.resolution || tier.resolution || undefined,
         tierId: tier.id,
     };
+}
+
+/**
+ * The video model this project pinned in Setup, for the provider this
+ * generation will actually run on (the per-generation provider if one was
+ * chosen), or null.
+ */
+function videoPinFor(shotId, override) {
+    try {
+        const row = db.prepare(`SELECT p.id, p.provider_config FROM film_shots s JOIN film_scenes sc ON sc.id = s.scene_id
+            JOIN film_projects p ON p.id = sc.project_id WHERE s.id = ?`).get(shotId);
+        if (!row) return null;
+        const cfg = { ...JSON.parse(row.provider_config || '{}'), ...(override || {}) };
+        return require('../lib/providers').pinnedModelFor('video', cfg);
+    } catch (_) { return null; }
 }
 
 function videoOverrideOf(req, query) {
@@ -328,7 +345,8 @@ function handleVideoGen(req, res, urlParts, query) {
         // segment never reaches this handler at all.
         if (sub === 'preview' && req.method === 'GET') {
             const tier = videoTierOf(req, query);
-            return previewVideo(res, shotId, videoOverrideOf(req, query), applyTier(tier, req, query), query);
+            const ov = videoOverrideOf(req, query);
+            return previewVideo(res, shotId, ov, applyTier(tier, req, query, videoPinFor(shotId, ov)), query);
         }
         if (sub === 'generate' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return generateVideoStream(req, res, shotId);
@@ -403,7 +421,7 @@ async function generateVideo(req, res, shotId) {
 
     ctx.consistency = consistencyContext;
     const tier = videoTierOf(req, null);
-    const chosen = applyTier(tier, req, null);
+    const chosen = applyTier(tier, req, null, videoPinFor(shotId, videoOverrideOf(req)));
     ctx.overrides = {
         seed: req.body && req.body.seed ? req.body.seed : consistencyContext.locked_seed,
         // The tier supplies a model only when the caller named none: a default
@@ -976,4 +994,4 @@ async function stitchVideo(req, res, shotId) {
     }
 }
 
-module.exports = { handleVideoGen };
+module.exports = { handleVideoGen, applyTier, videoPinFor };

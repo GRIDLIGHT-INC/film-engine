@@ -68,10 +68,10 @@ something. That is the single most useful thing to copy.
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
 | Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 18 media queries that are not `print` (12 at
+**The responsive layout did not exist.** There are 20 media queries that are not `print` (12 at
 the time of this assessment, plus the one the character sheet's two-up block
 added when its layout was brought back to the reference design, plus the one
-that stacks the one-screen Previs console below 1200px), and it
+that stacks the one-screen Previs console below 1200px, plus two that stack the Setup page's providers and keys on a narrow window), and it
 is easy to read that as "already responsive". Not one of them touches the **app shell**. They
 govern:
 

@@ -345,7 +345,14 @@ function updateProject(req, res, id) {
         fields.push('annotation_feedback = ?');
         values.push(body.annotation_feedback ? 1 : 0);
     }
-    if (body.status !== undefined && VALID_STATUSES.includes(body.status)) {
+    // A stage the project cannot be in is REFUSED, naming the stages it can:
+    // ignoring it answered 200 while nothing changed, which reads as the
+    // project list's stage picker being broken.
+    if (body.status !== undefined) {
+        if (!VALID_STATUSES.includes(body.status)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: `"${body.status}" is not a stage`, stages: VALID_STATUSES }));
+        }
         fields.push('status = ?');
         values.push(body.status);
     }
@@ -749,4 +756,4 @@ function clearAnchor(req, res, projectId) {
     res.end(JSON.stringify({ ...anchorPayload(projectId), cleared: true }));
 }
 
-module.exports = { handleProjects, handleProjectSettingsPreset };
+module.exports = { VALID_STATUSES, handleProjects, handleProjectSettingsPreset };

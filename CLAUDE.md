@@ -273,6 +273,8 @@ film-engine/
 │   │   ├── provider-media.js     # Buffer-vs-URL normalisation + gateway origin check
 │   │   ├── providers/worldlabs.js # World Labs Marble: a location's plates become a navigable world
 │   │   ├── providers/fluidsynth.js # A cue's written notes played through local instruments; composes nothing, never a default
+│   │   ├── providers/topaz.js   # Topaz Labs video upscale: Starlight Precise/Fast, Astra, Proteus — estimate, accept, multipart upload, real cancel
+│   │   ├── providers/magnific.js # Magnific video upscale: creative, turbo, precision and Topaz-via-Magnific, sized by tier to the delivery
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
@@ -619,6 +621,8 @@ film-engine/
 │       ├── screenplay-entities.test.js  # A transition is not a character; a first name is not a second person
 │       ├── runway-readiness.test.js     # Exact Runway request, motion, models, costs + sequence modes
 │       ├── runway-verdict.test.js       # All ten readiness recommendations, as a set, mutation-proven
+│       ├── ai-tools-api-brief.test.js   # The AI video/image tools brief: every model it says is offered, proposed, missing from MuAPI or retiring, checked against the adapters and the MuAPI snapshot
+│       ├── ai-tools-epic.test.js        # The AI tools epic: every task well formed, each proposed MuAPI model planned once, the retirement naming every source site, deferred vendors and Midjourney out of scope
 │       ├── runway-parity-brief.test.js  # The Runway parity brief, every number derived from the adapter and a dated spec snapshot
 │       ├── runway-parity-epic.test.js   # The epic held to its brief, its milestones, its assumptions and the code
 │       ├── comfyui-epic.test.js         # ComfyUI as a provider: every brief idea a task, every registry an adapter must satisfy named
@@ -630,6 +634,12 @@ film-engine/
 │       ├── seedance-post.test.js       # The 4K finishing pass: a provider for post at all
 │       ├── dialogue-audio-reference.test.js # Recorded dialogue to Seedance 2.5: audios_list on MuAPI, referenceAudio on Runway, uploaded first, held to the probed fields
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
+│       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
+│       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
+│       ├── setup-models.test.js        # A model pinned per capability in Setup: checked against its provider, applied at the one funnel, outranked only by a per-generation choice
+│       ├── project-stage-picker.test.js # The stage changed from the project list: exactly the server's stages, saved and read back, a bad one refused
+│       ├── fixtures/topaz-contract.json # Topaz Video API shapes and supported models, probed free on 2026-09-30
+│       ├── fixtures/magnific-contract.json # Magnific upload and upscaler shapes, from its docs on 2026-09-30
 │       ├── seedance-tiers.test.js      # 480p draft and 4K finish, traced to a real Seedance 2.5 URL
 │       ├── video-surfaces.test.js      # A capability with no control does not exist
 │       ├── provider-image-encoding.test.js # A bare base64 blob is not an image a provider accepts
@@ -1252,6 +1262,15 @@ a second pass, or drafting at 720p, which reaches 2160 in a single 3× pass.
 And the finishing pass now derives its factor from the **delivery size**. It was
 `scale_factor: 2` regardless of what it was scaling, so a 480p draft finished at
 960×540 — not a deliverable, and indistinguishable from a successful post pass.
+
+### Topaz and Magnific Upscale Too, and a Model Is Chosen in Setup
+*"Work on adding the topaz adapter, but also how do I select which model in the app?"* and *"also can we add magnific as a provider"*.
+
+**Two more upscalers on `post`.** `lib/providers/topaz.js` speaks Topaz's Video API: a free estimate (`POST /video/`), then accept (reserves credits and returns part URLs), a multipart PUT with each ETag kept, complete-upload, and a status poll. `DELETE /video/:id` really stops a job, so Topaz declares `cancel: 'provider'`. Models: Starlight Precise 2.6, Starlight Fast 3, Astra 2 (creative, prompted) and Proteus. The output is fitted to the delivery by its short edge, never below the source, and capped at the model's own ceiling with a note. It is priced from Topaz's frames-per-credit table at $0.12 a credit. `lib/providers/magnific.js` uploads through Magnific's own signed URL (the PUT never carries the API key) and picks the smallest tier (720p, 1k, 2k, 4k) that reaches the delivery. It offers the creative, turbo, precision and Topaz-via-Magnific upscalers. Magnific publishes no per-frame rate, so its row is Runway's resale price marked inferred. `rateFor` now honours an entry-level or per-model `inferred`, and an empty override is not an installed rate. The upscale confirmation groups every upscaler by provider, priced for this clip, and greys out one whose key is missing.
+
+**A model is pinned per capability.** Setup's provider table has a model menu beside each provider menu. The menu lists only what that provider offers and follows the provider picked. `setProjectProviders` checks `<capability>_model` against the provider that would run it and refuses an unknown one with `available_models`; a blank clears it. The pin is applied at `resolve()` through `pinnedModelFor`, the one funnel, and only when the adapter offers that model. It never overwrites a model the caller named. For video it outranks the quality tier and loses to a per-generation choice (`applyTier`, `videoPinFor`). The LLM takes no pin, because the connected agent is the model.
+
+**Setup is one full-width screen.** Providers, models and keys run across the top (models for this project on the left, keys shared by every project on the right). Every other card packs into CSS columns, with long explanations folded behind "Why". **A project's stage is a dropdown on the project list**: it offers exactly the stages the server accepts, and `PUT /projects/:id` now refuses an unknown stage with the list (400) rather than answering 200 with nothing changed.
 
 ### Your Recorded Dialogue, Sent to Seedance 2.5
 *"Set up the path to upload audio, as I have audio files for a project (my dialogue), with Seedance 2.5 on Runway or MuAPI."*
@@ -3202,7 +3221,7 @@ Served at `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy
 ### The Graph Shows Its Work
 *From the comparison of ComfyUI's editor with this Production screen (GRD-4533, `docs/plans/production-graph-nodes-epic.md`).* The graph already put every shot, sequence, sound and version on one canvas; what the engine KNEW about them — what is running, what is behind, what a clip still needs, how a version was made — never reached it. Eight features bring it there, built on data that already existed, all behind the `production_graph` setting and all spending only through the one confirmation.
 
-**Live progress on the node.** Every generation is a row in `film_generation_jobs` while it runs, synchronous ones included (migration 117; `lib/generation-progress.js`, at most one write a second per job, the latest value kept). Progress comes from the ADAPTER, through an `onProgress` that `resolve()` injects, and each adapter declares what it can honestly report as `reportsProgress`: a **percent** from runway, bfl, meshy and gridlight (step over total); a **phase** from muapi, seedance and worldlabs, whose polls carry a status and no number; **none** from the synchronous rest. A provider with no percentage is drawn as elapsed time and "no percentage from this provider" — a percentage is never invented, and a poll with no progress field is never read as 0%. Because it is written to the database, a job Claude starts in the MCP process shows on the page too; the page polls while anything runs, since the live channel is silent about its own server's writes.
+**Live progress on the node.** Every generation is a row in `film_generation_jobs` while it runs, synchronous ones included (migration 117; `lib/generation-progress.js`, at most one write a second per job, the latest value kept). Progress comes from the ADAPTER, through an `onProgress` that `resolve()` injects, and each adapter declares what it can honestly report as `reportsProgress`: a **percent** from runway, bfl, meshy, topaz and gridlight (step over total); a **phase** from muapi, seedance, magnific and worldlabs, whose polls carry a status and no number; **none** from the synchronous rest. A provider with no percentage is drawn as elapsed time and "no percentage from this provider" — a percentage is never invented, and a poll with no progress field is never read as 0%. Because it is written to the database, a job Claude starts in the MCP process shows on the page too; the page polls while anything runs, since the live channel is silent about its own server's writes.
 
 **Out-of-date on the graph, and "Run what changed".** Every node carries `impact` — current, redo, waiting, never or **untracked** — from `lib/impact.js` and nowhere else, one rule per node type; voice, lip-sync, SFX and post roll up as badges on the shot. Untracked is said aloud: a file made outside the workflow has no input fingerprint, and calling it current would be a guess. `lib/run-changed.js` plans the redo-now rows for free, priced and in chain order, naming everything it leaves out (waiting, a card only a person can rewrite, a locked board, a held node); the run goes one item at a time through the pipeline's own `executeStep`, re-reading the report after each, and stops at the first refusal naming the rest.
 
@@ -3210,7 +3229,7 @@ Served at `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy
 
 **Queue and history strip.** `lib/generation-queue.js` puts every job in exactly one of running, waiting, done today, awaiting collection and failed; the strip under the canvas pans to each item's node, collects a pending job in place and re-runs a failed one through its node's confirmation.
 
-**What cancel really does.** Each async adapter declares `cancel`. Only runway really cancels at the provider (`DELETE /v1/tasks/:id`), and there the job is marked cancelled. Everywhere else (bfl, meshy, muapi, seedance, worldlabs) the provider cannot be stopped, so the button is **Stop waiting**: the job stays collectable and the answer says the provider may still finish and bill for it (`lib/generation-cancel.js`). Cancelling a run stops it before its next step and names what it did not attempt.
+**What cancel really does.** Each async adapter declares `cancel`. Runway really cancels at the provider (`DELETE /v1/tasks/:id`), and so does topaz (`DELETE /video/:id`, which refunds what was not processed); there the job is marked cancelled. Everywhere else (bfl, meshy, muapi, seedance, magnific, worldlabs) the provider cannot be stopped, so the button is **Stop waiting**: the job stays collectable and the answer says the provider may still finish and bill for it (`lib/generation-cancel.js`). Cancelling a run stops it before its next step and names what it did not attempt.
 
 **How was this made.** `lib/asset-recipe.js` serves a version's provider, model, prompt, negative, references, seed, size, tier, fingerprint, ledger row and cost on `GET /assets/:id/provenance`, naming whatever was not recorded rather than borrowing it from a neighbour; the panel offers "Make another like this" (the seed only where the provider honours one) and an A/B wipe. **Drop a file on the canvas** to find its recipe: it is hashed in the browser and matched by hash and size (`lib/asset-match.js`), so the bytes never leave the page.
 
@@ -6497,6 +6516,8 @@ node --test backend/tests/plate-consistency.test.js
 node --test backend/tests/storage-never-throws.test.js
 node --test backend/tests/nothing-covers-the-page.test.js
 node --test backend/tests/fcc-parity-brief.test.js
+node --test backend/tests/ai-tools-api-brief.test.js
+node --test backend/tests/ai-tools-epic.test.js
 node --test backend/tests/runway-parity-brief.test.js
 node --test backend/tests/runway-parity-epic.test.js
 node --test backend/tests/comfyui-epic.test.js
@@ -6618,6 +6639,10 @@ node --test backend/tests/motion-prompt.test.js
 node --test backend/tests/video-model-contracts.test.js
 node --test backend/tests/seedance-post.test.js
 node --test backend/tests/muapi-upscale.test.js
+node --test backend/tests/topaz-upscale.test.js
+node --test backend/tests/magnific-upscale.test.js
+node --test backend/tests/setup-models.test.js
+node --test backend/tests/project-stage-picker.test.js
 node --test backend/tests/dialogue-audio-reference.test.js
 node --test backend/tests/seedance-tiers.test.js
 node --test backend/tests/video-surfaces.test.js

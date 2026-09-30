@@ -113,7 +113,8 @@ test('every capability the brief calls unserved has no hosted provider today', (
     const unserved = CAPABILITIES.filter(c => hosted(c).length === 0);
     assert.deepEqual(unserved, ['lipsync'], `capabilities with no hosted provider: ${unserved.join(', ')}`);
     for (const c of unserved) assert.ok(BRIEF.includes(`\`${c}\``));
-    assert.deepEqual(hosted('post'), ['seedance'], 'the brief says post is served by Seedance alone');
+    assert.deepEqual(hosted('post'), ['magnific', 'seedance', 'topaz'], 'the brief says post is served by Seedance, Topaz and Magnific, for upscale only');
+    assert.match(BRIEF, /served for upscale only, by Seedance \(MuAPI\), Topaz and Magnific/);
 });
 
 /*
