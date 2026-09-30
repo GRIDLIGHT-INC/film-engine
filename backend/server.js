@@ -123,6 +123,7 @@ const { handlePostProduction } = require('./routes/post-production');
 const { handlePipeline } = require('./routes/pipeline');
 const { handleThreeD } = require('./routes/threed');
 const { handleWorlds, SHOT_TAILS: WORLD_SHOT_TAILS } = require('./routes/worlds');
+const { handleSetBuilds, LOCATION_TAILS: SET_BUILD_TAILS } = require('./routes/set-builds');
 const approvalGuard = require('./lib/approval-guard');
 const { handleApprovals } = require('./routes/approvals');
 const { handleFrameHandles } = require('./routes/frame-handles');
@@ -990,6 +991,12 @@ const server = http.createServer(async (req, res) => {
          * A handler that exists and is never reached looks exactly like a
          * missing feature: the /film/locations/:id trap that already cost once.
          */
+        // A location's set, built in Blender from its plates. Before the
+        // /film/locations/:id catch-all, which would otherwise swallow it.
+        if (parts[1] === 'set-builds'
+            || (parts[1] === 'locations' && parts[2] && SET_BUILD_TAILS.includes(parts[3]))) {
+            return await handleSetBuilds(req, res, parts, query);
+        }
         if (parts[1] === 'worlds' || parts[1] === 'world-versions'
             || (parts[1] === 'projects' && parts[3] === 'worlds')
             // The tails come from the route module itself, so one added there

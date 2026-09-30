@@ -31,6 +31,8 @@ const SKIP_DIRS = new Set(['node_modules', 'vendor', '.git', 'data', '.venv']);
 const NOT_FFMPEG = {
     'lib/instrument-render.js|bin': 'probes FluidSynth (`--version`), not ffmpeg',
     'lib/instrument-render.js|fl.bin': 'runs FluidSynth to render MIDI',
+    'lib/set-build.js|bin': 'probes Blender (`--version`), not ffmpeg',
+    'lib/set-build.js|blender.bin': 'runs Blender headless to build a set',
     'tests/instrument-host.test.js|venv': 'starts the Python instrument sidecar',
     "tests/music-bundle.test.js|'tar'": 'unpacks a bundle with tar',
     "tests/music-rights.test.js|'zip'": 'builds an archive with zip',

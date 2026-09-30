@@ -26,13 +26,14 @@ film-engine/
 │   ├── preflight.js        # End-to-end readiness report (CLI, exits 1 if blocked)
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
+│   ├── blender-set.py      # A location's set built headless in Blender from a layout: renders from the plate cameras, or the plates projected on and exported as a GLB
 │   ├── ableton-sidecar.js  # The Ableton sidecar: loopback-only, token-gated, an allowlist of typed AbletonOSC operations (run by hand)
 │   ├── instrument-sidecar.py # The instrument sidecar: supervises plugin workers, loopback and token-gated (run by hand)
 │   ├── instrument-worker.py # One plugin job in its own process: a real main thread for the editor, and a crash costs one job
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (120 migrations)
+│   │   └── migrations/     # SQL migration files (121 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -74,6 +75,7 @@ film-engine/
 │   │   ├── flows.js            # Flow CRUD + graph validation (Phase 1)
 │   │   ├── previs.js           # Previs blocking CRUD + framing solve (Phase 2)
 │   │   ├── worlds.js           # Worlds, versions, calibration, pinning, lock
+│   │   ├── set-builds.js       # A location's set built in Blender from its plates: brief, attempts, comparison sheets, finish
 │   │   ├── generation-jobs.js  # Outstanding generations, and collecting them
 │   │   ├── production-reports.js # Staleness, sides, DOOD, run plan, breakdown summary (reports)
 │   │   ├── mood-board.js       # Look development: references → style preset
@@ -278,6 +280,7 @@ film-engine/
 │   │   ├── providers/topaz.js   # Topaz Labs video upscale: Starlight Precise/Fast, Astra, Proteus — estimate, accept, multipart upload, real cancel
 │   │   ├── providers/magnific.js # Magnific video upscale: creative, turbo, precision and Topaz-via-Magnific, sized by tier to the delivery
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
+│   │   ├── set-build.js         # The agent writes the room from the plates; Blender builds, renders beside the plates, projects and exports it, free
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
 │   │   ├── world-assets.js      # What a world ships, and which parts we keep rather than link
 │   │   ├── cinematography.js    # Facts out, proposal in, validated — the engine never decides
@@ -638,6 +641,7 @@ film-engine/
 │       ├── muapi-upscale.test.js       # Every MuAPI upscaler reaches the delivery size, priced and metered; the selected clip uploaded first; the canvas and an agent can both run it
 │       ├── video-model-options.test.js # Every video model's options offered from its provider's schema, each reaching the request, refused by name outside it, through the preview and the paid call
 │       ├── world-blender-import.test.js # A Blender GLB as the next world version, in metres: walked in Previs, the camera kept through the validated proposal, applied to the card
+│       ├── set-build.test.js   # One layout vocabulary told, accepted and built; refused by field; built headless, compared per plate, finished into a world and a 3D asset
 │       ├── generation-options.test.js # Any connected provider on every generate dialog, its own options each reaching the request, applied at the funnel only to its own provider
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
@@ -4034,6 +4038,19 @@ Higgsfield builds 3D inside Blender (its Scene Builder, driven through an MCP br
 
 **The Camera Operate nudges had never moved a camera.** They sent the move flat with no rationale, and `/direct` takes `{ rationale, changes, apply }`, so every nudge was refused with "the proposal changes nothing", said only on the status bar. Both the nudges and the walk now send the contract, and `tests/world-blender-import.test.js` runs each request through the route's own validator.
 
+### A Location's Set, Built in Blender From Its Plates
+*"The Blender build, done automatically: we might remove the Marble process since Blender is free to do."*
+
+A world used to come from one place, a paid Marble reconstruction. It can now be BUILT, for nothing, on this Mac. The work splits exactly where this engine always splits it (`lib/set-build.js`). Reading a photograph of a diner and saying *the counter runs down the west side, eleven metres, a stool every seventy centimetres* is judgement, and the connected agent IS the model, so no server-side LLM is called. Everything after that judgement is mechanical and belongs to the engine.
+
+**The brief** (`GET /locations/:id/set-build/brief`, `set_build_brief`, free) hands over the location's approved plates (as images, for an agent that has to look at them), its own description and orientation plan, the layout vocabulary, the conventions and whether Blender is installed. **The layout** is a room, its openings (window, door or gap, cut out of a wall rather than boolean-subtracted, so the geometry stays quads the projection can texture), objects (box, cylinder, sphere, with repeats) and one camera per plate, in metres on Blender's axes. `LAYOUT_SCHEMA` is the one statement of it: the brief tells it, `validateLayout` accepts it, and `blender-set.py` builds it, and the test holds all three to the same shapes, walls and opening kinds. A layout is refused by field before Blender runs, and a camera may only stand for a plate the location has.
+
+**An attempt** (`POST /locations/:id/set-builds`, `set_build_render`) is built headless and rendered from every plate camera. Each render is set beside its plate and blended over it, so the agent SEES where a wall is wrong rather than guessing. Attempts are rows in `film_set_builds` (migration 124), never overwritten, because the second layout is written from what the first got wrong. Blender is probed, never bundled (`BLENDER_PATH`, then the standard install paths), and the answer is the file the script wrote rather than its exit code.
+
+**Finishing** (`POST /set-builds/:id/finish`, `set_build_finish`) projects every surface from the plate that sees it most squarely and unoccluded; a surface no plate saw keeps its plain colour rather than a smear. The set is exported as a GLB, made the next version of the location's world (created for the location if it has none, calibrated in metres through `importVersion`) and registered as a 3D model asset. Finishing twice is refused. Previs has a **Build set** button that lists each location's attempts with their sheets, finishes one, and says what to ask Claude for; the page never writes a room itself.
+
+Measured on The Glass Harbour diner, from nothing but its two usable plates: 18 seconds to build and compare, 5 to finish, 32,498 triangles, 6.6 × 3.2 × 11.0 m. The east plate got no camera, because it disagrees with the other two about the room. Marble stays for now; removing it touches the world capability across a dozen registries, and is worth doing once this path has proven itself on more than one location.
+
 ### A Preview Is Built the Way Its Purchase Is
 Parity made the two surfaces agree about what a director decided. It did not make the REQUEST agree with the screen, and that is where the money is: `routes/storyboard.js` called `buildStoryboardPrompt` directly for generate-all, the streaming generate and per-shot regenerate, and `routes/video-gen.js` had its own `loadShotContext` and four direct `buildVideoPayload` calls. Neither file mentioned previs anywhere in those paths, while `/shots/:id/prompt` and the previs previews went through `loadShotContext` + `buildCapabilityPayload` and did carry it.
 
@@ -6229,7 +6246,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (120 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (121 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6285,6 +6302,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (120 migrations).
 - `film_music_automation` — a parameter over time, per track or per clip
 - `film_music_operations` — every generate, separate, bounce, import, push, pull, rebase and approval, with lineage
 - `film_music_daw_links` — one DAW item per Film Engine key per adapter, with the DAW revision last written
+- `film_set_builds` — every attempt at building a location's set in Blender: the layout, the comparison sheets, and the world version and 3D asset it became
 
 ## Epic Status
 
@@ -6689,6 +6707,7 @@ node --test backend/tests/muapi-upscale.test.js
 node --test backend/tests/video-model-options.test.js
 node --test backend/tests/generation-options.test.js
 node --test backend/tests/world-blender-import.test.js
+node --test backend/tests/set-build.test.js
 node --test backend/tests/topaz-upscale.test.js
 node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/setup-models.test.js

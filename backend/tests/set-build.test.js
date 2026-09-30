@@ -1,0 +1,252 @@
+/**
+ * A location's set, built in Blender from its own plates.
+ *
+ * "The Blender build, done automatically: we might remove the Marble process
+ * since Blender is free to do."
+ *
+ *   - the layout vocabulary the brief TELLS the agent is the vocabulary the
+ *     validator ACCEPTS and the Blender script BUILDS: every shape, wall and
+ *     opening kind, in all three;
+ *   - a layout is refused by field, before Blender runs, and writes nothing;
+ *     a camera may only stand for a plate the location has;
+ *   - the brief carries the plates (as images for an agent), the location's
+ *     own words and Blender's presence, and costs nothing;
+ *   - where Blender is installed: an attempt is built headless and rendered
+ *     from every plate camera into a comparison sheet, kept as a row; finishing
+ *     it makes a world (created for the location) with a calibrated version,
+ *     and a 3D model asset; finishing twice is refused;
+ *   - an agent reaches all of it through tools that dispatch through the route;
+ *   - the server routes it before the /film/locations/:id catch-all;
+ *   - Previs offers it, and the page says what to ask rather than guessing a room.
+ */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { spawnSync } = require('child_process');
+
+process.env.FILM_DATA_DIR = path.join(os.tmpdir(), 'film-engine-setbuild-' + crypto.randomUUID().slice(0, 8));
+const { db, generateId } = require('../db/database');
+require('../db/schema').ensureSchema();
+const setBuild = require('../lib/set-build');
+const { handleSetBuilds, LOCATION_TAILS } = require('../routes/set-builds');
+const ROOT = path.join(__dirname, '..', '..');
+const SCRIPT = fs.readFileSync(path.join(ROOT, 'backend', 'blender-set.py'), 'utf8');
+const SPA = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
+const SERVER = fs.readFileSync(path.join(ROOT, 'backend', 'server.js'), 'utf8');
+
+function call(method, urlPath, body) {
+    return new Promise(resolve => {
+        const [p, qs] = urlPath.split('?');
+        const parts = p.split('/').filter(Boolean);
+        const chunks = [];
+        const res = {
+            statusCode: 200, headers: {},
+            writeHead(s, h) { this.statusCode = s; Object.assign(this.headers, h || {}); },
+            setHeader() {}, write(c) { chunks.push(c); },
+            end(c) {
+                if (c) chunks.push(c);
+                const raw = Buffer.concat(chunks.map(x => Buffer.isBuffer(x) ? x : Buffer.from(String(x))));
+                let data; try { data = JSON.parse(raw.toString('utf8')); } catch { data = raw; }
+                resolve({ status: this.statusCode, headers: this.headers, data });
+            },
+        };
+        Promise.resolve(handleSetBuilds({ method, body: body || {} }, res, parts, Object.fromEntries(new URLSearchParams(qs || ''))))
+            .catch(err => resolve({ status: 500, data: { error: err.message } }));
+    });
+}
+
+/** A real PNG at a real size, so the plate is read by its header like any other. */
+function png(file, w, h, color) {
+    const { resolveFfmpeg } = require('../lib/ffmpeg');
+    const ff = resolveFfmpeg();
+    const r = spawnSync(ff.bin, ['-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${color}:s=${w}x${h}`,
+        '-frames:v', '1', file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    assert.equal(r.status, 0, String(r.stderr));
+}
+
+function fixture() {
+    const projectId = generateId();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fe-setbuild-'));
+    db.prepare('INSERT INTO film_projects (id, title, assets_dir) VALUES (?, ?, ?)').run(projectId, 'Set build', dir);
+    const locationId = generateId();
+    db.prepare('INSERT INTO film_locations (id, project_id, name, description) VALUES (?, ?, ?, ?)')
+        .run(locationId, projectId, 'THE DINER', 'A long room. Counter down the west side.');
+    const plates = {};
+    for (const [view, color] of [['', 'gray'], ['south', 'brown']]) {
+        const file = path.join(dir, `plate_${view || 'default'}.png`);
+        png(file, 320, 180, color);
+        const id = generateId();
+        db.prepare(`INSERT INTO film_assets (id, project_id, location_id, asset_type, file_path, file_name, format, metadata)
+                    VALUES (?, ?, ?, 'reference_image', ?, ?, 'png', ?)`)
+            .run(id, projectId, locationId, file, path.basename(file), JSON.stringify(view ? { view } : {}));
+        plates[view || 'default'] = id;
+    }
+    return { projectId, locationId, dir, plates };
+}
+
+function layout(over = {}) {
+    return Object.assign({
+        room: { x0: -2, x1: 2, y0: 0, y1: 6, height: 3, wall_color: '#c9b590',
+            floor: { pattern: 'checker', colors: ['#eeeeee', '#111111'], tile: 0.5 } },
+        openings: [
+            { wall: 'north', kind: 'window', from: -1, to: 1, sill: 1, top: 2.4, mullions: 2 },
+            { wall: 'south', kind: 'door', from: -0.5, to: 0.4, top: 2.1 },
+            { wall: 'east', kind: 'gap', from: 2, to: 3, sill: 0, top: 2.2 },
+        ],
+        objects: [
+            { name: 'Counter', shape: 'box', at: [-1.2, 3, 0], size: [0.7, 4, 1], color: '#b8b8bc', metal: 0.8 },
+            { name: 'Stool', shape: 'cylinder', at: [-0.6, 1.5, 0], radius: 0.2, height: 0.75, color: '#8c0a0a',
+                repeat: { count: 4, step: [0, 0.9, 0] } },
+            { name: 'Pendant', shape: 'sphere', at: [0, 3, 2.5], radius: 0.15, color: '#efe6cf' },
+        ],
+        cameras: [
+            { plate: 'default', position: [0, 0.5, 1.5], yaw: 0, pitch: -2, lens: 24 },
+            { plate: 'south', position: [0, 5.5, 1.6], yaw: 180, lens: 24 },
+        ],
+    }, over);
+}
+
+test('the vocabulary the brief tells, the validator accepts and the script builds is one vocabulary', () => {
+    const told = JSON.stringify(setBuild.LAYOUT_SCHEMA);
+    for (const shape of setBuild.SHAPES) {
+        assert.ok(told.includes(shape), `the brief does not tell the agent about the ${shape} shape`);
+        assert.ok(SCRIPT.includes(`ob['shape'] == '${shape}'`), `the Blender script cannot build a ${shape}`);
+        const one = layout({ objects: [shape === 'box' ? { name: 'x', shape, at: [0, 3, 0], size: [1, 1, 1] }
+            : { name: 'x', shape, at: [0, 3, 0], radius: 0.3, height: 1 }] });
+        assert.deepEqual(setBuild.validateLayout(one, ['default', 'south']), [], `a valid ${shape} is refused`);
+    }
+    for (const side of setBuild.WALL_SIDES) {
+        assert.ok(told.includes(side), `the brief does not name the ${side} wall`);
+        assert.ok(SCRIPT.includes(`'${side}': dict(`), `the Blender script has no ${side} wall`);
+    }
+    for (const kind of setBuild.OPENING_KINDS) {
+        assert.ok(told.includes(kind), `the brief does not tell the agent about a ${kind}`);
+        const one = layout({ openings: [{ wall: 'north', kind, from: -1, to: 1, sill: 0.5, top: 2 }] });
+        assert.deepEqual(setBuild.validateLayout(one, ['default', 'south']), [], `a valid ${kind} is refused`);
+    }
+    // window and door are drawn differently; a gap is a hole with nothing in it.
+    assert.match(SCRIPT, /o\['kind'\] == 'window'/);
+    assert.match(SCRIPT, /o\['kind'\] == 'door'/);
+});
+
+test('a layout is refused by field before Blender runs', () => {
+    const views = ['default', 'south'];
+    assert.deepEqual(setBuild.validateLayout(layout(), views), []);
+    const refusals = [
+        [{ room: undefined }, /room is required/],
+        [{ room: { x0: 0, x1: 0.2, y0: 0, y1: 5, height: 3 } }, /room width/],
+        [{ room: { x0: 0, x1: 4, y0: 0, y1: 5, height: 3, wall_color: 'red' } }, /wall_color must be #rrggbb/],
+        [{ openings: [{ wall: 'up', kind: 'window', from: 0, to: 1 }] }, /openings\[0\]\.wall/],
+        [{ openings: [{ wall: 'north', kind: 'arch', from: 0, to: 1 }] }, /openings\[0\]\.kind/],
+        [{ openings: [{ wall: 'north', kind: 'door', from: 2, to: 1 }] }, /from < to/],
+        [{ objects: [{ name: 'x', shape: 'cone', at: [0, 0, 0] }] }, /shape must be one of/],
+        [{ objects: [{ name: 'x', shape: 'box', at: [0, 0, 0], size: [1, 0, 1] }] }, /size must be/],
+        [{ objects: [{ name: 'x', shape: 'box', at: [0, 0], size: [1, 1, 1] }] }, /at must be/],
+        [{ objects: [{ name: 'x', shape: 'sphere', at: [0, 0, 0], radius: 0.2, repeat: { count: 5000, step: [0, 0, 0] } }] }, /ceiling is/],
+        [{ cameras: [] }, /at least one plate camera/],
+        [{ cameras: [{ plate: 'north', position: [0, 0, 1.5] }] }, /is not one of this location's plates/],
+        [{ cameras: [{ plate: 'south', position: [0, 0, 1.5] }, { plate: 'south', position: [0, 1, 1.5] }] }, /already has a camera/],
+        [{ cameras: [{ plate: 'south', position: [0, 0, 1.5], lens: 2 }] }, /lens must be/],
+    ];
+    for (const [over, want] of refusals) {
+        const errs = setBuild.validateLayout(layout(over), views);
+        assert.ok(errs.some(e => want.test(e)), `expected ${want} for ${JSON.stringify(over)}; got ${JSON.stringify(errs)}`);
+    }
+});
+
+test('the brief carries the plates, the location\'s words and Blender\'s presence, for nothing', async () => {
+    const f = fixture();
+    const r = await call('GET', `/film/locations/${f.locationId}/set-build/brief?images=1`);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(r.data.plates.map(p => p.view).sort(), ['default', 'south']);
+    assert.ok(r.data.plates.every(p => p.width === 320 && p.height === 180));
+    assert.equal(r.data.images.length, 2, 'an agent must be able to LOOK at the plates');
+    assert.ok(r.data.images.every(i => /^data:image\/png;base64,/.test(i.data_uri)));
+    assert.match(r.data.location.description, /Counter down the west side/);
+    assert.equal(typeof r.data.blender.available, 'boolean');
+    assert.match(r.data.cost, /Free/);
+    assert.ok(r.data.instructions.length >= 3);
+    assert.equal((await call('GET', '/film/locations/nope/set-build/brief')).status, 404);
+});
+
+test('a refused layout writes nothing and names the field', async () => {
+    const f = fixture();
+    const r = await call('POST', `/film/locations/${f.locationId}/set-builds`,
+        { layout: layout({ cameras: [{ plate: 'north', position: [0, 0, 1] }] }) });
+    assert.equal(r.status, 400);
+    assert.ok(r.data.errors.some(e => /not one of this location's plates/.test(e)));
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM film_set_builds WHERE location_id = ?').get(f.locationId).n, 0);
+});
+
+const blender = setBuild.resolveBlender();
+test('an attempt is built headless, compared against its plates, and finished into a world and a 3D asset',
+    { skip: blender.available ? false : `Blender is not installed here: ${blender.reason}`, timeout: 300000 }, async () => {
+        const f = fixture();
+        const r = await call('POST', `/film/locations/${f.locationId}/set-builds`, { layout: layout(), note: 'first', with_images: true });
+        assert.equal(r.status, 201, JSON.stringify(r.data).slice(0, 800));
+        assert.equal(r.data.status, 'rendered');
+        assert.equal(r.data.attempt, 1);
+        assert.deepEqual(r.data.sheets.map(s => s.view).sort(), ['default', 'south'], 'one sheet per plate camera');
+        assert.equal(r.data.images.length, 2);
+        const sheet = await call('GET', r.data.sheets[0].url);
+        assert.equal(sheet.status, 200);
+        assert.equal(sheet.headers['Content-Type'], 'image/png');
+        assert.ok(Buffer.isBuffer(sheet.data) && sheet.data.slice(1, 4).toString() === 'PNG');
+        assert.equal((await call('GET', `/film/set-builds/${r.data.id}/files/..%2Fjob_render.json`)).status, 400,
+            'only comparison sheets are served');
+
+        const second = await call('POST', `/film/locations/${f.locationId}/set-builds`, { layout: layout(), note: 'second' });
+        assert.equal(second.data.attempt, 2, 'attempts are kept, never overwritten');
+
+        const done = await call('POST', `/film/set-builds/${r.data.id}/finish`);
+        assert.equal(done.status, 200, JSON.stringify(done.data).slice(0, 800));
+        assert.equal(done.data.status, 'finished');
+        const world = db.prepare('SELECT * FROM film_worlds WHERE id = ?').get(done.data.world.id);
+        assert.equal(world.location_id, f.locationId, 'the world is created FOR the location');
+        const v = db.prepare('SELECT * FROM film_world_versions WHERE id = ?').get(done.data.world_version_id);
+        assert.equal(v.provider, 'blender');
+        assert.equal(v.scale_factor, 1, 'a Blender set arrives calibrated in metres');
+        assert.equal(world.active_version_id, v.id);
+        const asset = db.prepare('SELECT * FROM film_assets WHERE id = ?').get(done.data.asset_id);
+        assert.equal(JSON.parse(asset.metadata).kind, 'model_3d', 'the set is kept as a 3D model asset');
+        assert.ok(fs.existsSync(asset.file_path));
+        assert.ok(done.data.faces.default > 0 && done.data.faces.south > 0, 'both plates were projected onto the set');
+
+        const again = await call('POST', `/film/set-builds/${r.data.id}/finish`);
+        assert.equal(again.status, 409, 'finishing twice would put the same set into the world twice');
+
+        // A second finished attempt is the NEXT version of the same world.
+        const next = await call('POST', `/film/set-builds/${second.data.id}/finish`);
+        assert.equal(next.data.world.id, world.id);
+        assert.equal(next.data.version.version, 2);
+    });
+
+test('an agent reaches it through tools that dispatch through the route, and none calls a model', () => {
+    const tools = require('../lib/mcp-tools');
+    const list = tools.listTools();
+    const names = list.map(t => t.name);
+    for (const n of ['set_build_brief', 'set_build_render', 'set_build_list', 'set_build_get', 'set_build_finish']) {
+        assert.ok(names.includes(n), `${n} is not an agent tool`);
+    }
+    assert.match(fs.readFileSync(path.join(ROOT, 'backend', 'lib', 'mcp-tools.js'), 'utf8'),
+        /name: 'set_build_render',\s*handler: handleSetBuilds/);
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'backend', 'lib', 'set-build.js'), 'utf8'), /llm-client/,
+        'reading the plates is the connected agent\'s job, never a server-side model');
+});
+
+test('the server routes it ahead of the /film/locations/:id catch-all', () => {
+    const at = SERVER.indexOf('handleSetBuilds(req, res, parts, query)');
+    const catchAll = SERVER.indexOf("if (parts[1] === 'locations') {");
+    assert.ok(at > 0 && catchAll > 0 && at < catchAll, 'set-build routes must be dispatched before the location handler');
+    assert.deepEqual([...LOCATION_TAILS].sort(), ['set-build', 'set-builds']);
+});
+
+test('Previs offers it, and the page says what to ask instead of guessing a room', () => {
+    assert.match(SPA, /onclick="setBuildOpen\(\)"[^>]*>Build set</);
+    assert.match(SPA, /set_build_brief, then set_build_render/);
+    assert.match(SPA, /\/set-builds\/\$\{buildId\}\/finish/);
+    assert.match(SPA, /function setBuildHtml/);
+});

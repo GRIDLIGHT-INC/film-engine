@@ -5071,7 +5071,13 @@ table, .render-table { border-radius:12px; overflow:hidden; }
 .pv-float { position:absolute; top:10px; display:flex; align-items:center; gap:6px; z-index:5; }
 .pv-float-l { left:10px; }
 .pv-float-r { right:10px; }
-.pv-walkbar { top:auto; bottom:10px; left:10px; right:10px; flex-wrap:wrap; pointer-events:auto; }
+.sb-attempt { border: 1px solid var(--border, #333); border-radius: 6px; padding: 8px; margin: 8px 0; }
+        .sb-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .sb-sheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-top: 6px; }
+        .sb-sheets figure { margin: 0; } .sb-sheets img { width: 100%; cursor: zoom-in; border-radius: 4px; }
+        .sb-sheets figcaption { font-size: 11px; opacity: .7; }
+        .sb-ask { display: flex; gap: 8px; align-items: center; } .sb-ask code { flex: 1; font-size: 12px; white-space: normal; }
+        .pv-walkbar { top:auto; bottom:10px; left:10px; right:10px; flex-wrap:wrap; pointer-events:auto; }
 .pv-walkbar:empty { display:none; }
 .pv-seg { display:flex; gap:2px; padding:3px; border-radius:10px; background:rgba(21,21,23,0.9);
   border:1px solid rgba(255,255,255,0.08); }
@@ -16512,6 +16518,7 @@ THREE.GLTFLoader = GLTFLoader;
             <button class="pv-btn" onclick="worldScoreComplexity()">Risk <span id="weRiskGrade">—</span></button>
             <button class="pv-btn" onclick="worldCheckExport()">Handover <span id="weExportState">—</span></button>
             ${worldRegionOn('create-spatial-world') ? '<button class="pv-btn" onclick="worldOpenCreate()">New world</button>' : ''}
+            <button class="pv-btn" onclick="setBuildOpen()" title="Build this location's set in Blender from its plates. Free.">Build set</button>
           </div>
           ${worldDecisionsHtml()}
           <div class="pv-grid">
@@ -17791,6 +17798,76 @@ THREE.GLTFLoader = GLTFLoader;
         const n = worldOverlays().filter(o => on(o.id)).length;
         const badge = document.getElementById('weOvCount');
         if (badge) badge.textContent = String(n);
+    }
+
+    /*
+     * A location's set, built in Blender from its own plates (lib/set-build.js).
+     *
+     * The page cannot write the layout: reading a photograph of a room and
+     * saying where the counter is is judgement, and the connected agent is the
+     * model here. So this modal says exactly what to ask, shows every attempt
+     * the agent has rendered with its comparison sheets, and finishes one:
+     * projecting, exporting and importing are mechanical and free, so a person
+     * can press that button as well as an agent can.
+     */
+    const SETBUILD = { locationId: null };
+    async function setBuildOpen(locationId) {
+        let locs = [];
+        try { locs = (await api(`/projects/${state.currentProject.id}/locations`)).locations || []; } catch (_) { locs = []; }
+        const pick = locationId || SETBUILD.locationId || (WORLD.world && WORLD.world.location_id) || (locs[0] && locs[0].id);
+        SETBUILD.locationId = pick;
+        const loc = locs.find(l => l.id === pick);
+        let brief = null, builds = [];
+        if (pick) {
+            try { brief = await api(`/locations/${pick}/set-build/brief`); } catch (_) { brief = null; }
+            try { builds = (await api(`/locations/${pick}/set-builds`)).builds || []; } catch (_) { builds = []; }
+        }
+        showModalHtml('setBuildModal', setBuildHtml(locs, loc, brief, builds));
+        showModal('setBuildModal');
+    }
+    function setBuildHtml(locs, loc, brief, builds) {
+        const opts = locs.map(l => `<option value="${esc(l.id)}"${loc && l.id === loc.id ? ' selected' : ''}>${esc(l.name)}</option>`).join('');
+        const plates = brief ? brief.plates : [];
+        const blender = brief ? brief.blender : null;
+        const ask = loc ? `Build the set for "${loc.name}" from its plates (set_build_brief, then set_build_render).` : '';
+        const attempts = builds.map(b => `
+            <div class="sb-attempt">
+              <div class="sb-head"><b>Attempt ${b.attempt}</b> <span class="pv-chip">${esc(b.status)}</span>
+                ${b.note ? `<span class="text-sm text-muted">${esc(b.note)}</span>` : ''}
+                <span style="flex:1"></span>
+                ${b.status === 'rendered' ? `<button class="btn btn-primary btn-sm" onclick="setBuildFinish('${b.id}', this)">Finish → world + 3D asset</button>` : ''}
+                ${b.status === 'finished' ? '<span class="text-sm">In the world, and kept as a 3D model</span>' : ''}
+              </div>
+              ${b.error ? `<p class="text-sm" style="color:var(--danger,#e66)">${esc(b.error)}</p>` : ''}
+              <div class="sb-sheets">${b.sheets.map(sh => `<figure><img src="${API_BASE}${sh.url}" alt="${esc(sh.view)}" loading="lazy"
+                    onclick="openPlateViewer(this.src, ${jsAttr('Attempt ' + b.attempt + ' · ' + sh.view)})"><figcaption>${esc(sh.view)}: plate | render, blended below</figcaption></figure>`).join('')}</div>
+            </div>`).join('');
+        return `
+            <h3>Build the set in Blender</h3>
+            <p class="text-sm text-muted">Free: Blender runs on this Mac. Claude reads the plates and writes the room;
+               the engine builds it, renders it from each plate's camera beside the plate, and, when you finish an
+               attempt, paints the plates onto it and makes it this location's world and a 3D model.</p>
+            <div class="form-group"><label>Location</label>
+              <select onchange="setBuildOpen(this.value)">${opts}</select></div>
+            <p class="text-sm">${plates.length} plate${plates.length === 1 ? '' : 's'}${plates.length ? ': ' + plates.map(p => esc(p.view)).join(', ') : ' (generate or upload one first)'}
+               · Blender ${blender && blender.available ? esc(blender.version) : `<b>not found</b> (${esc((blender && blender.reason) || '')})`}</p>
+            ${ask ? `<div class="form-group"><label>Ask Claude</label>
+              <div class="sb-ask"><code>${esc(ask)}</code>
+              <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard && navigator.clipboard.writeText(${jsAttr(ask)}); setStatus('Copied')">Copy</button></div></div>` : ''}
+            <div class="sb-attempts">${attempts || '<p class="text-sm text-muted">No attempts yet.</p>'}</div>
+            <div class="btn-row"><button class="btn btn-secondary" onclick="setBuildOpen()">Refresh</button>
+              <button class="btn btn-secondary" onclick="closeModal('setBuildModal')">Close</button></div>`;
+    }
+    async function setBuildFinish(buildId, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = 'Painting the plates on and exporting…'; }
+        try {
+            const r = await api(`/set-builds/${buildId}/finish`, { method: 'POST' });
+            setStatus(`Set finished: ${r.world.name} v${r.version.version}, and kept as a 3D model. Pin a shot to it to walk it.`);
+            await setBuildOpen();
+        } catch (err) {
+            setStatus(err.message, true);
+            if (btn) { btn.disabled = false; btn.textContent = 'Finish → world + 3D asset'; }
+        }
     }
 
     function worldOpenCreate() {

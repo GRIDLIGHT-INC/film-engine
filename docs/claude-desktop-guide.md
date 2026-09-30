@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**410 tools, 82 families.** Everything the app can do, you can ask for in a
+**415 tools, 83 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -999,6 +999,24 @@ no Draco) into the project's own folder and pass its path. It becomes the next
 version of the world, drawn textured in Previs's Look view, and it arrives in
 metres, so it needs no `world_calibrate`. Pin a shot to it with `world_pin_shot`;
 the camera kept in Previs is applied to the shot's card like any other.
+
+### A location's set, built in Blender from its plates
+
+`set_build_brief` · `set_build_render` · `set_build_list` · `set_build_get` ·
+`set_build_finish`
+
+The free way to make a world, and the one that needs no provider: YOU read the
+plates and write the room; Blender, on this Mac, builds it. `set_build_brief`
+hands you the plates as pictures, the location's own description, the layout
+vocabulary (room, openings, objects, one camera per plate) and whether Blender is
+installed. Write a layout in metres and call `set_build_render`: the set is built
+headless and rendered from every plate camera, and you get one sheet per plate,
+the plate beside your render and the two blended, so you can SEE where it is
+wrong. Fix the cameras first, then the geometry, and render again; every attempt
+is kept. `set_build_finish` paints each plate onto the surfaces it sees, makes the
+set the next version of the location's world (creating the world if there is
+none) and keeps it as a 3D model asset. All of it is FREE. Surfaces no plate saw
+keep their plain colour; another plate from a new position fills them.
 
 ### The geometric plate
 

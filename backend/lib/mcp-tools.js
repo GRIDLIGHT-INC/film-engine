@@ -32,6 +32,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // flows engine alone left an agent able to run generation and unable to give it
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
+const { handleSetBuilds } = require('../routes/set-builds');
 const { handleBackups } = require('../routes/backups');
 const { handlePostProduction } = require('../routes/post-production');
 const { handleAppSettings } = require('../routes/app-settings');
@@ -462,6 +463,58 @@ const PRODUCTION_TOOLS = [
             source: { type: 'string', description: 'blender (default) | glb' },
             reason: { type: 'string', description: 'What changed in this version of the set.' },
         }, required: ['world_id'],
+    },
+    {
+        name: 'set_build_brief',
+        handler: handleSetBuilds, method: 'GET',
+        path: a => `/film/locations/${a.location_id}/set-build/brief?images=1`,
+        description:
+            'Everything needed to build a location\'s set in Blender from its own plates: the plates themselves '
+            + '(as images), the location\'s description and orientation plan, the layout vocabulary, the '
+            + 'conventions, whether Blender is installed, and the last attempt\'s layout to iterate from. FREE. '
+            + 'YOU write the layout from it (the engine never guesses a room); then call set_build_render.',
+        schema: { location_id: { type: 'string' } }, required: ['location_id'],
+    },
+    {
+        name: 'set_build_render',
+        handler: handleSetBuilds, method: 'POST',
+        path: a => `/film/locations/${a.location_id}/set-builds`,
+        body: a => ({ layout: a.layout, note: a.note, with_images: true }),
+        description:
+            'Build a layout headless in Blender and render it from every plate camera. FREE: Blender runs on '
+            + 'this machine. Returns one sheet per plate (the plate, the render, and the two blended) as images, '
+            + 'so you can SEE where the set is wrong. Fix the cameras first (position, yaw, pitch, lens), then '
+            + 'the geometry, and render again; every attempt is kept. A refused layout names the field.',
+        schema: {
+            location_id: { type: 'string' },
+            layout: { type: 'object', description: 'room, openings, objects, cameras: see set_build_brief.schema.' },
+            note: { type: 'string', description: 'What changed in this attempt.' },
+        }, required: ['location_id', 'layout'],
+    },
+    {
+        name: 'set_build_list',
+        handler: handleSetBuilds, method: 'GET',
+        path: a => `/film/locations/${a.location_id}/set-builds`,
+        description: 'Every set-build attempt for a location, newest first, with its status and comparison sheets. FREE.',
+        schema: { location_id: { type: 'string' } }, required: ['location_id'],
+    },
+    {
+        name: 'set_build_get',
+        handler: handleSetBuilds, method: 'GET',
+        path: a => `/film/set-builds/${a.build_id}`,
+        description: 'One set-build attempt: its layout, status, comparison sheets and, once finished, its world version and 3D asset. FREE.',
+        schema: { build_id: { type: 'string' } }, required: ['build_id'],
+    },
+    {
+        name: 'set_build_finish',
+        handler: handleSetBuilds, method: 'POST',
+        path: a => `/film/set-builds/${a.build_id}/finish`,
+        description:
+            'Finish a rendered attempt: every surface is camera-projected from the plate that sees it, the set '
+            + 'is exported as a GLB, made the next version of the location\'s world (the world is created if the '
+            + 'location has none), and kept as a 3D model asset. FREE. Earlier versions stay, and no shot is '
+            + 'moved: pin one with world_pin_shot to walk the set in Previs.',
+        schema: { build_id: { type: 'string' } }, required: ['build_id'],
     },
     {
         name: 'world_lock',
