@@ -3077,9 +3077,10 @@ const PRODUCTION_TOOLS = [
             + 'book, generates nothing. Counts come from the project: the shots and their lengths, '
             + 'else the screenplay’s measured screen time cut into shots, else the target length. '
             + 'Pass resolution, image_provider/image_model or video_provider/video_model to see what '
-            + 'another choice costs; `alternatives` prices the same work on every connected generator. '
-            + 'First attempts only: raise takes_* for regenerations. Voice, music and upscaling are not '
-            + 'included.',
+            + 'another choice costs; `alternatives` prices the same work on every generator. ATTEMPTS ARE '
+            + 'COUNTED: by default 3.5 per plate and frame and 2.5 per clip (usually 3-4 per picture, '
+            + 'sometimes 6; 2-3 per clip), with `range` giving the film at the low, likely and high counts '
+            + 'and at one attempt. takes_* overrides them. Voice, music and upscaling are not included.',
         path: a => {
             const keys = ['resolution', 'image_provider', 'image_model', 'video_provider', 'video_model',
                 'character_views', 'location_views', 'prop_views', 'takes_plates', 'takes_storyboard',
@@ -3098,9 +3099,9 @@ const PRODUCTION_TOOLS = [
             character_views: { type: 'number', description: 'Pictures per character (default 4: front, two profiles, back).' },
             location_views: { type: 'number', description: 'Pictures per location (default 4).' },
             prop_views: { type: 'number', description: 'Pictures per prop (default 1).' },
-            takes_plates: { type: 'number', description: 'Attempts per plate (default 1).' },
-            takes_storyboard: { type: 'number', description: 'Attempts per frame (default 1).' },
-            takes_footage: { type: 'number', description: 'Attempts per clip (default 1).' },
+            takes_plates: { type: 'number', description: 'Attempts per plate (default 3.5: usually 3-4, sometimes 6).' },
+            takes_storyboard: { type: 'number', description: 'Attempts per frame (default 3.5).' },
+            takes_footage: { type: 'number', description: 'Attempts per clip (default 2.5: usually 2-3).' },
             shot_seconds: { type: 'number', description: 'Average shot length when the film has no shots yet (default 4).' },
             runtime_seconds: { type: 'number', description: 'The running time, overriding what the screenplay measures.' },
         },

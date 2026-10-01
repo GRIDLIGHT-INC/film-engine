@@ -40,6 +40,17 @@ const DEFAULT_VIEWS = Object.freeze({
     prop: 1,        // the product plate; a prop sheet can hold more
 });
 const DEFAULT_SHOT_SECONDS = 4;
+/*
+ * ATTEMPTS, not one try. "The estimate should take into consideration the
+ * number of attempts per image, usually 3-4 and sometimes 6, and footage 2-3."
+ * A first-attempt figure is the number nobody ever pays. The likely figure uses
+ * the middle of the usual range; the range runs from the low end to the high.
+ */
+const ATTEMPTS = Object.freeze({
+    image: Object.freeze({ low: 3, likely: 3.5, high: 6 }),
+    footage: Object.freeze({ low: 2, likely: 2.5, high: 3 }),
+});
+const attemptsFor = c => (c === 'footage' ? ATTEMPTS.footage : ATTEMPTS.image);
 const CATEGORIES = Object.freeze(['plates', 'storyboard', 'footage']);
 
 const round2 = n => Math.round(n * 100) / 100;
@@ -294,11 +305,20 @@ function estimateProduction(projectId, opts = {}) {
     const config = require('./provider-config').providerConfigOf(work.project);
     const raster = resolveRaster(opts.resolution, work.project.target_resolution);
     const takes = {};
-    for (const c of CATEGORIES) takes[c] = num(opts.takes && opts.takes[c], 1);
+    for (const c of CATEGORIES) takes[c] = num(opts.takes && opts.takes[c], attemptsFor(c).likely);
 
     const imageGen = chooseGenerator('image', config, { provider: opts.image_provider, model: opts.image_model });
     const videoGen = chooseGenerator('video', config, { provider: opts.video_provider, model: opts.video_model });
     const priced = priceWork(work, imageGen, videoGen, raster, takes);
+    // One attempt of everything, so the range is the same arithmetic at other counts.
+    const once = priceWork(work, imageGen, videoGen, raster, { plates: 1, storyboard: 1, footage: 1 });
+    const at = which => {
+        const t = {};
+        for (const c of CATEGORIES) t[c] = round2(once.totals[c] * attemptsFor(c)[which]);
+        t.total = round2(t.plates + t.storyboard + t.footage);
+        return t;
+    };
+    const range = { low: at('low'), likely: at('likely'), high: at('high'), first_attempt: once.totals };
 
     // What the same work costs on every other connected generator, at this size.
     const alternatives = { image: [], video: [] };
@@ -350,6 +370,8 @@ function estimateProduction(projectId, opts = {}) {
         },
         runtime: work.runtime,
         takes,
+        attempts: ATTEMPTS,
+        range,
         lines: priced.lines,
         totals: priced.totals,
         priced: priced.priced,
@@ -357,11 +379,14 @@ function estimateProduction(projectId, opts = {}) {
         excluded,
         notes: [
             ...priced.notes,
-            'First attempts at published list rates. Raise "takes" for the regenerations you expect; a refused generation is not billed.',
+            `Counted at ${takes.plates} attempts per plate, ${takes.storyboard} per frame and ${takes.footage} per clip. `
+                + `Usually ${ATTEMPTS.image.low}-4 attempts per picture (sometimes ${ATTEMPTS.image.high}) and `
+                + `${ATTEMPTS.footage.low}-${ATTEMPTS.footage.high} per clip: the range runs from the low end to the high. `
+                + 'Published list rates; a refused generation is not billed.',
             'Plates, frames and footage only: voice, music, effects and upscaling are not in this figure.',
         ],
     };
 }
 
-module.exports = { estimateProduction, countWork, chooseGenerator, priceImage, priceClip, resolveRaster,
+module.exports = { ATTEMPTS, estimateProduction, countWork, chooseGenerator, priceImage, priceClip, resolveRaster,
     DEFAULT_VIEWS, DEFAULT_SHOT_SECONDS, CATEGORIES };

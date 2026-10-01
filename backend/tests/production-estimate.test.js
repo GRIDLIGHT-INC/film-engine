@@ -70,7 +70,7 @@ function project({ shots = [], characters = 1, locations = 1, props = 1, target 
 
 test('the work is counted from the project, and priced through the meters', () => {
     const id = project({ shots: [4000, 6000], characters: 2, locations: 1, props: 3 });
-    const d = E.estimateProduction(id, { alternatives: false });
+    const d = E.estimateProduction(id, { takes: { plates: 1, storyboard: 1, footage: 1 }, alternatives: false });
     assert.equal(d.generators.image.provider, 'testimg');
     assert.equal(d.generators.video.provider, 'testvid');
     const plates = d.lines.filter(l => l.category === 'plates');
@@ -87,15 +87,15 @@ test('the work is counted from the project, and priced through the meters', () =
 
 test('a resolution or a generator changed here changes the figure exactly as the bill would', () => {
     const id = project({ shots: [5000] });
-    const base = E.estimateProduction(id, { alternatives: false });
-    const k4 = E.estimateProduction(id, { resolution: '4k_uhd', alternatives: false });
+    const base = E.estimateProduction(id, { takes: { plates: 1, storyboard: 1, footage: 1 }, alternatives: false });
+    const k4 = E.estimateProduction(id, { resolution: '4k_uhd', takes: { plates: 1, storyboard: 1, footage: 1 }, alternatives: false });
     assert.equal(k4.resolution.width, 3840);
     assert.equal(k4.totals.footage, 5, '5 s at the 4K rate');
     assert.ok(k4.totals.footage > base.totals.footage, 'the resolution reached the price');
-    const hi = E.estimateProduction(id, { image_model: 'img-hi', alternatives: false });
+    const hi = E.estimateProduction(id, { image_model: 'img-hi', takes: { plates: 1, storyboard: 1, footage: 1 }, alternatives: false });
     assert.ok(hi.totals.plates > base.totals.plates && hi.totals.storyboard > base.totals.storyboard, 'the model reached the price');
     // Takes multiply; views change the count.
-    const more = E.estimateProduction(id, { takes: { footage: 3 }, views: { character: 1 }, alternatives: false });
+    const more = E.estimateProduction(id, { takes: { plates: 1, storyboard: 1, footage: 3 }, views: { character: 1 }, alternatives: false });
     assert.equal(more.totals.footage, base.totals.footage * 3);
     assert.equal(more.lines.find(l => l.kind === 'character').count, 1);
 });
@@ -165,4 +165,26 @@ test('the set is the registry\'s: every plate kind, and every image and video ad
             assert.ok(listed, `${cap} adapter ${a.id} is neither priced nor named as excluded`);
         }
     }
+});
+
+test('attempts: usually 3-4 per picture (sometimes 6) and 2-3 per clip, counted by default and as a range', () => {
+    assert.deepEqual(E.ATTEMPTS.image, { low: 3, likely: 3.5, high: 6 });
+    assert.deepEqual(E.ATTEMPTS.footage, { low: 2, likely: 2.5, high: 3 });
+    const id = project({ shots: [4000, 6000], characters: 2, locations: 1, props: 3 });
+    const d = E.estimateProduction(id, { alternatives: false });
+    assert.deepEqual(d.takes, { plates: 3.5, storyboard: 3.5, footage: 2.5 }, 'the default is not the usual attempts');
+    // One attempt: plates $1.50, frames $0.20, footage $2.00 (the first test).
+    assert.deepEqual(d.range.first_attempt, { plates: 1.5, storyboard: 0.2, footage: 2, total: 3.7 });
+    assert.equal(d.totals.plates, 5.25); assert.equal(d.totals.storyboard, 0.7); assert.equal(d.totals.footage, 5);
+    assert.deepEqual(d.range.likely, d.totals);
+    assert.deepEqual(d.range.low, { plates: 4.5, storyboard: 0.6, footage: 4, total: 9.1 });
+    assert.deepEqual(d.range.high, { plates: 9, storyboard: 1.2, footage: 6, total: 16.2 });
+    // A choice made here wins over the default, and the range still says the usual spread.
+    const mine = E.estimateProduction(id, { takes: { plates: 6 }, alternatives: false });
+    assert.equal(mine.totals.plates, 9);
+    assert.deepEqual(mine.range.high, d.range.high);
+    // The page shows the range and lets attempts be set in half steps.
+    const HTML = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
+    assert.ok(/d\.range\.low\.total/.test(HTML) && /d\.range\.high\.total/.test(HTML), 'the tab does not show the range');
+    assert.ok(/'takes_plates', 'Attempts per plate', d\.takes\.plates, '[^']*', 0\.5\)/.test(HTML), 'attempts cannot be set in half steps');
 });

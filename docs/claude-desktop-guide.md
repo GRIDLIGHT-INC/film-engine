@@ -1274,8 +1274,9 @@ measured screen time when there are no shots yet) and prices it on the
 generators this project would use, at its resolution. Pass another `resolution`
 or another image or video provider to see the difference; the answer
 also lists the same work on every connected generator, and says when one cannot
-deliver the size asked for. Free, first attempts only (raise `takes_*`), and
-voice, music and upscaling are not in it. The Budget page's **Film Estimate**
+deliver the size asked for. It counts the usual attempts (3-4 per picture,
+sometimes 6; 2-3 per clip) and gives the range from the low to the high count
+beside one attempt. Free; voice, music and upscaling are not in it. The Budget page's **Film Estimate**
 tab is the same estimate.
 
 `spend_backfill` reconstructs what a project spent *before* metering existed, by
