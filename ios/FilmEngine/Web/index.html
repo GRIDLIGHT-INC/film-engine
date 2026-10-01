@@ -5252,7 +5252,8 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 .pv-toolrail { position:absolute; z-index:8; left:14px; top:14px; display:flex; flex-direction:column; gap:2px; padding:6px;
   border:1px solid #2a2d36; border-radius:14px; background:rgba(16,17,23,.90); }
 .pv-tool { width:62px; height:56px; display:flex; align-items:center; justify-content:center; border:0; border-radius:10px;
-  background:transparent; color:#b9bbc6; font-size:11px; font-weight:600; cursor:pointer; }
+  flex-direction:column; gap:4px; background:transparent; color:#b9bbc6; font-size:11px; font-weight:600; cursor:pointer; }
+.pv-icon { display:block; flex:none; }
 .pv-tool:hover, .pv-tool.active { background:#2e3343; color:#fff; }
 .pv-tool.active[title*="furniture"] { background:#1e6b58; }
 .pv-floors { position:absolute; z-index:8; right:14px; top:54px; width:210px; display:flex; flex-direction:column; gap:2px;
@@ -17138,7 +17139,7 @@ THREE.GLTFLoader = GLTFLoader;
     function worldToolRailHtml() {
         const active = SETEDIT.on ? 'edit' : WALK.on ? 'walk' : WORLD.tab === 'light' ? 'lights' : (WORLD.tool || 'select');
         const tool = (id, label, title) => `<button class="pv-tool${active === id ? ' active' : ''}"
-            onclick="worldToolSelect('${id}')" title="${esc(title)}">${label}</button>`;
+            onclick="worldToolSelect('${id}')" title="${esc(title)}">${pvIcon(id, 22)}<span>${label}</span></button>`;
         return `<div class="pv-toolrail" role="toolbar" aria-label="Previs tools">
             ${tool('select', 'Select', 'Select and frame the shot')}
             ${tool('walk', 'Walk', 'Walk the set with the keyboard and mouse')}
@@ -17146,6 +17147,27 @@ THREE.GLTFLoader = GLTFLoader;
             ${tool('edit', 'Edit set', 'Move, turn or remove furniture in the built set')}
             ${tool('lights', 'Lights', 'Open the lighting inspector')}
         </div>`;
+    }
+
+    /* The approved Previs artifact uses one quiet line-icon family throughout.
+       Keeping the paths here prevents platform emoji and font glyphs from
+       changing the controls' meaning or alignment. */
+    const PV_ICONS = Object.freeze({
+        select: '<path d="M5 3l14 8-6 2-2 6z"></path>',
+        walk: '<circle cx="12" cy="12" r="3"></circle><path d="M2 12h3M19 12h3M12 2v3M12 19v3"></path>',
+        people: '<circle cx="10" cy="6" r="3"></circle><path d="M4 21v-3a6 6 0 0 1 12 0v3M19 8v6M16 11h6"></path>',
+        edit: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"></path>',
+        lights: '<path d="M9 18h6M10 21h4"></path><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"></path>',
+        'chevron-down': '<path d="M6 9l6 6 6-6"></path>',
+        'chevron-up': '<path d="M6 15l6-6 6 6"></path>',
+        'look-around': '<path d="M21 12a9 4 0 1 1-4-3.3"></path><path d="M17 5v4h4"></path>',
+        more: '<circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none"></circle>',
+        play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"></path>',
+        timeline: '<path d="M4 7h16M4 12h16M4 17h10"></path>',
+    });
+    function pvIcon(name, size = 18) {
+        return `<svg class="pv-icon" data-pv-icon="${esc(name)}" width="${size}" height="${size}" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PV_ICONS[name] || ''}</svg>`;
     }
 
     function worldDecisionSummaryHtml() {
@@ -17169,7 +17191,7 @@ THREE.GLTFLoader = GLTFLoader;
 
     function worldMoreMenuHtml() {
         return `<details class="pv-more">
-          <summary class="pv-btn pv-more-button" aria-label="More actions">•••</summary>
+          <summary class="pv-btn pv-more-button" aria-label="More actions">${pvIcon('more')}</summary>
           <div class="pv-more-menu" role="menu" aria-label="More actions">
             <span class="pv-menu-label">This shot</span>
             <button class="pv-more-item" onclick="worldRenderPlate()"><b>Render the frame</b><span>The board frame from this camera</span></button>
@@ -17193,7 +17215,7 @@ THREE.GLTFLoader = GLTFLoader;
         return `<details class="pv-shot-picker">
           <summary class="pv-btn"><span class="pv-shot-badge">${esc(shot ? shot.shot_code : (WORLD.scout ? 'SET' : '—'))}</span>
             <span class="pv-shot-current">${esc(shot ? (shot.location || shot.description || 'Shot') : (WORLD.scout ? WORLD.scout.name : 'Choose a shot'))}</span>
-            <span class="pv-dim">${esc(WORLD.version ? 'set v' + WORLD.version.version : '')}</span></summary>
+            <span class="pv-dim">${esc(WORLD.version ? 'set v' + WORLD.version.version : '')}</span>${pvIcon('chevron-down', 16)}</summary>
           <div class="pv-shot-menu">${shots.length ? shots.map(sh => `<button class="pv-more-item${sh.id === WORLD.shotId ? ' active' : ''}"
               onclick="worldRailSelect('${sh.id}')"><b>${esc(sh.shot_code || '')}</b><span>${esc(sh.location || sh.description || '')}</span></button>`).join('')
               : '<span class="pv-dim">No shots yet — break the screenplay down first.</span>'}</div>
@@ -17208,12 +17230,12 @@ THREE.GLTFLoader = GLTFLoader;
           </div>`;
         const hasMove = (WORLD.moves || []).length || (WORLD.keys || []).length;
         return `<div class="pv-movedock">
-          <button class="pv-play" onclick="worldPlayMove()" aria-label="Play the move">▶</button>
+          <button class="pv-play" onclick="worldPlayMove()" aria-label="Play the move">${pvIcon('play')}</button>
           <span class="pv-time">${((WORLD.t || 0) * dur).toFixed(1)} <span>/ ${dur.toFixed(1)} s</span></span>
           <div class="pv-move-summary"><span class="pv-playhead" style="left:${Math.round((WORLD.t || 0) * 100)}%"></span>
             ${hasMove ? '<span>Camera move and authored keys</span>' : '<span>No move yet — the camera holds. Add a key to start one.</span>'}</div>
           <button class="pv-btn" onclick="worldAddKey()">+ Key</button>
-          <button class="pv-btn" onclick="worldToggleTimeline()">Timeline</button>
+          <button class="pv-btn" onclick="worldToggleTimeline()">${pvIcon('timeline', 16)}Timeline${pvIcon('chevron-up', 16)}</button>
           <canvas id="wePathCanvas" class="we-path pv-path-hidden"></canvas>
         </div>`;
     }
@@ -17235,7 +17257,7 @@ THREE.GLTFLoader = GLTFLoader;
           <header class="pv-topbar">
             ${worldShotPickerHtml(shots)}
             <div class="pv-view-switch"><div class="pv-seg">${worldModeButtonsHtml()}</div>${worldLookAroundButtonHtml()}
-              <button class="pv-btn pv-quiet" onclick="worldToggleOverlayMenu()">Overlays</button></div>
+              <button class="pv-btn pv-quiet" onclick="worldToggleOverlayMenu()">Overlays${pvIcon('chevron-down', 16)}</button></div>
             <div class="pv-top-actions">${worldDecisionSummaryHtml()}${worldMoreMenuHtml()}</div>
           </header>
           <div class="pv-grid">
@@ -17405,7 +17427,7 @@ THREE.GLTFLoader = GLTFLoader;
         const off = info && !info.mesh && info.enabled && !info.panorama && !info.splats.length
             ? ' disabled title="This world version has neither a splat nor a panorama"' : '';
         return `<button class="pv-btn pv-quiet${worldViewMode() === 'pano' ? ' active' : ''}"${off}
-                    onclick="worldSetViewMode('pano')">Look around</button>`;
+                    onclick="worldSetViewMode('pano')">${pvIcon('look-around')}Look around</button>`;
     }
 
     async function worldSetViewMode(id) {
@@ -36531,15 +36553,17 @@ ${fountainText.slice(0, 50000)}`;
      * choose the class cannot get that wrong.
      */
     function showModalHtml(id, html) {
+        const structured = /class=["'][^"']*\bmodal-(?:header|body)\b/.test(html);
+        const content = structured ? html : `<div class="modal-body">${html}</div>`;
         let modal = document.getElementById(id);
         if (!modal) {
             modal = document.createElement('div');
             modal.id = id;
             modal.className = 'modal-overlay';
-            modal.innerHTML = '<div class="modal">' + html + '</div>';
+            modal.innerHTML = '<div class="modal">' + content + '</div>';
             document.body.appendChild(modal);
         } else {
-            modal.querySelector('.modal').innerHTML = html;
+            modal.querySelector('.modal').innerHTML = content;
         }
         // Delegated, so a modal built at run time stacks like every other one.
         showModal(id);

@@ -23,10 +23,24 @@ test('Previs renders the approved view-first regions and keeps every tool reacha
     for (const label of ['Select', 'Walk', 'People', 'Edit set', 'Lights']) {
         assert.match(html, new RegExp(`>${label}<`), `${label} is missing from the in-view tool rail`);
     }
+    for (const icon of ['select', 'walk', 'people', 'edit', 'lights']) {
+        assert.match(html, new RegExp(`data-pv-icon="${icon}"`), `${icon} lost the icon from the approved design`);
+    }
+    for (const icon of ['chevron-down', 'look-around', 'more', 'play', 'timeline']) {
+        assert.match(html, new RegExp(`data-pv-icon="${icon}"`), `${icon} is missing from the approved controls`);
+    }
     for (const label of ['Render the frame', 'Match a reference', 'Risk check', 'Build or rebuild the set',
         'Other versions of this set', 'New world', 'Handover to the crew', 'Export previz video']) {
         assert.match(html, new RegExp(`>${label}<`), `${label} is missing from More`);
     }
+});
+
+test('dynamic modal content receives the standard padded body unless it already supplies modal structure', () => {
+    const at = PAGE.indexOf('function showModalHtml(');
+    assert.ok(at > 0, 'showModalHtml is missing');
+    const src = PAGE.slice(at, PAGE.indexOf('\n    }', at) + 6);
+    assert.match(src, /modal-body/, 'raw dynamic modals still bypass the standard 20px body padding');
+    assert.match(src, /modal-(?:header|body)/, 'structured modals would be double-wrapped');
 });
 
 test('the move starts as a compact dock and can open the full timeline drawer', () => {
