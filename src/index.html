@@ -5183,6 +5183,9 @@ body.pv-hide-bottom .pv-console { height:calc(100vh - 150px); }
 .pv-stagebar { left:10px; right:10px; bottom:10px; top:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; pointer-events:auto; }
 .pv-stagebar:empty { display:none; }
 .pv-stage-name { height:28px; min-width:220px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; padding:0 8px; }
+.pv-num { width:52px; height:26px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; padding:0 6px; }
+.pv-follow, .pv-floor { display:inline-flex; align-items:center; gap:4px; }
+.pv-floor select { height:26px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; }
 .stage-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; max-height:52vh; overflow-y:auto; margin:10px 0; }
 .stage-item { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:#1d1d20; color:#ddd; cursor:pointer; text-align:left; }
 .stage-item:hover { border-color:#6690ff; } .stage-item span { font-size:11px; opacity:.6; }
@@ -18004,7 +18007,7 @@ THREE.GLTFLoader = GLTFLoader;
      * change is saved through the subjects-only route, so the camera, its keys
      * and the director's notes are never touched by staging.
      */
-    const STAGE = { sel: null, drag: null, timer: null, library: null, gltf: {}, lookSig: null };
+    const STAGE = { sel: null, drag: null, timer: null, library: null, gltf: {}, lookSig: null, pending: null, keySel: null };
     // Editing the set's own objects (see EDITING THE SET below).
     const SETEDIT = { on: false, build: null, items: [], sel: null, drag: null, dirty: false, busy: false };
 
@@ -18061,7 +18064,44 @@ THREE.GLTFLoader = GLTFLoader;
             ctx.fillText(String(su.name), g.centre[0] + 10, g.centre[1] + 4);
         }
     }
-    function stageHit(px, pz) { return stageHitIn(stageSubjects(), STAGE.sel, px, pz); }
+    /** A subject's path from above: her route, its keys, the selected key ringed. */
+    function stageDrawPath(ctx, su, selected, X, Z, f) {
+        if (!stageHasPath(su)) return;
+        const keys = su.path.slice().sort((a, b) => a.t - b.t);
+        const t0 = keys[0].t, t1 = keys[keys.length - 1].t;
+        ctx.save();
+        ctx.strokeStyle = selected ? 'rgba(255,170,90,0.95)' : 'rgba(217,138,95,0.55)';
+        ctx.lineWidth = selected ? 2 : 1.25;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        const N = Math.max(2, Math.min(200, keys.length * 12));
+        for (let n = 0; n <= N; n++) {
+            const p = subjectPoseAt(su, t0 + (t1 - t0) * n / N).position;
+            if (n) ctx.lineTo(X(p[0] * f), Z(p[2] * f)); else ctx.moveTo(X(p[0] * f), Z(p[2] * f));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        keys.forEach((k, j) => {
+            const x = X(k.position[0] * f), z = Z(k.position[2] * f);
+            ctx.beginPath(); ctx.arc(x, z, selected ? 5 : 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = selected ? '#ffb46a' : '#d98a5f'; ctx.fill();
+            if (selected && j === STAGE.keySel) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }
+            if (selected) { ctx.fillStyle = '#f3e3d6'; ctx.font = '10px -apple-system, sans-serif'; ctx.fillText((k.t / 1000).toFixed(1) + 's', x + 7, z - 6); }
+        });
+        ctx.restore();
+    }
+    /** Which key of the selected subject's path is under a point, if any. */
+    function stagePathKeyHit(px, pz) {
+        const xf = WORLD.planXf, su = STAGE.sel != null ? stageSubjects()[STAGE.sel] : null;
+        if (!xf || !stageHasPath(su)) return null;
+        const keys = su.path.slice().sort((a, b) => a.t - b.t);
+        const f = xf.f || 1;
+        for (let j = keys.length - 1; j >= 0; j--) {
+            if (Math.hypot(px - xf.X(keys[j].position[0] * f), pz - xf.Z(keys[j].position[2] * f)) < 7) return su.path.indexOf(keys[j]);
+        }
+        return null;
+    }
+    function stageHit(px, pz) { return stageHitIn(stageShownSubjects(), STAGE.sel, px, pz); }
     function stageHitIn(subs, sel, px, pz) {
         const xf = WORLD.planXf;
         if (!xf) return null;
@@ -18082,7 +18122,7 @@ THREE.GLTFLoader = GLTFLoader;
         return null;
     }
     /* The plan's own view: zoom about the cursor, drag empty floor to pan. */
-    const PLANVIEW = { key: null, zoom: 1, cx: null, cz: null, pan: null };
+    const PLANVIEW = { key: null, zoom: 1, cx: null, cz: null, pan: null, level: 'auto' };
 
     function planZoomAt(px, pz, factor) {
         const xf = WORLD.planXf;
@@ -18120,10 +18160,14 @@ THREE.GLTFLoader = GLTFLoader;
                 stageRenderBar(); worldPaintFrame();
                 return;
             }
+            // A key of the selected subject's path: select it (Delete removes it).
+            const keyHit = stagePathKeyHit(px, pz);
+            if (keyHit != null) { STAGE.keySel = keyHit; e.preventDefault(); stageRenderBar(); worldPaintFrame(); return; }
             const hit = stageHit(px, pz);
+            if (!hit || hit.i !== STAGE.sel) STAGE.keySel = null;
             STAGE.sel = hit ? hit.i : null;
             if (hit) {
-                const su = stageSubjects()[hit.i];
+                const su = stageShownSubject(stageSubjects()[hit.i], hit.i);
                 const [wx, wz] = WORLD.planXf.inv(px, pz).map(v => v / (WORLD.planXf.f || 1));
                 STAGE.drag = { i: hit.i, turn: hit.turn, ox: wx - su.position[0], oz: wz - su.position[2], moved: false };
                 e.preventDefault();
@@ -18190,13 +18234,23 @@ THREE.GLTFLoader = GLTFLoader;
             if (!g || !WORLD.planXf) return;
             const r = c.getBoundingClientRect();
             const [wx, wz] = WORLD.planXf.inv(e.clientX - r.left, e.clientY - r.top).map(v => v / (WORLD.planXf.f || 1));
-            const su = stageSubjects()[g.i];
-            if (!su) return;
+            const stored = stageSubjects()[g.i];
+            if (!stored) return;
+            /*
+             * A subject with a path is not moved: where she is dragged is
+             * HELD (drawn there) until "+ Key here" keeps it at the playhead's
+             * time. Moving her stored spot would move nothing she does.
+             */
+            const moving = stageHasPath(stored);
+            const shown = stageShownSubject(stored, g.i);
+            const su = moving ? (STAGE.pending && STAGE.pending.i === g.i ? STAGE.pending
+                : (STAGE.pending = { i: g.i, position: shown.position.slice(), rotationDeg: (shown.rotationDeg || [0, 0, 0]).slice() })) : stored;
             if (g.turn) {
                 // Face the cursor; yaw 0 is north (-Z), turning left is positive.
                 let deg = Math.atan2(-(wx - su.position[0]), -(wz - su.position[2])) * 180 / Math.PI;
                 if (!e.altKey) deg = Math.round(deg / 15) * 15;
                 su.rotationDeg = [0, deg, 0];
+                if (moving) su.turned = true;
             } else {
                 su.position = [wx - g.ox, su.position[1] || 0, wz - g.oz];
             }
@@ -18209,7 +18263,10 @@ THREE.GLTFLoader = GLTFLoader;
             STAGE.camDrag = null;
             const g = STAGE.drag;
             STAGE.drag = null;
-            if (g && g.moved) stageSave();
+            if (g && g.moved && STAGE.pending && STAGE.pending.i === g.i) {
+                stageRenderBar();
+                setStatus('Held here — press "+ Key here" to keep it at ' + (stageNowMs() / 1000).toFixed(2) + 's; scrubbing lets it go');
+            } else if (g && g.moved) stageSave();
         });
     }
     document.addEventListener('keydown', e => {
@@ -18227,8 +18284,11 @@ THREE.GLTFLoader = GLTFLoader;
         const subs = stageSubjects();
         const su = subs[STAGE.sel];
         if (!su) return;
+        if ((e.key === 'Delete' || e.key === 'Backspace') && STAGE.keySel != null && stageHasPath(su)) {
+            e.preventDefault(); return stageDeleteKey();
+        }
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            subs.splice(STAGE.sel, 1); STAGE.sel = null; e.preventDefault(); stageSave();
+            subs.splice(STAGE.sel, 1); STAGE.sel = null; STAGE.keySel = null; STAGE.pending = null; e.preventDefault(); stageSave();
         } else if (e.key === 'q' || e.key === 'e') {
             const step = (e.shiftKey ? 45 : 15) * (e.key === 'q' ? 1 : -1);
             su.rotationDeg = [0, ((su.rotationDeg || [])[1] || 0) + step, 0]; stageSave();
@@ -18263,7 +18323,7 @@ THREE.GLTFLoader = GLTFLoader;
         const plan = worldViewMode() === 'plan';
         if (plan && SETEDIT.on) return setEditRenderBar(bar);
         const su = STAGE.sel != null ? stageSubjects()[STAGE.sel] : null;
-        bar.innerHTML = !plan ? '' : `
+        const html = !plan ? '' : `${planFloorPickerHtml()}
             <button class="pv-btn" onclick="setEditStart()" title="Move, turn or remove the set's own furniture, then rebuild it">Edit set</button>
             <button class="pv-btn pv-primary" onclick="stageOpenAdd()">＋ Add people, furniture or a model</button>
             ${su ? `<input class="pv-stage-name" value="${esc(su.name || '')}" placeholder="Name (named subjects reach the prompt)"
@@ -18271,8 +18331,14 @@ THREE.GLTFLoader = GLTFLoader;
                 <button class="pv-btn" onclick="stageTurn(15)" title="Turn left 15° (Q)">↺</button>
                 <button class="pv-btn" onclick="stageTurn(-15)" title="Turn right 15° (E)">↻</button>
                 <button class="pv-btn${su.isTarget ? ' pv-amber' : ''}" onclick="stageTarget()" title="Frame the shot on this subject">Frame on</button>
-                <button class="pv-btn" onclick="stageRemove()" title="Remove (Delete)">Remove</button>`
+                <button class="pv-btn" onclick="stageRemove()" title="Remove (Delete)">Remove</button>
+                ${stagePathBarHtml(su)}`
                 : '<span class="pv-dim">Click a subject to select it · drag to move · drag the white dot or Q/E to turn</span>'}`;
+        // Rebuilt only when it changes: the plan repaints every frame of a move,
+        // and rebuilding would close an open picker and drop a half-typed name.
+        if (bar.dataset.html === html && bar.innerHTML) return;
+        bar.dataset.html = html;
+        bar.innerHTML = html;
     }
     function stageRename(v) { const su = stageSubjects()[STAGE.sel]; if (su) { su.name = String(v || '').trim(); stageSave(); worldPaintFrame(); } }
     function stageTurn(deg) { const su = stageSubjects()[STAGE.sel]; if (su) { su.rotationDeg = [0, ((su.rotationDeg || [])[1] || 0) + deg, 0]; stageSave(); worldPaintFrame(); } }
@@ -18282,7 +18348,7 @@ THREE.GLTFLoader = GLTFLoader;
         const on = !su.isTarget; subs.forEach(o => { delete o.isTarget; }); if (on) su.isTarget = true;
         stageSave(); stageRenderBar(); worldPaintFrame();
     }
-    function stageRemove() { const subs = stageSubjects(); if (STAGE.sel != null) { subs.splice(STAGE.sel, 1); STAGE.sel = null; stageSave(); stageRenderBar(); worldPaintFrame(); } }
+    function stageRemove() { const subs = stageSubjects(); if (STAGE.sel != null) { subs.splice(STAGE.sel, 1); STAGE.sel = null; STAGE.keySel = null; STAGE.pending = null; stageSave(); stageRenderBar(); worldPaintFrame(); } }
 
     /* ── EDITING THE SET: its own furniture, moved, turned or removed ───────
      *
@@ -18472,7 +18538,7 @@ THREE.GLTFLoader = GLTFLoader;
         const T = window.THREE;
         if (!T || !MESHLOOK.scene || !T.GLTFLoader) return;
         const subs = stageSubjects();
-        const sig = JSON.stringify(subs.map(s => [s.kind, s.model, s.position, s.rotationDeg, s.sizeM]));
+        const sig = JSON.stringify(subs.map(s => [s.kind, s.model, s.position, s.rotationDeg, s.sizeM, s.fitToModel]));
         if (sig === STAGE.lookSig) return;
         STAGE.lookSig = sig;
         const old = MESHLOOK.scene.getObjectByName('staged');
@@ -18480,7 +18546,7 @@ THREE.GLTFLoader = GLTFLoader;
         const group = new T.Group(); group.name = 'staged';
         MESHLOOK.scene.add(group);
         const f = (worldCameraPose() || {}).scale || 1;
-        const place = (obj, su) => {
+        const place = (obj, su, si) => {
             const box = new T.Box3().setFromObject(obj);
             const dim = box.getSize(new T.Vector3());
             const want = stageSize(su);
@@ -18494,26 +18560,321 @@ THREE.GLTFLoader = GLTFLoader;
             holder.scale.multiplyScalar(f);
             holder.position.set(su.position[0] * f, (su.position[1] || 0) * f, su.position[2] * f);
             holder.rotation.y = stageYaw(su);
+            holder.userData.si = si;
             group.add(holder);
+            stageLookPose();
         };
-        for (const su of subs) {
-            if (!Array.isArray(su.position)) continue;
+        subs.forEach((su, si) => {
+            if (!Array.isArray(su.position)) return;
             const m = su.model || (su.kind === 'human' ? { library: 'man' } : null);
             if (!m) {
                 const geo = su.kind === 'sphere' ? new T.SphereGeometry(0.5, 16, 12) : new T.BoxGeometry(1, 1, 1);
-                place(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0x9a9aa2 })), su);
-                continue;
+                place(new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0x9a9aa2 })), su, si);
+                return;
             }
             const url = mediaUrl(m.library ? `/film/previs-library/${m.library}/file` : `/film/models/${m.asset_id}/file`);
             if (!STAGE.gltf[url]) STAGE.gltf[url] = new Promise((res, rej) => new T.GLTFLoader().load(url, g => res(g.scene), undefined, rej));
             STAGE.gltf[url].then(scene => {
                 if (STAGE.lookSig !== sig) return;
-                place(scene.clone(true), su);
+                place(scene.clone(true), su, si);
                 worldMeshRenderOnce();
             }).catch(() => { /* a model that will not load is simply not drawn */ });
-        }
+        });
         worldMeshRenderOnce();
     }
+
+    /* ── A SUBJECT THAT MOVES, AND THE FLOORS OF A HOUSE ─────────────────────
+     *
+     * "The camera follows a girl running from the top floor down through five
+     * levels of the house." A staged subject may carry `path`: timed keys
+     * { t (ms into the shot), position, rotationDeg? }. subjectPoseAt is the
+     * ONE sampler, mirrored from lib/previs-subject-path.js and held equal to
+     * it by tests/previs-subject-path.test.js: the Plan and Look views draw
+     * her where the render puts her. Recording a path: select her, scrub the
+     * playhead, drag her where she should be, press "+ Key here".
+     */
+    function subjectPoseAt(su, tMs) {
+        const DEG = 180 / Math.PI;
+        const base = su && Array.isArray(su.position) ? su.position.map(Number) : [0, 0, 0];
+        const baseYaw = Number(((su && su.rotationDeg) || [])[1]) || 0;
+        const keys = (su && Array.isArray(su.path) ? su.path : [])
+            .filter(k => k && Number.isFinite(Number(k.t)) && Array.isArray(k.position) && k.position.length === 3)
+            .slice().sort((a, b) => a.t - b.t);
+        if (!keys.length) return { position: base, yawDeg: baseYaw, moving: false };
+        const yawOf = k => (Array.isArray(k.rotationDeg) ? Number(k.rotationDeg[1]) || 0 : null);
+        if (keys.length === 1) {
+            const y = yawOf(keys[0]);
+            return { position: keys[0].position.map(Number), yawDeg: y == null ? baseYaw : y, moving: false };
+        }
+        const T = Number(tMs) || 0;
+        const travel = (a, b) => {
+            const dx = b.position[0] - a.position[0], dz = b.position[2] - a.position[2];
+            return Math.hypot(dx, dz) > 0.01 ? Math.atan2(-dx, -dz) * DEG : null;
+        };
+        let i = 0;
+        while (i < keys.length - 2 && keys[i + 1].t < T) i++;
+        const a = keys[i], b = keys[i + 1];
+        const f = b.t > a.t ? Math.max(0, Math.min(1, (T - a.t) / (b.t - a.t))) : 0;
+        const position = a.position.map((v, x) => Number(v) + (Number(b.position[x]) - Number(v)) * f);
+        const ya = yawOf(a), yb = yawOf(b);
+        let yawDeg;
+        if (ya != null && yb != null) {
+            yawDeg = ya + ((((yb - ya) % 360) + 540) % 360 - 180) * f;
+        } else {
+            yawDeg = travel(a, b);
+            for (let j = i - 1; yawDeg == null && j >= 0; j--) yawDeg = travel(keys[j], keys[j + 1]);
+            for (let j = i + 1; yawDeg == null && j < keys.length - 1; j++) yawDeg = travel(keys[j], keys[j + 1]);
+            if (yawDeg == null) yawDeg = ya != null ? ya : (yb != null ? yb : baseYaw);
+        }
+        const moving = T > a.t && T < b.t && travel(a, b) != null;
+        yawDeg = ((((yawDeg + 180) % 360) + 360) % 360) - 180;
+        if (yawDeg === -180) yawDeg = 180;
+        return { position, yawDeg: yawDeg + 0, moving };
+    }
+
+    /** Where the playhead is, in milliseconds into the shot. */
+    function stageNowMs() { return Math.round((WORLD.t || 0) * (WORLD.durationMs || 4000)); }
+    function stageHasPath(su) { return !!(su && Array.isArray(su.path) && su.path.length); }
+
+    /**
+     * A subject as it is drawn NOW: at the playhead on her path, or where she
+     * was just dragged to (not yet a key). A copy: the stored row is untouched.
+     */
+    function stageShownSubject(su, i) {
+        if (!su || !stageHasPath(su)) return su;
+        const p = STAGE.pending && STAGE.pending.i === i ? STAGE.pending : null;
+        if (p) return Object.assign({}, su, { position: p.position, rotationDeg: p.rotationDeg || su.rotationDeg });
+        const pose = subjectPoseAt(su, stageNowMs());
+        return Object.assign({}, su, { position: pose.position, rotationDeg: [0, pose.yawDeg, 0] });
+    }
+    function stageShownSubjects() { return stageSubjects().map(stageShownSubject); }
+
+    /** The staged people in Look follow the playhead too. */
+    function stageLookPose() {
+        const g = MESHLOOK.scene && MESHLOOK.scene.getObjectByName('staged');
+        if (!g) return;
+        const subs = stageSubjects();
+        const f = (worldCameraPose() || {}).scale || 1;
+        for (const h of g.children) {
+            const su = subs[h.userData && h.userData.si];
+            if (!su || !stageHasPath(su)) continue;
+            const s = stageShownSubject(su, h.userData.si);
+            h.position.set(s.position[0] * f, (s.position[1] || 0) * f, s.position[2] * f);
+            h.rotation.y = stageYaw(s);
+        }
+    }
+
+    /** Keep the selected subject's spot at the playhead as a key of her path. */
+    function stageKeyHere() {
+        const i = STAGE.sel, su = stageSubjects()[i];
+        if (!su) return;
+        const t = stageNowMs();
+        const shown = stageShownSubject(su, i);
+        const p = STAGE.pending && STAGE.pending.i === i ? STAGE.pending : null;
+        const r3 = n => Math.round(n * 1000) / 1000;
+        const key = { t, position: shown.position.map(r3) };
+        if (p && p.turned) key.rotationDeg = [0, r3(((shown.rotationDeg || [])[1]) || 0), 0];
+        let path = Array.isArray(su.path) ? su.path.slice() : [];
+        // Her first key after the start also keeps where she stood at the start.
+        if (!path.length && t > 0) path.push({ t: 0, position: su.position.map(r3) });
+        path = path.filter(k => Math.abs(k.t - t) > 20).concat([key]).sort((a, b) => a.t - b.t);
+        su.path = path;
+        STAGE.pending = null; STAGE.keySel = path.indexOf(key);
+        stageSave(); stageRenderBar(); worldPaintFrame(); stageLookPose(); worldMeshRenderOnce();
+        setStatus(`${su.name || 'Subject'}: key ${STAGE.keySel + 1} of ${path.length} at ${(t / 1000).toFixed(2)}s — scrub, drag her, and add the next`);
+    }
+    function stageDeleteKey() {
+        const su = stageSubjects()[STAGE.sel];
+        if (!su || !stageHasPath(su) || STAGE.keySel == null) return;
+        su.path.splice(STAGE.keySel, 1);
+        if (!su.path.length) delete su.path;
+        STAGE.keySel = null;
+        stageSave(); stageRenderBar(); worldPaintFrame(); stageLookPose(); worldMeshRenderOnce();
+    }
+    function stageClearPath() {
+        const i = STAGE.sel, su = stageSubjects()[i];
+        if (!su || !stageHasPath(su)) return;
+        if (!confirm(`Clear ${su.name || 'this subject'}'s path? She stays where the playhead shows her.`)) return;
+        const shown = stageShownSubject(su, i);
+        su.position = shown.position.slice(); su.rotationDeg = (shown.rotationDeg || [0, 0, 0]).slice();
+        delete su.path; STAGE.keySel = null; STAGE.pending = null;
+        stageSave(); stageRenderBar(); worldPaintFrame(); stageLookPose(); worldMeshRenderOnce();
+    }
+
+    /**
+     * FOLLOW: a Steadicam that walks the selected subject's own path a set
+     * distance behind her. The server writes ordinary camera keys through the
+     * timeline route, so everything downstream reads them unchanged.
+     */
+    async function stageFollow() {
+        const i = STAGE.sel, su = stageSubjects()[i];
+        if (!su || !WORLD.shotId) return;
+        if (!stageHasPath(su) || su.path.length < 2) return setStatus('Give her a path first: two keys at least', true);
+        const num = (id, d) => { const v = Number((document.getElementById(id) || {}).value); return Number.isFinite(v) && v > 0 ? v : d; };
+        if ((WORLD.keys || []).length && !confirm('Replace this shot\'s camera keys with a follow?')) return;
+        try {
+            const out = await api(`/shots/${WORLD.shotId}/previs/timeline`, { method: 'PUT',
+                body: JSON.stringify({ follow: { subject: i, distance_m: num('pvFollowDist', 2.5), height_m: num('pvFollowHeight', 1.6) } }) });
+            if (out && out.blocking) {
+                WORLD.blocking = Object.assign({}, WORLD.blocking || {}, { blocking: out.blocking });
+                worldHydrateMove();
+            }
+            worldConsoleRender();
+            setStatus(`The camera follows ${su.name || 'her'}: ${(WORLD.keys || []).length} keys. Play the move to see it.`);
+        } catch (err) { setStatus('Follow not set: ' + err.message, true); }
+    }
+
+    /**
+     * THE FLOORS OF A SET, for the Plan. From the layout it was built from
+     * (slab tops, wall bases) when there is one, else from the geometry:
+     * horizontal surfaces by area (by count of vertices when there are no
+     * triangles), kept only where something stands on them — so a ceiling
+     * with nothing above is not a floor. Heights in the plan's own metres.
+     */
+    function planLevels(src) {
+        const s = src || {};
+        const L = s.layout;
+        const cluster = (hs, gap) => {
+            const out = [];
+            for (const h of hs.slice().sort((a, b) => a - b)) {
+                const c = out[out.length - 1];
+                if (c && h - c.last < gap) { c.last = h; c.top = Math.max(c.top, h); } else out.push({ last: h, top: h });
+            }
+            return out.map(c => c.top);
+        };
+        if (L && (Array.isArray(L.slabs) || Array.isArray(L.walls))) {
+            const hs = [];
+            for (const sl of (L.slabs || [])) if (Number.isFinite(Number(sl && sl.z))) hs.push(Number(sl.z));
+            for (const w of (L.walls || [])) hs.push(w && Number.isFinite(Number(w.z0)) ? Number(w.z0) : 0);
+            if (L.room) hs.push(0);
+            return cluster(hs, 0.5);
+        }
+        const V = Array.isArray(s.vertices) ? s.vertices : [];
+        if (!V.length) return [];
+        const T = Array.isArray(s.triangles) ? s.triangles : [];
+        const BIN = 0.1;
+        const weight = new Map();
+        if (T.length) {
+            for (const t of T) {
+                const a = V[t[0]], b = V[t[1]], c = V[t[2]];
+                if (!a || !b || !c) continue;
+                if (Math.max(a[1], b[1], c[1]) - Math.min(a[1], b[1], c[1]) > 0.02) continue;
+                const ux = b[0] - a[0], uz = b[2] - a[2], vx = c[0] - a[0], vz = c[2] - a[2];
+                const k = Math.round(a[1] / BIN);
+                weight.set(k, (weight.get(k) || 0) + Math.abs(ux * vz - uz * vx) / 2);
+            }
+        } else {
+            for (const v of V) { const k = Math.round(v[1] / BIN); weight.set(k, (weight.get(k) || 0) + 1); }
+        }
+        let most = 0;
+        for (const w of weight.values()) most = Math.max(most, w);
+        const least = T.length ? Math.max(4, most * 0.1) : Math.max(4, V.length * 0.02);
+        const cands = [...weight.entries()].filter(([, w]) => w >= least).map(([k]) => k * BIN);
+        const supported = (h) => {
+            if (T.length) {
+                const mark = h + 1.0;
+                return T.some(t => {
+                    const a = V[t[0]], b = V[t[1]], c = V[t[2]];
+                    if (!a || !b || !c) return false;
+                    const lo = Math.min(a[1], b[1], c[1]), hi = Math.max(a[1], b[1], c[1]);
+                    return lo <= mark && hi >= mark && lo >= h - 0.3;
+                });
+            }
+            let n = 0;
+            for (const v of V) if (v[1] > h + 0.3 && v[1] < h + 2.0) n++;
+            return n >= Math.max(3, V.length * 0.005);
+        };
+        return cluster(cands, 0.5).filter(supported);
+    }
+
+    /** Which floor a height stands on: the highest level at or just above it. */
+    function planLevelIndex(levels, y) {
+        let idx = 0;
+        (levels || []).forEach((l, i) => { if (l <= Number(y) + 0.3) idx = i; });
+        return idx;
+    }
+
+    /** The floors of the world on show: the layout's when it was built from one, cached per version. */
+    function planLevelsFor(geo) {
+        const vid = WORLD.version && WORLD.version.id;
+        const key = (vid || '') + ':' + ((geo && geo.vertices) || []).length;
+        const c = WORLD.planLevelsCache || (WORLD.planLevelsCache = {});
+        if (vid && c.layoutFor !== vid) {
+            c.layoutFor = vid; c.layout = null; c.key = null;
+            api(`/set-builds?world_version_id=${encodeURIComponent(vid)}`)
+                .then(b => { c.layout = (b && b.layout) || null; c.key = null; worldPaintFrame(); })
+                .catch(() => { /* not built from a layout: the geometry decides */ });
+        }
+        if (c.key === key && c.levels) return c.levels;
+        c.key = key;
+        c.levels = c.layout ? planLevels({ layout: c.layout }) : planLevels(geo || {});
+        return c.levels;
+    }
+
+    /** The floor the plan is cut on: the one chosen, else the selected subject's, else the camera's. */
+    function planActiveLevel(levels, f) {
+        if (PLANVIEW.level !== 'auto' && PLANVIEW.level != null && levels[PLANVIEW.level] != null) return PLANVIEW.level;
+        const su = STAGE.sel != null ? stageShownSubject(stageSubjects()[STAGE.sel], STAGE.sel) : null;
+        if (su && Array.isArray(su.position)) return planLevelIndex(levels, (su.position[1] || 0) * f);
+        const live = worldCameraPose();
+        return live ? planLevelIndex(levels, live.eye[1] - 1.0) : 0;
+    }
+    function planSetFloor(v) { PLANVIEW.level = v === 'auto' ? 'auto' : Number(v); worldPaintFrame(); }
+
+    /** The floor picker, only when a set has more than one floor. */
+    function planFloorPickerHtml() {
+        const pl = WORLD.planFloors;
+        if (!pl || !pl.levels || pl.levels.length < 2) return '';
+        const opts = pl.levels.map((l, i) => `<option value="${i}"${PLANVIEW.level === i ? ' selected' : ''}>Floor ${i + 1} · ${l.toFixed(1)} m</option>`).join('');
+        return `<label class="pv-dim pv-floor" title="The plan is cut 1.2 m above the chosen floor. Follow takes the selected subject's floor, else the camera's, and keeps up as the move plays.">Floor
+            <select id="pvFloorPick" onchange="planSetFloor(this.value)"><option value="auto"${PLANVIEW.level === 'auto' ? ' selected' : ''}>Follow (${pl.active + 1})</option>${opts}</select></label>`;
+    }
+
+    /** The selected subject's path controls, in the Plan's staging bar. */
+    function stagePathBarHtml(su) {
+        if (!su) return '';
+        const n = stageHasPath(su) ? su.path.length : 0;
+        return `<span class="pv-dim">Path: ${n ? `${n} key${n === 1 ? '' : 's'}` : 'none'}</span>
+            <button class="pv-btn" onclick="stageKeyHere()" title="Keep where she is now as a key at the playhead's time">＋ Key here</button>
+            ${STAGE.keySel != null && n ? `<button class="pv-btn" onclick="stageDeleteKey()" title="Remove the selected key">✕ Key ${STAGE.keySel + 1}</button>` : ''}
+            ${n ? '<button class="pv-btn" onclick="stageClearPath()" title="Remove her path; she stays where she is shown">Clear path</button>' : ''}
+            ${n > 1 ? `<span class="pv-follow"><button class="pv-btn" onclick="stageFollow()" title="Camera keys that trail her along her own path (a Steadicam follow)">Follow her</button>
+                <input id="pvFollowDist" class="pv-num" type="number" min="0.5" step="0.5" value="2.5" title="Metres behind her"> m behind,
+                <input id="pvFollowHeight" class="pv-num" type="number" min="0.2" step="0.1" value="1.6" title="Camera height above her floor"> m high</span>` : ''}`;
+    }
+
+    /* ── THE MOVE, RENDERED: a previz video, free and local (Blender) ───── */
+    async function previzVideoExport(btn) {
+        if (!WORLD.shotId) return setStatus('Open a shot first', true);
+        const label = btn ? btn.textContent : '';
+        const done = () => { if (btn) { btn.disabled = false; btn.textContent = label; } };
+        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+        try {
+            await api(`/shots/${WORLD.shotId}/previs/render-video`, { method: 'POST', body: '{}' });
+        } catch (err) { done(); return setStatus('Previz video not started: ' + err.message, true); }
+        const shot = WORLD.shotId;
+        const poll = async () => {
+            let r;
+            try { r = await api(`/shots/${shot}/previs/videos`); } catch (err) { done(); return setStatus(err.message, true); }
+            const job = r && r.job;
+            if (job && (job.status === 'running' || job.status === 'encoding')) {
+                if (btn) btn.textContent = job.status === 'encoding' ? 'Encoding…' : `Rendering ${job.frame}/${job.frames}`;
+                return setTimeout(poll, 1000);
+            }
+            done();
+            if (job && job.status === 'failed') return setStatus('Previz video failed: ' + job.error, true);
+            const v = r && r.videos && r.videos[0];
+            if (!v) return setStatus('The previz video was not registered', true);
+            const url = mediaUrl(v.url);
+            showModalHtml('previzVideoModal', `<h3>Previz · v${esc(String(v.version))}</h3>
+                <video src="${esc(url)}" controls autoplay style="width:100%;max-height:70vh;background:#000"></video>
+                <p class="text-sm text-muted">${esc(String(v.width))}×${esc(String(v.height))} · ${esc(String(v.fps))} fps · kept in 03 Previs. <a href="${esc(url)}" download>Download</a></p>
+                <div class="btn-row"><button class="btn btn-secondary" onclick="closeModal('previzVideoModal')">Close</button></div>`);
+            showModal('previzVideoModal');
+        };
+        poll();
+    }
+    Object.assign(window, { stageKeyHere, stageDeleteKey, stageClearPath, stageFollow, planSetFloor, previzVideoExport });
 
     function worldPaintPlan(ctx, c) {
         const hasGeo = !!(WORLD.geometry && Array.isArray(WORLD.geometry.vertices) && WORLD.geometry.vertices.length);
@@ -18535,7 +18896,7 @@ THREE.GLTFLoader = GLTFLoader;
         // Fitted to the set, then the view's own zoom and centre (wheel, drag).
         const fit = Math.min(sx, sz);
         const pv = PLANVIEW;
-        if (pv.key !== WORLD.shotId) { pv.key = WORLD.shotId; pv.zoom = 1; pv.cx = null; pv.cz = null; }
+        if (pv.key !== WORLD.shotId) { pv.key = WORLD.shotId; pv.zoom = 1; pv.cx = null; pv.cz = null; pv.level = 'auto'; STAGE.pending = null; STAGE.keySel = null; }
         const s = fit * pv.zoom;
         const cx = pv.cx != null ? pv.cx : (min[0] + max[0]) / 2;
         const cz = pv.cz != null ? pv.cz : (min[2] + max[2]) / 2;
@@ -18553,15 +18914,35 @@ THREE.GLTFLoader = GLTFLoader;
          * height shows what stands on the floor, and a wall still reads as the
          * brightest thing because it reaches the cut everywhere it stands.
          */
-        const cut = min[1] + (max[1] - min[1]) * 0.6;
+        let cut = min[1] + (max[1] - min[1]) * 0.6;
+        /*
+         * FLOORS. A house is several plans: with more than one floor the cut
+         * is 1.2 m above the floor on show, and only what stands between that
+         * floor and the next is drawn. One floor (or no metres to measure in)
+         * keeps the single cut above.
+         */
+        const live0 = worldCameraPose();
+        const f0 = live0 ? live0.scale : 1;
+        const levels = hasGeo && String(geo.scale_state || '') === 'SCALE CALIBRATED' ? planLevelsFor(geo) : [];
+        const multi = levels.length > 1;
+        const active = multi ? planActiveLevel(levels, f0) : 0;
+        WORLD.planFloors = { levels, active };
+        let lo = -Infinity, base = min[1];
+        if (multi) {
+            base = levels[active];
+            lo = base - 0.15;
+            const next = levels[active + 1];
+            cut = Math.min(base + 1.2, next != null ? next - 0.05 : Infinity);
+        }
+        const onFloor = (y) => !multi || planLevelIndex(levels, y) === active;
         for (const v of geo.vertices) {
-            if (v[1] > cut) continue;
+            if (v[1] > cut || v[1] < lo) continue;
             const i = Math.floor(X(v[0]) / cell), j = Math.floor(Z(v[2]) / cell);
             if (i < 0 || j < 0 || i >= cols || j >= rows) continue;
             const k = j * cols + i;
             if (v[1] > hmap[k]) hmap[k] = v[1];
         }
-        const floor = min[1], span = Math.max(1e-6, cut - min[1]);
+        const floor = base, span = Math.max(1e-6, cut - base);
         for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
             const h = hmap[j * cols + i];
             if (h === -Infinity) continue;
@@ -18569,6 +18950,28 @@ THREE.GLTFLoader = GLTFLoader;
             const g = Math.round(38 + t * 150);
             ctx.fillStyle = `rgb(${g},${g + 3},${g + 8})`;
             ctx.fillRect(i * cell, j * cell, cell, cell);
+        }
+        if (multi && Array.isArray(geo.triangles)) {
+            // An architect's section: where each wall of this floor meets the cut.
+            ctx.strokeStyle = 'rgba(232,232,240,0.9)'; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            const V = geo.vertices;
+            for (const t of geo.triangles) {
+                const p = [V[t[0]], V[t[1]], V[t[2]]];
+                if (!p[0] || !p[1] || !p[2]) continue;
+                const pts = [];
+                for (let k = 0; k < 3; k++) {
+                    const a = p[k], b = p[(k + 1) % 3];
+                    if ((a[1] - cut) * (b[1] - cut) < 0) {
+                        const u = (cut - a[1]) / (b[1] - a[1]);
+                        pts.push([a[0] + (b[0] - a[0]) * u, a[2] + (b[2] - a[2]) * u]);
+                    }
+                }
+                if (pts.length === 2 && Math.min(p[0][1], p[1][1], p[2][1]) >= lo) {
+                    ctx.moveTo(X(pts[0][0]), Z(pts[0][1])); ctx.lineTo(X(pts[1][0]), Z(pts[1][1]));
+                }
+            }
+            ctx.stroke();
         }
         // one metre, when there are metres
         if (String(geo.scale_state || '') === 'SCALE CALIBRATED') {
@@ -18592,11 +18995,19 @@ THREE.GLTFLoader = GLTFLoader;
             if (p) wedge(p, 'rgba(183,183,190,0.75)', 'rgba(255,255,255,0.04)', a.key);
         }
         const live = worldCameraPose();
-        if (live) wedge(live, '#6690ff', 'rgba(102,144,255,0.16)', 'CAMERA');
+        // Something on another floor is drawn faint: it is there, not here.
+        const faint = (y, draw) => { ctx.save(); if (!onFloor(y)) ctx.globalAlpha = 0.3; draw(); ctx.restore(); };
+        if (live) faint(live.eye[1] - 1.0, () => wedge(live, '#6690ff', 'rgba(102,144,255,0.16)', 'CAMERA'));
         const f = live ? live.scale : 1;
         WORLD.planXf.f = f;
         if (SETEDIT.on) SETEDIT.items.forEach((it, i) => stageDrawFootprint(ctx, it, i === SETEDIT.sel, X, Z, s, f));
-        else stageSubjects().forEach((su, i) => stageDrawFootprint(ctx, su, i === STAGE.sel, X, Z, s, f));
+        else {
+            stageSubjects().forEach((su, i) => stageDrawPath(ctx, su, i === STAGE.sel, X, Z, f));
+            stageSubjects().forEach((su, i) => {
+                const shown = stageShownSubject(su, i);
+                if (shown && Array.isArray(shown.position)) faint((shown.position[1] || 0) * f, () => stageDrawFootprint(ctx, shown, i === STAGE.sel, X, Z, s, f));
+            });
+        }
         // The lighting rig, seen from above: each light, its role, and where it points.
         const lit = WORLD.blocking && WORLD.blocking.lighting;
         if (WORLD.showLights !== false && lit && Array.isArray(lit.rig)) {
@@ -18771,6 +19182,7 @@ THREE.GLTFLoader = GLTFLoader;
             <button class="we-btn" onclick="worldPlayMove()">▶ PLAY MOVE</button>
             <button class="we-btn" onclick="worldAddKey()">+ KEY</button>
             <button class="we-btn" onclick="worldAddLeg()">+ LEG</button>
+            <button class="we-btn" onclick="previzVideoExport(this)" title="Render this move through the set to an MP4 in Blender, with the people on their paths. Free, on this Mac; kept in 03 Previs.">EXPORT PREVIZ VIDEO</button>
           </div>
           <div class="we-ruler">${ticks.join('')}</div>
           <div class="we-lane"><span class="we-lane-l">POSITION</span>
@@ -18874,6 +19286,8 @@ THREE.GLTFLoader = GLTFLoader;
 
     function worldSeekTo(t) {
         WORLD.t = Math.max(0, Math.min(1, Number(t) || 0));
+        STAGE.pending = null;
+        stageLookPose();
         WORLD.previewT = worldPoseAtT(WORLD.t) ? WORLD.t : null;
         worldPaintFrame();
         if (typeof worldMeshRenderOnce === 'function') worldMeshRenderOnce();

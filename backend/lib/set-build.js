@@ -402,7 +402,12 @@ function resolveAssets(layout, projectId) {
 
 // ── running Blender ─────────────────────────────────────────────────────────
 
-function runBlender(job, timeoutMs) {
+/*
+ * `opts.script` runs another script through the same probe, spawn and verdict
+ * (the previz render, lib/previs-video.js), and `opts.onLog` hears each chunk
+ * of its output, which is how a long render reports its progress.
+ */
+function runBlender(job, timeoutMs, opts = {}) {
     const blender = resolveBlender();
     if (!blender.available) {
         const e = new Error(blender.reason);
@@ -413,10 +418,13 @@ function runBlender(job, timeoutMs) {
     const jobPath = path.join(job.out_dir, `job_${job.mode}.json`);
     fs.writeFileSync(jobPath, JSON.stringify(job));
     return new Promise((resolve, reject) => {
-        const child = spawn(blender.bin, ['-b', '--factory-startup', '--python', SCRIPT, '--', jobPath],
+        const child = spawn(blender.bin, ['-b', '--factory-startup', '--python', opts.script || SCRIPT, '--', jobPath],
             { stdio: ['ignore', 'pipe', 'pipe'] });
         let log = '';
-        child.stdout.on('data', b => { log += b; if (log.length > 400000) log = log.slice(-200000); });
+        child.stdout.on('data', b => {
+            log += b; if (log.length > 400000) log = log.slice(-200000);
+            if (opts.onLog) { try { opts.onLog(String(b)); } catch (_) { /* a listener never stops a render */ } }
+        });
         child.stderr.on('data', b => { log += b; });
         const timer = setTimeout(() => { child.kill('SIGKILL'); }, timeoutMs || 240000);
         child.on('close', code => {
@@ -664,6 +672,6 @@ async function finishAttempt(buildId, opts = {}) {
 }
 
 module.exports = {
-    resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, measuredAttempt, editedAttempt, buildForVersion, getBuild, listBuilds,
+    resolveBlender, runBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, measuredAttempt, editedAttempt, buildForVersion, getBuild, listBuilds,
     LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, STYLES, TIMES_OF_DAY, LIMITS, INSTRUCTIONS, SCRIPT, resolveAssets,
 };

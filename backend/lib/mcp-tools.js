@@ -2726,8 +2726,10 @@ const PRODUCTION_TOOLS = [
             'Place, move, turn or remove the people, furniture and models staged in a shot, and nothing else: the '
             + 'camera, its keys and the director\'s notes are kept. FREE. Each subject: { kind: human|mesh|cube|sphere|'
             + 'imageplane, name, position: [x, y, z] (y up, metres in a calibrated world), rotationDeg: [0, yaw, 0] '
-            + '(0 faces north, -Z), sizeM: [width, height, depth], model: { library } or { asset_id } }. Send the '
-            + 'WHOLE list: what is left out is removed. Only NAMED subjects reach a prompt.',
+            + '(0 faces north, -Z), sizeM: [width, height, depth], model: { library } or { asset_id }, path? }. A subject '
+            + 'that MOVES carries path: [{ t (ms into the shot, in order, at most 200), position: [x, y, z], rotationDeg? }]; '
+            + 'between keys she faces the way she travels unless both keys are turned, and she is stored where she starts. '
+            + 'Send the WHOLE list: what is left out is removed. Only NAMED subjects reach a prompt.',
         schema: {
             shot_id: { type: 'string' },
             subjects: { type: 'array', description: 'The complete list of staged subjects.' },
@@ -2789,19 +2791,50 @@ const PRODUCTION_TOOLS = [
             if (a.moves !== undefined) b.moves = a.moves;
             if (a.camera_keys !== undefined) b.cameraKeys = a.camera_keys;
             if (a.duration_ms !== undefined) b.durationMs = a.duration_ms;
+            if (a.follow !== undefined) b.follow = a.follow;
             return b;
         },
         description:
             'Set a shot\'s camera MOVE and nothing else: its legs (moves: [{ movement, weight, ease }]), its authored '
             + 'camera keys (camera_keys: [{ t: 0..1, position: [x, y, z], rotation: [yaw, pitch, roll] in degrees, '
             + 'focalMm }]) and its length (duration_ms). FREE. The camera, the people staged and the director\'s notes '
-            + 'are kept; send the whole list of whatever you change.',
+            + 'are kept; send the whole list of whatever you change. follow: { subject (index or name), distance_m '
+            + '(default 2.5), height_m (default 1.6), keys? } writes a Steadicam follow instead: ordinary camera keys '
+            + 'that walk a moving subject\'s own path that far behind her, aimed at her.',
         schema: {
             shot_id: { type: 'string' },
             moves: { type: 'array', items: { type: 'object' } },
             camera_keys: { type: 'array', items: { type: 'object' } },
             duration_ms: { type: 'number' },
+            follow: { type: 'object', properties: {
+                subject: { type: ['integer', 'string'] }, distance_m: { type: 'number' },
+                height_m: { type: 'number' }, keys: { type: 'integer' } } },
         },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_video_render',
+        handler: handlePrevis, method: 'POST',
+        path: a => `/film/shots/${a.shot_id}/previs/render-video`,
+        body: a => ({ fps: a.fps, width: a.width }),
+        description:
+            'Render the shot\'s previz MOVE through its set to an MP4: the camera path the playhead plays and the '
+            + 'staged people along their paths, in Blender (Workbench) and encoded by ffmpeg. FREE, on this Mac. '
+            + 'Starts it and answers at once; previs_video_list reports progress and the file. Refused by name when '
+            + 'the shot is not pinned to a world or Blender is not installed. Each export is a new version.',
+        schema: {
+            shot_id: { type: 'string' },
+            fps: { type: 'number', description: 'default: the project\'s frame rate' },
+            width: { type: 'integer', description: 'default 1280; the height follows the project\'s aspect' },
+        },
+        required: ['shot_id'],
+    },
+    {
+        name: 'previs_video_list',
+        handler: handlePrevis, method: 'GET',
+        path: a => `/film/shots/${a.shot_id}/previs/videos`,
+        description: 'The previz videos exported for a shot, newest first, with their URLs, and the render in flight (frame n of N). FREE.',
+        schema: { shot_id: { type: 'string' } },
         required: ['shot_id'],
     },
     {

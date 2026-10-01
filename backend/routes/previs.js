@@ -351,6 +351,8 @@ function validateBlocking(body) {
         if (obj.name !== undefined && typeof obj.name !== 'string') {
             errors.push(`subjects[${i}].name must be a string naming a character or prop`);
         }
+        // A subject that moves: timed keys, checked against the shot's length in putBlocking.
+        errors.push(...require('../lib/previs-subject-path').validateSubjectPath(obj.path, `subjects[${i}]`));
         // WHICH model a staged figure is: a Previs library entry (people and
         // furniture) or one of the project's own 3D models (a Meshy creature).
         // Ownership of an asset_id is checked where the shot's project is known.
@@ -511,8 +513,45 @@ function putTimeline(req, res, shotId) {
     }
     if (b.cameraKeys !== undefined) patch.cameraKeys = b.cameraKeys;
     if (b.durationMs !== undefined) patch.durationMs = b.durationMs;
-    if (!Object.keys(patch).length) return json(res, 400, { error: 'send moves, cameraKeys or durationMs' });
+    /*
+     * FOLLOW a staged subject: a Steadicam that walks the subject's own path a
+     * set distance behind them. It writes ORDINARY camera keys, so the sampled
+     * path, the video payload and the render all read it unchanged.
+     */
+    if (b.follow !== undefined) {
+        const f = b.follow || {};
+        const current = loadBlocking(shotId);
+        const subs = (current && current.subjects) || [];
+        const su = Number.isInteger(f.subject) ? subs[f.subject]
+            : subs.find(o => o && f.subject != null && String(o.name || '').toLowerCase() === String(f.subject).toLowerCase());
+        if (!su) return json(res, 400, { error: 'follow.subject must name a staged subject (its index or its name)' });
+        const dur = Number(b.durationMs) > 0 ? Number(b.durationMs) : ((current && current.durationMs) || DEFAULT_MOVE_MS);
+        try {
+            patch.cameraKeys = require('../lib/previs-subject-path').followCameraKeys(su, {
+                durationMs: dur, distanceM: f.distance_m, heightM: f.height_m, keys: f.keys,
+                focalMm: f.focal_mm || (current && current.camera && current.camera.focalMm),
+            });
+        } catch (err) { return json(res, 400, { error: err.message, code: err.code }); }
+    }
+    if (!Object.keys(patch).length) return json(res, 400, { error: 'send moves, cameraKeys, durationMs or follow' });
     return putMerged(req, res, shotId, patch);
+}
+
+/*
+ * A subject that moves is STORED where it starts. Everything that reads a
+ * staged position without a time — the framing subject, the lighting rig, the
+ * prompt's staging line — then reads the start of the shot, which is the frame
+ * a still is generated for. An empty path is dropped rather than kept as noise.
+ */
+function stagedAtStart(su) {
+    if (!su || typeof su !== 'object') return su;
+    const { hasPath, subjectPoseAt } = require('../lib/previs-subject-path');
+    if (Array.isArray(su.path) && !su.path.length) { const { path, ...rest } = su; return rest; }
+    if (!hasPath(su)) return su;
+    const pose = subjectPoseAt(su, 0);
+    const r = n => Math.round(n * 1000) / 1000;
+    return Object.assign({}, su, { position: pose.position.map(r), rotationDeg: [0, r(pose.yawDeg), 0],
+        path: su.path.map(k => Object.assign({}, k)).sort((a, b) => a.t - b.t) });
 }
 
 function putBlocking(req, res, shotId, internal) {
@@ -532,6 +571,20 @@ function putBlocking(req, res, shotId, internal) {
         let kind = null;
         try { kind = row && JSON.parse(row.metadata || '{}').kind; } catch (_) { kind = null; }
         if (!/^model_/.test(kind || '')) errors.push(`subjects[${i}].model.asset_id is not one of this project's 3D models`);
+    });
+    // A subject's path is bounded by the shot it moves in: the length this save
+    // will store (what was sent, else what is stored on the shot, else the default).
+    const shotLen = db.prepare('SELECT duration_ms FROM film_shots WHERE id = ?').get(shotId);
+    const effectiveMs = (typeof body.durationMs === 'number' && body.durationMs > 0) ? Math.round(body.durationMs)
+        : (shotLen && shotLen.duration_ms > 0 ? shotLen.duration_ms : DEFAULT_MOVE_MS);
+    (Array.isArray(body.subjects) ? body.subjects : []).forEach((o, i) => {
+        if (o && Array.isArray(o.path)) {
+            o.path.forEach((k, j) => {
+                if (k && Number.isFinite(k.t) && k.t > effectiveMs) {
+                    errors.push(`subjects[${i}].path[${j}].t ${k.t} ms is after the shot ends (${effectiveMs} ms)`);
+                }
+            });
+        }
     });
     if (errors.length) return json(res, 400, { error: 'Invalid blocking', errors });
 
@@ -561,7 +614,7 @@ function putBlocking(req, res, shotId, internal) {
         // it means it.
         movement: body.movement || dominantMovement(body.moves) || 'static',
         moves: Array.isArray(body.moves) ? body.moves : [],
-        subjects: Array.isArray(body.subjects) ? body.subjects : [],
+        subjects: (Array.isArray(body.subjects) ? body.subjects : []).map(stagedAtStart),
         cameraKeys: Array.isArray(body.cameraKeys) ? normalizeCameraKeys(body.cameraKeys) : [],
     };
 
@@ -587,7 +640,9 @@ function putBlocking(req, res, shotId, internal) {
     // Sampled at save time, so what is stored is what was seen. A sequence is
     // sampled as one continuous path; a lone movement keeps the old call, which
     // is what makes every blocking saved before phase 5 reload unchanged.
-    const frames = body.frames || 24;
+    // A long authored move (a follow, a one-take) is sampled densely enough to
+    // keep every key it was given; a short one keeps the 24 it always had.
+    const frames = body.frames || (blocking.cameraKeys.length > 12 ? Math.min(1200, blocking.cameraKeys.length * 3) : 24);
     const path = blocking.cameraKeys.length
         ? require('../lib/previs-blocking').sampleCameraKeys(blocking.cameraKeys, { frames })
         : blocking.moves.length
@@ -1470,6 +1525,36 @@ function handlePrevis(req, res, urlParts) {
         if (urlParts[4] === 'subjects') {
             if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
             return putSubjects(req, res, shotId);
+        }
+        /*
+         * The move rendered through the set to an MP4: free, local (Blender +
+         * ffmpeg). POST starts it and answers 202 with the job (wait: true
+         * answers when it is done); GET lists the exported videos and the job.
+         */
+        if (urlParts[4] === 'render-video') {
+            const pv = require('../lib/previs-video');
+            const b = req.body || {};
+            if (req.method === 'GET') {
+                try { return json(res, 200, pv.plan(shotId, { fps: b.fps, width: b.width })); }
+                catch (err) { return json(res, err.status || 500, { error: err.message, code: err.code }); }
+            }
+            if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+            let started;
+            try {
+                pv.plan(shotId, { fps: b.fps, width: b.width });
+                started = pv.render(shotId, { fps: b.fps, width: b.width });
+            } catch (err) { return json(res, err.status || 500, { error: err.message, code: err.code }); }
+            if (b.wait) {
+                return started.then(out => json(res, 201, out),
+                    err => json(res, err.status || 500, { error: err.message, code: err.code }));
+            }
+            started.catch(() => { /* recorded on the job, which GET …/videos reports */ });
+            return json(res, 202, { started: true, job: pv.JOBS.get(shotId) || null,
+                note: 'Rendering in Blender. GET /film/shots/:id/previs/videos reports progress and the file.' });
+        }
+        if (urlParts[4] === 'videos') {
+            if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+            return json(res, 200, require('../lib/previs-video').list(shotId));
         }
         if (urlParts[4] === 'director') {
             if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });

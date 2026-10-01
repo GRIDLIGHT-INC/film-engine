@@ -27,6 +27,7 @@ film-engine/
 │   ├── dry-run.js          # What every service would be sent, without sending it (CLI)
 │   ├── spike-world.js     # Is a Marble world usable as a previs stage? Three answers, $0.20 (CLI)
 │   ├── blender-set.py      # A location's set built headless in Blender from a layout: renders from the plate cameras, or the plates projected on and exported as a GLB
+│   ├── blender-previz.py   # A shot's move rendered through its set in Blender (Workbench): the camera path and the staged people on theirs, frame by frame
 │   ├── ableton-sidecar.js  # The Ableton sidecar: loopback-only, token-gated, an allowlist of typed AbletonOSC operations (run by hand)
 │   ├── instrument-sidecar.py # The instrument sidecar: supervises plugin workers, loopback and token-gated (run by hand)
 │   ├── instrument-worker.py # One plugin job in its own process: a real main thread for the editor, and a crash costs one job
@@ -284,6 +285,8 @@ film-engine/
 │   │   ├── worlds.js            # A world, its versions, and which one a shot is framed inside
 │   │   ├── set-build.js         # The agent writes the room from the plates; Blender builds, renders beside the plates, projects and exports it, free
 │   │   ├── previs-library.js    # 140 CC0 low-poly furniture pieces and four people of our own, each at a real size read from its file
+│   │   ├── previs-subject-path.js # A staged subject that moves: timed keys, one sampler (mirrored in the page), facing the way she runs; a Steadicam follow as ordinary camera keys
+│   │   ├── previs-video.js      # The move rendered to an MP4: planned free, rendered in Blender, encoded by ffmpeg, kept in 03 Previs as a new version
 │   │   ├── room-scan.js         # An Apple RoomPlan scan (one room, or a house over storeys) read into the set layout: walls, openings, floors, stairs, library furniture
 │   │   ├── lighting.js          # A technique (where the lights stand) over a mood (colour, quantity): shot, then location; the rig lights Previs and is said to the model
 │   │   ├── world-scale.js       # A reconstruction has no unit until somebody measures one thing in it
@@ -656,6 +659,7 @@ film-engine/
 │       ├── lighting.test.js      # Techniques over the card's moods; shot then location; in the prompt; a mirrored key; refused by name; lit in Previs
 │       ├── previs-staging.test.js # A staged model is a library entry or this project's 3D model; moving people or the move keeps the camera; mouse gestures; the folds; Blender light units
 │       ├── previs-scout.test.js # A set walked before any shot exists: inside the room, in its open part, facing the longest view; a view made a shot, pinned and kept
+│       ├── previs-subject-path.test.js # A subject that runs: keys refused by name, one sampler in page and lib, a follow behind her on her own route, a plan cut per floor, the move rendered in Blender and measured
 │       ├── generation-options.test.js # Any connected provider on every generate dialog, its own options each reaching the request, applied at the funnel only to its own provider
 │       ├── topaz-upscale.test.js       # Every Topaz model sized to the delivery without shrinking, priced from its credit table, sound kept, parts uploaded with their ETags, cancel real
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
@@ -4115,6 +4119,17 @@ A world used to come from one place, a paid Marble reconstruction. It can now be
 
 Measured on The Glass Harbour diner, from nothing but its two usable plates: 18 seconds to build and compare, 5 to finish, 32,498 triangles, 6.6 × 3.2 × 11.0 m. The east plate got no camera, because it disagrees with the other two about the room. Marble stays for now; removing it touches the world capability across a dozen registries, and is worth doing once this path has proven itself on more than one location.
 
+### A Girl Runs Down Five Floors: Moving Subjects, Floors, and the Move as a Video
+*The Lodgers: one take, the camera following a girl from the top floor down through five levels of a LiDAR-scanned house.* Three things were missing: a staged person stood still for the whole shot, the Plan was one cut through the whole house, and the move could only be watched while the page was open.
+
+**A subject can move.** A staged subject may carry `path`: timed keys `{ t (ms into the shot), position, rotationDeg? }`, refused by name when a time is not finite, falls after the shot, is out of order or repeated, or there are more than 200 (`validateSubjectPath`, the duration bound in `putBlocking`). Between keys she is linear and faces the way she travels, unless both keys are turned (then the short way round); before the first key and after the last she holds; a pause keeps the facing she arrived with. `lib/previs-subject-path.js` `subjectPoseAt` is the ONE sampler, mirrored in the page and held equal by test over every case, so the Plan draws her where the render puts her. She is **stored where she starts** (`stagedAtStart`), so everything that reads a position without a time (the framing subject, the lighting rig, the prompt) reads the first frame, and the staging line adds one short clause: *Lily … centre frame, running toward frame left* (running at 2.2 m/s or more for a person, walking under it, moving for anything else). In Plan, select her, scrub, drag her (held, not saved, drawn where you left her), **+ Key here**; the route is drawn dashed with its keys, a key is selected by clicking and removed with Delete or **✕ Key**. Look and Plan both pose her at the playhead during Play Move and scrubbing. Saving goes through the subjects-only route, so the camera and its keys are never touched.
+
+**Follow her.** `PUT /shots/:id/previs/timeline` takes `follow: { subject, distance_m, height_m, keys? }` (and `previs_timeline` does): ORDINARY camera keys that walk her own route `distance_m` behind her (through the same doors, down the same stairs; before she sets off the camera stands behind her along her first leg), `height_m` above it, aimed at her chest. Nothing downstream changes, and a move with more than twelve keys is sampled densely enough to keep every one.
+
+**The Plan has floors.** `planLevels` reads them from the layout the world was built from (slab tops and wall bases, clustered within 0.5 m; `GET /set-builds?world_version_id=`), else from the geometry: horizontal triangles by AREA (so a table top is not a storey), kept only where something stands on them (so a ceiling with nothing above is not a floor). With more than one floor the plan is cut 1.2 m above the floor on show and draws only what stands between it and the next, with the section line where each wall meets the cut; a **Floor** picker appears (Follow: the selected subject's floor, else the camera's, following the camera as the move plays). Subjects and the camera on other floors are drawn faint. One floor, or a world with no metres, keeps the old 60% cut.
+
+**Export previz video.** `POST /shots/:id/previs/render-video` (`previs_video_render`) plans the frames for free (`lib/previs-video.js`: one per frame of the shot at the project's fps, 1280 wide at its aspect; the camera from the sampled path exactly as the playhead poses it, `cameraPoseAt` mirroring `worldPoseAtT`; each subject from `subjectPoseAt`, drawn from her library GLB at her staged size), renders them headless in Blender Workbench through the shot's pinned world GLB (`backend/blender-previz.py`, run through `set-build`'s one Blender runner), encodes with ffmpeg (`-nostdin`, one image-sequence input), and registers the MP4 as `other` / `kind: previs_video` in 03 Previs, each export a new version. It answers at once with the job; `GET /shots/:id/previs/videos` (`previs_video_list`) reports frame n of N and the files, and the button on the move timeline shows the progress on itself and plays the file. A shot not in a set, or a machine with no Blender or ffmpeg, is refused by name before anything is written (**425 tools**). `tests/previs-subject-path.test.js` renders a real one-second move and measures the file; nine mutations (the facing, the page's copy, the bound, the order, the start, the follow's lag, the floor test, the staging clause, the scrub) each fail it.
+
 ### A Preview Is Built the Way Its Purchase Is
 Parity made the two surfaces agree about what a director decided. It did not make the REQUEST agree with the screen, and that is where the money is: `routes/storyboard.js` called `buildStoryboardPrompt` directly for generate-all, the streaming generate and per-shot regenerate, and `routes/video-gen.js` had its own `loadShotContext` and four direct `buildVideoPayload` calls. Neither file mentioned previs anywhere in those paths, while `/shots/:id/prompt` and the previs previews went through `loadShotContext` + `buildCapabilityPayload` and did carry it.
 
@@ -6779,6 +6794,7 @@ node --test backend/tests/set-build.test.js
 node --test backend/tests/previs-library.test.js
 node --test backend/tests/previs-staging.test.js
 node --test backend/tests/previs-scout.test.js
+node --test backend/tests/previs-subject-path.test.js
 node --test backend/tests/lighting.test.js
 node --test backend/tests/room-scan.test.js
 node --test backend/tests/topaz-upscale.test.js

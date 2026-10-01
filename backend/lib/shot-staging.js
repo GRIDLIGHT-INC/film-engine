@@ -35,6 +35,7 @@
 
 const { sensorFor, DEFAULT_SENSOR } = require('./previs-camera');
 const { basis } = require('./previs-pick');
+const { hasPath, subjectPoseAt, pathSummary } = require('./previs-subject-path');
 
 const D2R = Math.PI / 180;
 
@@ -166,6 +167,9 @@ function stagingFacts(previs) {
 
     for (const obj of subjects) {
         if (!obj || !Array.isArray(obj.position)) continue;
+        // A subject that moves is described where it STARTS: a still is the first frame.
+        const moves = hasPath(obj);
+        const startAt = moves ? subjectPoseAt(obj, 0).position : obj.position;
         const name = String(obj.name || obj.label || '').trim();
         if (!name) {
             out.unsaid.push({
@@ -177,7 +181,7 @@ function stagingFacts(previs) {
             continue;
         }
 
-        const v = sub(obj.position.map(Number), camPos);
+        const v = sub(startAt.map(Number), camPos);
         const depth = dot(v, forward);
         if (depth <= 0) {
             out.unsaid.push({
@@ -205,10 +209,30 @@ function stagingFacts(previs) {
             facing = band(FACING_BANDS, deg).phrase;
         }
 
+        /*
+         * Moving: one short clause, from the camera, in the words a director
+         * uses — which way across the frame, and running or walking. The route
+         * itself is the video's business; a still only needs to know it is a
+         * moment in a run, not a pose.
+         */
+        let motion = null;
+        if (moves) {
+            const sum = pathSummary(obj);
+            const d = [sum.to[0] - sum.from[0], 0, sum.to[2] - sum.from[2]];
+            const across = dot(d, right), toward = dot(d, forward);
+            const person = obj.kind === 'human' || (obj.model && ['man', 'woman', 'boy', 'girl'].includes(obj.model.library));
+            const verb = person ? (sum.speedMs >= 2.2 ? 'running' : 'walking') : 'moving';
+            const way = Math.hypot(across, toward) < 0.2 ? '' : (Math.abs(across) > Math.abs(toward)
+                ? (across > 0 ? ' toward frame right' : ' toward frame left')
+                : (toward < 0 ? ' toward camera' : ' away from camera'));
+            motion = verb + way;
+        }
+
         out.said.push({
             name,
             kind: obj.kind || 'object',
-            phrase: `${name} ${dep.phrase} ${lat.phrase}` + (facing ? `, ${facing}` : ''),
+            phrase: `${name} ${dep.phrase} ${lat.phrase}` + (motion ? `, ${motion}` : (facing ? `, ${facing}` : '')),
+            motion,
             frame_x: Number(x.toFixed(3)),
             depth_ratio: Number(ratio.toFixed(3)),
             off_frame: !!lat.offFrame,
