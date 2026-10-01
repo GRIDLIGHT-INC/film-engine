@@ -102,7 +102,7 @@ test('WE-5.1 the plate is gathered by the ONE gatherer, so all four paths get it
         'the gatherer never looks for a plate — no path can attach one');
 });
 
-test('WE-5.1b the gatherer actually RETURNS the plate — not merely defines a lookup', () => {
+test('WE-5.1b a stored plate is findable, and the gatherer does NOT send it with a frame', () => {
     /*
      * BEHAVIOURAL, because the source check above is not enough and a mutation
      * proved it: replacing the call with `const plateRef = null` left every
@@ -132,23 +132,18 @@ test('WE-5.1b the gatherer actually RETURNS the plate — not merely defines a l
                 VALUES (?, ?, ?, 'other', ?, 'plate.png', ?)`)
         .run(generateId(), projectId, shotId, file, JSON.stringify({ kind: 'plate_image' }));
 
-    const after = gatherShotReferences(projectId, [], null, [], null, { shotId });
-    const got = after.find(r => r && r.kind === 'plate');
-    assert.ok(got, 'a plate exists for this shot and the gatherer did not return it');
     /*
-     * Bound to the BYTES, not the path. The gatherer inlines each reference as
-     * a data URI, and that is the thing that actually reaches the provider —
-     * asserting a path would pass while the picture was serialised, sent and
-     * thrown away, which is precisely the MuAPI failure this file names.
+     * NOT SENT, by the director's decision (2026-10-01): "the geometric plate
+     * from previz shouldn't be sent; it should be the location plate with the
+     * cinematography directions we explored in previz." The plate is still
+     * stored and found for the routes that show or export it; a FRAME does not
+     * carry it, and Previs reaches the frame as words.
      */
-    assert.match(String(got.uri), /^data:image\/png;base64,iVBORw0KGgo/,
-        'the plate did not travel as image bytes — it was gathered and dropped');
-    assert.strictEqual(got.name, 'PLATE');
-
-    // And a shot that does not name itself gets nothing, which is what makes
-    // the "every call site passes shotId" check above load-bearing.
-    assert.ok(!gatherShotReferences(projectId, [], null, [], null, {})
-        .some(r => r && r.kind === 'plate'), 'a plate travelled without the shot being named');
+    const after = gatherShotReferences(projectId, [], null, [], null, { shotId });
+    assert.ok(!after.some(r => r && r.kind === 'plate'), 'the geometric plate was gathered for a frame');
+    const { plateReferenceFor } = require('../lib/shot-references');
+    const found = plateReferenceFor(shotId);
+    assert.ok(found && found.kind === 'plate', 'the stored plate can no longer be found at all');
 });
 
 // ══ WE-5.2 · it actually travels ════════════════════════════════════════════
@@ -286,7 +281,7 @@ test('WE-5.10 rendering a plate spends nothing', () => {
 
 // ══ WE-5.12 · the pixels ════════════════════════════════════════════════════
 
-test('WE-5.12 a rendered plate is stored, and the gatherer then finds it', async () => {
+test('WE-5.12 a rendered plate is stored and findable, and not sent with a frame', async () => {
     /*
      * The round trip. Until this existed the route described a plate it had no
      * way to receive: the record, the size and the prompt lead were all correct
@@ -325,12 +320,11 @@ test('WE-5.12 a rendered plate is stored, and the gatherer then finds it', async
     assert.ok(stored.data.stored, 'the route accepted a rendered plate and stored nothing');
     assert.strictEqual(stored.data.free, true, 'storing a plate reported a cost');
 
-    // The bytes are on disk and the gatherer picks them up with nothing else changed.
-    const ref = gatherShotReferences(projectId, [], null, [], null, { shotId })
-        .find(r => r && r.kind === 'plate');
-    assert.ok(ref, 'a plate was stored and the gatherer does not see it');
-    assert.match(String(ref.uri), /^data:image\/png;base64,iVBORw0KGgo/,
-        'the stored plate did not come back as image bytes');
+    // Stored and findable; deliberately not sent with a frame (2026-10-01).
+    const { plateReferenceFor } = require('../lib/shot-references');
+    assert.ok(plateReferenceFor(shotId), 'a plate was stored and cannot be found');
+    assert.ok(!gatherShotReferences(projectId, [], null, [], null, { shotId }).some(r => r && r.kind === 'plate'),
+        'the geometric plate travels with a frame');
 
     // Re-rendering REPLACES rather than accumulating: two plates for one shot
     // means "the plate" is whichever row the query happens to return.

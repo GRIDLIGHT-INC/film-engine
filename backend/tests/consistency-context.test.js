@@ -171,7 +171,13 @@ describe('consistency-context', () => {
 
         const payload = applyConsistencyToImagePayload({ prompt: 'base prompt', negative_prompt: 'bad hands' }, context);
         assert.match(payload.prompt, /base prompt/);
-        assert.match(payload.prompt, /red coat/);
+        // Mara's locked picture travels, so her contract is not sent: a subject
+        // sent as a picture is not described (2026-10-01).
+        assert.doesNotMatch(payload.prompt, /red coat/);
+        // Without her picture in the request, the contract is all there is.
+        const noPicture = applyConsistencyToImagePayload(
+            { prompt: 'base prompt', reference_images: [{ name: 'SOMEONE ELSE', kind: 'character' }] }, context);
+        assert.match(noPicture.prompt, /red coat/);
         assert.match(payload.negative_prompt, /different actor/);
         assert.equal(payload.seed, 4242);
         assert.equal(payload.ip_adapter_image, '/refs/mara-front.png');

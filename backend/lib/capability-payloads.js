@@ -965,6 +965,9 @@ function buildImagePayloadForAdapter(ctx, adapter) {
     const pixels = Number(adapter && adapter.maxImagePixels) || null;
     const firstCtx = { ...(ctx || {}), imagePromptLimit: declared, maxImagePixels: pixels };
     const first = CAPABILITY_BUILDERS.image(firstCtx);
+    // Who got what, carried back to the caller's context so a preview built
+    // through this function can show the budget of the prompt really sent.
+    if (ctx && typeof ctx === 'object') ctx.__budget = firstCtx.__budget || null;
     const firstPayload = Array.isArray(first) ? first[0] : first;
     const negative = String((firstPayload && firstPayload.negative_prompt) || '').trim();
     const reserve = adapter && adapter.supportsNegativePrompt === 'folded' && negative
@@ -975,6 +978,7 @@ function buildImagePayloadForAdapter(ctx, adapter) {
 
     const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available, maxImagePixels: pixels };
     const rebuilt = CAPABILITY_BUILDERS.image(rebuiltCtx);
+    if (ctx && typeof ctx === 'object') ctx.__budget = rebuiltCtx.__budget || null;
     return withTierModel(Array.isArray(rebuilt) ? rebuilt[0] : rebuilt, ctx, adapter);
 }
 

@@ -30,6 +30,9 @@ const REQUEST_BUILDERS = {
     meshy: m => ({ image: m.buildImageRequest }),
     openai: m => ({ image: m.buildImageRequest, llm: m.buildLLMRequest }),
     runway: m => ({ image: m.buildImageRequest, video: m.buildVideoRequest }),
+    // MuAPI was missing, so the dry run of the house image provider said "this
+    // adapter exposes no request builder" while the builder sat exported.
+    muapi: m => ({ image: m.buildImageRequest }),
     seedance: m => ({ video: m.buildVideoRequest }),
     elevenlabs: m => ({
         voice: m.buildVoiceRequest, sfx: m.buildSfxRequest,
@@ -41,7 +44,7 @@ const REQUEST_BUILDERS = {
 
 const MODULE_FOR = {
     google: 'google-image', openai: 'openai-image',
-    meshy: 'meshy', runway: 'runway', seedance: 'seedance',
+    meshy: 'meshy', runway: 'runway', seedance: 'seedance', muapi: 'muapi-image',
     elevenlabs: 'elevenlabs', anthropic: 'anthropic', gridlight: 'gridlight-adapter',
 };
 
@@ -348,4 +351,4 @@ function describeCapability(capability, ctx, providerConfig) {
     return out;
 }
 
-module.exports = { describeCapability, sanitize, inputsFor, costFor, CAPABILITIES };
+module.exports = { describeCapability, sanitize, inputsFor, costFor, builderFor, CAPABILITIES };

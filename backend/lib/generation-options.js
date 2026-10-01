@@ -72,8 +72,9 @@ function imageControls(providerId, model) {
             controls.push({ key: 'frame', label: 'Frame', type: 'choice', field: 'aspect_ratio',
                 choices: ratioChoices(ratios), note: 'Unset: the shot\'s own shape.' });
         }
-        controls.push(NEGATIVE);
-        notes.push('MuAPI accepts no seed on any Nano Banana endpoint.');
+        // No Avoid: MuAPI has no negative field, and folding one into the
+        // prompt names each excluded thing to the model (muapi-image.js).
+        notes.push('MuAPI accepts no seed and no negative on any Nano Banana endpoint, so there is no Avoid list here.');
         notes.push('The size is the "Size for this one" choice: MuAPI sells 1K, 2K and 4K on the same model.');
     } else if (providerId === 'google') {
         const { ASPECTS } = require('./providers/google-image');

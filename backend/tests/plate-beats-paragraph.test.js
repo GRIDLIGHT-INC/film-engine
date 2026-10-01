@@ -10,8 +10,12 @@
  * spent describing photographs the model was already holding.
  *
  * The prose cannot simply go: untagged, it is also the LABEL that says which
- * of six attached pictures is the colossus. So it is reduced to what a
+ * of six attached pictures is the colossus. So it was reduced to what a
  * photograph cannot carry.
+ *
+ * Superseded 2026-10-01: a reference key now labels every attached picture,
+ * so a plated subject sends no prose. condenseForPlate is kept and tested for
+ * any caller that still wants the short form.
  */
 
 const test = require('node:test');
@@ -70,18 +74,22 @@ test('condensing never returns nothing, and never grows the text', () => {
     }
 });
 
-test('a subject with NO plate keeps its whole description', () => {
+test('a subject with NO plate keeps its whole description; a plated one is named, not described', () => {
     /*
-     * Asserted at the call site, not on the helper: where there is no picture
-     * the prose is all there is, and shortening it would be removing the only
-     * thing the model has to go on. The condition is `platedHere`.
+     * Behavioural now. Since 2026-10-01 a subject whose own picture is attached
+     * sends no prose at all (the reference key names it): the director's rule,
+     * "descriptions of the items sent as a picture shouldn't be there". The
+     * condensed form this file was written for is no longer sent. What must not
+     * change is the other half: where there is no picture, the prose is all
+     * there is.
      */
-    const fs = require('fs');
-    const path = require('path');
-    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'storyboard-prompt.js'), 'utf8');
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
-    assert.match(code, /platedHere\s*\?/,
-        'the condenser is applied unconditionally, so an unplated subject loses its description');
-    assert.match(code, /opts\.references\s*\|\|\s*\[\]/,
-        'nothing checks whether the subject’s own picture is actually attached');
+    const { buildStoryboardPrompt } = require('../lib/storyboard-prompt');
+    const card = { description: 'MANNY at the table.', characters: ['MANNY'] };
+    const chars = [{ name: 'MANNY', appearance_prompt: MANNY }];
+    const bare = buildStoryboardPrompt(card, chars, null, '', { maxPromptChars: 16000 }).prompt;
+    assert.ok(bare.includes(MANNY), 'an unplated subject lost its description');
+    const plated = buildStoryboardPrompt(card, chars, null, '', { maxPromptChars: 16000, tagged: false,
+        references: [{ name: 'MANNY', kind: 'character', uri: 'data:image/png;base64,AA' }] }).prompt;
+    assert.ok(!plated.includes('FACE: broad'), 'a plated subject is still described');
+    assert.ok(plated.includes('Reference 1: character MANNY'), 'a plated subject is not named');
 });

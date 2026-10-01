@@ -330,9 +330,11 @@ test('the board and the prompt cannot disagree about which camera is used', () =
         const prompt = buildStoryboardPrompt(
             { shot_code: '1A', description: 'a street', camera: CARD_CAMERA }, [], null, '', { previs });
 
-        if (e.shot_type.value) {
-            assert.ok(prompt.prompt.includes(SHOT_TYPE_MAP[e.shot_type.value]),
-                `the board says framing ${e.shot_type.value} and the prompt does not use it`);
+        // The shot SIZE is one answer (lib/framing via effectiveCamera): the
+        // board shows it and the prompt says it.
+        if (e.framing.value) {
+            assert.ok(prompt.prompt.includes(e.framing.phrase),
+                `the board says shot size ${e.framing.value} and the prompt does not say it`);
         }
         if (e.lens.value) {
             assert.ok(prompt.prompt.includes(`${e.lens.value} lens`),

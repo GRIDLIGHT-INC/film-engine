@@ -7806,6 +7806,17 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                     Previs overrides framing, lens and movement &mdash; what was staged beats what was
                     written &mdash; and staging subjects there says where they stand in this frame.
                 </p>
+                <h4 style="margin:14px 0 8px;">Style <span class="text-muted text-sm" style="font-weight:normal;">&mdash; the film&rsquo;s look, as this shot sends it</span></h4>
+                <div class="form-group">
+                    <textarea id="shotCardStyle" rows="4" style="width:100%;line-height:1.5;font-family:inherit;"
+                        oninput="shotCardStyleEdited()"
+                        placeholder="No style for this shot"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                        <button class="btn btn-sm btn-secondary" type="button" onclick="shotCardStyleUseFilm()">Use the film style</button>
+                        <button class="btn btn-sm btn-secondary" type="button" onclick="shotCardStyleNone()">No style for this shot</button>
+                        <span class="text-sm text-muted" id="shotCardStyleState"></span>
+                    </div>
+                </div>
                 <div id="shotCardPreview" style="margin:10px 0;"></div>
                 <div id="shotCardWarning" class="text-sm" style="display:none;margin-bottom:10px;"></div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -40632,11 +40643,61 @@ ${fountainText.slice(0, 50000)}`;
         out.style.color = n > 360 ? 'var(--warning,#b8860b)' : '';
     }
 
+    /*
+     * THE STYLE, PER SHOT. "Style of movie should be shown in the modal so I can
+     * remove it or change it." The box shows what this shot sends: its own style
+     * when it has one, else the film's. Editing makes it this shot's; "Use the
+     * film style" puts it back to following the film (saved as null).
+     */
+    function shotCardStyleFill() {
+        const box = document.getElementById('shotCardStyle');
+        if (!box) return;
+        const own = (SHOT_CARD.card.generation || {}).style;
+        SHOT_CARD.styleMode = typeof own === 'string' ? 'shot' : 'film';
+        box.value = typeof own === 'string' ? own : (SHOT_CARD.filmStyle || '');
+        shotCardStyleSay();
+    }
+    function shotCardStyleSay() {
+        const el = document.getElementById('shotCardStyleState');
+        const box = document.getElementById('shotCardStyle');
+        if (!el || !box) return;
+        el.textContent = SHOT_CARD.styleMode === 'film'
+            ? 'Following the film style (Settings). Edit it to give this shot its own.'
+            : (box.value.trim() ? 'This shot\u2019s own style, saved on the shot.' : 'No style for this shot.');
+    }
+    function shotCardStyleEdited() { SHOT_CARD.styleMode = 'shot'; shotCardStyleSay(); }
+    function shotCardStyleUseFilm() {
+        const box = document.getElementById('shotCardStyle');
+        if (box) box.value = SHOT_CARD.filmStyle || '';
+        SHOT_CARD.styleMode = 'film';
+        shotCardStyleSay();
+    }
+    function shotCardStyleNone() {
+        const box = document.getElementById('shotCardStyle');
+        if (box) box.value = '';
+        SHOT_CARD.styleMode = 'shot';
+        shotCardStyleSay();
+    }
+    /** What to save: undefined leaves it alone, null follows the film, a string is the shot's. */
+    function shotCardStyleValue() {
+        const box = document.getElementById('shotCardStyle');
+        if (!box) return undefined;
+        const had = typeof (SHOT_CARD.card.generation || {}).style === 'string';
+        if (SHOT_CARD.styleMode === 'film') return had ? null : undefined;
+        return box.value.trim();
+    }
+    window.shotCardStyleEdited = shotCardStyleEdited;
+    window.shotCardStyleUseFilm = shotCardStyleUseFilm;
+    window.shotCardStyleNone = shotCardStyleNone;
+
     function directingPanel(p, opts) {
         const o = opts || {};
         return `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;">
-            <div class="form-group"><label>Framing</label>
+            <div class="form-group"><label>Shot size <span class="text-muted text-sm">EWS&ndash;ECU</span></label>
+                <select id="${p}Framing" title="The one shot size the prompt says. Previs, when the shot is blocked, wins over this."></select>
+                <div class="text-sm text-muted" id="${p}FramingHint"></div></div>
+            <div class="form-group"><label>Shot type <span class="text-muted text-sm">angle or rig; a size word here only counts with no shot size set</span></label>
                 <select id="${p}ShotType"></select>
                 <div class="text-sm text-muted" id="${p}ShotTypeHint"></div></div>
             <div class="form-group"><label>Lens</label>
@@ -40717,6 +40778,7 @@ ${fountainText.slice(0, 50000)}`;
     function directingFallbacks(specs) {
         const sp = specs || {};
         return {
+            Framing: 'what Previs frames, else the size in the shot type',
             ShotType: 'whatever previs solves, or a medium',
             Lens: sp.lens ? `mood board: ${sp.lens}` : 'the film default',
             Movement: 'static, unless previs blocks a move',
@@ -40730,6 +40792,12 @@ ${fountainText.slice(0, 50000)}`;
 
     function fillDirectingPanel(p, vocab, cam, lighting, fallbacks) {
         const light = lighting || {};
+        if (document.getElementById(p + 'Framing')) {
+            const fr = document.getElementById(p + 'Framing');
+            fr.innerHTML = '<option value="">— from Previs, else the shot type —</option>'
+                + (vocab.framings || []).map(f => `<option value="${esc(f.id)}" title="${esc(f.phrase)}">${esc(f.short)} &middot; ${esc(f.label)}</option>`).join('');
+            fr.value = cam.framing || '';
+        }
         shotCardFill(p + 'ShotType', vocab.shot_types, cam.shot_type, '— from the film —');
         shotCardFill(p + 'Movement', vocab.camera_moves, cam.movement, '— from the film —');
         shotCardFill(p + 'Lighting', vocab.lighting,
@@ -40762,6 +40830,7 @@ ${fountainText.slice(0, 50000)}`;
         const val = id => { const el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
         const set = (k, v) => { if (v === '' || v === null || v === undefined) delete camera[k]; else camera[k] = v; };
         set('shot_type', val(p + 'ShotType'));
+        if (document.getElementById(p + 'Framing')) set('framing', val(p + 'Framing'));
         set('movement', val(p + 'Movement'));
         set('lens', val(p + 'Lens'));
         set('sensor', val(p + 'Sensor'));
@@ -41580,12 +41649,17 @@ ${fountainText.slice(0, 50000)}`;
         const e = f.effective || {};
         const facet = k => (e[k] && e[k].value) || '';
         const from = k => (e[k] && e[k].source) || 'card';
+        // The shot SIZE is the one the prompt says (lib/framing, via the
+        // effective camera). A size word in shot_type is not shown beside it.
+        const SIZE_WORDS = ['establishing', 'wide', 'medium', 'close-up', 'extreme-close-up'];
+        const shotType = facet('shot_type');
         const facets = [
-            ['shotCardShotType', facet('shot_type'), from('shot_type')],
+            ['shotCardFraming', facet('framing') ? String(facet('framing')).toUpperCase() : '', from('framing')],
+            ['shotCardShotType', shotType, from('shot_type')],
             ['shotCardLens', facet('lens'), from('lens')],
             ['shotCardMovement', facet('movement'), from('movement')],
             ['shotCardLighting', light.type || (typeof f.lighting === 'string' ? f.lighting : ''), 'card'],
-        ];
+        ].filter(([field, v]) => !(field === 'shotCardShotType' && (SIZE_WORDS.includes(v) || !v)));
         const WHERE = {
             blocking: ['staged in previs — this beats the card', 'var(--gl-brand-cyan, #38bdf8)'],
             film: ['the production default — no shot chose this', 'var(--gl-text-muted, #94a3b8)'],
@@ -41608,7 +41682,7 @@ ${fountainText.slice(0, 50000)}`;
         const missing = facets.filter(([, v]) => !v).length;
         const add = missing
             ? `<span class="tag" style="cursor:pointer;opacity:.6;"
-                     title="${missing} of framing, lens, movement and lighting are not set"
+                     title="${missing} of shot size, lens, movement and lighting are not set"
                      onclick="editShotCard('${f.shot_id}')">+ ${missing} unset</span>`
             : '';
         const dur = f.duration_ms ? `<span class="tag">${(f.duration_ms / 1000).toFixed(1)}s</span>` : '';
@@ -42307,6 +42381,14 @@ ${fountainText.slice(0, 50000)}`;
      * director needs is the words going out, the pictures going with them, and
      * whether anything was cut.
      */
+    /** What each part of a frame prompt is called on the Direct panel. */
+    const PROMPT_PART_LABEL = Object.freeze({
+        references: 'Pictures', camera_note: 'Camera note', plate: 'Plate', anchor: 'Anchor',
+        direction: 'The shot', staging: 'Where people stand', camera: 'Camera', annotations: 'Marks',
+        lighting: 'Lighting', style: 'Style', scale: 'Sizes', appearance: 'Unpictured subjects',
+        location: 'Location (no picture)', contracts: 'Locked profiles', quality: 'Quality tags',
+    });
+
     async function previewShotPrompt() {
         const box = document.getElementById('shotCardPreview');
         if (!box || !SHOT_CARD.shotId) return;
@@ -42338,6 +42420,22 @@ ${fountainText.slice(0, 50000)}`;
                       ? (d.references || []).map(r => esc(
                           `${r.subject || '?'}${r.view ? ` — ${r.view}` : ''} (${r.kind || '?'})`)).join(', ')
                       : '<span class="text-muted">none &mdash; every subject is being invented from words</span>'}
+                </div>
+                <div class="text-sm" style="margin-top:8px;">
+                  <strong>What goes into it, in order</strong>
+                  <span class="text-muted">&mdash; everything that shapes this frame, and where it comes from</span>
+                  <table style="width:100%;border-collapse:collapse;margin-top:4px;">
+                    ${(d.budget || []).filter(b => b.text).map(b => `<tr style="vertical-align:top;border-top:1px solid rgba(255,255,255,.08);">
+                        <td style="padding:4px 8px 4px 0;white-space:nowrap;"><strong>${esc(PROMPT_PART_LABEL[b.contributor] || b.contributor)}</strong></td>
+                        <td style="padding:4px 0;line-height:1.45;">${esc(b.text)}${b.cut ? ` <span style="color:var(--warning,#b8860b);">(cut ${b.cut})</span>` : ''}</td>
+                      </tr>`).join('')}
+                  </table>
+                  ${d.negative_not_sent ? `<div class="text-muted" style="margin-top:5px;line-height:1.45;">
+                      <strong>Not sent:</strong> the "must not appear" list
+                      (${esc(d.negative_not_sent)}) &mdash; ${esc(d.provider || 'this provider')} has no
+                      negative field, and naming those things in the prompt draws them.</div>` : ''}
+                  ${d.preview_error ? `<div style="color:var(--warning,#b8860b);margin-top:5px;">
+                      Read from the card rather than the generation path: ${esc(d.preview_error)}</div>` : ''}
                 </div>
                 ${staging ? `<div class="text-sm" style="margin-top:5px;">
                     <strong>Staged geometry:</strong> ${esc(staging[0])}
@@ -42409,12 +42507,15 @@ ${fountainText.slice(0, 50000)}`;
             let specs = {};
             try {
                 const pid = state.currentProject.id;
-                const [chars, props, locs, board] = await Promise.all([
+                const [chars, props, locs, board, proj] = await Promise.all([
                     api(`/projects/${pid}/characters`).catch(() => []),
                     api(`/projects/${pid}/props`).catch(() => []),
                     api(`/projects/${pid}/locations`).catch(() => []),
                     api(`/projects/${pid}/mood-board`).catch(() => ({})),
+                    api(`/projects/${pid}`).catch(() => null),
                 ]);
+                const p0 = proj && (proj.project || proj);
+                SHOT_CARD.filmStyle = (p0 && p0.style_preset) || '';
                 /*
                  * `has_plate` comes from the server, derived from the same
                  * asset query the gatherer uses to attach a plate. This read
@@ -42467,10 +42568,14 @@ ${fountainText.slice(0, 50000)}`;
                 put('shotCardBeats', Array.isArray(SHOT_CARD.card.beats) ? SHOT_CARD.card.beats.join('\n') : '');
                 put('shotCardNegPrompt', (SHOT_CARD.card.generation || {}).negative_prompt);
             }
+            shotCardStyleFill();
 
             document.getElementById('shotCardWarning').style.display = 'none';
             document.getElementById('shotCardPreview').innerHTML = '';
             showModal('shotCardModal');
+            // What will be sent, shown as soon as the panel opens: every part
+            // of the prompt and where it comes from. Free.
+            previewShotPrompt();
             if (focusField) {
                 const el = document.getElementById(focusField);
                 if (el) setTimeout(() => { el.focus(); el.scrollIntoView({ block: 'center' }); }, 60);
@@ -42540,6 +42645,10 @@ ${fountainText.slice(0, 50000)}`;
             // generation merges on the route; null clears the negative prompt.
             const neg = txt('shotCardNegPrompt');
             if (neg !== null) body.generation = { negative_prompt: neg || null };
+            // The shot's own style: absent follows the film, '' is none, text is
+            // this shot's. null on the route returns it to the film's.
+            const st = shotCardStyleValue();
+            if (st !== undefined) body.generation = { ...(body.generation || {}), style: st };
         }
         if (blocking.direction !== undefined) body.direction = blocking.direction;
         if (blocking.description) body.description = blocking.description;

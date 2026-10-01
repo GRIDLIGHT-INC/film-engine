@@ -175,8 +175,14 @@ function buildImageRequest(p) {
     const model = MODELS[p.model] ? p.model : DEFAULT_MODEL;
     const spec = MODELS[model];
 
+    /*
+     * NO NEGATIVE. MuAPI's Nano Banana endpoints have no negative field, and
+     * folding one into the prompt as "Avoid: softbox, light stand, lens flare…"
+     * named every one of those things to the model, last, in the same text as
+     * the shot. The director's decision (2026-10-01): on MuAPI the negative is
+     * not sent. The shot's own words say what is in frame.
+     */
     let prompt = String(p.prompt || '');
-    if (p.negative_prompt) prompt += `\n\nAvoid: ${p.negative_prompt}`;
     if (prompt.length > PROMPT_LIMIT) prompt = prompt.slice(0, PROMPT_LIMIT);
 
     const images = [];
@@ -415,7 +421,9 @@ const muapiImageAdapter = {
     sizeControlReason: 'MuAPI takes an aspect ratio and a 1K/2K/4K tier; the exact pixel '
         + 'dimensions are the tier\u2019s, not the ones asked for.',
     promptLimit: PROMPT_LIMIT,
-    supportsNegativePrompt: 'folded',
+    supportsNegativePrompt: false,
+    negativePromptReason: 'No Nano Banana endpoint has a negative field, and folding one into the '
+        + 'prompt as "Avoid: …" names each thing to the model. Not sent, by the director\u2019s decision.',
     // MuAPI accepts no seed field on any nano endpoint -- see buildImageRequest.
     supportsSeed: false,
     referenceMode: 'edit',

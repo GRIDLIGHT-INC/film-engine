@@ -383,6 +383,21 @@ test('E: every image adapter either sends the negative or folds it in', async ()
             continue;
         }
         const request = builder(payload);
+        /*
+         * A DECLARED drop is a decision, not dead code. MuAPI has no negative
+         * field, and folding it in as "Avoid: …" named the excluded things to
+         * the model; the director chose to send nothing there. Allowed only when
+         * the adapter says so with its reason, and then the builder must really
+         * not send it.
+         */
+        if (adapter.supportsNegativePrompt === false) {
+            if (!String(adapter.negativePromptReason || '').trim()) {
+                dropped.push(`${id}: declares no negative support and gives no reason`);
+            } else if (JSON.stringify(request).includes(SENTINEL)) {
+                dropped.push(`${id}: declares the negative is not sent, and its builder sends it`);
+            }
+            continue;
+        }
         if (!JSON.stringify(request).includes(SENTINEL)) {
             dropped.push(`${id}: the negative reaches the provider in neither a native field nor the positive prompt`);
         }

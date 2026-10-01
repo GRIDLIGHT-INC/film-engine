@@ -1007,7 +1007,18 @@ function effectiveCamera(cardCamera, previs, filmOptics, opts) {
         return { value: null, source: null };
     };
 
+    /*
+     * THE SHOT SIZE, from the one standard (lib/framing): Previs's coverage,
+     * else the card's framing, else a size word in shot_type. The board shows
+     * it and the prompt says it, from this one answer.
+     */
+    const sized = require('./framing').shotFraming({ camera: card }, facets);
+    const framing = sized.id
+        ? { value: sized.id, source: sized.source === 'previs' ? 'blocking' : 'card', phrase: sized.phrase }
+        : { value: null, source: null, phrase: null };
+
     return {
+        framing,
         shot_type: shotType,
         lens,
         movement,

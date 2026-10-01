@@ -128,16 +128,17 @@ test('the storyboard route gates references on the provider that will run', () =
     assert.ok(tagged >= 1, 'nothing checks supportsReferenceTags, so tags reach providers that cannot read them');
 });
 
-test('a provider that takes pictures but cannot name them keeps the prose', () => {
-    // Meshy conditions on an untagged array. Attaching the plate AND keeping
-    // the description is strictly better than either alone — the picture fixes
-    // identity, the words survive for a model that cannot read @tags.
-    const refs = [{ name: 'MAYA', tag: 'maya', uri: 'data:image/png;base64,AAA' }];
+test('a provider that takes pictures but cannot name them gets a numbered key, not a tag', () => {
+    // Meshy and MuAPI condition on an untagged array. The words used to stay
+    // as the only label; since 2026-10-01 the reference key labels each picture
+    // by its position, and a subject sent as a picture is not described.
+    const refs = [{ name: 'MAYA', kind: 'character', tag: 'maya', uri: 'data:image/png;base64,AAA' }];
     const { prompt } = buildStoryboardPrompt(CARD, CHARS, LOC, 'noir', { references: refs, tagged: false });
 
     assert.ok(!/@\w+/.test(prompt), `untaggable provider still got a tag: ${prompt}`);
-    assert.ok(prompt.includes('rust-orange cardigan'),
-        'the description was dropped for a provider that cannot read tags');
+    assert.ok(prompt.includes('Reference 1: character MAYA'), 'the picture is not named');
+    assert.ok(!prompt.includes('rust-orange cardigan'),
+        'the subject was described beside its own picture');
 });
 
 /**

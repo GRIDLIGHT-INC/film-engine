@@ -93,9 +93,11 @@ function identify(item) {
 
 /** Whether this subject's own picture is travelling with the prompt. */
 function hasReference(ctx, item) {
-    return (ctx.references || []).some(r =>
-        String(r.subject_name || '').toLowerCase() === String(item.subject_name || '').toLowerCase()
-        && String(r.profile_type || '') === String(item.profile_type || ''));
+    // Two shapes reach here: a consistency reference ({subject_name,
+    // profile_type}) and a gathered plate ({name, kind}).
+    return (ctx.references || []).some(r => r
+        && String(r.subject_name || r.name || '').toLowerCase() === String(item.subject_name || '').toLowerCase()
+        && String(r.profile_type || r.kind || '') === String(item.profile_type || ''));
 }
 
 /** Cut at a clause boundary; a description's opening is what the thing IS. */
@@ -119,6 +121,25 @@ function fitAdditions(basePrompt, ctx, opts) {
         : (ctx.prompt_additions || []).map(text => ({ text, profile_type: 'prop', subject_name: '' }));
 
     items.sort((a, b) => (ADDITION_RANK[a.profile_type] ?? 5) - (ADDITION_RANK[b.profile_type] ?? 5));
+
+    /*
+     * A SUBJECT WHOSE PICTURE IS ATTACHED IS NOT DESCRIBED.
+     *
+     * "Descriptions of the items sent as a picture shouldn't be there, polluting
+     * and potentially changing the final board shot." The picture is the
+     * description, and the prompt's reference key names it ("Reference 2:
+     * character MANNY"). Prose about it competed with the picture and, for a
+     * location, carried the text written to generate the EMPTY set plate
+     * ("no people, no bottle, the tabletop completely bare") into a shot with
+     * a man and a bottle in it.
+     *
+     * Decided against what is ACTUALLY attached (the references passed in), so
+     * a subject whose picture did not make the cut keeps its words: travelling
+     * with neither is the failure a previous version of this rule caused.
+     */
+    for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].subject_name && hasReference(ctx, items[i])) items.splice(i, 1);
+    }
 
     /*
      * ADDITION_RANK orders by KIND — identity before place before objects —
@@ -158,9 +179,12 @@ function fitAdditions(basePrompt, ctx, opts) {
     }
 
     /*
-     * NOT shortened because a plate is attached.
+     * (A subject whose picture IS attached was removed above. This was once
+     * "not shortened because a plate is attached", reverted because the
+     * decision was made against the profiles rather than the pictures really
+     * in the payload; it is now made against the pictures.)
      *
-     * That was tried and reverted. The reasoning was sound — a plate shows what
+     * The history of that revert: a plate shows what
      * a subject looks like, so describing it again is redundant — and it was
      * wrong in practice for one reason: the picture does not always arrive. A
      * provider takes three references and a shot can want five; one generation

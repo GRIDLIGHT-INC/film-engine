@@ -303,6 +303,13 @@ async function callImageGen(prompt, negativePrompt, seed, options, projectConfig
         typeof payloadFactory === 'function' ? payloadFactory : requestBody,
         projectConfig || {}, { timeout: 300000, ...(callOpts || {}) });
 
+    // A preview stops at the provider's door (lib/providers previewRequest):
+    // nothing was generated, and what would have been sent comes back.
+    if (result && result.ok && result.preview) {
+        return { preview: { provider: result.provider, payload: result.payload, request: result.request,
+            chain: result._chain || [] } };
+    }
+
     if (!result || !result.ok) {
         const tried = (result && result._chain || [])
             .map(a => `${a.provider}: ${a.error}`).join(' | ') || (result && result.error) || 'unknown error';
@@ -2046,7 +2053,45 @@ function currentFrameVersion(shotId) {
  * Spends nothing, which is what makes it usable. Finding out by generating is
  * how trying three phrasings becomes a budget decision.
  */
-function shotPromptPreview(req, res, shotId, query) {
+/**
+ * What a board generation of this shot would send, from the generation itself.
+ *
+ * Runs regenerateShot in preview mode: the same gather, the same context, the
+ * same per-adapter payload, the same pin and dialog options, stopped at the
+ * provider funnel, which returns the adapter's own wire request. Null when the
+ * path refused (the reason is in `error`).
+ */
+async function realBoardRequest(shotId, body) {
+    let status = 200, sent = null;
+    const fake = {
+        headersSent: false,
+        writeHead(code) { status = code; },
+        setHeader() {},
+        end(b) { try { sent = JSON.parse(b); } catch (_) { sent = b; } },
+    };
+    try {
+        const got = await regenerateShot({ body: body || {}, headers: {} }, fake, shotId, { preview: true });
+        if (got && got.preview) return got;
+        return { error: (sent && sent.error) || 'the generation path refused', status };
+    } catch (err) {
+        return { error: err.message, status: 502 };
+    }
+}
+
+/** The prompt a wire request carries, wherever its provider puts it. */
+function wirePrompt(request) {
+    const body = request && (request.body || request);
+    if (!body || typeof body !== 'object') return null;
+    if (typeof body.prompt === 'string') return body.prompt;
+    if (typeof body.promptText === 'string') return body.promptText;
+    if (Array.isArray(body.input)) {
+        const t = body.input.filter(x => x && x.type === 'text').map(x => x.text || '').join('\n');
+        if (t) return t;
+    }
+    return null;
+}
+
+async function shotPromptPreview(req, res, shotId, query) {
     const { loadShotContext, buildCapabilityPayload } = require('../lib/capability-payloads');
 
     let ctx;
@@ -2093,9 +2138,25 @@ function shotPromptPreview(req, res, shotId, query) {
     try { built = buildCapabilityPayload('image', ctx); } catch (err) {
         return json(res, 409, { error: err.message, code: err.code });
     }
-    const payload = Array.isArray(built.payload) ? built.payload[0] : built.payload;
+    let payload = Array.isArray(built.payload) ? built.payload[0] : built.payload;
     const ceiling = imagePromptLimitFor(ctx.project);
-    const prompt = String(payload.prompt || '');
+    /*
+     * THE PROMPT SHOWN IS THE PROMPT SENT. Built by the generation path itself
+     * and read off the adapter's wire request; the payload above is only the
+     * fallback when that path refuses (and then `real.error` says why).
+     */
+    const real = await realBoardRequest(shotId, {
+        direction_mode: directionMode,
+        ...(query && query.use_annotations !== undefined
+            ? { use_annotations: query.use_annotations === 'true' || query.use_annotations === '1' } : {}),
+    });
+    const realPreview = real && real.preview;
+    if (realPreview && realPreview.payload) payload = realPreview.payload;
+    const sentPrompt = realPreview ? wirePrompt(realPreview.request) : null;
+    const prompt = String(sentPrompt != null ? sentPrompt : (payload.prompt || ''));
+    const negativeSent = !!(realPreview && realPreview.payload && realPreview.payload.negative_prompt
+        && JSON.stringify((realPreview.request && (realPreview.request.body || realPreview.request)) || {})
+            .includes(String(realPreview.payload.negative_prompt).slice(0, 40)));
 
     // Every locked subject that contributes prose, with what it wanted and what
     // it got. "Over by 946" is actionable; "the prompt was truncated" is not.
@@ -2136,7 +2197,17 @@ function shotPromptPreview(req, res, shotId, query) {
             location_view: ctx.sceneCard.location_view || '',
         },
         prompt,
-        negative_prompt: payload.negative_prompt || '',
+        // Only what reaches the provider. MuAPI has no negative field and is
+        // sent none, so its negative is reported as not sent rather than shown.
+        negative_prompt: negativeSent ? (payload.negative_prompt || '') : '',
+        negative_sent: negativeSent,
+        negative_not_sent: negativeSent ? '' : (payload.negative_prompt || ''),
+        provider: realPreview ? realPreview.provider : null,
+        // The wire request itself, pictures described rather than printed.
+        request: realPreview && realPreview.request
+            ? require('../lib/dry-run').sanitize(realPreview.request) : null,
+        preview_source: realPreview ? 'generation_path' : 'payload_builder',
+        preview_error: realPreview ? null : (real && real.error) || null,
         prompt_chars: prompt.length,
         ceiling,
         headroom: ceiling ? ceiling - prompt.length : null,
@@ -2148,7 +2219,7 @@ function shotPromptPreview(req, res, shotId, query) {
         // { subject_name, profile_type, role }. Reporting only the second
         // rendered every gathered plate as `{}` — a report that says a
         // subject's picture is attached, and cannot say which subject.
-        references: (payload.reference_images || []).map(r => ({
+        references: ((real && real.references) || payload.reference_images || []).map(r => ({
             subject: r.name || r.subject_name || null,
             kind: r.kind || r.profile_type || null,
             tag: r.tag || null,
@@ -2178,7 +2249,7 @@ function shotPromptPreview(req, res, shotId, query) {
          * already declares for them, so what is reported sums to what is sent.
          */
         budget: (() => {
-            const rows = ((built.meta && built.meta.budget) || []).slice();
+            const rows = (((real && real.budget) || (built.meta && built.meta.budget)) || []).slice();
             const kept = contributors.reduce((n, c) => n + (Number(c.survived) || 0), 0);
             const wanted = contributors.reduce((n, c) => n + (Number(c.wrote) || 0), 0);
             if (kept > 0 && !rows.some(r => r.contributor === 'contracts')) {
@@ -3169,7 +3240,8 @@ async function regenerateShot(req, res, shotId, opts) {
     const project = db.prepare('SELECT id, title, style_preset, provider_config, aspect_ratio, annotation_feedback, anchor_shot_id, board_locked_at FROM film_projects WHERE id = ?').get(scene.project_id);
     // An exploration writes no frame, so a locked board does not refuse it — the
     // pick that would replace one is refused instead.
-    const _lock = cap.capture ? null : boardLocked(project, req.body || {});
+    // A preview reads; it never writes a frame, so a lock does not refuse it.
+    const _lock = (cap.capture || cap.preview) ? null : boardLocked(project, req.body || {});
     if (_lock) return json(res, 423, _lock);
     if (!project) {
         return json(res, 404, { error: 'Project not found' });
@@ -3260,7 +3332,7 @@ async function regenerateShot(req, res, shotId, opts) {
     // Camera mode keeps a scene, so there has to BE one. Locking a scene you
     // have not generated is not a mode, it is a mistake — and running anyway
     // would spend money producing exactly the drift the mode exists to prevent.
-    if (DIRECTION_MODES[directionMode].requires_anchor && !anchorAttached) {
+    if (DIRECTION_MODES[directionMode].requires_anchor && !anchorAttached && !cap.preview) {
         return json(res, 409, {
             error: 'Camera mode keeps the scene from an existing frame, and none is attached.',
             reason: anchorState.reason,
@@ -3304,7 +3376,10 @@ async function regenerateShot(req, res, shotId, opts) {
         generationCtx = loadShotContext(shotId);
         const application = generationCtx.previsApplication;
         if (application && !application.applied) {
-            if (body.ignore_staged !== true) {
+            // A preview shows what the board would generate from the committed
+            // card, which is what ignore_staged generates; it reports the
+            // staged state separately.
+            if (body.ignore_staged !== true && !cap.preview) {
                 return json(res, 409, {
                     error: 'This shot has unapplied Previs blocking.',
                     code: 'STAGED_PREVIS',
@@ -3333,7 +3408,7 @@ async function regenerateShot(req, res, shotId, opts) {
         : (body.seed || consistencyContext.locked_seed || crypto.randomInt(0, 2 ** 31));
 
     // Update status — not for an exploration, which leaves the shot as it was.
-    if (!cap.capture) db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
+    if (!cap.capture && !cap.preview) db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('generating', shotId);
 
     try {
         ensureStoryboardDir(project.id);
@@ -3366,18 +3441,38 @@ async function regenerateShot(req, res, shotId, opts) {
             // visible in the picture travelling beside them.
             anchorCovers: anchorCoversFor(anchorState, anchorAttached),
         });
+        let lastBudget = null;
         const payloadFactory = generationCtx && !body.prompt_override
-            ? adapter => buildImagePayloadForAdapter({
-                ...generationCtx,
-                tierOverride: qualityOverride,
-                consistency: consistencyContext,
-                overrides: {
-                    seed,
-                    ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
-                    ip_adapter_weight: primaryRef && primaryRef.weight,
-                },
-            }, adapter)
+            ? adapter => {
+                const c = {
+                    ...generationCtx,
+                    tierOverride: qualityOverride,
+                    consistency: consistencyContext,
+                    overrides: {
+                        seed,
+                        ip_adapter_image: primaryRef && (primaryRef.file_path || primaryRef.file_name),
+                        ip_adapter_weight: primaryRef && primaryRef.weight,
+                    },
+                };
+                const p = buildImagePayloadForAdapter(c, adapter);
+                lastBudget = c.__budget || null;
+                return p;
+            }
             : null;
+
+        /*
+         * THE PREVIEW IS THIS PATH. Everything above ran exactly as a purchase
+         * runs it; the provider funnel stops before the call and hands back
+         * the adapter's own wire request. shotPromptPreview reads this.
+         */
+        if (cap.preview) {
+            const { preview: stoppedAt } = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt,
+                imagePayload.seed, imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory,
+                { previewRequest: true });
+            return { preview: stoppedAt || null, budget: lastBudget, references: shotRefs,
+                direction_mode: directionMode, anchor_attached: anchorAttached,
+                prompt_override: !!body.prompt_override };
+        }
         const { buffer: imageBuffer, provider: usedProvider, model: usedModel } =
             await callImageGen(imagePayload.prompt, imagePayload.negative_prompt, imagePayload.seed,
                 imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory,
@@ -3445,7 +3540,7 @@ async function regenerateShot(req, res, shotId, opts) {
         });
 
     } catch (err) {
-        if (cap.capture) throw err;
+        if (cap.capture || cap.preview) throw err;
         db.prepare('UPDATE film_shots SET status = ? WHERE id = ?').run('failed', shotId);
         json(res, 502, {
             error: 'Image generation failed',

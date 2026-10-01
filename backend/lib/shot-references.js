@@ -91,8 +91,17 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
      * prompts still read perfectly. That is the divergence this module exists
      * to end.
      */
-    const plateRef = opts && opts.shotId ? plateReferenceFor(opts.shotId) : null;
-    if (plateRef) candidates.push(plateRef);
+    /*
+     * NOT SENT, by the director's decision: "the geometric plate from previz
+     * shouldn't be sent; it should be the location plate with the
+     * cinematography directions we explored in previz." A flat grey render as
+     * picture 1 fixed the geometry and competed with every real picture; on a
+     * shot with no saved camera it was a render of the world's DEFAULT camera,
+     * an angle nobody chose. Previs now reaches the frame as words — framing,
+     * lens, height, movement, where people stand, lighting — and the location
+     * plate carries the place. plateReferenceFor stays for the routes that
+     * show or export the plate.
+     */
 
     if (anchorRef) candidates.push(anchorRef);
 

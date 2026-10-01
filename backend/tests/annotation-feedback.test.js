@@ -282,7 +282,8 @@ test('a wall of marks is bounded rather than allowed to eat the prompt', () => {
     const { prompt } = buildStoryboardPrompt(card, [], null, 'noir', { annotations: many, maxPromptChars: 1000 });
     assert.ok(prompt.length <= 1000, `prompt overran the ceiling at ${prompt.length}`);
     assert.ok(prompt.includes('film noir'), 'the look was pushed out by the markup');
-    assert.ok(prompt.includes('wide angle shot'), 'the camera was pushed out by the markup');
+    // A wide is said by the shot-size standard (lib/framing), never "wide angle".
+    assert.ok(prompt.includes('wide shot (WS)'), 'the camera was pushed out by the markup');
 });
 
 // ── Refine reads the same marks differently ─────────────────────────────

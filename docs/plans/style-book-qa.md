@@ -87,9 +87,9 @@ database (`FILM_DATA_DIR` is redirected — the `test-isolation` contract).
 ## B. Applying to a shot — `applyEntryToShot`
 
 #### SB-APPLY-01 — every mergeable facet is carried
-**Scenario** An entry setting all eight of `shot_type`, `movement`, `note`, `lens`, `sensor`, `aperture`, `focus_distance_m`, `height_m`.
+**Scenario** An entry setting all nine of `shot_type`, `framing`, `movement`, `note`, `lens`, `sensor`, `aperture`, `focus_distance_m`, `height_m`.
 **Inputs** a card with none of them.
-**Expected** all eight appear in `applied`; the card carries all eight.
+**Expected** all nine appear in `applied`; the card carries all nine.
 **Failure means** a facet silently does not travel, so a favourite angle applies partially and the director cannot see which half. **COVERED**.
 
 #### SB-APPLY-02 — a stage pose is skipped and says so

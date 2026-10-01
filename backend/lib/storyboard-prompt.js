@@ -11,7 +11,9 @@
 // ── Shot Type → Camera Description ──────────────────────────────────
 
 const SHOT_TYPE_MAP = {
-    'wide': 'wide angle shot',
+    // A wide SHOT, never "wide angle": that is a lens, and it contradicted a
+    // card shooting on a 50. The size itself is said by lib/framing.
+    'wide': 'wide shot',
     'medium': 'medium shot',
     'close-up': 'close-up shot, detailed face',
     'extreme-close-up': 'extreme close-up, macro detail',
@@ -134,6 +136,14 @@ const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, distorted, deformed, ugly,
  * in the prompt that a person deliberately wrote about this shot.
  */
 const PROMPT_PRIORITY = [
+    /*
+     * Which attached picture is which. Most providers take an untagged array,
+     * so "the attached photograph is this man" with four photographs attached
+     * was a coin flip. Short, protected, and first: every later mention of a
+     * subject leans on it.
+     */
+    { id: 'references', protected: true,
+      why: 'names each attached picture in order, so a picture is never left for the model to guess' },
     { id: 'camera_note', protected: true,
       why: 'a short, deliberate instruction about where the camera is — the last thing that should be lost' },
     /*
@@ -470,6 +480,31 @@ function condenseForPlate(text) {
     return (out && out.length < String(text).length) ? out : String(text || '').trim();
 }
 
+/**
+ * "Reference 1: location PRODUCT TABLE - LIMBO. Reference 2: character MANNY."
+ *
+ * In the order the pictures travel, which is the order every adapter sends
+ * them. Null when nothing is attached.
+ */
+const REFERENCE_KIND_LABEL = {
+    location: 'location', character: 'character', prop: 'prop',
+    anchor: 'the scene to re-shoot', style: 'look reference', plate: 'geometric plate',
+};
+function referenceKey(references, tagFor) {
+    const refs = (references || []).filter(Boolean);
+    if (!refs.length) return null;
+    const parts = refs.map((r, i) => {
+        const kind = REFERENCE_KIND_LABEL[r.kind] || r.kind || 'reference';
+        const name = String(r.name || r.subject_name || '').trim();
+        const label = r.kind === 'anchor'
+            ? `${kind}${name ? ` (shot ${name})` : ''}`
+            : `${kind}${name ? ` ${name}` : ''}`;
+        const tag = tagFor && name && tagFor.get(name.toUpperCase());
+        return `Reference ${i + 1}: ${label}${r.view ? `, ${r.view} view` : ''}${tag ? ` (@${tag})` : ''}`;
+    });
+    return `${parts.join('. ')}. Each picture shows what that subject looks like; this text says how the shot is framed and what happens in it`;
+}
+
 function buildStoryboardPrompt(sceneCard, characters, location, stylePreset, options) {
     const opts = options || {};
     const ceiling = opts.maxPromptChars || MAX_PROMPT_CHARS;
@@ -551,6 +586,10 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     if (opts.plateAttached) {
         add('plate', require('./generation-plate').platePromptLead({ tag: null }));
     }
+    {
+        const key = referenceKey(opts.references, tagFor);
+        if (key) add('references', key);
+    }
 
     if (opts.anchorAttached) {
         add('anchor', require('./shot-anchor').anchorLeadPhrase(opts.anchorTag));
@@ -594,10 +633,11 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
             add('appearance', `@${charTag}`);
         } else if (covered && opts.directionMode === 'camera') {
             add('appearance', String(charName).toUpperCase());
+        } else if (platedHere) {
+            // The picture IS the description, and the reference key already
+            // says which picture it is. Words about it only compete with it.
         } else if (dbChar.appearance_prompt) {
-            add('appearance', platedHere
-                ? `${String(charName).toUpperCase()}: ${condenseForPlate(dbChar.appearance_prompt)}`
-                : dbChar.appearance_prompt);
+            add('appearance', dbChar.appearance_prompt);
         }
     }
 
@@ -616,10 +656,10 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
         const propPlated = (opts.references || []).some(
             r => r && r.name && String(r.name).toUpperCase() === String(propName).toUpperCase());
         if (propTag) add('appearance', `@${propTag}`);
-        else {
+        else if (!propPlated) {
+            // Described only when its picture is not attached.
             const brief = dbProp.visual_prompt || dbProp.description;
-            add('appearance', [String(propName).toUpperCase(),
-                propPlated ? condenseForPlate(brief) : brief].filter(Boolean).join(': '));
+            add('appearance', [String(propName).toUpperCase(), brief].filter(Boolean).join(': '));
         }
     }
 
@@ -732,9 +772,17 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     const effective = effectiveCamera(cardCamera, opts.previs, opts.filmOptics,
         { framingIsUsable: f => !!SHOT_TYPE_MAP[f] });
 
-    // 3. Camera shot type
-    const shotType = effective.shot_type.value;
-    if (shotType && SHOT_TYPE_MAP[shotType]) {
+    // 3. The shot size, said ONE way (lib/framing): Previs, else the card's
+    // framing, else a size-word in shot_type. Whatever wins is the only size
+    // in the prompt, so nothing else can contradict it.
+    const { SHOT_TYPE_FRAMING } = require('./framing');
+    // From effectiveCamera, the same answer the board shows.
+    if (effective.framing && effective.framing.phrase) add('camera', effective.framing.phrase);
+    // shot_type still says what it says about ANGLE or RIG (low angle, dutch,
+    // handheld, two people in frame…). A size word in it is not repeated: the
+    // line above already said the size, and may have overruled it.
+    const shotType = cardCamera.shot_type;
+    if (shotType && SHOT_TYPE_MAP[shotType] && !SHOT_TYPE_FRAMING[shotType]) {
         add('camera', SHOT_TYPE_MAP[shotType]);
     }
 
@@ -822,9 +870,18 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // 7. Location context
     if (location) {
         const locTag = location.name && tagFor.get(String(location.name).toUpperCase());
+        /*
+         * A location whose plate is attached is not described. Its description
+         * is the text the PLATE was generated from — on Drive-In Outreach,
+         * "the tabletop is COMPLETELY BARE … no bottle … no people" — and sent
+         * beside a shot with a man and a bottle in it, it instructed against
+         * the shot. The plate shows the place; the key names it.
+         */
+        const locPlated = (opts.references || []).some(r => r && r.kind === 'location'
+            && String(r.name || '').toUpperCase() === String(location.name || '').toUpperCase());
         if (locTag) {
             add('location', `@${locTag}`);
-        } else if (location.description) {
+        } else if (location.description && !locPlated) {
             add('location', location.description);
         }
         if (location.lighting_default && !lightType) {
@@ -841,6 +898,13 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
     // A named preset still wins (it carries a matched negative prompt too);
     // anything else is passed through verbatim, because a director describing
     // their own film is the more useful case and the column already allowed it.
+    /*
+     * THIS SHOT's style, when the director set one in the Direct panel. Absent
+     * is the film's style; an empty string is no style at all for this shot.
+     */
+    const shotStyle = sceneCard.generation && typeof sceneCard.generation.style === 'string'
+        ? sceneCard.generation.style : null;
+    if (shotStyle !== null) stylePreset = shotStyle;
     const preset = stylePreset && STYLE_PRESETS[stylePreset];
     if (preset) {
         add('style', preset.suffix);
@@ -956,6 +1020,9 @@ function assemblePrompt(sceneCard, characters, location, stylePreset, options) {
             wanted: c.text.length,
             chars: survivor ? survivor.text.length : 0,
             cut: c.text.length - (survivor ? survivor.text.length : 0),
+            // The words themselves, so the Direct panel can show what each
+            // contributor puts in the prompt rather than only how long it is.
+            text: survivor ? survivor.text : '',
             why: c.why,
         };
     });
@@ -1118,6 +1185,7 @@ function rankContributions(contributions, shot) {
 }
 
 module.exports = {
+    referenceKey,
     condenseForPlate, splitSentences,    rankContributions,
     trimToAllowance,
     PROMPT_PRIORITY,

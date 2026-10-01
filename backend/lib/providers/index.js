@@ -753,6 +753,25 @@ function withJobRecording_(adapter, capability, projectConfig) {
          * does not inherit them. Nothing chosen changes nothing.
          */
         require('../generation-options').applyChosen(cap || capability, cfg, adapter.id, payload);
+        /*
+         * STOP AT THE PROVIDER'S DOOR.
+         *
+         * A preview that builds its prompt down a different road from the
+         * purchase is a guess: the board's preview left out 38% of what was
+         * really sent, the location text that contradicted the shot. With
+         * `previewRequest` the whole real path runs — payload, pin, the
+         * dialog's options — and here, instead of calling out, the adapter's
+         * own request builder describes the wire body. No job row, no meter,
+         * no socket.
+         */
+        if (opts && opts.previewRequest) {
+            let request = null;
+            try {
+                const build = require('../dry-run').builderFor(adapter.id, cap || capability);
+                request = build ? build(payload) : null;
+            } catch (err) { request = { error: err.message }; }
+            return { ok: true, preview: true, provider: adapter.id, payload, request };
+        }
         const o = Object.assign({}, opts || {});
         let jobId = open(cap, o);
         /*

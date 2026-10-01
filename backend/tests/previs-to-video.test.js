@@ -143,13 +143,26 @@ test('the prompt still says the same things, in a deliberate order', () => {
     // The prompt was reordered, not rewritten. Every clause the old code
     // produced must still be present — a REORDER is a decision, a LOSS is a bug,
     // and a byte comparison cannot tell them apart.
+    /*
+     * RENAMED, deliberately (2026-10-01): a size word in shot_type is now said
+     * through the shot-size standard (lib/framing). "wide angle shot" was a
+     * LENS instruction on a shot with its own lens; "close-up shot, detailed
+     * face" is "close-up (CU): the face fills most of the frame". Each old
+     * clause maps to the one that replaced it, and the new one must be there.
+     */
+    const RENAMED = {
+        'wide angle shot': 'wide shot (WS)',
+        'close-up shot': 'close-up (CU)',
+        'detailed face': 'the face fills most of the frame',
+    };
     const missing = [];
     for (const [key, expected] of Object.entries(GOLDEN)) {
         const [movement, shotType] = key.split('|');
         const actual = buildVideoPayload(...goldenCall(movement, shotType));
         const clauses = expected.prompt.split(', ').map(c => c.trim()).filter(Boolean);
         for (const c of clauses) {
-            if (!actual.prompt.includes(c)) missing.push(`${key}: lost "${c}"`);
+            const now = RENAMED[c] || c;
+            if (!actual.prompt.includes(now)) missing.push(`${key}: lost "${c}"`);
         }
     }
     assert.deepStrictEqual(missing.slice(0, 5), [],

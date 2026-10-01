@@ -115,7 +115,7 @@ test('every MCP tool has a case — the agent path is how this pipeline is drive
 test('every camera facet is given a disposition — carried or skipped', () => {
     const d = doc();
     const facets = [...lib.mergeableFacets(), ...lib.POSE_FACETS];
-    assert.strictEqual(facets.length, 10, `facet set changed: ${facets.length}`);
+    assert.strictEqual(facets.length, 11, `facet set changed: ${facets.length}`);
     for (const f of facets) assert.ok(names(d, f), `facet ${f} has no stated disposition`);
 });
 

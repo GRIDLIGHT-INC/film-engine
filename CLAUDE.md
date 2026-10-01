@@ -153,6 +153,7 @@ film-engine/
 │   │   ├── character-sheet.js     # Four official views, four reference categories, six regions
 │   │   ├── scene-card-schema.js   # Scene card YAML validator
 │   │   ├── storyboard-prompt.js   # Storyboard prompt engineering + style lock
+│   │   ├── framing.js             # The shot size said one way: eight crew sizes (EWS–ECU), Previs first, then the card
 │   │   ├── reference-images.js    # Tagged reference plates: data URIs, tags, ≤3 selection
 │   │   ├── reference-plates.js    # Location + prop plate generation (shared implementation)
 │   │   ├── image-fallback.js      # Walk credentialed image providers on refusal
@@ -329,6 +330,8 @@ film-engine/
 │   └── tests/
 │       ├── nle-export.test.js          # NLE export unit tests
 │       ├── storyboard-prompt.test.js   # Storyboard prompt unit tests
+│       ├── page-parses.test.js     # Every inline script on the page compiles: one stray parenthesis blanks a whole block
+│       ├── board-prompt-standard.test.js # A frame's prompt: pictures named in a key and not described, one shot size, the shot's own style, no MuAPI negative, the preview is the send
 │       ├── reference-images.test.js    # Tag safety, data URIs, reference selection
 │       ├── reference-plates.test.js    # Every referenceable kind can produce a plate
 │       ├── image-fallback.test.js      # Image generation survives a provider refusal
@@ -3987,6 +3990,20 @@ MCP gains `entities_create`, `entities_describe`, `character_create`, `location_
 
 `tests/screenplay-to-entities.test.js` is set-based over the three entity kinds a storyboard prompt reads, because the failure was per-kind and partial: locations worked, characters were half-done, props were absent entirely, and a test written against "the dragon" passes the moment one row exists.
 
+### What a Board Frame Is Sent (2026-10-01)
+*"The geometric plate from previz shouldn't be sent… descriptions of the items sent as picture shouldn't be there… framing should be a standard… style of movie should be shown in the modal so I can remove it or change it… pictures should be labelled as what they are."*
+
+Intercepting a real regenerate of Drive-In Outreach 1A (every outbound call captured, nothing sent) showed three things. The prompt sent was 4,855 characters while the preview said 2,649. The missing 1,900 were the location's description, which is the text its EMPTY-set plate was generated from ("the tabletop COMPLETELY BARE… no bottle… no people"), sent beside a shot of a man with a bottle. And MuAPI received the negative as trailing "Avoid: softbox, light stand, lens flare…", naming each excluded thing to the model.
+
+- **No geometric plate.** `gatherShotReferences` no longer attaches the Previs render (`plateReferenceFor` stays for the routes that show and export it). The location plate carries the place; Previs reaches the frame as words (shot size, lens, height, movement, staging, lighting).
+- **Pictures are named in a key, never described.** The prompt opens `Reference 1: character MANNY. Reference 2: location … Reference 3: prop …`, in the order the images travel. A character, prop or location whose own picture is in THIS request sends no prose, and a locked profile's contract for it is dropped (`fitAdditions`). Decided against what is actually attached: a subject whose picture did not make the cut keeps its words.
+- **One shot size** (`lib/framing.js`): the Previs page's eight crew sizes, each sent as a phrase that defines itself ("medium wide shot (MWS): framed from the knees up"). Previs's coverage wins, then the card's `camera.framing` (the Direct panel's **Shot size**), then a size word in `shot_type`. `effectiveCamera` returns it as `framing`, so the board tag and the prompt are one answer. A size word in `shot_type` is never sent beside it, and "wide" is never "wide angle".
+- **The shot's own style.** `generation.style` on the card: absent follows the film, `''` is none, text replaces the film's for this shot. The Direct modal shows it, with **Use the film style** and **No style for this shot**.
+- **No negative on MuAPI.** Nano Banana has no negative field; `supportsNegativePrompt: false` with its reason, and the Avoid option is gone from MuAPI's dialog.
+- **The preview is the send.** `regenerateShot` has a preview mode that runs the whole real path and stops at the provider funnel (`previewRequest` in `lib/providers`, which returns the adapter's own wire request, opens no job and meters nothing). `GET /shots/:id/prompt` is built from it (`preview_source: generation_path`, `request`, `negative_not_sent`), so the confirmation, the Direct panel and the purchase cannot differ. The Direct panel lists every part of the prompt with its text. `dry_run` now has MuAPI's request builder.
+
+Measured on the copy of 1A afterwards: the captured send equals the preview byte for byte, 3 labelled pictures, 2,454 characters, no location text, no Avoid. A real project also gained THE TABLE as a prop (furniture, 1.4 × 0.9 m) on 1A, so the table no longer lives only inside the location's empty-set text.
+
 ### Storyboard Generation
 Transforms scene cards into SDXL-optimized image prompts via the prompt engineering module (`lib/storyboard-prompt.js`). Maps shot types, camera movements, and lighting from scene cards to descriptive prompt tokens. Supports character LoRA/TI injection, style presets (cinematic, noir, anime, documentary, horror, fantasy), and style locking (deterministic seed variation per scene for visual consistency). Images generated via ImageGen API (`POST http://localhost:8080/image`) and stored at `data/storyboards/{project_id}/{shot_code}.png`.
 
@@ -6419,6 +6436,8 @@ node --test --test-concurrency=4 backend/tests/*.test.js
 # Run individual test files
 node --test backend/tests/nle-export.test.js
 node --test backend/tests/storyboard-prompt.test.js
+node --test backend/tests/board-prompt-standard.test.js
+node --test backend/tests/page-parses.test.js
 node --test backend/tests/reference-images.test.js
 node --test backend/tests/reference-plates.test.js
 node --test backend/tests/image-fallback.test.js

@@ -94,29 +94,22 @@ const SUBJECT_KINDS = [
     { id: 'location', ref: { name: 'STREET', kind: 'location', file_path: '/tmp/s.png' }, filler: 'B' },
 ];
 
-test('a plate replaces its subject prose ONLY where the provider can name it', () => {
-    // I got this backwards first time and a test caught it.
-    //
-    // The tempting rule is "a picture is attached, so drop the words". That is
-    // right for a provider that reads @tags: the tag binds THIS image to THAT
-    // subject, so the paragraph is redundant. It is wrong for one that takes an
-    // untagged array — with two references and no names, nothing tells the model
-    // which picture is the woman and which is the street, so the words are the
-    // only thing carrying identity. Dropping them there trades a redundancy for
-    // a wrong subject.
+test('a plate replaces its subject prose, and the key says which picture is which', () => {
+    // History: dropping the words for an UNTAGGED provider once left the model
+    // holding unlabelled pictures, so the words stayed as the label. Since
+    // 2026-10-01 a reference key names every attached picture in order
+    // ("Reference 1: character MAYA"), so the label no longer needs the
+    // paragraph, and the director's rule is that a subject sent as a picture
+    // is not described.
     const refs = SUBJECT_KINDS.map(k => ({ ...k.ref, tag: k.id, uri: 'data:image/png;base64,AAA' }));
-
-    const tagged = sp.buildStoryboardPrompt(CARD, CHARS, LOCATION, 'teal and amber',
-        { references: refs, tagged: true }).prompt;
-    const untagged = sp.buildStoryboardPrompt(CARD, CHARS, LOCATION, 'teal and amber',
-        { references: refs, tagged: false }).prompt;
-
-    assert.ok(!tagged.includes('A'.repeat(50)),
-        'a taggable provider was sent the plate AND the paragraph describing it');
-    assert.ok(untagged.includes('A'.repeat(50)),
-        'an untaggable provider lost the words that say which picture is the subject');
-    assert.ok(untagged.length > tagged.length,
-        'the two paths produce the same prompt, so the distinction does nothing');
+    for (const tagged of [true, false]) {
+        const prompt = sp.buildStoryboardPrompt(CARD, CHARS, LOCATION, 'teal and amber',
+            { references: refs, tagged }).prompt;
+        assert.ok(!prompt.includes('A'.repeat(50)),
+            `${tagged ? 'tagged' : 'untagged'}: the plate AND the paragraph describing it were sent`);
+        refs.forEach((r, i) => assert.ok(prompt.includes(`Reference ${i + 1}: `),
+            `${tagged ? 'tagged' : 'untagged'}: picture ${i + 1} is not named`));
+    }
 });
 
 test('the action survives on both paths, because no plate carries it', () => {
@@ -329,12 +322,16 @@ test('a reference for a different subject does not shorten this one', () => {
  *
  * A redundant description costs room. A missing one costs the shot.
  */
-test('a subject with a plate keeps its full description', () => {
+test('a subject keeps its full description unless its own picture is in THIS request', () => {
     const items = [{ text: `A green four-door sedan. ${'C'.repeat(900)}`,
                      profile_type: 'prop', subject_name: 'SEDAN' }];
+    // Its picture travels: the picture is the description (2026-10-01).
     const plated = { prompt_addition_items: items,
                      references: [{ subject_name: 'SEDAN', profile_type: 'prop' }] };
-    const out = fitAdditions('', plated, { maxPromptChars: 4000 });
-    assert.ok(out[0].length > 500,
-        'a description was dropped because a picture was attached; the picture does not always arrive');
+    assert.deepEqual(fitAdditions('', plated, { maxPromptChars: 4000 }), []);
+    // Its picture did not make the cut: the words are all there is.
+    const unplated = { prompt_addition_items: items,
+                       references: [{ subject_name: 'MAYA', profile_type: 'character' }] };
+    const out = fitAdditions('', unplated, { maxPromptChars: 4000 });
+    assert.ok(out[0] && out[0].length > 500, 'a subject with no picture lost its description');
 });

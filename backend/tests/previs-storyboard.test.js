@@ -164,7 +164,7 @@ test('a card can say a low angle without being blocked in 3D', () => {
 
     const low = buildStoryboardPrompt(
         { ...wide, camera: { ...wide.camera, height_m: 0.4 } }, [], null, '', {}).prompt;
-    assert.ok(/wide angle shot/.test(low), 'the framing was lost when the angle was added');
+    assert.ok(/wide shot \(WS\)/.test(low), 'the framing was lost when the angle was added');
     assert.ok(/low angle, camera looking up/.test(low),
         'camera.height_m validates on the card and still reaches no prompt');
 

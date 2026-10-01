@@ -94,7 +94,14 @@ describe('buildStoryboardPrompt', () => {
     it('maps shot_type to camera description', () => {
         const card = { shot_code: '1A', camera: { shot_type: 'close-up' } };
         const { prompt } = buildStoryboardPrompt(card, [], null, null);
-        assert.ok(prompt.includes('close-up shot, detailed face'));
+        // A size word in shot_type is said through the shot-size standard.
+        assert.ok(prompt.includes('close-up (CU): the face fills most of the frame'));
+    });
+
+    it('maps an angle in shot_type to its own phrase', () => {
+        const card = { shot_code: '1A', camera: { shot_type: 'low-angle' } };
+        const { prompt } = buildStoryboardPrompt(card, [], null, null);
+        assert.ok(prompt.includes('low angle shot, looking up'));
     });
 
     it('maps camera movement', () => {

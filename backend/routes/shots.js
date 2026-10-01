@@ -144,10 +144,11 @@ function updateShotCard(req, res, shotId) {
     if (body.generation !== undefined && body.generation !== null) {
         const g = body.generation;
         const bad = typeof g !== 'object' || Array.isArray(g)
-            || (g.negative_prompt !== undefined && g.negative_prompt !== null && typeof g.negative_prompt !== 'string');
+            || (g.negative_prompt !== undefined && g.negative_prompt !== null && typeof g.negative_prompt !== 'string')
+            || (g.style !== undefined && g.style !== null && typeof g.style !== 'string');
         if (bad) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ error: 'generation must be an object; generation.negative_prompt must be a string (null clears it)' }));
+            return res.end(JSON.stringify({ error: 'generation must be an object; generation.negative_prompt and generation.style must be strings (null clears them)' }));
         }
     }
     const changed = [];
@@ -298,6 +299,8 @@ function cardVocabulary(req, res) {
         prop_categories: require('../lib/prop-categories').PROP_CATEGORIES,
         prop_category_labels: require('../lib/prop-categories').PROP_CATEGORY_LABELS,
         shot_types: VALID_SHOT_TYPES,
+        // The shot size, in the crew vocabulary the prompt and Previs share.
+        framings: require('../lib/framing').FRAMINGS.map(f => ({ id: f.id, short: f.short, label: f.label, phrase: f.phrase })),
         camera_moves: VALID_CAMERA_MOVES,
         lighting: VALID_LIGHTING,
         // Techniques (a rig: where the lights stand) and the key's side, served

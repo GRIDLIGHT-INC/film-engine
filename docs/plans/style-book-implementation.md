@@ -199,11 +199,12 @@ None of the six calls an LLM, so `mcp-no-server-llm.test.js` passes by construct
 
 ---
 
-## 5. What apply does with each of the 10 camera facets
+## 5. What apply does with each of the 11 camera facets
 
 | Facet | Disposition |
 |---|---|
 | `shot_type` | carried, validated against `VALID_SHOT_TYPES` |
+| `framing` | carried, the shot size (EWS–ECU), validated against `lib/framing` — added 2026-10-01 |
 | `movement` | carried, validated against `VALID_CAMERA_MOVES` |
 | `lens` | carried, free string — "40mm anamorphic", "24-70 at 35" |
 | `sensor` | carried, validated against `VALID_SENSORS` |

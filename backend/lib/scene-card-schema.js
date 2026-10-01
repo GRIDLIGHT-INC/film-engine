@@ -174,6 +174,14 @@ function validateSceneCard(card) {
                         + '— it is never trimmed, so it has to stay short. Put the rest in the description.');
                 }
             }
+            // The shot size, in the crew vocabulary (lib/framing). Separate
+            // from shot_type, which mixes size, angle and rig in one word.
+            if (card.camera.framing !== undefined && card.camera.framing !== null && card.camera.framing !== '') {
+                const { FRAMINGS } = require('./framing');
+                if (!FRAMINGS.some(f => f.id === card.camera.framing)) {
+                    errors.push(`camera.framing must be one of: ${FRAMINGS.map(f => f.id).join(', ')}`);
+                }
+            }
             if (card.camera.lens !== undefined && typeof card.camera.lens !== 'string') {
                 errors.push('camera.lens must be a string (e.g. "35mm", "85mm")');
             }
@@ -311,6 +319,11 @@ function validateSceneCard(card) {
         } else if (card.generation.negative_prompt !== undefined && card.generation.negative_prompt !== null
             && typeof card.generation.negative_prompt !== 'string') {
             errors.push('generation.negative_prompt must be a string');
+        } else if (card.generation.style !== undefined && card.generation.style !== null
+            && typeof card.generation.style !== 'string') {
+            // THIS shot's style, replacing the film's. Absent means the film's
+            // style; an empty string means none at all for this shot.
+            errors.push('generation.style must be a string (empty for no style; null returns to the film style)');
         }
     }
 
