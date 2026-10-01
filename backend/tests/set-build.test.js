@@ -147,6 +147,10 @@ test('a house is walls, slabs and stairs: told, accepted and built, with room op
         cameras: [{ plate: 'default', position: [2, 2, 3], rotation: [[1, 0, 0], [0, 0, -1], [0, 1, 0]] }],
     };
     assert.deepEqual(setBuild.validateLayout(house, ['default']), [], 'a split-level house with no room is refused');
+    const angled = Object.assign({}, house, {
+        slabs: [{ name: 'Angled floor', points: [[0, 0], [5, 1], [4, 4], [-1, 3]], z: 1.4 }],
+    });
+    assert.deepEqual(setBuild.validateLayout(angled, ['default']), [], 'a polygon floor is refused');
     const bad = (over, want) => {
         const errs = setBuild.validateLayout(Object.assign({}, house, over), ['default']);
         assert.ok(errs.some(e => want.test(e)), `expected ${want}; got ${JSON.stringify(errs)}`);
@@ -154,6 +158,8 @@ test('a house is walls, slabs and stairs: told, accepted and built, with room op
     bad({ walls: [{ from: [0, 0], to: [2, 0], height: 2.5, openings: [{ kind: 'door', at: 1.5, width: 0.9 }] }] }, /must sit inside the wall/);
     bad({ walls: [{ from: [0, 0], height: 2.5 }] }, /needs from and to/);
     bad({ slabs: [{ x0: 2, x1: 1, y0: 0, y1: 1, z: 0 }] }, /x0 < x1/);
+    bad({ slabs: [{ points: [[0, 0], [1, 0]], z: 0 }] }, /at least three/);
+    bad({ slabs: [{ points: [[0, 0], [1, 0], [2, 0]], z: 0 }] }, /enclose an area/);
     bad({ stairs: [{ at: [0, 0, 0], width: 0.9, rise: 1, run: 2, steps: 0 }] }, /steps must be/);
     bad({ cameras: [{ plate: 'default', position: [0, 0, 1], rotation: [[1, 0], [0, 1]] }] }, /3x3 matrix/);
     assert.ok(setBuild.validateLayout({ cameras: house.cameras }, ['default'])[0].includes('needs a building'));

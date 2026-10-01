@@ -93,8 +93,8 @@ const LAYOUT_SCHEMA = Object.freeze({
     walls: '[{ name, from: [x, y], to: [x, y], z0 (the floor it stands on, default 0), height, thickness (default 0.12), '
         + 'color, openings: [{ kind: window|door|gap, at (metres from `from` to the opening\'s near edge), width, sill, top, mullions }] }] '
         + '(for anything that is not one box-shaped room: interior walls, split levels, L-shaped plans)',
-    slabs: '[{ name, x0, x1, y0, y1, z (the TOP of the floor), thickness (default 0.2), color, '
-        + "pattern: 'plain'|'checker', colors, tile }] (a floor or ceiling at any level; leave a gap where a stair comes up)",
+    slabs: '[{ name, x0, x1, y0, y1 OR points: [[x,y], ...], z (the TOP of the floor), thickness (default 0.2), color, '
+        + "pattern: 'plain'|'checker', colors, tile }] (a rectangular or measured polygon floor/ceiling at any level; leave a gap where a stair comes up)",
     light: `{ time_of_day: ${TIMES_OF_DAY.join('|')}, sun_from: north|south|east|west (the side the sun comes in from) }`,
     assets: 'An object with shape: asset is a model placed at real size: `asset` names an entry of the Previs library '
         + '(GET /film/previs-library: 140 low-poly furniture pieces and four people) or `asset_id` names one of this '
@@ -179,9 +179,23 @@ function validateLayout(layout, plateViews, opts = {}) {
     });
     (L.slabs || []).forEach((sl, i) => {
         const at = `slabs[${i}]${sl && sl.name ? ` (${sl.name})` : ''}`;
-        for (const k of ['x0', 'x1', 'y0', 'y1', 'z']) if (!num(sl[k])) errors.push(`${at}.${k} must be a number`);
-        if (num(sl.x0) && num(sl.x1) && sl.x1 <= sl.x0) errors.push(`${at} needs x0 < x1`);
-        if (num(sl.y0) && num(sl.y1) && sl.y1 <= sl.y0) errors.push(`${at} needs y0 < y1`);
+        const polygon = Array.isArray(sl.points);
+        if (polygon) {
+            if (sl.points.length < 3) errors.push(`${at}.points needs at least three [x, y] points`);
+            else if (!sl.points.every(PT2)) errors.push(`${at}.points must contain only [x, y] points`);
+            else {
+                const twiceArea = sl.points.reduce((sum, p, j) => {
+                    const q = sl.points[(j + 1) % sl.points.length];
+                    return sum + p[0] * q[1] - q[0] * p[1];
+                }, 0);
+                if (Math.abs(twiceArea) < 0.005) errors.push(`${at}.points must enclose an area`);
+            }
+        } else {
+            for (const k of ['x0', 'x1', 'y0', 'y1']) if (!num(sl[k])) errors.push(`${at}.${k} must be a number`);
+            if (num(sl.x0) && num(sl.x1) && sl.x1 <= sl.x0) errors.push(`${at} needs x0 < x1`);
+            if (num(sl.y0) && num(sl.y1) && sl.y1 <= sl.y0) errors.push(`${at} needs y0 < y1`);
+        }
+        if (!num(sl.z)) errors.push(`${at}.z must be a number`);
         if (sl.color != null && !HEX.test(sl.color)) errors.push(`${at}.color must be #rrggbb`);
         (sl.colors || []).forEach((c, j) => { if (!HEX.test(c)) errors.push(`${at}.colors[${j}] must be #rrggbb`); });
         if (sl.pattern === 'checker' && !(num(sl.tile) && sl.tile >= 0.05)) errors.push(`${at}: a checker slab needs tile of at least 0.05 m`);

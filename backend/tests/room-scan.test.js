@@ -123,6 +123,26 @@ test('a two-storey house becomes walls, openings, floors, stairs and library fur
     assert.ok(setBuild.validateLayout(layout, []).length > 0, 'a plate layout still needs its cameras');
 });
 
+test('rotated RoomPlan floors keep their measured footprint instead of becoming a bounding rectangle', () => {
+    const scan = house();
+    scan.floors = [surf('AF1', { floor: {} }, [6, 3, 0],
+        [[Math.SQRT1_2, 0, -Math.SQRT1_2, 0], [Math.SQRT1_2, 0, Math.SQRT1_2, 0], [0, -1, 0, 0], [2, 0, -3, 1]])];
+    const { layout } = scanToLayout(scan);
+    assert.equal(layout.slabs.length, 1);
+    assert.equal(layout.slabs[0].points.length, 4);
+    assert.ok(new Set(layout.slabs[0].points.map(p => p[0])).size > 2,
+        `an angled floor was flattened to an axis-aligned box: ${JSON.stringify(layout.slabs[0])}`);
+    assert.deepEqual(setBuild.validateLayout(layout, [], { measured: true }), []);
+});
+
+test('tiny stair classifications are reported and omitted while real stair runs survive', () => {
+    const scan = house();
+    scan.objects.push(surf('noise-step', { stairs: {} }, [0.9, 0.04, 0.8], T(0, [1, 0.02, -1])));
+    const { layout, report } = scanToLayout(scan);
+    assert.equal(layout.stairs.length, 1);
+    assert.ok(report.skipped.some(s => /noise-step.*too small/i.test(s)), JSON.stringify(report.skipped));
+});
+
 test('a structure that repeats its room inside rooms[] builds every wall, opening and object once', () => {
     // How a real CapturedStructure arrives (The Lodgers office, 2026-10-01): the
     // room's walls, floors, doors, windows and objects at the top level AND again
@@ -273,7 +293,11 @@ test('the iPhone app scans with RoomPlan and the page asks it under the same nam
     assert.ok(/class ScanStore/.test(swift) && /Documents|documentDirectory/.test(swift), 'scans are not kept on the phone');
     assert.ok(/func photoTargets/.test(swift) && /captureView\.captureSession\.stop\(pauseARSession: false\)/.test(swift), 'no guided photos in the scan session');
     assert.ok(/cameraToWorld/.test(swift) && /"camera_to_world"/.test(swift) && /"focal_px"/.test(swift), 'a photo is not sent with its pose');
+    assert.ok(/wholeHomeWarning/.test(swift) && /Discard last space/.test(swift),
+        'whole-home capture does not warn when several rooms or levels were combined');
     assert.ok(/room-scan\/import/.test(swift) && /\/film\/projects/.test(content), 'a saved scan cannot be sent to a project\'s location');
+    assert.ok(/QLPreviewController/.test(content) && /Open 3D scan/.test(content) && /scan\.usdz/.test(content),
+        'a saved scan cannot be reopened as a 3D model');
     // The phone does two things: scan and photograph. The home offers no way into the full page.
     assert.ok(/Scan a location/.test(content) && !/Open Film Engine/.test(content), 'the phone\'s home is not just the scanner');
 });

@@ -297,11 +297,14 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
     @Published var guide = "…"
     @Published var onMark = false
     @Published var flash = false
+    @Published var wholeHomeWarning: String?
 
     var scanId = UUID().uuidString
     /// A saved scan being added to: its photos and walls are loaded, and the room is found again from its world map.
     private(set) var resuming: SavedScan?
     private var timer: Timer?
+    private var scanMonitor: Timer?
+    private var scanStartHeight: Float?
     private let ci = CIContext()
 
     override init() { super.init() }
@@ -355,13 +358,31 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
     func startRoom() {
         captureView.captureSession.run(configuration: RoomCaptureSession.Configuration())
         scanning = true
+        wholeHomeWarning = nil
+        scanStartHeight = arSession.currentFrame?.camera.transform.columns.3.y
+        scanMonitor?.invalidate()
+        scanMonitor = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.monitorWholeHomeCapture() }
+        }
         message = rooms.isEmpty
-            ? "Scanning room 1. Walk the edges; get the corners, the doors and the windows."
-            : "Scanning room \(rooms.count + 1). The rooms keep their places, stairs and floors included."
+            ? "Scanning space 1. Stay in this room; get every corner, door and window, then tap Space done before leaving."
+            : "Scanning space \(rooms.count + 1). Scan rooms, landings and stairwells separately so levels remain distinct."
+    }
+
+    /// RoomPlan reconstructs a whole home by merging several captured rooms.
+    /// If one CapturedRoom spans a flight of stairs, Apple commonly stretches
+    /// its walls and assigns every surface to story zero.
+    private func monitorWholeHomeCapture() {
+        guard scanning, let y = arSession.currentFrame?.camera.transform.columns.3.y else { return }
+        if scanStartHeight == nil { scanStartHeight = y }
+        if let start = scanStartHeight, abs(y - start) > 0.75 {
+            wholeHomeWarning = "You changed floors during one space. Tap Space done, discard this combined space, then scan the stairwell/landing and the next floor as separate spaces."
+        }
     }
 
     /// Stop this room but keep the AR session running, so the next room lands in the same space.
     func finishRoom() {
+        scanMonitor?.invalidate()
         captureView.captureSession.stop(pauseARSession: false)
         scanning = false
         processing = true
@@ -378,8 +399,20 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
                 return
             }
             self.rooms.append(processedResult)
-            self.message = "\(self.rooms.count) room\(self.rooms.count == 1 ? "" : "s") scanned. Walk to the next room (or up the stairs) and tap Scan another room, or Take photos."
+            if processedResult.walls.count > 16 {
+                self.wholeHomeWarning = "This space contains \(processedResult.walls.count) walls and may combine several rooms. For accurate angles and floors, discard it and scan each room, landing and stairwell separately."
+            }
+            self.message = "\(self.rooms.count) space\(self.rooms.count == 1 ? "" : "s") scanned. Move to the next room, landing or stairwell, then tap Scan another space."
         }
+    }
+
+    func discardLastRoom() {
+        guard !rooms.isEmpty else { return }
+        rooms.removeLast()
+        wholeHomeWarning = nil
+        message = rooms.isEmpty
+            ? "Combined space discarded. Start with one room and tap Space done before crossing a doorway or changing floors."
+            : "Last space discarded. \(rooms.count) accurate space\(rooms.count == 1 ? " remains" : "s remain")."
     }
 
     // ── photos ──
@@ -546,6 +579,7 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
 
     func cancel() {
         timer?.invalidate()
+        scanMonitor?.invalidate()
         if scanning { captureView.captureSession.stop() }
         arSession.pause()
         if resuming == nil && !FileManager.default.fileExists(atPath: folder.appendingPathComponent("scan.json").path) {
@@ -613,6 +647,11 @@ struct RoomScanView: View {
                         .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 } else {
                     Text(model.message).font(.subheadline).multilineTextAlignment(.center)
+                    if let warning = model.wholeHomeWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote.weight(.semibold)).foregroundStyle(.orange)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 if model.busy || model.processing { ProgressView() }
                 controls
@@ -632,12 +671,14 @@ struct RoomScanView: View {
             HStack(spacing: 10) {
                 Button("Cancel") { model.cancel(); done(RoomScanResult(cancelled: true)) }.buttonStyle(.bordered)
                 if model.scanning {
-                    Button("Room done") { model.finishRoom() }.buttonStyle(.borderedProminent)
+                    Button("Space done") { model.finishRoom() }.buttonStyle(.borderedProminent)
                 } else if !model.processing {
-                    Button(model.rooms.isEmpty ? "Start" : "Scan another room") { model.startRoom() }
+                    Button(model.rooms.isEmpty ? "Start first room" : "Scan another space") { model.startRoom() }
                         .buttonStyle(.borderedProminent)
                     if !model.rooms.isEmpty {
                         Button("Take photos") { model.beginPhotos() }.buttonStyle(.borderedProminent).tint(.green)
+                        Button("Discard last space") { model.discardLastRoom() }
+                            .buttonStyle(.bordered).tint(.orange)
                     }
                 }
             }

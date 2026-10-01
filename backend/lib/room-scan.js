@@ -183,7 +183,7 @@ function scanToLayout(scan, opts = {}) {
     const slabFrom = (pts, top, name) => {
         const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
         return { name, x0: r3(Math.min(...xs)), x1: r3(Math.max(...xs)), y0: r3(Math.min(...ys)), y1: r3(Math.max(...ys)),
-            z: r3(top), thickness: 0.15, color: FLOOR_COLOUR };
+            points: pts.map(p => p.map(r3)), z: r3(top), thickness: 0.15, color: FLOOR_COLOUR };
     };
     if (F.length) {
         // The structure's floor and its room's floor are the same floor under two
@@ -223,6 +223,13 @@ function scanToLayout(scan, opts = {}) {
         const yaw = r3(Math.atan2(-f[0], f[1]) * 180 / Math.PI);
         const at = plan(o.centre).map(r3);
         if (o.category === 'stairs') {
+            // RoomPlan occasionally labels a threshold or one shallow step as
+            // stairs. Rendering those as a full staircase is much worse than
+            // naming the rejected observation in the import report.
+            if (h < 0.12 || d < 0.4 || w < 0.4) {
+                report.skipped.push(`${o.id || `objects[${i}]`} stairs: too small to be a stair run`);
+                return;
+            }
             // The bottom front edge, climbing along its facing.
             const back = [o.centre[0] - o.az[0] * d / 2, o.centre[2] - o.az[2] * d / 2];
             layout.stairs.push({ name: `stairs ${i + 1}`, at: [r3(back[0]), r3(-back[1]), baseZ], yaw,

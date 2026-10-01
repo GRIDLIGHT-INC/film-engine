@@ -108,6 +108,36 @@ def floor_plane(name, fx0, fx1, fy0, fy1, z, spec, thickness=0.0):
     return fl
 
 
+def polygon_floor(name, points, z, spec, thickness=0.0):
+    """A measured floor footprint. RoomPlan floors may be rotated; replacing
+    them with their axis-aligned bounds fills courtyards and erases angled rooms."""
+    cols = spec.get('colors') or [spec.get('color', '#8a8278')]
+    points = [(float(x), float(y)) for x, y in points]
+    n = len(points)
+    if n < 3:
+        return None
+    # Keep the top face counter-clockwise so its normal points up regardless
+    # of the order used by the capture framework.
+    area = sum(points[i][0] * points[(i + 1) % n][1] - points[(i + 1) % n][0] * points[i][1] for i in range(n))
+    if area < 0:
+        points.reverse()
+    bottom = z - thickness if thickness > 0 else z
+    verts = [(x, y, bottom) for x, y in points]
+    if thickness > 0:
+        verts += [(x, y, z) for x, y in points]
+        faces = [tuple(range(n - 1, -1, -1)), tuple(range(n, n * 2))]
+        faces += [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+    else:
+        faces = [tuple(range(n))]
+    mesh = bpy.data.meshes.new(name + ' mesh')
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    fl = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(fl)
+    fl.data.materials.append(mat(cols[0], 0.35))
+    return fl
+
+
 # ── the room (optional: one box-shaped room) ────────────────────────────────
 R = L.get('room')
 T = 0.1
@@ -212,8 +242,11 @@ for wi, W in enumerate(L.get('walls', [])):
 
 # ── slabs: a floor or ceiling at any level ─────────────────────────────────
 for si, SL in enumerate(L.get('slabs', [])):
-    floor_plane(SL.get('name') or f'Slab {si + 1}', SL['x0'], SL['x1'], SL['y0'], SL['y1'], SL['z'],
-                SL, thickness=SL.get('thickness', 0.2))
+    name = SL.get('name') or f'Slab {si + 1}'
+    if SL.get('points'):
+        polygon_floor(name, SL['points'], SL['z'], SL, thickness=SL.get('thickness', 0.2))
+    else:
+        floor_plane(name, SL['x0'], SL['x1'], SL['y0'], SL['y1'], SL['z'], SL, thickness=SL.get('thickness', 0.2))
 
 # ── stairs: solid steps rising in the direction of yaw ─────────────────────
 for ti, ST in enumerate(L.get('stairs', [])):

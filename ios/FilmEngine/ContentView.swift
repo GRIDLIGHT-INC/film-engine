@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import QuickLook
 
 /// The app IS the app.
 ///
@@ -32,7 +33,7 @@ struct ContentView: View {
                     .disabled(!RoomScanSupport.available)
                 } footer: {
                     Text(RoomScanSupport.available
-                         ? "LiDAR, room after room (stairs and upper floors too), then guided photos of every wall. Works offline: it is saved on this iPhone and sent to Film Engine later."
+                         ? "LiDAR, one room, landing or stairwell at a time (upper floors too), then guided photos of every wall. Works offline: it is saved on this iPhone and sent to Film Engine later."
                          : RoomScanSupport.reason)
                 }
                 Section("Saved scans") {
@@ -81,6 +82,7 @@ struct ScanDetailView: View {
     @State private var name = ""
     @State private var adding = false
     @State private var sending = false
+    @State private var showingModel = false
 
     private var scan: SavedScan? { store.scans.first { $0.id == scanId } }
 
@@ -96,6 +98,8 @@ struct ScanDetailView: View {
                         }
                     }
                     Section {
+                        Button { showingModel = true } label: { Label("Open 3D scan", systemImage: "cube.transparent") }
+                            .disabled(!FileManager.default.fileExists(atPath: store.folder(scan.id).appendingPathComponent("scan.usdz").path))
                         Button { adding = true } label: { Label("Add photos", systemImage: "camera") }
                             .disabled(!RoomScanSupport.available)
                         Button { sending = true } label: { Label(scan.sent == nil ? "Send to Film Engine…" : "Send again…", systemImage: "paperplane") }
@@ -129,6 +133,10 @@ struct ScanDetailView: View {
                     }
                 }
                 .sheet(isPresented: $sending) { SendScanView(scan: scan) }
+                .sheet(isPresented: $showingModel) {
+                    ScanQuickLook(url: store.folder(scan.id).appendingPathComponent("scan.usdz"))
+                        .ignoresSafeArea()
+                }
             } else {
                 Text("This scan is no longer on the phone.").foregroundStyle(.secondary)
             }
@@ -141,6 +149,29 @@ struct ScanDetailView: View {
         var s = scan
         s.name = n
         try? store.write(s)
+    }
+}
+
+/// Apple's native USDZ viewer: orbit, zoom and inspect a saved scan without
+/// sending it back to the Mac or starting a new capture session.
+struct ScanQuickLook: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) { }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        let url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as NSURL
+        }
     }
 }
 
