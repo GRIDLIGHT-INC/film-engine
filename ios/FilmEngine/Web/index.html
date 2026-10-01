@@ -16363,6 +16363,32 @@ THREE.GLTFLoader = GLTFLoader;
         worldWalkKeep();
     }
 
+    /*
+     * WHO THE SHOT IS ON. Framing, the angle's height and the lighting rig are
+     * all measured on the framing subject — which was simply whoever was
+     * staged first. Any staged person, piece of furniture or model can be the
+     * subject; the names are the ones given on the Plan (rename "Woman" to the
+     * character there).
+     */
+    function worldShotOnHtml() {
+        const subs = stageSubjects();
+        if (!subs.length) return '<p class="we-hint">Nobody is staged yet: add people or objects on the Plan view, then choose who the shot is on.</p>';
+        const cur = Math.max(0, subs.findIndex(x => x.isTarget));
+        return `<div class="we-oprow"><span class="we-oplabel">Shot on</span>
+            <select class="we-shoton" onchange="worldShotOn(Number(this.value))">${subs.map((x, i) =>
+                `<option value="${i}"${i === cur ? ' selected' : ''}>${esc(x.name || ('subject ' + (i + 1)))}</option>`).join('')}</select>
+            <button class="we-btn" onclick="worldSetViewMode('plan')" title="Rename or move them on the Plan view">Rename / move</button></div>`;
+    }
+    function worldShotOn(i) {
+        const subs = stageSubjects();
+        if (!subs[i]) return;
+        subs.forEach((x, k) => { if (k === i) x.isTarget = true; else delete x.isTarget; });
+        stageSave();
+        worldConsoleRender();
+        setStatus(`The shot is on ${subs[i].name || 'subject ' + (i + 1)}: framing, angle and lighting are measured on them`);
+    }
+    window.worldShotOn = worldShotOn;
+
     function worldShotHtml() {
         const now = worldShotNow();
         const t = worldShotSubject();
@@ -16370,7 +16396,8 @@ THREE.GLTFLoader = GLTFLoader;
             `<button class="we-shotchip${on ? ' active' : ''}" onclick="${fn}" title="${esc(title || label)}">${esc(label)}</button>`;
         return `
             <div class="we-panel we-shotpanel">
-              <div class="we-label">SHOT <span class="we-live">${t ? 'on ' + esc(t.name) : 'no subject staged'}</span></div>
+              <div class="we-label">SHOT</div>
+              ${worldShotOnHtml()}
               <div class="we-opgroup">FRAMING</div>
               <div class="we-shotchips">${SHOT_FRAMINGS.map(f =>
                   chip(`worldShotPlace('${f.id}', null)`, f.id, f.short, now.framing === f.id, f.label)).join('')}</div>
@@ -19431,6 +19458,41 @@ THREE.GLTFLoader = GLTFLoader;
      * rather than sitting in the page, so with the flag off the previs screen
      * is exactly the screen it was.
      */
+    function worldScrollKey(el, host) {
+        if (el.id) return '#' + el.id;
+        const cls = (el.className && typeof el.className === 'string') ? el.className.trim().split(/\s+/)[0] : el.tagName;
+        const same = [...host.querySelectorAll(el.tagName + (cls && cls !== el.tagName ? '.' + CSS.escape(cls) : ''))];
+        return `${el.tagName}.${cls}:${same.indexOf(el)}`;
+    }
+    function worldScrollSnapshot(host) {
+        const out = { inner: [], outer: [] };
+        for (const el of host.querySelectorAll('*')) {
+            if (el.scrollTop > 0 || el.scrollLeft > 0) out.inner.push([worldScrollKey(el, host), el.scrollTop, el.scrollLeft]);
+        }
+        // The page around the console scrolls too.
+        for (let el = host.parentElement; el; el = el.parentElement) {
+            if (el.scrollTop > 0) out.outer.push([el, el.scrollTop]);
+        }
+        out.win = window.scrollY || 0;
+        return out;
+    }
+    function worldScrollRestore(host, snap) {
+        if (!snap) return;
+        for (const [key, top, left] of snap.inner) {
+            let el = null;
+            if (key.startsWith('#')) el = host.querySelector(key.replace(/^#(.*)$/, (m, id) => '#' + CSS.escape(id)));
+            else {
+                const [tagCls, idx] = key.split(':');
+                const [tag, cls] = tagCls.split('.');
+                const list = [...host.querySelectorAll(tag + (cls && cls !== tag ? '.' + CSS.escape(cls) : ''))];
+                el = list[Number(idx)] || null;
+            }
+            if (el) { el.scrollTop = top; el.scrollLeft = left; }
+        }
+        for (const [el, top] of snap.outer) el.scrollTop = top;
+        if (snap.win) window.scrollTo(0, snap.win);
+    }
+
     function worldConsoleRender() {
         if (!worldEngineOn()) return;
         const page = document.getElementById('page-previs');
@@ -19441,7 +19503,16 @@ THREE.GLTFLoader = GLTFLoader;
             host.id = 'worldConsole';
             page.insertBefore(host, page.firstChild);
         }
+        /*
+         * KEEP WHERE THE DIRECTOR WAS SCROLLED. Every button on the right
+         * re-renders the console, and replacing its HTML put every scrolled
+         * panel (and the page) back at the top, so a click halfway down the
+         * Light tab jumped the screen. Scroll positions are keyed by id or by
+         * class and order, and put back after the redraw.
+         */
+        const scrolls = worldScrollSnapshot(host);
         host.innerHTML = worldConsoleHtml(state.currentProject || {}, WORLD.world, WORLD.version);
+        worldScrollRestore(host, scrolls);
         const hint = document.getElementById('weModeHint');
         if (hint) {
             hint.textContent = WORLD.mode === 'maintain'

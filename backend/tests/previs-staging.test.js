@@ -322,3 +322,12 @@ test('a camera looking up at a face is not refused because the feet are behind i
     const failures = (out.failures || out.errors || []).map(f => f.check || f);
     assert.ok(!failures.includes('subject_behind_camera'), JSON.stringify(out));
 });
+
+test('a console redraw keeps every scrolled panel where it was, and the shot can be on anyone staged', () => {
+    const render = pageFn('worldConsoleRender');
+    const snap = render.indexOf('worldScrollSnapshot(host)'), set = render.indexOf('host.innerHTML ='), back = render.indexOf('worldScrollRestore(host');
+    assert.ok(snap > 0 && set > snap && back > set, 'the console is redrawn without keeping its scroll: a click jumps the panel to the top');
+    const on = pageFn('worldShotOnHtml');
+    assert.ok(/stageSubjects\(\)/.test(on) && /worldShotOn\(/.test(on), 'the shot cannot be put on another subject');
+    assert.ok(/isTarget = true/.test(pageFn('worldShotOn')), 'choosing a subject does not make it the framing subject');
+});
