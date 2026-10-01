@@ -518,6 +518,26 @@ const PRODUCTION_TOOLS = [
         schema: { build_id: { type: 'string' } }, required: ['build_id'],
     },
     {
+        name: 'set_build_for_version',
+        handler: handleSetBuilds, method: 'GET',
+        path: a => `/film/set-builds?world_version_id=${encodeURIComponent(a.world_version_id)}`,
+        description: 'The set-build attempt a world version was made from, with its layout (walls, openings, floors, '
+            + 'objects, cameras), or 404 when the version did not come from a set layout. FREE.',
+        schema: { world_version_id: { type: 'string' } }, required: ['world_version_id'],
+    },
+    {
+        name: 'set_build_edit',
+        handler: handleSetBuilds, method: 'POST',
+        path: a => `/film/set-builds/${a.build_id}/edit`,
+        body: a => ({ objects: a.objects, note: a.note }),
+        description: 'Rebuild a set with its OBJECTS changed (moved, turned, resized, added or removed) and everything '
+            + 'else kept as the attempt it came from: walls, openings, floors, stairs, light and photo cameras. '
+            + 'Built and finished in Blender, FREE, as the location\'s next world version; no shot is moved, so pin '
+            + 'the shots with world_pin_shot. Pass the FULL objects list in the layout vocabulary (set_build_brief).',
+        schema: { build_id: { type: 'string' }, objects: { type: 'array', items: { type: 'object' } }, note: { type: 'string' } },
+        required: ['build_id', 'objects'],
+    },
+    {
         name: 'world_lock',
         handler: handleWorlds, method: 'POST',
         path: a => `/film/worlds/${a.world_id}/lock`,

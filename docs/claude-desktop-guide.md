@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**421 tools, 83 families.** Everything the app can do, you can ask for in a
+**423 tools, 83 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -1011,7 +1011,7 @@ the camera kept in Previs is applied to the shot's card like any other.
 ### A location's set, built in Blender from its plates
 
 `set_build_brief` · `set_build_render` · `set_build_list` · `set_build_get` ·
-`set_build_finish`
+`set_build_finish` · `set_build_for_version` · `set_build_edit`
 
 The free way to make a world, and the one that needs no provider: YOU read the
 plates and write the room; Blender, on this Mac, builds it. `set_build_brief`
@@ -1025,6 +1025,13 @@ is kept. `set_build_finish` paints each plate onto the surfaces it sees, makes t
 set the next version of the location's world (creating the world if there is
 none) and keeps it as a 3D model asset. All of it is FREE. Surfaces no plate saw
 keep their plain colour; another plate from a new position fills them.
+
+To change a built set's furniture, `set_build_for_version` gives the layout a world
+version was made from, and `set_build_edit` takes the full objects list back, moved,
+turned, added or removed: walls, openings, floors and cameras stay exactly as they
+were, and the set is built and finished as the next world version, FREE. No shot is
+moved; pin the ones that should use it with `world_pin_shot`. The director does the
+same on the Previs Plan view with **Edit set**.
 
 ### The geometric plate
 

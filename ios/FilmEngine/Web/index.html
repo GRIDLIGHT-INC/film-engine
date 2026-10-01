@@ -18005,6 +18005,8 @@ THREE.GLTFLoader = GLTFLoader;
      * and the director's notes are never touched by staging.
      */
     const STAGE = { sel: null, drag: null, timer: null, library: null, gltf: {}, lookSig: null };
+    // Editing the set's own objects (see EDITING THE SET below).
+    const SETEDIT = { on: false, build: null, items: [], sel: null, drag: null, dirty: false, busy: false };
 
     function stageSubjects() {
         if (!WORLD.blocking) WORLD.blocking = {};
@@ -18031,6 +18033,7 @@ THREE.GLTFLoader = GLTFLoader;
         };
     }
     function stageColour(su) {
+        if (su.setObject) return su.edited ? '#5fc7a8' : '#7aa4c4';
         if (su.model && su.model.asset_id) return '#a58ad8';
         if (su.kind === 'human' || (su.model && ['man', 'woman', 'boy', 'girl'].includes(su.model.library))) return '#d98a5f';
         if (su.model && su.model.library) return '#bda47c';
@@ -18058,13 +18061,13 @@ THREE.GLTFLoader = GLTFLoader;
             ctx.fillText(String(su.name), g.centre[0] + 10, g.centre[1] + 4);
         }
     }
-    function stageHit(px, pz) {
+    function stageHit(px, pz) { return stageHitIn(stageSubjects(), STAGE.sel, px, pz); }
+    function stageHitIn(subs, sel, px, pz) {
         const xf = WORLD.planXf;
         if (!xf) return null;
-        const subs = stageSubjects();
-        if (STAGE.sel != null && subs[STAGE.sel]) {
-            const h = stageShape(subs[STAGE.sel], xf.X, xf.Z, xf.f).handle;
-            if (Math.hypot(px - h[0], pz - h[1]) < 10) return { i: STAGE.sel, turn: true };
+        if (sel != null && subs[sel]) {
+            const h = stageShape(subs[sel], xf.X, xf.Z, xf.f).handle;
+            if (Math.hypot(px - h[0], pz - h[1]) < 10) return { i: sel, turn: true };
         }
         const [wx, wz] = xf.inv(px, pz).map(v => v / (xf.f || 1));
         for (let i = subs.length - 1; i >= 0; i--) {
@@ -18105,6 +18108,18 @@ THREE.GLTFLoader = GLTFLoader;
             if (worldViewMode() !== 'plan') return;
             const r = c.getBoundingClientRect();
             const px = e.clientX - r.left, pz = e.clientY - r.top;
+            if (SETEDIT.on) {
+                const sh = stageHitIn(SETEDIT.items, SETEDIT.sel, px, pz);
+                SETEDIT.sel = sh ? sh.i : null;
+                if (sh) {
+                    const it = SETEDIT.items[sh.i];
+                    const [wx, wz] = WORLD.planXf.inv(px, pz).map(v => v / (WORLD.planXf.f || 1));
+                    SETEDIT.drag = { i: sh.i, turn: sh.turn, ox: wx - it.position[0], oz: wz - it.position[2] };
+                } else PLANVIEW.pan = { x: e.clientX, y: e.clientY };
+                e.preventDefault();
+                stageRenderBar(); worldPaintFrame();
+                return;
+            }
             const hit = stageHit(px, pz);
             STAGE.sel = hit ? hit.i : null;
             if (hit) {
@@ -18158,6 +18173,19 @@ THREE.GLTFLoader = GLTFLoader;
                 }
                 return worldWalkRepaint();
             }
+            if (SETEDIT.drag && WORLD.planXf) {
+                const d = SETEDIT.drag, it = SETEDIT.items[d.i];
+                if (!it) return;
+                const r = c.getBoundingClientRect();
+                const [wx, wz] = WORLD.planXf.inv(e.clientX - r.left, e.clientY - r.top).map(v => v / (WORLD.planXf.f || 1));
+                if (d.turn) {
+                    let deg = Math.atan2(-(wx - it.position[0]), -(wz - it.position[2])) * 180 / Math.PI;
+                    if (!e.altKey) deg = Math.round(deg / 15) * 15;
+                    it.rotationDeg = [0, deg, 0];
+                } else it.position = [wx - d.ox, it.position[1] || 0, wz - d.oz];
+                it.edited = true; SETEDIT.dirty = true;
+                return worldPaintFrame();
+            }
             const g = STAGE.drag;
             if (!g || !WORLD.planXf) return;
             const r = c.getBoundingClientRect();
@@ -18176,6 +18204,7 @@ THREE.GLTFLoader = GLTFLoader;
             worldPaintFrame();
         });
         window.addEventListener('mouseup', () => {
+            if (SETEDIT.drag) { SETEDIT.drag = null; stageRenderBar(); }
             PLANVIEW.pan = null;
             STAGE.camDrag = null;
             const g = STAGE.drag;
@@ -18184,7 +18213,15 @@ THREE.GLTFLoader = GLTFLoader;
         });
     }
     document.addEventListener('keydown', e => {
-        if (state.currentPage !== 'previs' || worldViewMode() !== 'plan' || STAGE.sel == null) return;
+        if (state.currentPage !== 'previs' || worldViewMode() !== 'plan') return;
+        if (SETEDIT.on) {
+            const t = e.target && e.target.tagName;
+            if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || SETEDIT.sel == null) return;
+            if (e.key === 'Delete' || e.key === 'Backspace') { setEditRemove(); e.preventDefault(); }
+            else if (e.key === 'q' || e.key === 'e') setEditTurn((e.shiftKey ? 45 : 15) * (e.key === 'q' ? 1 : -1));
+            return;
+        }
+        if (STAGE.sel == null) return;
         const t = e.target && e.target.tagName;
         if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
         const subs = stageSubjects();
@@ -18224,8 +18261,10 @@ THREE.GLTFLoader = GLTFLoader;
         const bar = document.getElementById('pvStageBar');
         if (!bar) return;
         const plan = worldViewMode() === 'plan';
+        if (plan && SETEDIT.on) return setEditRenderBar(bar);
         const su = STAGE.sel != null ? stageSubjects()[STAGE.sel] : null;
         bar.innerHTML = !plan ? '' : `
+            <button class="pv-btn" onclick="setEditStart()" title="Move, turn or remove the set's own furniture, then rebuild it">Edit set</button>
             <button class="pv-btn pv-primary" onclick="stageOpenAdd()">＋ Add people, furniture or a model</button>
             ${su ? `<input class="pv-stage-name" value="${esc(su.name || '')}" placeholder="Name (named subjects reach the prompt)"
                         onchange="stageRename(this.value)">
@@ -18244,6 +18283,121 @@ THREE.GLTFLoader = GLTFLoader;
         stageSave(); stageRenderBar(); worldPaintFrame();
     }
     function stageRemove() { const subs = stageSubjects(); if (STAGE.sel != null) { subs.splice(STAGE.sel, 1); STAGE.sel = null; stageSave(); stageRenderBar(); worldPaintFrame(); } }
+
+    /* ── EDITING THE SET: its own furniture, moved, turned or removed ───────
+     *
+     * "I should be able to grab an object and move it, like the chair in the
+     * corner is 180 degrees opposite to reality."
+     *
+     * A built set is a layout (lib/set-build.js): walls, openings and floors as
+     * measured, and objects placed in it. Edit set draws those objects on the
+     * Plan as footprints, in the same coordinates as staged people (layout x, y
+     * is world x, -z, and yaw means the same in both: 0 faces north, turning left
+     * is positive). Nothing is written until "Rebuild set": the edited objects
+     * go to POST /set-builds/:id/edit, which keeps every wall and camera of the
+     * attempt it came from, builds and finishes the next world version in
+     * Blender (free), and the shot is pinned to it.
+     */
+
+    /** A layout object as a footprint the staging painter can draw: [w, h, d], world position, yaw. */
+    function setEditItem(o, i) {
+        let w = 0.6, d = 0.6, h = 1;
+        if (Array.isArray(o.size)) [w, d, h] = o.size;
+        else if (o.shape === 'cylinder') { w = d = 2 * (o.radius || 0.3); h = o.height || 1; }
+        else if (o.shape === 'sphere') { w = d = h = 2 * (o.radius || 0.3); }
+        const at = Array.isArray(o.at) ? o.at : [0, 0, 0];
+        return { setObject: true, src: i, name: o.name || o.asset || o.shape || 'object',
+                 position: [at[0], at[2] || 0, -at[1]], rotationDeg: [0, o.yaw || 0, 0], sizeM: [w, h, d], edited: false };
+    }
+
+    async function setEditStart() {
+        const vid = WORLD.version && WORLD.version.id;
+        if (!vid) return setStatus('This shot has no set yet: build or pin one first.', true);
+        try {
+            const b = await api(`/set-builds?world_version_id=${encodeURIComponent(vid)}`);
+            const objects = (b && b.layout && b.layout.objects) || [];
+            SETEDIT.build = b;
+            SETEDIT.items = objects.map(setEditItem);
+            SETEDIT.removed = 0;
+            SETEDIT.sel = null; SETEDIT.dirty = false; SETEDIT.on = true;
+            setStatus(`Editing the ${WORLD.world && WORLD.world.name || ''} set: ${objects.length} objects. Nothing changes until Rebuild set.`);
+        } catch (err) {
+            return setStatus(/404|not built/.test(err.message)
+                ? 'This world version was not built from a set layout (a Marble world or an imported model), so it has no objects to edit.'
+                : 'Could not read the set: ' + err.message, true);
+        }
+        stageRenderBar(); worldPaintFrame();
+    }
+    function setEditCancel() {
+        if (SETEDIT.dirty && !confirm('Discard the changes to the set?')) return;
+        Object.assign(SETEDIT, { on: false, items: [], sel: null, drag: null, dirty: false });
+        stageRenderBar(); worldPaintFrame();
+    }
+    function setEditTurn(deg) {
+        const it = SETEDIT.items[SETEDIT.sel];
+        if (!it) return;
+        it.rotationDeg = [0, ((it.rotationDeg || [])[1] || 0) + deg, 0];
+        it.edited = true; SETEDIT.dirty = true;
+        stageRenderBar(); worldPaintFrame();
+    }
+    function setEditRemove() {
+        if (SETEDIT.sel == null) return;
+        SETEDIT.items.splice(SETEDIT.sel, 1); SETEDIT.sel = null;
+        SETEDIT.removed = (SETEDIT.removed || 0) + 1; SETEDIT.dirty = true;
+        stageRenderBar(); worldPaintFrame();
+    }
+    /** The edited footprints back into layout objects: only position and yaw change. */
+    function setEditObjects() {
+        const src = (SETEDIT.build && SETEDIT.build.layout && SETEDIT.build.layout.objects) || [];
+        const r3 = n => Math.round(n * 1000) / 1000;
+        return SETEDIT.items.map(it => {
+            const o = JSON.parse(JSON.stringify(src[it.src]));
+            const z0 = Array.isArray(o.at) ? (o.at[2] || 0) : 0;
+            o.at = [r3(it.position[0]), r3(-it.position[2]), z0];
+            if (o.shape !== 'cylinder' && o.shape !== 'sphere') o.yaw = r3(((it.rotationDeg || [])[1] || 0));
+            return o;
+        });
+    }
+    async function setEditRebuild() {
+        if (!SETEDIT.build || SETEDIT.busy) return;
+        SETEDIT.busy = true; stageRenderBar();
+        setStatus('Rebuilding the set in Blender — about half a minute, free…', true);
+        try {
+            const out = await api(`/set-builds/${SETEDIT.build.id}/edit`, { method: 'POST',
+                body: JSON.stringify({ objects: setEditObjects() }) });
+            const vid = out && out.version && out.version.id;
+            if (!vid) throw new Error('the rebuild made no world version');
+            Object.assign(SETEDIT, { on: false, items: [], sel: null, drag: null, dirty: false, busy: false });
+            if (WORLD.shotId) {
+                await api(`/shots/${WORLD.shotId}/world`, { method: 'POST', body: JSON.stringify({ world_version_id: vid }) });
+                await worldRailSelect(WORLD.shotId);
+            } else if (WORLD.scout) {
+                await worldLoadScoutable(state.currentProject.id);
+                await worldScoutSelect(WORLD.scout.worldId);
+            }
+            setStatus(`Set rebuilt as version ${out.version.version}${WORLD.shotId ? ', and this shot is on it' : ''}. Earlier versions stay.`);
+        } catch (err) {
+            SETEDIT.busy = false;
+            setStatus('The set was not rebuilt: ' + err.message, true);
+        }
+        stageRenderBar(); worldPaintFrame();
+    }
+    function setEditRenderBar(bar) {
+        const it = SETEDIT.items[SETEDIT.sel];
+        const n = SETEDIT.items.filter(x => x.edited).length + (SETEDIT.removed || 0);
+        bar.innerHTML = `
+            <span class="pv-amber" style="font-weight:600">Editing the set</span>
+            ${it ? `<span>${esc(it.name)}</span>
+                <button class="pv-btn" onclick="setEditTurn(15)" title="Turn left 15° (Q)">↺</button>
+                <button class="pv-btn" onclick="setEditTurn(-15)" title="Turn right 15° (E)">↻</button>
+                <button class="pv-btn" onclick="setEditTurn(180)" title="Turn it round">180°</button>
+                <button class="pv-btn" onclick="setEditRemove()" title="Remove (Delete)">Remove</button>`
+                : '<span class="pv-dim">Click a piece of the set · drag to move · drag the white dot or Q/E to turn</span>'}
+            <button class="pv-btn pv-primary" onclick="setEditRebuild()" ${n && !SETEDIT.busy ? '' : 'disabled'}
+                title="Build the next version of the set with these changes (free, in Blender) and keep this shot on it">${SETEDIT.busy ? 'Rebuilding…' : `Rebuild set${n ? ` (${n})` : ''}`}</button>
+            <button class="pv-btn" onclick="setEditCancel()" ${SETEDIT.busy ? 'disabled' : ''}>Done</button>`;
+    }
+    Object.assign(window, { setEditStart, setEditCancel, setEditTurn, setEditRemove, setEditRebuild });
 
     async function stageOpenAdd(tab) {
         if (!STAGE.library) {
@@ -18441,7 +18595,8 @@ THREE.GLTFLoader = GLTFLoader;
         if (live) wedge(live, '#6690ff', 'rgba(102,144,255,0.16)', 'CAMERA');
         const f = live ? live.scale : 1;
         WORLD.planXf.f = f;
-        stageSubjects().forEach((su, i) => stageDrawFootprint(ctx, su, i === STAGE.sel, X, Z, s, f));
+        if (SETEDIT.on) SETEDIT.items.forEach((it, i) => stageDrawFootprint(ctx, it, i === SETEDIT.sel, X, Z, s, f));
+        else stageSubjects().forEach((su, i) => stageDrawFootprint(ctx, su, i === STAGE.sel, X, Z, s, f));
         // The lighting rig, seen from above: each light, its role, and where it points.
         const lit = WORLD.blocking && WORLD.blocking.lighting;
         if (WORLD.showLights !== false && lit && Array.isArray(lit.rig)) {

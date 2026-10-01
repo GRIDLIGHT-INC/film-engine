@@ -308,3 +308,78 @@ test('a box turned by yaw turns about its own centre, not the world origin (buil
     // Turned 41.2°: one metre wide along (cos, sin), so about 0.75 by 0.66 in plan.
     assert.ok(Math.abs((x1 - x0) - 0.765) < 0.03 && Math.abs((y1 - y0) - 0.674) < 0.03, `extent ${x1 - x0} x ${y1 - y0}`);
 });
+
+test('a built set\'s objects can be moved and turned, and the walls stay as measured (built in Blender)',
+    { skip: blender.available ? false : `Blender is not installed here: ${blender.reason}`, timeout: 300000 }, async () => {
+    const projectId = generateId(), locationId = generateId();
+    db.prepare('INSERT INTO film_projects (id, title) VALUES (?, ?)').run(projectId, 'Edit');
+    db.prepare('INSERT INTO film_locations (id, project_id, name) VALUES (?, ?, ?)').run(locationId, projectId, 'ROOM');
+    const layout = { walls: [
+        { name: 'south', from: [0, 0], to: [4, 0], height: 2.5, openings: [] },
+        { name: 'east', from: [4, 0], to: [4, 3], height: 2.5, openings: [] },
+        { name: 'north', from: [4, 3], to: [0, 3], height: 2.5, openings: [] },
+        { name: 'west', from: [0, 3], to: [0, 0], height: 2.5, openings: [] }],
+        slabs: [{ name: 'floor', x0: 0, x1: 4, y0: 0, y1: 3, z: 0 }],
+        objects: [{ name: 'chair', shape: 'box', at: [1, 1, 0], size: [0.6, 0.6, 0.9], yaw: 0 },
+                  { name: 'table', shape: 'box', at: [3, 2, 0], size: [1.2, 0.8, 0.75] }] };
+    const first = await setBuild.measuredAttempt(locationId, layout, { note: 'test room' });
+    const vid = first.version.id;
+
+    const found = await call('GET', `/film/set-builds?world_version_id=${vid}`);
+    assert.equal(found.status, 200, JSON.stringify(found.data));
+    assert.equal(found.data.id, first.id);
+    assert.equal((await call('GET', '/film/set-builds?world_version_id=nope')).status, 404);
+
+    const objects = found.data.layout.objects.map(o => o.name === 'chair' ? { ...o, at: [2, 1.5, 0], yaw: 180 } : o)
+        .filter(o => o.name !== 'table');
+    // A caller cannot reshape the measured room: walls sent with the edit are ignored.
+    const r = await call('POST', `/film/set-builds/${first.id}/edit`, { objects, walls: [] });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.notEqual(r.data.version.id, vid, 'no new world version');
+    assert.equal(r.data.version.version, first.version.version + 1);
+    const L = r.data.layout;
+    assert.deepEqual(L.walls, found.data.layout.walls, 'the walls changed');
+    assert.deepEqual(L.slabs, found.data.layout.slabs);
+    assert.deepEqual(L.objects.map(o => [o.name, o.at, o.yaw]), [['chair', [2, 1.5, 0], 180]]);
+    assert.equal((await call('POST', `/film/set-builds/${first.id}/edit`, { objects: 'x' })).status, 400);
+});
+
+test('the Previs Plan view edits the set: footprints out of the layout and back, then a rebuild that pins the shot', () => {
+    const vm = require('vm');
+    const fnSrc = name => {
+        const i = SPA.indexOf(`function ${name}(`);
+        assert.ok(i > 0, `${name} missing`);
+        let j = SPA.indexOf(')', i); j = SPA.indexOf('{', j);
+        for (let d = 0, k = j; k < SPA.length; k++) {
+            if (SPA[k] === '{') d++; else if (SPA[k] === '}' && --d === 0) return SPA.slice(i, k + 1);
+        }
+        return '';
+    };
+    const ctx = { Math, JSON, SETEDIT: { build: null, items: [] } };
+    vm.createContext(ctx);
+    vm.runInContext(fnSrc('setEditItem') + fnSrc('setEditObjects'), ctx);
+    const src = [{ name: 'chair', shape: 'asset', asset: 'loungeChair', at: [1.37, 1.75, 0], yaw: 132.9, size: [0.66, 0.87, 1.02] },
+                 { name: 'bin', shape: 'cylinder', at: [0.5, 2, 0], radius: 0.13, height: 0.36 }];
+    const J = x => JSON.parse(JSON.stringify(x));
+    const items = src.map((o, i) => J(ctx.setEditItem(o, i)));
+    // Layout (x, y) is world (x, -z); the size is drawn [w, h, d]; yaw is the same number.
+    assert.deepEqual(items[0].position, [1.37, 0, -1.75]);
+    assert.deepEqual(items[0].sizeM, [0.66, 1.02, 0.87]);
+    assert.equal(items[0].rotationDeg[1], 132.9);
+    assert.deepEqual(items[1].sizeM, [0.26, 0.36, 0.26]);
+    items[0].rotationDeg = [0, 312.9, 0];
+    items[0].position = [2, 0, -1];
+    ctx.SETEDIT.build = { layout: { objects: src } };
+    ctx.SETEDIT.items = items;
+    const out = JSON.parse(JSON.stringify(ctx.setEditObjects()));
+    assert.deepEqual(out[0], { ...src[0], at: [2, 1, 0], yaw: 312.9 });
+    assert.deepEqual(out[1], src[1], 'an untouched cylinder changed');
+    // Nothing is written until Rebuild; the rebuild posts to the edit route and pins the shot.
+    const rebuild = fnSrc('setEditRebuild');
+    assert.match(rebuild, /\/set-builds\/\$\{SETEDIT\.build\.id\}\/edit/);
+    assert.match(rebuild, /\/shots\/\$\{WORLD\.shotId\}\/world`, \{ method: 'POST'/);
+    assert.match(fnSrc('stageRenderBar'), /setEditStart\(\)/, 'no way into editing the set');
+    for (const key of ['setEditTurn(180)', 'setEditRemove()', 'setEditRebuild()']) {
+        assert.ok(fnSrc('setEditRenderBar').includes(key), key);
+    }
+});

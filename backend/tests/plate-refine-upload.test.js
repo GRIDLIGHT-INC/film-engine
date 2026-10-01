@@ -67,4 +67,11 @@ test('a JPEG uploaded as a location plate is refined, sent as itself, and archiv
     const rows = db.prepare(`SELECT file_name, metadata FROM film_assets WHERE location_id = ? AND asset_type = 'reference_image'`).all(locationId);
     const current = rows.filter(x => !/"plate_role":"superseded"/.test(x.metadata || ''));
     assert.deepEqual(current.map(x => path.extname(x.file_name)), ['.png'], `current plates: ${JSON.stringify(rows)}`);
+
+    // The sheet lists the current plate only: the archived JPEG (moved to versions/)
+    // drew as a broken tile on the location when it was listed as a view.
+    const views = await call('GET', ['locations', locationId, 'plate', 'views']);
+    assert.equal(views.status, 200, JSON.stringify(views.data));
+    assert.deepEqual(views.data.views.map(v => path.extname(v.file_name)), ['.png'],
+        `views: ${JSON.stringify(views.data.views.map(v => v.file_name))}`);
 });

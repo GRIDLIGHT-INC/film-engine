@@ -5,6 +5,8 @@
  *   GET  /film/locations/:id/set-builds          every attempt, newest first
  *   POST /film/locations/:id/set-builds          { layout, note } → build headless, render, compare (free)
  *   GET  /film/set-builds/:id                    one attempt
+ *   GET  /film/set-builds?world_version_id=      the attempt a world version was built from (its layout), or 404
+ *   POST /film/set-builds/:id/edit               { objects } → the same set with its objects moved, built and finished as the next world version (free)
  *   GET  /film/set-builds/:id/files/:name        a comparison sheet
  *   POST /film/set-builds/:id/finish             project, export, world version, 3D asset (free)
  *   POST /film/locations/:id/room-scan/import    a RoomPlan scan (JSON, USDZ beside it, posed photos as plates) built as the location's set (free);
@@ -89,6 +91,15 @@ async function handleSetBuilds(req, res, urlParts, query) {
 
         // /film/set-builds/:id[/finish|/files/:name]
         const buildId = urlParts[2];
+        if (!buildId && req.method === 'GET') {
+            const vid = String((query && query.world_version_id) || '');
+            if (!vid) return json(res, 400, { error: 'world_version_id is required' });
+            const b = setBuild.buildForVersion(vid);
+            return b ? json(res, 200, b) : json(res, 404, { error: 'This world version was not built from a set layout' });
+        }
+        if (urlParts[3] === 'edit' && req.method === 'POST') {
+            return json(res, 200, await setBuild.editedAttempt(buildId, body.objects, { note: body.note }));
+        }
         if (!urlParts[3] && req.method === 'GET') {
             const b = setBuild.getBuild(buildId);
             return b ? json(res, 200, b) : json(res, 404, { error: 'Set build not found' });

@@ -566,11 +566,42 @@ async function measuredAttempt(locationId, layout, opts = {}) {
                 d.prepare('UPDATE film_set_builds SET renders_json = ? WHERE id = ?').run(JSON.stringify(renders), id);
             }
         }
-        return await finishAttempt(id, { style: 'clean' });
+        return await finishAttempt(id, { style: opts.style || 'clean' });
     } catch (err) {
         d.prepare("UPDATE film_set_builds SET status = 'failed', error = ? WHERE id = ?").run(String(err.message).slice(0, 2000), id);
         throw err;
     }
+}
+
+/**
+ * The set a world version was built from: the attempt whose finish made it.
+ * Null for a version that did not come from a set build (a Marble world, an
+ * imported GLB), which therefore has no layout to edit.
+ */
+function buildForVersion(versionId) {
+    const row = db().prepare(`SELECT * FROM film_set_builds WHERE world_version_id = ? AND status = 'finished'
+                               ORDER BY attempt DESC LIMIT 1`).get(versionId);
+    return row ? rowOut(row) : null;
+}
+
+/**
+ * A set edited in Previs: the objects moved, turned, resized or removed, and
+ * everything else kept exactly as the attempt it came from (walls, openings,
+ * floors, stairs, light, and the photo cameras the sheets are rendered from).
+ * Built and finished in one call, in the style the source was finished in,
+ * so it becomes the location's next world version like any other attempt.
+ * Only objects are taken from the caller: a wall is measured, and a set that
+ * could be reshaped from a drag would stop matching the place it was scanned in.
+ */
+async function editedAttempt(buildId, objects, opts = {}) {
+    const src = db().prepare('SELECT * FROM film_set_builds WHERE id = ?').get(buildId);
+    if (!src) { const e = new Error('Set build not found'); e.status = 404; throw e; }
+    if (!Array.isArray(objects)) { const e = new Error('objects must be the full list of the set\'s objects'); e.status = 400; throw e; }
+    const layout = Object.assign({}, JSON.parse(src.layout_json), { objects });
+    let style = 'clean';
+    try { style = (JSON.parse(src.faces_json || '{}').style) || 'clean'; } catch (_) { style = 'clean'; }
+    return measuredAttempt(src.location_id, layout, {
+        note: (opts.note || `Edited in Previs from attempt ${src.attempt}`).slice(0, 200), style });
 }
 
 /** The world a location's set belongs to, made if it has none. */
@@ -633,6 +664,6 @@ async function finishAttempt(buildId, opts = {}) {
 }
 
 module.exports = {
-    resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, measuredAttempt, getBuild, listBuilds,
+    resolveBlender, validateLayout, platesFor, brief, renderAttempt, finishAttempt, measuredAttempt, editedAttempt, buildForVersion, getBuild, listBuilds,
     LAYOUT_SCHEMA, SHAPES, WALL_SIDES, OPENING_KINDS, STRUCTURE, STYLES, TIMES_OF_DAY, LIMITS, INSTRUCTIONS, SCRIPT, resolveAssets,
 };

@@ -314,6 +314,10 @@ function plateViewsFor(subjectId, kind) {
          FROM film_assets
           WHERE project_id = ? AND ${column} = ?
             AND asset_type IN ('reference_image', 'character_sheet')
+            -- The current plates only. An archived version (a plate regenerated or
+            -- refined, kept under versions/) and a gallery concept are not views:
+            -- listed here, an archived one drew as a broken tile on the sheet.
+            AND ${require('../lib/subject-gallery').sendableSql()}
        ORDER BY created_at ASC`).all(subject.project_id, subjectId);
     out.views = rows.map(r => {
         let meta = {};
@@ -377,6 +381,7 @@ function listPlateViews(res, subjectId, kind) {
          FROM film_assets
           WHERE project_id = ? AND ${column} = ?
             AND asset_type IN ('reference_image', 'character_sheet')
+            AND ${require('../lib/subject-gallery').sendableSql()}
        ORDER BY created_at ASC`).all(loc.project_id, subjectId);
 
     const views = rows.map(r => {
