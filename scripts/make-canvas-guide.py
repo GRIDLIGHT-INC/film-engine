@@ -909,9 +909,15 @@ pic('76-previs-build-set', '"Build set": ask Claude to build from the plates, or
     'kept, compared against the plates.', width=Inches(4.2))
 bullets([('From the plates: ', 'copy the line under "Ask Claude" into Claude. It reads the plates, writes the room, and '
           'Blender builds and renders it beside each plate so you can see where it is wrong. Free, on this Mac.'),
-         ('With an iPhone Pro: ', 'open Film Engine on the phone, go to Previs → Build set → "Scan with this iPhone". '
-          'Scan a room, tap "Room done", walk to the next room (or up the stairs) and "Scan another room"; "Finish & '
-          'build" sends it. Rooms and floors keep their places. Furniture becomes library models at its measured size.'),
+         ('With an iPhone Pro (works offline): ', 'open the Film Engine app and tap "Scan a location". Scan a room '
+          'while RoomPlan draws its lines live, tap "Room done", walk to the next room (or up the stairs) and "Scan another '
+          'room". Then "Take photos": the app shows where to stand and which way to turn for each wall ("Walk 1.4 m ahead, '
+          'turn left 20°"), and keeps each photo with the exact position of the phone. "Extra" takes any detail you want. '
+          '"Done, save" keeps it on the phone. Back in reach of the Mac, tap "Send to Film Engine…" on the saved scan, '
+          'choose the project and the location (or type a new one). The scan becomes the set, the photos become the '
+          'location\'s plates, and the scan is rendered beside each photo.'),
+         ('Then ask Claude ', 'to finish the set from its scan and photos: it keeps the measured walls and cameras and adds '
+          'every object the photos show, as shapes and flat colours.'),
          ('Import RoomPlan JSON ', 'takes a scan made elsewhere.'),
          ('Finish an attempt ', 'to make it the location\'s world and a 3D model.')])
 

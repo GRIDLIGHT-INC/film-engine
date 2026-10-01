@@ -10,28 +10,176 @@ import WebKit
 /// from itself.
 struct ContentView: View {
     @EnvironmentObject var settings: ServerSettings
+    @StateObject private var store = ScanStore.shared
     @State private var showingSettings = false
+    @State private var scanning = false
+    @State private var sending: SavedScan?
 
+    /*
+     * The phone does TWO things: scan a location in 3D (RoomPlan, drawing its
+     * lines live) and photograph it, then send both to a project's location.
+     * Everything else happens in Film Engine on the Mac. Scanning needs no
+     * network: on location there may be none, so a scan is kept on the phone
+     * and sent when the Mac is reachable.
+     */
     var body: some View {
-        Group {
-            if settings.isConfigured {
-                WebAppView(serverURL: settings.normalized)
-                    .ignoresSafeArea(edges: .bottom)
-                    .overlay(alignment: .topTrailing) {
-                        Button { showingSettings = true } label: {
-                            Image(systemName: "gearshape.fill")
-                                .padding(10)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                        .padding(.trailing, 12)
-                        .padding(.top, 4)
-                        .opacity(0.55)
+        NavigationStack {
+            List {
+                Section {
+                    Button { scanning = true } label: {
+                        Label("Scan a location", systemImage: "viewfinder")
+                            .font(.headline)
                     }
-            } else {
-                SetupView()
+                    .disabled(!RoomScanSupport.available)
+                } footer: {
+                    Text(RoomScanSupport.available
+                         ? "LiDAR, room after room (stairs and upper floors too), then guided photos of every wall. Works offline: it is saved on this iPhone and sent to Film Engine later."
+                         : RoomScanSupport.reason)
+                }
+                Section("Saved scans") {
+                    if store.scans.isEmpty {
+                        Text("None yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(store.scans) { scan in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(scan.name).font(.body.weight(.semibold))
+                            Text("\(scan.rooms) room\(scan.rooms == 1 ? "" : "s") · \(scan.photos.count) photo\(scan.photos.count == 1 ? "" : "s") · \(scan.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            if let sent = scan.sent {
+                                Text("Sent to \(sent.location) · \(sent.at.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.footnote).foregroundStyle(.green)
+                            }
+                            Button(scan.sent == nil ? "Send to Film Engine…" : "Send again…") { sending = scan }
+                                .font(.footnote.weight(.semibold))
+                        }
+                        .swipeActions { Button("Delete", role: .destructive) { store.delete(scan) } }
+                    }
+                }
+                Section {
+                    Button { showingSettings = true } label: { Label("Film Engine on your Mac", systemImage: "desktopcomputer") }
+                } footer: {
+                    Text(settings.isConfigured ? "Scans are sent to \(settings.normalized)." : "Set the Mac's address before sending a scan. Scanning does not need it.")
+                }
+            }
+            .navigationTitle("Film Engine")
+        }
+        .fullScreenCover(isPresented: $scanning) {
+            if #available(iOS 17.0, *) {
+                RoomScanView(request: nil) { _ in scanning = false; store.reload() }
             }
         }
+        .sheet(item: $sending) { scan in SendScanView(scan: scan) }
         .sheet(isPresented: $showingSettings) { SetupView(isSheet: true) }
+    }
+}
+
+/// Send a scan kept on the phone to a location: choose the project, then a
+/// location or a new one. The engine builds the set on the Mac.
+struct SendScanView: View {
+    let scan: SavedScan
+    @EnvironmentObject var settings: ServerSettings
+    @Environment(\.dismiss) private var dismiss
+    @State private var projects: [Item] = []
+    @State private var locations: [Item] = []
+    @State private var project: Item?
+    @State private var newName = ""
+    @State private var status = ""
+    @State private var working = false
+    @State private var result: String?
+
+    struct Item: Identifiable, Hashable { let id: String; let name: String }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !settings.isConfigured {
+                    Text("Set the Mac's address first (Server on the home screen).")
+                }
+                if let result {
+                    Section("Sent") { Text(result) }
+                } else {
+                    Section("Project") {
+                        Picker("Project", selection: $project) {
+                            Text("Choose…").tag(Item?.none)
+                            ForEach(projects) { Text($0.name).tag(Item?.some($0)) }
+                        }
+                    }
+                    if project != nil {
+                        Section("Location") {
+                            ForEach(locations) { loc in
+                                Button(loc.name) { Task { await send(to: loc) } }.disabled(working)
+                            }
+                            HStack {
+                                TextField("New location name", text: $newName)
+                                Button("Create & send") { Task { await createAndSend() } }
+                                    .disabled(working || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            }
+                        }
+                    }
+                }
+                if working { ProgressView() }
+                if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(.secondary) }
+            }
+            .navigationTitle(scan.name)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .task { await loadProjects() }
+            .onChange(of: project) { p in Task { await loadLocations(p) } }
+        }
+    }
+
+    private var base: String { settings.normalized }
+
+    private func getJSON(_ path: String) async -> [String: Any]? {
+        guard let url = URL(string: base + path) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } catch { status = "Film Engine is not reachable: \(error.localizedDescription)"; return nil }
+    }
+
+    private func loadProjects() async {
+        guard let d = await getJSON("/film/projects"), let list = d["projects"] as? [[String: Any]] else { return }
+        projects = list.compactMap { p in (p["id"] as? String).map { Item(id: $0, name: (p["title"] as? String) ?? "Untitled") } }
+    }
+
+    private func loadLocations(_ p: Item?) async {
+        locations = []
+        guard let p, let d = await getJSON("/film/projects/\(p.id)/locations"), let list = d["locations"] as? [[String: Any]] else { return }
+        locations = list.compactMap { l in (l["id"] as? String).map { Item(id: $0, name: (l["name"] as? String) ?? "Location") } }
+    }
+
+    private func createAndSend() async {
+        guard let p = project, let url = URL(string: base + "/film/projects/\(p.id)/locations") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["name": newName.trimmingCharacters(in: .whitespaces)])
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            // A name already in the project answers with the existing one.
+            let row = (obj?["existing"] as? [String: Any]) ?? obj
+            guard let id = row?["id"] as? String else { status = (obj?["error"] as? String) ?? "Could not create the location."; return }
+            await send(to: Item(id: id, name: (row?["name"] as? String) ?? newName))
+        } catch { status = error.localizedDescription }
+    }
+
+    private func send(to loc: Item) async {
+        working = true
+        status = "Sending \(scan.rooms) room\(scan.rooms == 1 ? "" : "s") and \(scan.photos.count) photos. Blender builds the set on the Mac; this can take a minute…"
+        defer { working = false }
+        let r = await ScanStore.shared.send(scan, base: base, locationId: loc.id, name: scan.name)
+        if r.ok {
+            var s = scan
+            s.sent = SentInfo(project: project?.name ?? "", location: loc.name, at: Date())
+            try? ScanStore.shared.write(s)
+            result = "Built as a set for \(loc.name), with \(scan.photos.count) photos as its plates.\n\n"
+                + "Next, ask Claude: “Finish the set for \(loc.name) from its scan and photos (set_build_brief, then set_build_render).” "
+                + "It adds every object the photos show on top of the scan."
+            status = ""
+        } else {
+            status = r.error ?? "The scan was not sent."
+        }
     }
 }
 
@@ -65,7 +213,7 @@ struct SetupView: View {
 
                 if case .reachable = settings.status {
                     Section {
-                        Button("Open Film Engine") { dismiss() }
+                        Button("Done") { dismiss() }
                             .font(.headline)
                     }
                 }

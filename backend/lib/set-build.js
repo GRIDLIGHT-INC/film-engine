@@ -292,19 +292,47 @@ function fileDataUri(p) {
 const INSTRUCTIONS = [
     'Read every plate and the location\'s own words. Decide the room\'s size in metres from things of known size '
         + '(a door is about 2.1 m tall, a counter about 1.05 m, a stool seat about 0.75 m, a person about 1.7 m).',
-    'Write ONE layout: the room, its openings, every object that reads in the plates, and one camera per plate '
-        + 'placed where that photograph was taken from. The cameras matter most: every comparison is only as '
-        + 'good as the camera it is rendered from.',
-    'Call set_build_render. Look at each sheet: the plate, your render, and the two blended. Where an edge in '
-        + 'your render does not sit on the same edge in the plate, move the camera first (position, yaw, '
-        + 'pitch, lens), then the geometry. Render again. Two or three attempts is normal.',
-    'When the blends line up, call set_build_finish with that attempt. It projects the plates onto the set, '
-        + 'makes it the next version of the location\'s world, and keeps it as a 3D model asset.',
-    'Furniture, fixtures and people are library models (shape: asset), not boxes: pick the nearest entry by '
-        + 'category and give it the size you measured. A box is the fallback for anything the library does not have.',
-    'Model only what a camera will see and a shot will be framed against. Anything you cannot place from the '
-        + 'plates is better left out than guessed: a surface nobody photographed stays its plain colour.',
+    'If the brief carries a scan_base, START FROM IT: its walls, openings, slabs, stairs and cameras were measured '
+        + 'by LiDAR and the phone, so keep them exactly and do not move a camera. Your job is everything the scan '
+        + 'reduced to a box or missed: add it to the scan_base\'s objects (replace a scanned box with its proper '
+        + 'pieces where you can see them).',
+    'INVENTORY FIRST. Before writing any layout, list for every plate each thing a camera could frame against: '
+        + 'furniture, fixtures, counters, shelves and what stands on them, lamps and pendant lights, signs, menus, '
+        + 'pictures and posters, window frames and blinds, appliances, plants, bins, coat hooks, rails, radiators, '
+        + 'ceiling beams and vents, anything on the floor. A previz set that holds only the big furniture is the '
+        + 'failure this step exists to prevent: aim to represent all, or nearly all, of what is in the photographs.',
+    'Build each thing from its parts, not one block: a booth is a seat, a back and its table; a counter is a base, a '
+        + 'top and a foot rail; a shelf unit is its sides and each shelf; a stool is a seat on a post; a window has its '
+        + 'frame and mullions. Use library models (shape: asset) where one fits at the measured size, and boxes, '
+        + 'cylinders and spheres for the rest. Use repeat for rows (stools, lights, tiles of a sign).',
+    'Shapes and flat colours only, never textures: give each object the colour it reads as in the plates. The '
+        + 'point is that every object is THERE, at its size and place, so a shot can be blocked and framed against it.',
+    'Write ONE layout: the building, its openings, every object from the inventory, and one camera per plate placed '
+        + 'where that photograph was taken from (unless the scan_base already measured it). Every comparison is only '
+        + 'as good as the camera it is rendered from.',
+    'Call set_build_render. Look at each sheet: the plate, your render, and the two blended. Where an edge in your '
+        + 'render does not sit on the same edge in the plate, fix the camera first (unless measured), then the '
+        + 'geometry. Then go down your inventory against each sheet and add whatever is still missing. Render again; '
+        + 'three or four attempts is normal for a detailed set.',
+    'When the blends line up and the inventory is in, call set_build_finish with that attempt. It makes the set the '
+        + 'next version of the location\'s world (clean: flat colours sampled from the plates) and keeps it as a 3D model.',
+    'Leave out only what you genuinely cannot place from any plate; a surface nobody photographed keeps its plain colour.',
 ];
+
+/** The newest attempt built from a LiDAR scan, as the base for a detail pass, or null. */
+function scanBase(locationId) {
+    const rows = db().prepare('SELECT id, attempt, layout_json, note FROM film_set_builds WHERE location_id = ? '
+        + "AND status != 'failed' ORDER BY attempt DESC").all(locationId);
+    for (const r of rows) {
+        let L = null;
+        try { L = JSON.parse(r.layout_json); } catch (_) { L = null; }
+        if (L && L.source === 'lidar-scan') {
+            return { attempt_id: r.id, attempt: r.attempt, note: r.note, layout: L,
+                keep: 'walls, openings, slabs, stairs and cameras are measured: keep them exactly; add to objects' };
+        }
+    }
+    return null;
+}
 
 function brief(locationId, opts = {}) {
     const found = platesFor(locationId);
@@ -327,6 +355,9 @@ function brief(locationId, opts = {}) {
         library: require('./previs-library').list().map(e => ({ id: e.id, category: e.category, size_m: e.size_m })),
         last_attempt: last ? { id: last.id, attempt: last.attempt, status: last.status,
             layout: JSON.parse(last.layout_json) } : null,
+        // The LiDAR scan, when there is one: measured walls, openings, floors,
+        // stairs and photo cameras to build the details on.
+        scan_base: scanBase(locationId),
         cost: 'Free. Blender runs on this machine.',
         warnings: plates.length ? [] : ['This location has no plates. Generate or upload one before building a set.'],
         // The pictures themselves, for an agent that has to LOOK at them.
@@ -502,7 +533,7 @@ async function measuredAttempt(locationId, layout, opts = {}) {
     const location = d.prepare('SELECT * FROM film_locations WHERE id = ?').get(locationId);
     if (!location) { const e = new Error('Location not found'); e.status = 404; throw e; }
     const L = Object.assign({ cameras: [] }, layout);
-    const errors = validateLayout(L, [], { measured: true });
+    const errors = validateLayout(L, null, { measured: true });
     if (errors.length) { const e = new Error(`Scan refused: ${errors[0]}`); e.status = 400; e.errors = errors; throw e; }
     const resolved = resolveAssets(L, location.project_id);
     if (resolved.errors.length) { const e = new Error(`Scan refused: ${resolved.errors[0]}`); e.status = 400; e.errors = resolved.errors; throw e; }
@@ -518,6 +549,23 @@ async function measuredAttempt(locationId, layout, opts = {}) {
                VALUES (?, ?, ?, ?, ?, ?, 'rendered', ?)`)
         .run(id, location.project_id, locationId, attempt, JSON.stringify(L), opts.note || 'measured scan', outDir);
     try {
+        // Photos taken in the scan's session are plates with measured cameras:
+        // render the scan beside each, so the sheets show what the scan has
+        // and the photos have that it does not, before it is finished.
+        if (L.cameras.length) {
+            const found = platesFor(locationId);
+            const used = found.plates.filter(p => L.cameras.some(c => c.plate === p.view));
+            if (used.length) {
+                const result = await runBlender({ mode: 'render', layout: L, out_dir: outDir, plates: used, assets: resolved.assets });
+                const renders = {};
+                for (const p of used) {
+                    const r = result.renders[p.view];
+                    const sheet = r && compareSheet(p.path, r, path.join(outDir, `compare_${p.view}.png`));
+                    if (sheet) renders[p.view] = { render: r, sheet };
+                }
+                d.prepare('UPDATE film_set_builds SET renders_json = ? WHERE id = ?').run(JSON.stringify(renders), id);
+            }
+        }
         return await finishAttempt(id, { style: 'clean' });
     } catch (err) {
         d.prepare("UPDATE film_set_builds SET status = 'failed', error = ? WHERE id = ?").run(String(err.message).slice(0, 2000), id);

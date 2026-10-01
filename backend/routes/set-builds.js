@@ -7,7 +7,7 @@
  *   GET  /film/set-builds/:id                    one attempt
  *   GET  /film/set-builds/:id/files/:name        a comparison sheet
  *   POST /film/set-builds/:id/finish             project, export, world version, 3D asset (free)
- *   POST /film/locations/:id/room-scan/import    a RoomPlan scan (JSON, USDZ beside it) built as the location's set (free);
+ *   POST /film/locations/:id/room-scan/import    a RoomPlan scan (JSON, USDZ beside it, posed photos as plates) built as the location's set (free);
  *                                                `dry_run` answers the layout it would build and builds nothing
  *
  * The layout is written by the connected agent; see lib/set-build.js for why
@@ -50,8 +50,25 @@ async function handleSetBuilds(req, res, urlParts, query) {
                     return json(res, 400, { error: 'send structure: the RoomPlan CapturedStructure or CapturedRoom as JSON' });
                 }
                 const { scanToLayout } = require('../lib/room-scan');
-                const { layout, report } = scanToLayout(structure);
+                // Photos taken after the scan, in the same AR session: each one a
+                // plate with the pose the phone measured.
+                const photos = Array.isArray(body.photos) ? body.photos.slice(0, 60) : [];
+                const { layout, report } = scanToLayout(structure, {
+                    photos: photos.map(p => Object.assign({}, p, { image: undefined })) });
                 if (body.dry_run) return json(res, 200, { dry_run: true, layout, report });
+                const kept = new Set(layout.cameras.map(c => c.plate));
+                const media = require('../lib/media-imports');
+                report.plates = [];
+                for (const p of photos) {
+                    if (!kept.has(String(p.view || '').trim())) continue;
+                    try {
+                        media.importMedia('location-plate', { subjectId: locationId, view: String(p.view).trim(), data: p.image });
+                        report.plates.push(String(p.view).trim());
+                    } catch (err) {
+                        report.skipped.push(`photo ${p.view}: ${err.message}`);
+                        layout.cameras = layout.cameras.filter(c => c.plate !== String(p.view).trim());
+                    }
+                }
                 const files = { 'scan.json': JSON.stringify(structure) };
                 const m = typeof body.usdz === 'string' && body.usdz.match(/^data:[^;]*;base64,(.*)$/);
                 if (m) files['scan.usdz'] = Buffer.from(m[1], 'base64');

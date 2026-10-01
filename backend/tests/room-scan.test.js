@@ -28,7 +28,7 @@ process.env.FILM_DATA_DIR = process.env.FILM_DATA_DIR
 const { db, generateId } = require('../db/database');
 const { ensureSchema } = require('../db/schema');
 ensureSchema();
-const { scanToLayout, columnsOf, categoryOf } = require('../lib/room-scan');
+const { scanToLayout, columnsOf, categoryOf, photoCamera } = require('../lib/room-scan');
 const setBuild = require('../lib/set-build');
 const { handleSetBuilds } = require('../routes/set-builds');
 
@@ -166,6 +166,66 @@ test('with Blender here, the house is built into the location\'s world and a 3D 
         assert.ok(Math.max(...size) >= 5 && size.some(n => n >= 5.3), 'the second storey is not in the build');
     });
 
+test('a photo taken in the scan\'s session becomes a plate camera with the pose the phone measured', () => {
+    // The phone at ARKit (2.5, 1.5, 0.5), level, looking down -z (north at the start of the session).
+    const pose = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [2.5, 1.5, 0.5, 1]];
+    const one = photoCamera({ view: 'scan-r1-w1', camera_to_world: pose, focal_px: 1500, width: 1920, height: 1440 }, 0);
+    assert.deepEqual(one.camera.position, [2.5, -0.5, 1.5], 'ARKit (x, y, z) is not the layout\'s (x, -z, y)');
+    // Camera right is east, camera up is up, and it looks north: Blender's yaw 0, pitch 0.
+    assert.deepEqual(one.camera.rotation, [[1, 0, 0], [0, 0, -1], [0, 1, 0]]);
+    assert.equal(one.camera.lens, 28.125, 'the lens is not fx over the width on a 36 mm sensor');
+    // Flat column-major is read the same, and the floor height is taken off.
+    const flat = photoCamera({ view: 'x', camera_to_world: pose.flat(), focal_px: 1500, width: 1920 }, 1);
+    assert.equal(flat.camera.position[2], 0.5);
+    assert.ok(photoCamera({ view: 'bad name!', camera_to_world: pose, focal_px: 1, width: 1 }, 0).error);
+    assert.ok(photoCamera({ view: 'x', focal_px: 1, width: 1 }, 0).error);
+    // In a scan, each photo is a camera named for its plate; a broken one is named, not dropped silently.
+    const { layout, report } = scanToLayout(house(), { photos: [
+        { view: 'scan-r1-w1', camera_to_world: pose, focal_px: 1500, width: 1920, height: 1440 },
+        { view: 'scan-r1-w2', focal_px: 1500, width: 1920 }] });
+    assert.equal(layout.cameras.length, 1);
+    assert.equal(layout.source, 'lidar-scan');
+    assert.ok(report.skipped.some(s => /photos\[1\]/.test(s)), 'the photo with no pose was not named');
+    assert.deepEqual(setBuild.validateLayout(layout, ['scan-r1-w1'], { measured: true }), []);
+});
+
+test('the brief hands Claude the scan as a measured base, and asks for every object', () => {
+    const { projectId, locationId } = location();
+    const { layout } = scanToLayout(house());
+    db.prepare(`INSERT INTO film_set_builds (id, project_id, location_id, attempt, layout_json, note, status)
+                VALUES (?, ?, ?, 1, ?, 'RoomPlan', 'finished')`).run(generateId(), projectId, locationId, JSON.stringify(layout));
+    const b = setBuild.brief(locationId);
+    assert.ok(b.scan_base, 'no scan_base in the brief');
+    assert.equal(b.scan_base.layout.walls.length, 8);
+    assert.match(b.scan_base.keep, /keep them exactly/);
+    const words = b.instructions.join(' ');
+    assert.match(words, /scan_base/);
+    assert.match(words, /INVENTORY/);
+    assert.match(words, /from its parts/);
+    assert.match(words, /never textures/);
+});
+
+const blenderHere = setBuild.resolveBlender();
+test('with Blender here, a scan sent with its photos lands them as plates and renders the scan beside each',
+    { skip: blenderHere.available ? false : `Blender is not installed here: ${blenderHere.reason}`, timeout: 300000 }, async () => {
+        const { resolveFfmpeg } = require('../lib/ffmpeg');
+        const ff = resolveFfmpeg();
+        const jpg = path.join(os.tmpdir(), `scan-photo-${crypto.randomUUID().slice(0, 6)}.jpg`);
+        require('child_process').spawnSync(ff.bin, ['-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=gray:s=640x480',
+            '-frames:v', '1', jpg], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const image = `data:image/jpeg;base64,${require('fs').readFileSync(jpg).toString('base64')}`;
+        const { locationId } = location();
+        const pose = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [2.5, 1.5, -0.5, 1]];
+        const r = await call('POST', `/film/locations/${locationId}/room-scan/import`, { structure: house(), name: 'with photos',
+            photos: [{ view: 'scan-r1-w1', camera_to_world: pose, focal_px: 500, width: 640, height: 480, image }] });
+        assert.equal(r.status, 201, JSON.stringify(r.data).slice(0, 800));
+        assert.deepEqual(r.data.report.plates, ['scan-r1-w1']);
+        assert.equal(r.data.layout.cameras.length, 1);
+        assert.ok(r.data.sheets.some(s => s.view === 'scan-r1-w1'), 'the scan was not rendered beside the photo');
+        const plates = setBuild.platesFor(locationId).plates.map(p => p.view);
+        assert.ok(plates.includes('scan-r1-w1'), 'the photo is not one of the location\'s plates');
+    });
+
 test('the iPhone app scans with RoomPlan and the page asks it under the same names', () => {
     const fs = require('fs');
     const root = path.join(__dirname, '..', '..');
@@ -183,4 +243,11 @@ test('the iPhone app scans with RoomPlan and the page asks it under the same nam
     assert.ok(/stop\(pauseARSession: false\)/.test(swift), 'a finished room stops the AR session, so the next room loses its place');
     assert.ok(/StructureBuilder/.test(swift), 'rooms are not merged into one structure');
     assert.ok(/room-scan\/import/.test(page) && /"\/film" \+ request\.url/.test(swift), 'the upload does not go to the page\'s route');
+    // Offline first: a scan and its photos are kept on the phone and sent later to a chosen location.
+    assert.ok(/class ScanStore/.test(swift) && /Documents|documentDirectory/.test(swift), 'scans are not kept on the phone');
+    assert.ok(/func photoTargets/.test(swift) && /captureView\.captureSession\.stop\(pauseARSession: false\)/.test(swift), 'no guided photos in the scan session');
+    assert.ok(/cameraToWorld/.test(swift) && /"camera_to_world"/.test(swift) && /"focal_px"/.test(swift), 'a photo is not sent with its pose');
+    assert.ok(/room-scan\/import/.test(swift) && /\/film\/projects/.test(content), 'a saved scan cannot be sent to a project\'s location');
+    // The phone does two things: scan and photograph. The home offers no way into the full page.
+    assert.ok(/Scan a location/.test(content) && !/Open Film Engine/.test(content), 'the phone\'s home is not just the scanner');
 });

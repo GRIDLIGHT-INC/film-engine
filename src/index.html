@@ -4897,6 +4897,7 @@ table, .render-table { border-radius:12px; overflow:hidden; }
   text-align:left; width:100%; }
 .we-shot:hover { border-color:rgba(255,255,255,0.18); }
 .we-shot.active { border-color:rgba(95,211,196,0.5); background:rgba(95,211,196,0.09); color:#5fd3c4; }
+.we-shoton { flex:1; min-width:0; }
 .we-shot-id { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
   letter-spacing:0.1em; }
 .we-shot-name { font-size:12px; color:#8f8f8a; overflow:hidden; text-overflow:ellipsis;
@@ -18960,12 +18961,14 @@ THREE.GLTFLoader = GLTFLoader;
             <div class="form-group"><label>Or scan it with an iPhone (LiDAR)</label>
               <p class="text-sm text-muted">Measured, not guessed: walls, doors, windows, floors, stairs and furniture at their
                  real size. Scan room after room in one session — walk between them and up the stairs — and they keep their
-                 places, storeys included. Furniture becomes Previs library models. Free.</p>
+                 places, storeys included. Then the app guides you through a photo of every wall, each kept with where the phone
+                 stood, so the photos line up with the scan and become this location's plates. It works offline: send it
+                 here later. Furniture becomes Previs library models; Claude then adds every object the photos show. Free.</p>
               <div class="btn-row" style="justify-content:flex-start">
                 ${bridge
                     ? `<button class="btn btn-primary btn-sm" ${can ? '' : 'disabled'} onclick="roomScanStart(${jsAttr(loc.id)}, ${jsAttr(loc.name)})">Scan with this iPhone</button>
                        ${why ? `<span class="text-sm text-muted">${esc(why)}</span>` : ''}`
-                    : `<span class="text-sm text-muted">Open Film Engine on an iPhone Pro to scan, or import a RoomPlan JSON:</span>`}
+                    : `<span class="text-sm text-muted">In the Film Engine app on an iPhone Pro: Scan a location, then Send it to this location. Or import a RoomPlan JSON:</span>`}
                 <label class="btn btn-secondary btn-sm">Import RoomPlan JSON
                   <input type="file" accept="application/json,.json" style="display:none" onchange="roomScanImport(${jsAttr(loc.id)}, this)"></label>
               </div></div>`;

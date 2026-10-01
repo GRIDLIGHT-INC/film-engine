@@ -122,7 +122,7 @@ function scanToLayout(scan, opts = {}) {
     const ground = Math.min(...bases);
     const z = y => r3(y - ground);
 
-    const layout = { walls: [], slabs: [], stairs: [], objects: [], cameras: [], light: { time_of_day: 'midday', sun_from: 'south' } };
+    const layout = { source: 'lidar-scan', walls: [], slabs: [], stairs: [], objects: [], cameras: [], light: { time_of_day: 'midday', sun_from: 'south' } };
     const wallGeom = new Map();
     W.forEach((w, i) => {
         const half = w.dims[0] / 2;
@@ -215,7 +215,44 @@ function scanToLayout(scan, opts = {}) {
         report.objects++;
     });
     report.stories.sort((a, b) => a - b);
+
+    // Photographs taken in the same AR session: each becomes a plate camera
+    // with the pose the phone measured, so the set and the photo line up
+    // without anybody placing a camera by eye.
+    (opts.photos || []).forEach((ph, i) => {
+        const cam = photoCamera(ph, ground);
+        if (cam.error) { report.skipped.push(`photos[${i}]: ${cam.error}`); return; }
+        layout.cameras.push(cam.camera);
+        report.photos = (report.photos || 0) + 1;
+    });
+    report.ground_y = r3(ground);
     return { layout, report };
 }
 
-module.exports = { scanToLayout, categoryOf, columnsOf, CATEGORY_ASSET };
+/**
+ * A photograph's camera, from ARKit to the layout.
+ *
+ * `camera_to_world` is ARKit's camera transform (4x4, column-major, nested
+ * columns or flat) for the image AS SENT: upright, so the app has already
+ * turned the axes with the picture when the phone was held in portrait. ARKit
+ * and Blender share the camera convention (x right, y up, looking down -z), so
+ * only the WORLD changes: ARKit (x, y, z) is the layout's (x, -z, y), raised so
+ * the lowest floor is z = 0. The lens is the horizontal focal length in pixels
+ * over the image width, on the 36 mm sensor the builder renders with.
+ */
+function photoCamera(ph, ground) {
+    const cols = columnsOf(ph && ph.camera_to_world);
+    if (!cols) return { error: 'no camera_to_world' };
+    const view = String(ph.view || '').trim();
+    if (!/^[\w-]{1,40}$/.test(view)) return { error: 'no view name' };
+    const W = Number(ph.width), fx = Number(ph.focal_px);
+    if (!(W > 0) || !(fx > 0)) return { error: 'no width or focal_px' };
+    const P = v => [v[0], -v[2], v[1]];
+    const [cx, cy, cz] = [P(cols[0]), P(cols[1]), P(cols[2])];
+    const t = P(cols[3]);
+    const lens = r3(Math.min(300, Math.max(8, fx * 36 / W)));
+    return { camera: { plate: view, position: [r3(t[0]), r3(t[1]), r3(t[2] - ground)],
+        rotation: [0, 1, 2].map(row => [cx[row], cy[row], cz[row]].map(r3)), lens } };
+}
+
+module.exports = { scanToLayout, categoryOf, columnsOf, photoCamera, CATEGORY_ASSET };
