@@ -133,7 +133,7 @@ bullets(['1. Switching the canvas on', '2. The page at a glance', '3. How the ca
          '23. An edit made in Premiere', '24. The final film and its sound', '25. Sending the film to Premiere',
          '26. Delivery quality: the resolution you asked for', '27. Upscaling a clip', '28. Your recorded dialogue in a clip',
          '29. Backups', '30. Setup: providers, models and keys', '31. A video model\'s own options',
-         '32. Changing a project\'s stage', '33. Good to know'])
+         '32. Changing a project\'s stage', '33. Good to know', '34. Previs: how it works'])
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 doc.add_heading('1. Switching the canvas on', level=1)
@@ -242,6 +242,9 @@ node_card(
      ('From Previs: ', 'the directing decisions locked in Previs and their state. Changing them happens in Previs.'),
      ('Plates & details: ', 'the reference pictures this shot sends. Buttons to add an anchor frame, markup notes, a Previs '
       'angle, a Style book entry, or edit the card.'),
+     ('Lighting: ', 'editing the card offers a lighting technique (Rembrandt, Loop, Window, Silhouette and thirteen more) '
+      'and which side the key comes from, over the card\'s mood. A shot with none takes its location\'s; the film\'s '
+      'general look stays the mood board\'s style. Staged in Previs and applied, it is written here (section 34).'),
      ('Video prompt — what is sent: ', 'the exact text the video model will receive, "By part" or "One text". Your edit '
       'replaces the composed prompt for this generation ("reset" undoes it).'),
      ('Video generation: ', 'Generator, Quality (Draft / Production / Hero), Duration, Seed.'),
@@ -812,11 +815,114 @@ bullets([
     ('Cancel is honest. ', 'Runway and Topaz stop at the provider; elsewhere you stop waiting and the job can still be billed and collected.'),
     ('The final film uses what is selected. ', 'The conform joins each shot\'s selected clip in running order with the '
      'dialogue, score and ambience where Playback plays them.'),
-    ('Previs decisions are read here, changed in Previs. ', 'The Shot drawer shows them; "Open in Previs" to change them.'),
+    ('Previs decisions are read here, changed in Previs. ', 'The Shot drawer shows them; "Open in Previs" to change them (section 34).'),
+    ('Lighting has three levels. ', 'The shot\'s own technique wins, then the location\'s; the mood board\'s style is the film\'s general look.'),
     ('The score is written against a picture. ', 'Approve it once and it plays everywhere the film does (section 21).'),
     ('Your instruments are free to play. ', 'A render through your own library costs nothing and lands as a take (section 22).'),
     ('Every generator is asked for your resolution. ', 'A smaller result is said before you pay and listed by the delivery check (section 26).'),
 ])
+
+# ── 34 ────────────────────────────────────────────────────────────────────
+doc.add_page_break()
+doc.add_heading('34. Previs: how it works', level=1)
+p('Previs (Plan → Previs) is where a shot is staged and lit in a 3D set before anything is paid for. You choose who is '
+  'in the shot, where the camera stands, the lens, the move and the light, and see the result at once. Everything here '
+  'is free. Nothing reaches the storyboard until you Apply it, so you can try as many angles as you like.')
+pic('60-previs-console', 'The Previs console: shots on the left, the decisions strip, the view in the middle with the '
+    'move timeline under it, and the Camera / Light / Direct / Explore / Scene tabs on the right.')
+
+doc.add_heading('The set', level=3)
+p('A shot is framed inside its location\'s world. The world is the set built for that location: built free in Blender '
+  'from the location\'s plates, scanned with an iPhone, or imported as a GLB. It is in metres, so a 24mm lens and a '
+  '1.55 m camera height mean what they say. "scale calibrated" beside the title confirms that. "Build set" (top right) '
+  'makes or rebuilds it; see "Building the set" below.')
+
+doc.add_heading('The four views', level=3)
+pics_side(['62-previs-view-look', '63-previs-view-geometry'], 'Look: the set as the camera sees it, with real light. '
+          'Geometry: the plain shapes the image model is given as the plate.', each=Inches(3.2))
+pics_side(['64-previs-view-depth', '65-previs-view-plan'], 'Depth: near is light, far is dark. Plan: the set from '
+          'above, with the camera, its field of view and everyone staged.', each=Inches(3.2))
+bullets([('Look ', 'shows the set from exactly the shot\'s camera. 360° looks around from where the camera stands.'),
+         ('Geometry and Depth ', 'show what generation receives: the shapes and distances, not the colours.'),
+         ('Plan ', 'is the bird\'s-eye view. The blue wedge is what the lens sees. Scroll to zoom, drag to pan.'),
+         ('Moving the camera with the mouse: ', 'in Look, Geometry and Depth, scroll to dolly forward and back (Shift: '
+          'faster), drag to look around, and right-drag or Shift-drag to slide sideways and up or down.')])
+
+doc.add_heading('Staging people, furniture and your own models', level=3)
+pics_side(['66-previs-plan-staging', '67-previs-add-modal'], 'On the Plan, "+ Add people, furniture or a model" opens '
+          'the library; the selected figure gets turn buttons, Frame on and Remove.', each=Inches(3.2))
+p('People are a man, a woman, a boy and a girl at real heights; furniture is 140 library pieces; "Your 3D models" '
+  'lists the project\'s own (a Meshy creature, say). Each is placed a few metres in front of the camera. Drag it on the '
+  'Plan to move it, use the turn buttons to rotate it, "Frame on" to make it the subject the shot is framed on, and '
+  'Remove to take it out. Staging never moves the camera.')
+
+doc.add_heading('The decisions strip', level=3)
+pic('61-previs-decisions', 'Each decision says whether it is only being tried here, applied to the shot, or not set.')
+p('Camera, Direction, Lighting, Set view, Cast, Props and Move each carry a state: "trying" (staged here, not on the '
+  'shot yet), "applied" (written to the shot\'s card), or "not set". "Apply N to the shot" writes what you are trying '
+  'onto the card, which is what the storyboard frame is generated from. "Lock shot" freezes the applied decisions so '
+  'later experiments cannot change them by accident. The same states appear in the Production canvas\'s Shot drawer '
+  'under "From Previs" (section 5.1).')
+
+doc.add_heading('Camera tab: framing in film terms', level=3)
+pic('68-previs-camera-tab', 'Shot on, framing, angle, lens and Camera Operate.', width=Inches(2.6))
+bullets([('Shot on ', 'chooses who the shot is framed on, from everyone staged. "Rename / move" names or repositions them.'),
+         ('Framing ', 'EWS, WS, FS, MWS, MS, MCU, CU, ECU. The camera is moved so that subject fills the frame that way '
+          'with the current lens, keeping the side you shoot from.'),
+         ('Angle ', 'Eye level, Shoulder, Hip, Knee, Ground (worm\'s eye), Low, High, Overhead (bird\'s eye), Dutch.'),
+         ('Lens ', '12 to 135 mm. "Keep position" holds the camera and the subject size follows the lens; "Maintain '
+          'size" moves the camera so the subject stays the same size (a dolly-zoom).'),
+         ('Camera Operate ', 'every number (distance, height, pan, tilt, roll, lens) can be typed, or dragged left and '
+          'right with the mouse to change it while watching the view.')])
+
+doc.add_heading('Light tab', level=3)
+pics_side(['69-previs-light-tab', '70-previs-look-lit'], 'A technique, the side the key comes from and a mood, lit in '
+          'the Look view.', each=Inches(3.2))
+pic('71-previs-plan-lights', 'The Plan draws the lights: here the Rembrandt key and its fill around the subject.')
+p('Pick a technique (Three-point, Rembrandt, Loop, Butterfly, Clamshell, Split, Broad, Short, Backlight / rim, '
+  'Silhouette, Top light, Under light, Window, Practicals, High key, Low key, Chiaroscuro), the side the key light comes '
+  'from, and a mood (golden hour, night, neon, candlelight…). The lights are placed from the saved camera on the subject, '
+  'shown in Look ("Lights on in Look") and drawn on the Plan. Each line says where its value comes from: this stage, the '
+  'shot, or the location. "Clear staged" goes back to what the shot or location says. Apply writes it to the shot, '
+  'and the storyboard frame is described with it ("Rembrandt lighting, key light from camera left…").')
+
+doc.add_heading('A camera move', level=3)
+pics_side(['72-previs-timeline', '73-previs-look-mid-move'], 'The move timeline with two keys, and the view at the '
+          'playhead part-way through the move.', each=Inches(3.2))
+p('Put the camera where the move starts and press "+ Key"; move the playhead, put the camera where it ends and press '
+  '"+ Key" again. Drag the playhead to see any moment of the move in the view; "Play move" plays it. "+ Leg" adds a '
+  'named movement (dolly in, pan left…). Linear, Ease in, Ease out, Ease both and Hold shape how it speeds up and slows down.')
+
+doc.add_heading('Walk', level=3)
+pic('74-previs-walk', 'Walking: W/S/A/D to move, R/F for height, arrows or drag to turn, Shift for faster. '
+    '"Use this camera" keeps it; "Put it back" returns to the saved camera.')
+p('Walk lets you move through the set as if holding the camera. Nothing is saved while you walk. "Use this camera" keeps '
+  'it as a checked proposal: a camera inside a wall is refused, exactly as any other change would be.')
+
+doc.add_heading('More room', level=3)
+pic('75-previs-folded', 'With both side panels folded away the view takes the whole page.')
+p('The three buttons at the top right (◧ ◨ ⬓) hide or show the shot list, the right-hand tabs and the move timeline. '
+  'This browser remembers the choice.')
+
+doc.add_heading('Building the set', level=3)
+pic('76-previs-build-set', '"Build set": ask Claude to build from the plates, or scan with an iPhone. Each attempt is '
+    'kept, compared against the plates.', width=Inches(4.2))
+bullets([('From the plates: ', 'copy the line under "Ask Claude" into Claude. It reads the plates, writes the room, and '
+          'Blender builds and renders it beside each plate so you can see where it is wrong. Free, on this Mac.'),
+         ('With an iPhone Pro: ', 'open Film Engine on the phone, go to Previs → Build set → "Scan with this iPhone". '
+          'Scan a room, tap "Room done", walk to the next room (or up the stairs) and "Scan another room"; "Finish & '
+          'build" sends it. Rooms and floors keep their places. Furniture becomes library models at its measured size.'),
+         ('Import RoomPlan JSON ', 'takes a scan made elsewhere.'),
+         ('Finish an attempt ', 'to make it the location\'s world and a 3D model.')])
+
+doc.add_heading('From Previs to the storyboard', level=3)
+bullets(['Stage the cast, choose framing, angle and lens, light it, build the move.',
+         'Press "Apply N to the shot". The card now says what you staged.',
+         'Generate the frame from the Storyboard or the Production canvas: it uses the applied camera, cast and lighting. '
+         '"Render plate" here saves the geometry and depth plate, from this camera, that the model is given.',
+         'Lock the shot when it is right.'])
+p('Claude can do all of this too: previs_get, previs_stage, previs_library, previs_timeline, previs_director (lighting and '
+  'direction), previs_apply, previs_lock, set_build_brief, set_build_render and room_scan_import.')
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 doc.save(OUT)
