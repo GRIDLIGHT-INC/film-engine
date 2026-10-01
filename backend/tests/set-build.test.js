@@ -281,3 +281,30 @@ test('Previs offers it, and the page says what to ask instead of guessing a room
     assert.match(SPA, /\/set-builds\/\$\{buildId\}\/finish/);
     assert.match(SPA, /function setBuildHtml/);
 });
+
+test('a box turned by yaw turns about its own centre, not the world origin (built in Blender)',
+    { skip: blender.available ? false : `Blender is not installed here: ${blender.reason}`, timeout: 300000 }, () => {
+    // A whiteboard on a diagonal wall 2 m from the origin landed 1.5 m away,
+    // across a door: the turn was set on the object, whose origin was (0, 0, 0).
+    const fs = require('fs'), os = require('os'), { spawnSync } = require('child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yaw-'));
+    const job = { mode: 'none', out_dir: dir, plates: [], assets: {}, layout: {
+        walls: [{ name: 'w', from: [0, 0], to: [4, 0], height: 2.5, openings: [] }],
+        objects: [{ name: 'board', shape: 'box', at: [2, -1, 1], size: [1, 0.02, 0.6], yaw: 41.2 }],
+        cameras: [] } };
+    fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(job));
+    fs.writeFileSync(path.join(dir, 'probe.py'), [
+        'import bpy, runpy',
+        `runpy.run_path(${JSON.stringify(path.join(__dirname, '..', 'blender-set.py'))}, run_name='__main__')`,
+        'o = bpy.data.objects["board"]',
+        'vs = [o.matrix_world @ v.co for v in o.data.vertices]',
+        'print("BOUNDS", min(v.x for v in vs), max(v.x for v in vs), min(v.y for v in vs), max(v.y for v in vs))',
+    ].join('\n'));
+    const r = spawnSync(blender.bin, ['-b', '--factory-startup', '--python', path.join(dir, 'probe.py'), '--', path.join(dir, 'job.json')], { encoding: 'utf8' });
+    const m = (r.stdout || '').match(/BOUNDS (\S+) (\S+) (\S+) (\S+)/);
+    assert.ok(m, r.stdout + r.stderr);
+    const [x0, x1, y0, y1] = m.slice(1).map(Number);
+    assert.ok(Math.abs((x0 + x1) / 2 - 2) < 0.02 && Math.abs((y0 + y1) / 2 + 1) < 0.02, `centre moved to ${(x0 + x1) / 2}, ${(y0 + y1) / 2}`);
+    // Turned 41.2°: one metre wide along (cos, sin), so about 0.75 by 0.66 in plan.
+    assert.ok(Math.abs((x1 - x0) - 0.765) < 0.03 && Math.abs((y1 - y0) - 0.674) < 0.03, `extent ${x1 - x0} x ${y1 - y0}`);
+});

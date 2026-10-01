@@ -47,7 +47,7 @@ loaded only when a Look, 360° or Explore thumbnail is shown.**
 - Look uses exactly the painter's pose: staged position × scale factor, aim,
   vertical FOV for the lens, and the Marble y-down flip. Look and Geometry show
   the same shot.
-- The **generation plate stays geometric**. Look is a preview for the director.
+- The **splat render never reaches generation**. Look is a preview for the director. Since 2026-10-01 a board frame receives no Previs render at all: the shot reaches it as words (size, lens, height, movement, staging, lighting), with the location plate as its picture of the place.
   Generation still receives the plate the painter draws, and the view says so
   on screen.
 

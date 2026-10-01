@@ -123,6 +123,32 @@ test('a two-storey house becomes walls, openings, floors, stairs and library fur
     assert.ok(setBuild.validateLayout(layout, []).length > 0, 'a plate layout still needs its cameras');
 });
 
+test('a structure that repeats its room inside rooms[] builds every wall, opening and object once', () => {
+    // How a real CapturedStructure arrives (The Lodgers office, 2026-10-01): the
+    // room's walls, floors, doors, windows and objects at the top level AND again
+    // inside rooms[], under the same identifiers. Read twice, every chair stood
+    // twice in one spot and every window was cut twice.
+    const single = house();
+    const repeated = house();
+    repeated.rooms = [{ identifier: 'ground', story: 0, walls: house().walls, floors: house().floors,
+        doors: house().doors, windows: house().windows, openings: [], objects: house().objects }];
+    const a = scanToLayout(single), b = scanToLayout(repeated);
+    assert.equal(b.layout.walls.length, a.layout.walls.length);
+    assert.equal(b.layout.slabs.length, a.layout.slabs.length);
+    assert.equal(b.layout.objects.length, a.layout.objects.length);
+    assert.equal(b.report.openings, a.report.openings);
+    const doors = b.layout.walls.flatMap(w => w.openings).filter(o => o.kind === 'door');
+    assert.equal(doors.length, 1, 'the door was cut twice');
+    // The room's floor under another identifier, a few centimetres off: one floor.
+    const renamed = house();
+    renamed.rooms = [{ identifier: 'ground', floors: [surf('RF1', { floor: {} }, [5.05, 4.02, 0], Tfloor([2.52, 0.01, -2]))] }];
+    assert.equal(scanToLayout(renamed).layout.slabs.length, 2, 'one floor under two identifiers became two slabs');
+    // A file holding rooms only (no top-level copy) still reads every room.
+    const roomsOnly = { version: 2, rooms: [{ identifier: 'r', walls: house().walls, floors: house().floors,
+        doors: house().doors, windows: house().windows, objects: house().objects }] };
+    assert.equal(scanToLayout(roomsOnly).layout.walls.length, a.layout.walls.length);
+});
+
 function call(method, urlPath, body) {
     return new Promise(resolve => {
         const res = {

@@ -86,12 +86,29 @@ function frameOf(item) {
     };
 }
 
-/** Every array of a kind, whether the scan is one room, a structure, or { rooms: [...] }. */
+/**
+ * Every item of a kind, ONCE, whether the scan is one room, a structure, or
+ * { rooms: [...] }. A CapturedStructure lists each room's walls, floors,
+ * openings and objects at the top level AND again inside rooms[] under the
+ * same identifiers; reading both built every wall, window and chair twice.
+ * Items are kept by identifier; one with no identifier is taken from the top
+ * level when the top level has that kind, else from the rooms.
+ */
 function gather(scan, key) {
     const out = [];
-    const push = r => { if (r && Array.isArray(r[key])) out.push(...r[key]); };
-    push(scan);
-    if (Array.isArray(scan && scan.rooms)) scan.rooms.forEach(push);
+    const seen = new Set();
+    const top = scan && Array.isArray(scan[key]) ? scan[key] : [];
+    const take = (item, anonymousOk) => {
+        if (!item) return;
+        const id = item.identifier;
+        if (id != null) { if (seen.has(id)) return; seen.add(id); }
+        else if (!anonymousOk) return;
+        out.push(item);
+    };
+    top.forEach(item => take(item, true));
+    if (Array.isArray(scan && scan.rooms)) {
+        scan.rooms.forEach(r => { if (r && Array.isArray(r[key])) r[key].forEach(item => take(item, !top.length)); });
+    }
     return out;
 }
 
@@ -169,11 +186,21 @@ function scanToLayout(scan, opts = {}) {
             z: r3(top), thickness: 0.15, color: FLOOR_COLOUR };
     };
     if (F.length) {
-        F.forEach((f, i) => {
+        // The structure's floor and its room's floor are the same floor under two
+        // identifiers: one at the same level covering most of another is kept once.
+        const area = s => Math.max(0, s.x1 - s.x0) * Math.max(0, s.y1 - s.y0);
+        const sameFloor = (a, b) => {
+            if (Math.abs(a.z - b.z) > 0.1) return false;
+            const ix = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
+            const iy = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+            return ix * iy >= 0.8 * Math.min(area(a), area(b));
+        };
+        F.forEach(f => {
             const hx = f.dims[0] / 2, hy = f.dims[1] / 2;
             const corners = [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].map(([a, b]) =>
                 plan(f.centre.map((c, k) => c + f.ax[k] * a + f.ay[k] * b)));
-            layout.slabs.push(slabFrom(corners, z(f.centre[1]), `floor ${i + 1}`));
+            const slab = slabFrom(corners, z(f.centre[1]), `floor ${layout.slabs.length + 1}`);
+            if (!layout.slabs.some(s => sameFloor(s, slab))) layout.slabs.push(slab);
         });
     } else {
         const byLevel = new Map();

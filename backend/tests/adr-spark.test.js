@@ -175,11 +175,11 @@ const CLAIMS = [
         },
     },
     {
-        id: 'plate-stays-geometric',
+        id: 'splat-never-generates',
         why: 'Look is a preview; if generation started receiving the splat render, the record would be describing a different system',
         holds() {
-            if (!/GENERATION STILL RECEIVES THE GEOMETRIC PLATE/.test(read(PAGE))) return 'the Look view no longer says the plate is geometric';
-            return /generation plate stays geometric/i.test(doc()) || 'the record does not state it';
+            if (!/look:\s*'SPLAT PREVIEW — THE SHOT REACHES THE FRAME AS WORDS, WITH THE LOCATION PLATE'/.test(read(PAGE))) return 'the Look view no longer says what a frame receives';
+            return /splat render never reaches generation/i.test(doc()) || 'the record does not state it';
         },
     },
 ];

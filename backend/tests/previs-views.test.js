@@ -110,8 +110,9 @@ test('every view mode is a button, and the note under the frame is rendered', ()
     assert.match(html, /pv-frame pv-mode-/, 'the frame does not carry its mode class');
 });
 
-test('Look says, on screen, that generation still receives the geometric plate', () => {
-    assert.match(PAGE, /look:\s*'SPLAT PREVIEW — GENERATION STILL RECEIVES THE GEOMETRIC PLATE'/);
+test('Look says, on screen, what a board frame receives: the shot as words, with the location plate', () => {
+    assert.match(PAGE, /look:\s*'SPLAT PREVIEW — THE SHOT REACHES THE FRAME AS WORDS, WITH THE LOCATION PLATE'/);
+    assert.doesNotMatch(PAGE, /GENERATION (STILL )?RECEIVES THE GEOMETRIC PLATE/, 'a caption still says the geometric plate is sent');
 });
 
 test('with the console off, the page never reaches for the renderer', () => {

@@ -21,7 +21,7 @@
  */
 
 const { ISOLATED_KINDS, isolationNegativeFor, subjectPlateOpening, projectMedium } = require('./plate-isolation');
-const { generateId } = require('../db/database');
+const { db, generateId } = require('../db/database');
 const { persistProviderMedia } = require('./provider-media');
 const { getFileUrl, ensureDir } = require('./file-storage');
 

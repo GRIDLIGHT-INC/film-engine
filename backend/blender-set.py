@@ -287,7 +287,19 @@ for ob in L.get('objects', []):
             w_, d_, h_ = ob['size']
             o = box(nm, cx - w_ / 2, cx + w_ / 2, cy - d_ / 2, cy + d_ / 2, cz, cz + h_, m)
             if o and ob.get('yaw'):
-                o.rotation_euler[2] = math.radians(ob['yaw'])
+                # Turned about its OWN centre, baked into the mesh. Setting
+                # rotation_euler turned it about the object's origin, which is the
+                # world origin by the time the scene is built, so a whiteboard on
+                # a wall 2 m from the origin landed 1.5 m away, across a door.
+                from mathutils import Matrix
+                bpy.ops.object.select_all(action='DESELECT')
+                o.select_set(True)
+                bpy.context.view_layer.objects.active = o
+                bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+                c = (cx, cy, cz + h_ / 2)
+                o.data.transform(Matrix.Translation(c) @ Matrix.Rotation(math.radians(ob['yaw']), 4, 'Z')
+                                 @ Matrix.Translation((-c[0], -c[1], -c[2])))
+                o.matrix_world = Matrix.Identity(4)
         elif ob['shape'] == 'cylinder':
             r, h_ = ob['radius'], ob['height']
             bpy.ops.mesh.primitive_cylinder_add(radius=r, depth=h_, location=(cx, cy, cz + h_ / 2), vertices=24)

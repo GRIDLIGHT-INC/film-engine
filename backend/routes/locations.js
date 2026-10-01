@@ -637,11 +637,17 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
 
     const view = String(body.view || '').trim();
     const fileName = plateFileName(kind, subject.name, view);
+    // The plate under its own extension: a generated plate is a .png, but an
+    // uploaded one keeps the extension its bytes say (a phone photo is a .jpg),
+    // and looking only for the .png name made every uploaded plate unrefinable.
+    const stem = fileName.replace(/\.png$/, '');
     const existing = db.prepare(
         `SELECT id, file_path, file_name FROM film_assets
           WHERE project_id = (SELECT project_id FROM ${spec.table} WHERE id = ?)
-            AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name = ?`)
-        .get(subjectId, subjectId, spec.assetType, fileName);
+            AND ${spec.fkColumn} = ? AND asset_type = ? AND file_name IN (?, ?, ?, ?)
+            AND COALESCE(json_extract(CASE WHEN json_valid(metadata) THEN metadata END, '$.plate_role'), '') != 'superseded'
+          ORDER BY created_at DESC LIMIT 1`)
+        .get(subjectId, subjectId, spec.assetType, `${stem}.png`, `${stem}.jpg`, `${stem}.jpeg`, `${stem}.webp`);
     if (!existing || !existing.file_path || !fs.existsSync(existing.file_path)) {
         // Nothing to refine is a different problem from a failed refine.
         return badReq(res, view
@@ -703,7 +709,9 @@ async function refineSubjectPlate(req, res, kind, subjectId) {
      * what you want to return to when the refine overshoots.
      */
     const { stashPriorPlate, commitPriorPlate } = require('../lib/reference-plates');
-    const stash = stashPriorPlate(project.id, subject, spec, fileName);
+    // The file being replaced, under ITS name: a .jpg plate is archived too, or it
+    // would stay current beside the refined .png.
+    const stash = stashPriorPlate(project.id, subject, spec, existing.file_name);
 
     const { persistProviderMedia } = require('../lib/provider-media');
     const saved = await persistProviderMedia(project.id, spec.subdir, fileName, result.data,
