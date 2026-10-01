@@ -5182,6 +5182,8 @@ body.pv-hide-bottom .pv-console { height:calc(100vh - 150px); }
 .pv-folds { display:inline-flex; gap:2px; }
 .pv-stagebar { left:10px; right:10px; bottom:10px; top:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; pointer-events:auto; }
 .pv-stagebar:empty { display:none; }
+.pv-stagebar.editing { top:0; left:0; right:0; bottom:auto; min-height:52px; padding:7px 14px 7px 92px;
+  border-radius:0; background:#12302a; border-bottom:1px solid #2a8a72; }
 .pv-stage-name { height:28px; min-width:220px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; padding:0 8px; }
 .pv-num { width:52px; height:26px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:#1d1d20; color:#eee; padding:0 6px; }
 .pv-follow, .pv-floor { display:inline-flex; align-items:center; gap:4px; }
@@ -5194,6 +5196,140 @@ body.pv-hide-bottom .pv-console { height:calc(100vh - 150px); }
 .pv-fold.pv-folded { opacity:.5; }
 body.pv-shots-in-panel .pv-rail { display:none; }
 body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
+
+/* ── Previs, view first ────────────────────────────────────────────────────
+   The approved screen has two primary views, Shot and Plan. Technical views
+   live under Overlays, 360° is named Look around, and the controls surround
+   one large view instead of forming another dashboard beside it. */
+.pv-console { height:calc(100vh - 142px); min-height:590px; gap:0; margin:-16px; background:#0c0d11;
+  color:#e8e8ee; border-radius:14px; overflow:hidden; }
+.pv-topbar { min-height:64px; flex:none; display:flex; align-items:center; gap:12px; padding:10px 16px;
+  background:#121319; border-bottom:1px solid #22242c; position:relative; z-index:20; }
+.pv-shot-picker, .pv-decision-menu, .pv-more { position:relative; }
+.pv-shot-picker > summary, .pv-decision-menu > summary, .pv-more > summary { list-style:none; }
+.pv-shot-picker > summary::-webkit-details-marker, .pv-decision-menu > summary::-webkit-details-marker,
+.pv-more > summary::-webkit-details-marker { display:none; }
+.pv-shot-picker > summary { max-width:330px; display:flex; align-items:center; gap:8px; padding-left:7px; }
+.pv-shot-badge { height:24px; min-width:30px; padding:0 7px; display:inline-flex; align-items:center; justify-content:center;
+  border-radius:6px; background:#3b5bdb; color:#fff; font:600 12px 'SF Mono',ui-monospace,monospace; }
+.pv-shot-current { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f4f4f5; }
+.pv-shot-menu { position:absolute; left:0; top:38px; width:300px; max-height:55vh; overflow:auto; padding:8px;
+  background:#16181f; border:1px solid #2c2f39; border-radius:12px; box-shadow:0 16px 40px rgba(0,0,0,.55); }
+.pv-view-switch { flex:1; display:flex; justify-content:center; align-items:center; gap:6px; }
+.pv-top-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+.pv-quiet { background:transparent; border-color:transparent; color:#b9bbc6; }
+.pv-quiet.active { background:#2e3343; color:#fff; }
+.pv-decision-menu > summary { display:flex; align-items:center; gap:7px; }
+.pv-decision-dots { display:inline-flex; gap:3px; }
+.pv-decision-dot { width:7px; height:7px; border-radius:50%; background:#4a4d59; }
+.pv-decision-dot.done { background:#3fbf9b; }
+.pv-decision-pop { position:absolute; right:0; top:38px; width:min(680px,75vw); padding:8px; background:#16181f;
+  border:1px solid #2c2f39; border-radius:14px; box-shadow:0 16px 40px rgba(0,0,0,.55); }
+.pv-decision-pop .pv-decisions { background:transparent; border:0; }
+.pv-more-button { width:40px; padding:0; justify-content:center; letter-spacing:2px; }
+.pv-more-menu { position:absolute; right:0; top:38px; width:400px; max-height:calc(100vh - 110px); overflow:auto;
+  padding:10px; display:flex; flex-direction:column; gap:2px; background:#16181f; border:1px solid #2c2f39;
+  border-radius:16px; box-shadow:0 16px 40px rgba(0,0,0,.55); }
+.pv-menu-label { margin:10px 10px 5px; color:#9092a0; font:600 10px 'SF Mono',ui-monospace,monospace;
+  letter-spacing:.09em; text-transform:uppercase; }
+.pv-more-item { min-height:48px; padding:9px 11px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  border:0; border-radius:10px; background:transparent; color:#e8e8ee; text-align:left; cursor:pointer; }
+.pv-more-item:hover, .pv-more-item.active { background:#232631; }
+.pv-more-item b { font-size:13px; font-weight:600; }
+.pv-more-item span { color:#9ea0ad; font-size:11.5px; }
+.pv-more-item i { color:#6ee4c1; font-style:normal; }
+.pv-grid, body.pv-shots-in-panel .pv-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 352px;
+  gap:0; background:#0c0d11; }
+.pv-stage { padding:12px; gap:10px; }
+.pv-view { min-height:0; border-radius:14px; border-color:#23252d; background:#000; }
+.pv-inspector { width:352px; border-radius:0; border-width:0 0 0 1px; background:#121319; }
+.pv-tabs { padding:10px 12px; border-color:#22242c; }
+.pv-tab { height:38px; border-radius:9px; }
+.pv-tab.active { background:#232631; }
+.pv-tabbody { padding:0; }
+.pv-tabpane { gap:0; }
+.pv-side .we-panel { margin:0; border:0; border-bottom:1px solid #1d1f27; border-radius:0; padding:16px 18px; background:transparent; }
+.pv-toolrail { position:absolute; z-index:8; left:14px; top:14px; display:flex; flex-direction:column; gap:2px; padding:6px;
+  border:1px solid #2a2d36; border-radius:14px; background:rgba(16,17,23,.90); }
+.pv-tool { width:62px; height:56px; display:flex; align-items:center; justify-content:center; border:0; border-radius:10px;
+  background:transparent; color:#b9bbc6; font-size:11px; font-weight:600; cursor:pointer; }
+.pv-tool:hover, .pv-tool.active { background:#2e3343; color:#fff; }
+.pv-tool.active[title*="furniture"] { background:#1e6b58; }
+.pv-floors { position:absolute; z-index:8; right:14px; top:54px; width:210px; display:flex; flex-direction:column; gap:2px;
+  padding:8px; border:1px solid #2a2d36; border-radius:14px; background:rgba(16,17,23,.94); }
+.pv-floors > b { padding:5px 8px; color:#9092a0; font:600 10px 'SF Mono',ui-monospace,monospace;
+  letter-spacing:.09em; text-transform:uppercase; }
+.pv-floor-button, .pv-floor-follow { min-height:42px; display:flex; align-items:center; gap:9px; padding:0 9px; border:0;
+  border-radius:9px; background:transparent; color:#c9cbd5; text-align:left; cursor:pointer; }
+.pv-floor-button:hover, .pv-floor-button.active, .pv-floor-follow:hover, .pv-floor-follow.active { background:#2e3343; color:#fff; }
+.pv-floor-button > span { width:28px; height:26px; display:inline-flex; align-items:center; justify-content:center; border-radius:7px;
+  background:#20232c; font:600 11px 'SF Mono',ui-monospace,monospace; }
+.pv-floor-button.active > span { background:#3b5bdb; }
+.pv-floor-button small { margin-left:auto; color:#8e909c; font:500 10px 'SF Mono',ui-monospace,monospace; }
+.pv-floor-follow { min-height:34px; margin-top:4px; border-top:1px solid #2a2d36; border-radius:0 0 8px 8px; }
+.pv-float-l { left:92px; }
+.pv-float-r { right:14px; }
+.pv-hidden-count { display:none; }
+.pv-ov-menu { z-index:30; top:54px; right:calc(352px + 18px); width:250px; padding:8px; border-radius:12px;
+  background:#16181f; border:1px solid #2c2f39; box-shadow:0 16px 40px rgba(0,0,0,.55); }
+.pv-overlay-views { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding-bottom:8px; margin-bottom:7px;
+  border-bottom:1px solid #2a2d36; }
+.pv-overlay-views .pv-menu-label { grid-column:1/-1; margin:3px; }
+.pv-menu-action { height:34px; border:1px solid #2c2f39; border-radius:8px; background:#181a20; color:#c9cbd5; cursor:pointer; }
+.pv-menu-action.active { border-color:#3fbf9b; color:#6ee4c1; background:#12302a; }
+.pv-move { position:relative; }
+.pv-movedock { height:68px; display:flex; align-items:center; gap:12px; padding:0 14px; border:1px solid #23252d;
+  border-radius:14px; background:#121319; }
+.pv-play { width:44px; height:44px; flex:none; border:0; border-radius:50%; background:#2e3343; color:#fff; cursor:pointer; }
+.pv-time { color:#f1f1f5; font:600 13px 'SF Mono',ui-monospace,monospace; white-space:nowrap; }
+.pv-time span { color:#9ea0ad; font-weight:400; }
+.pv-move-summary { flex:1; min-width:80px; height:30px; position:relative; display:flex; align-items:center; padding:0 12px;
+  overflow:hidden; border:1px solid #262933; border-radius:8px; background:#181a20; color:#9ea0ad; font-size:12px; }
+.pv-playhead { position:absolute; left:0; top:-4px; bottom:-4px; width:2px; background:#8fa8ff; }
+.pv-path-hidden { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.pv-timeline-drawer { position:relative; height:330px; overflow:auto; border:1px solid #23252d; border-radius:14px; background:#121319; }
+.pv-timeline-drawer .we-timeline { border:0; border-radius:0; background:transparent; padding:14px; }
+.pv-timeline-close { position:absolute; z-index:4; top:8px; right:8px; }
+.pv-timeline-open .pv-grid { grid-template-columns:minmax(0,1fr); }
+.pv-timeline-open .pv-inspector { display:none; }
+.pv-timeline-open .pv-view { min-height:220px; }
+body.pv-hide-right .pv-grid, body.pv-hide-right.pv-shots-in-panel .pv-grid,
+body.pv-hide-right.pv-hide-left .pv-grid { grid-template-columns:minmax(0,1fr) !important; }
+body.pv-hide-left:not(.pv-hide-right) .pv-grid { grid-template-columns:minmax(0,1fr) 352px !important; }
+
+@media (max-width: 1200px) {
+  .pv-console { height:auto; min-height:0; margin:0; overflow:visible; }
+  .pv-topbar { flex-wrap:wrap; }
+  .pv-view-switch { order:3; flex-basis:100%; }
+  .pv-grid, body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 320px; }
+  .pv-inspector { width:320px; }
+  .pv-view { min-height:520px; }
+}
+@media (max-width: 720px) {
+  .pv-topbar { min-height:0; padding:8px; gap:6px; align-items:stretch; }
+  .pv-shot-picker { flex:1; min-width:0; }
+  .pv-shot-picker > summary { width:100%; max-width:none; }
+  .pv-shot-current { max-width:105px; }
+  .pv-top-actions { flex:0 0 auto; }
+  .pv-top-actions > .pv-btn, .pv-decision-menu { display:none; }
+  .pv-view-switch { overflow-x:auto; justify-content:flex-start; }
+  .pv-grid, body.pv-shots-in-panel .pv-grid { display:flex; flex-direction:column; }
+  .pv-stage { padding:8px; }
+  .pv-view { min-height:58vh; }
+  .pv-inspector { width:auto; min-height:420px; border-width:1px 0 0; }
+  .pv-toolrail { left:8px; top:8px; flex-direction:row; max-width:calc(100% - 16px); overflow-x:auto; }
+  .pv-tool { width:auto; min-width:58px; height:42px; padding:0 9px; }
+  .pv-floors { top:58px; right:8px; width:176px; max-height:45vh; overflow:auto; }
+  .pv-float-l { top:58px; left:8px; }
+  .pv-float-r { top:58px; right:8px; }
+  .pv-stagebar { bottom:8px; left:8px; right:8px; max-height:38%; overflow:auto; }
+  .pv-movedock { height:auto; min-height:62px; padding:8px; gap:6px; flex-wrap:wrap; }
+  .pv-move-summary { order:5; flex-basis:100%; }
+  .pv-ov-menu { position:fixed; top:118px; right:8px; left:8px; width:auto; max-height:70vh; overflow:auto; }
+  .pv-more-menu { position:fixed; top:58px; right:8px; left:8px; width:auto; max-height:calc(100vh - 70px); }
+  .pv-shot-menu { position:fixed; top:58px; left:8px; right:8px; width:auto; }
+  .pv-timeline-drawer { height:62vh; }
+}
 /* ── camera movement ─────────────────────────────────────────────────────── */
 .we-timeline { margin-top:12px; }
 .we-ruler { display:flex; justify-content:space-between; padding-left:92px; margin-top:12px;
@@ -15705,11 +15841,17 @@ THREE.GLTFLoader = GLTFLoader;
         };
     }
 
-    const WORLD = { overlays: null, lens: 35, mode: 'keep', pinned: null, world: null, version: null };
+    const WORLD = { overlays: null, lens: 35, mode: 'keep', pinned: null, world: null, version: null,
+        tab: 'camera', timelineOpen: false, tool: 'select' };
 
     function worldOverlayMenuHtml() {
         const st = WORLD.overlays || {};
-        return worldOverlays().map(o => {
+        const technical = `<div class="pv-overlay-views">
+            <span class="pv-menu-label">Technical views</span>
+            <button class="pv-menu-action${worldViewMode() === 'geo' ? ' active' : ''}" onclick="worldSetViewMode('geo')">Geometry</button>
+            <button class="pv-menu-action${worldViewMode() === 'depth' ? ' active' : ''}" onclick="worldSetViewMode('depth')">Depth</button>
+        </div>`;
+        return technical + worldOverlays().map(o => {
             const on = st[o.id] === undefined ? o.on : st[o.id];
             return `<label class="we-ov-row"><input type="checkbox" data-overlay="${o.id}"
                 ${on ? 'checked' : ''} onchange="worldToggleOverlay('${o.id}')">
@@ -16969,7 +17111,112 @@ THREE.GLTFLoader = GLTFLoader;
         await worldRefreshBlocking();
     }
 
-    function worldSetTab(id) { WORLD.tab = id; worldConsoleRender(); }
+    function worldSetTab(id) {
+        WORLD.tab = id;
+        if (id === 'light') WORLD.tool = 'lights';
+        else if (WORLD.tool === 'lights') WORLD.tool = 'select';
+        worldConsoleRender();
+    }
+
+    function worldToggleTimeline() { WORLD.timelineOpen = !WORLD.timelineOpen; worldConsoleRender(); }
+
+    async function worldToolSelect(id) {
+        WORLD.tool = id;
+        if (id === 'walk') return worldWalkToggle();
+        if (id === 'people') {
+            if (worldViewMode() !== 'plan') await worldSetViewMode('plan');
+            return stageOpenAdd('people');
+        }
+        if (id === 'edit') {
+            if (worldViewMode() !== 'plan') await worldSetViewMode('plan');
+            return setEditStart();
+        }
+        if (id === 'lights') return worldSetTab('light');
+        worldConsoleRender();
+    }
+
+    function worldToolRailHtml() {
+        const active = SETEDIT.on ? 'edit' : WALK.on ? 'walk' : WORLD.tab === 'light' ? 'lights' : (WORLD.tool || 'select');
+        const tool = (id, label, title) => `<button class="pv-tool${active === id ? ' active' : ''}"
+            onclick="worldToolSelect('${id}')" title="${esc(title)}">${label}</button>`;
+        return `<div class="pv-toolrail" role="toolbar" aria-label="Previs tools">
+            ${tool('select', 'Select', 'Select and frame the shot')}
+            ${tool('walk', 'Walk', 'Walk the set with the keyboard and mouse')}
+            ${tool('people', 'People', 'Add people, furniture or a model to the Plan')}
+            ${tool('edit', 'Edit set', 'Move, turn or remove furniture in the built set')}
+            ${tool('lights', 'Lights', 'Open the lighting inspector')}
+        </div>`;
+    }
+
+    function worldDecisionSummaryHtml() {
+        const decisions = (WORLD.blocking && WORLD.blocking.decisions) || [];
+        const decided = decisions.filter(d => d.state === 'applied' || d.state === 'locked').length;
+        const total = decisions.length || 7;
+        const trying = decisions.filter(d => d.state === 'trying').length;
+        const lockable = decisions.some(d => d.state === 'applied' || d.state === 'trying');
+        const allLocked = decisions.some(d => d.state === 'locked') && !lockable;
+        const dots = Array.from({ length: Math.min(total, 10) }, (_, i) =>
+            `<span class="pv-decision-dot${i < decided ? ' done' : ''}"></span>`).join('');
+        return `<details class="pv-decision-menu">
+              <summary class="pv-btn"><span class="pv-decision-dots">${dots}</span>${decided} of ${total} decided</summary>
+              <div class="pv-decision-pop">${worldDecisionsHtml()}</div>
+            </details>
+            ${trying ? `<button class="pv-btn" onclick="worldApplyDecisions()">Apply to shot</button>` : ''}
+            ${allLocked
+                ? '<button class="pv-btn" onclick="worldLockShot(false)">Unlock shot</button>'
+                : `<button class="pv-btn pv-primary" onclick="worldLockShot(true)"${decisions.length ? '' : ' disabled'}>Lock shot</button>`}`;
+    }
+
+    function worldMoreMenuHtml() {
+        return `<details class="pv-more">
+          <summary class="pv-btn pv-more-button" aria-label="More actions">•••</summary>
+          <div class="pv-more-menu" role="menu" aria-label="More actions">
+            <span class="pv-menu-label">This shot</span>
+            <button class="pv-more-item" onclick="worldRenderPlate()"><b>Render the frame</b><span>The board frame from this camera</span></button>
+            ${worldRegionOn('match-reference-composition') ? '<button class="pv-more-item" onclick="worldOpenMatchReference()"><b>Match a reference</b><span>Line the camera up to a picture you like</span></button>' : ''}
+            <button class="pv-more-item" onclick="worldScoreComplexity()"><b>Risk check</b><span>How likely this shot is to come back wrong · <i id="weRiskGrade">—</i></span></button>
+            <span class="pv-menu-label">The set</span>
+            <button class="pv-more-item" onclick="setBuildOpen()"><b>Build or rebuild the set</b><span>From the location's photos or scan · free</span></button>
+            <button class="pv-more-item" onclick="worldSetTab('scene')"><b>Other versions of this set</b><span>Choose the world version and inspect the scene</span></button>
+            ${worldRegionOn('create-spatial-world') ? '<button class="pv-more-item" onclick="worldOpenCreate()"><b>New world</b><span>Start a set from scratch</span></button>' : ''}
+            <span class="pv-menu-label">Workspace</span>
+            ${PV_FOLDS.map(f => `<button class="pv-more-item" onclick="pvToggleFold('${f.id}')"><b>${pvFolded(f.id) ? 'Show' : 'Hide'} ${f.id === 'left' ? 'shot list' : f.id === 'right' ? 'inspector' : 'move dock'}</b><span>${esc(f.tip)}</span></button>`).join('')}
+            <span class="pv-menu-label">Hand off</span>
+            <button class="pv-more-item" onclick="worldSetTab('scene');worldCheckExport()"><b>Handover to the crew</b><span>Camera, lens, marks and plan · <i id="weExportState">—</i></span></button>
+            <button class="pv-more-item" onclick="previzVideoExport(this)"><b>Export previz video</b><span>The move through the set as an MP4 · free</span></button>
+          </div>
+        </details>`;
+    }
+
+    function worldShotPickerHtml(shots) {
+        const shot = shots.find(s => s.id === WORLD.shotId);
+        return `<details class="pv-shot-picker">
+          <summary class="pv-btn"><span class="pv-shot-badge">${esc(shot ? shot.shot_code : (WORLD.scout ? 'SET' : '—'))}</span>
+            <span class="pv-shot-current">${esc(shot ? (shot.location || shot.description || 'Shot') : (WORLD.scout ? WORLD.scout.name : 'Choose a shot'))}</span>
+            <span class="pv-dim">${esc(WORLD.version ? 'set v' + WORLD.version.version : '')}</span></summary>
+          <div class="pv-shot-menu">${shots.length ? shots.map(sh => `<button class="pv-more-item${sh.id === WORLD.shotId ? ' active' : ''}"
+              onclick="worldRailSelect('${sh.id}')"><b>${esc(sh.shot_code || '')}</b><span>${esc(sh.location || sh.description || '')}</span></button>`).join('')
+              : '<span class="pv-dim">No shots yet — break the screenplay down first.</span>'}</div>
+        </details>`;
+    }
+
+    function worldMoveDockHtml() {
+        const dur = (WORLD.durationMs || 4000) / 1000;
+        if (WORLD.timelineOpen) return `<div class="pv-timeline-drawer">
+            <button class="pv-btn pv-timeline-close" onclick="worldToggleTimeline()" aria-label="Close timeline">Close timeline</button>
+            ${worldTimelineHtml()}
+          </div>`;
+        const hasMove = (WORLD.moves || []).length || (WORLD.keys || []).length;
+        return `<div class="pv-movedock">
+          <button class="pv-play" onclick="worldPlayMove()" aria-label="Play the move">▶</button>
+          <span class="pv-time">${((WORLD.t || 0) * dur).toFixed(1)} <span>/ ${dur.toFixed(1)} s</span></span>
+          <div class="pv-move-summary"><span class="pv-playhead" style="left:${Math.round((WORLD.t || 0) * 100)}%"></span>
+            ${hasMove ? '<span>Camera move and authored keys</span>' : '<span>No move yet — the camera holds. Add a key to start one.</span>'}</div>
+          <button class="pv-btn" onclick="worldAddKey()">+ Key</button>
+          <button class="pv-btn" onclick="worldToggleTimeline()">Timeline</button>
+          <canvas id="wePathCanvas" class="we-path pv-path-hidden"></canvas>
+        </div>`;
+    }
 
     function worldConsoleV2Html(project, world, version) {
         const m = worldMeasurements(version, []);
@@ -16978,35 +17225,20 @@ THREE.GLTFLoader = GLTFLoader;
             `<button class="we-lens${mm === WORLD.lens ? ' active' : ''}"
                      onclick="worldSetLens(${mm})">${mm}</button>`).join('');
         const shots = WORLD.shots || [];
-        const rail = shots.length
-            ? shots.map(sh => `
-                <button class="pv-shot${sh.id === WORLD.shotId ? ' active' : ''}" onclick="worldRailSelect('${sh.id}')">
-                  <span class="pv-shot-id">${esc(sh.shot_code || '')}</span>
-                  <span class="pv-shot-loc">${esc(sh.location || sh.description || '')}</span>
-                </button>`).join('')
-            : '<p class="pv-dim">No shots in this project yet — break the screenplay down first.</p>';
         const pane = (id, html) => `<div class="pv-tabpane${tab === id ? '' : ' pv-hidden'}" data-tab="${id}">${html}</div>`;
-        const tabs = PV_TABS.filter(t => t.id !== 'direct' || worldRegionOn('direct-the-shot'))
+        const tabs = PV_TABS.filter(t => t.id !== 'scene')
+            .filter(t => t.id !== 'direct' || worldRegionOn('direct-the-shot'))
             .filter(t => t.id !== 'explore' || worldRegionOn('explore-shot'))
             .map(t => `<button class="pv-tab${tab === t.id ? ' active' : ''}" onclick="worldSetTab('${t.id}')">${t.label}</button>`).join('');
         return `
-        <div class="pv-console">
-          <div class="pv-head">
-            <span class="pv-title">${esc((world && world.name) || 'No world yet')}</span>
-            <span class="pv-chip">${esc(version ? 'v' + version.version + (version.model ? ' · ' + version.model : '') : 'no version')}</span>
-            <span class="pv-chip${m.state === 'SCALE CALIBRATED' ? ' pv-chip-ok' : ''}">${esc(String(m.state || '').toLowerCase())}</span>
-            ${world && world.locked ? '<span class="pv-chip pv-chip-ok">world locked</span>' : ''}
-            <div class="pv-spacer"></div>
-            <button class="pv-btn" onclick="worldScoreComplexity()">Risk <span id="weRiskGrade">—</span></button>
-            <button class="pv-btn" onclick="worldCheckExport()">Handover <span id="weExportState">—</span></button>
-            ${worldRegionOn('create-spatial-world') ? '<button class="pv-btn" onclick="worldOpenCreate()">New world</button>' : ''}
-            <button class="pv-btn" onclick="setBuildOpen()" title="Build this location's set in Blender from its plates. Free.">Build set</button>
-            <span class="pv-folds">${PV_FOLDS.map(f => `<button class="pv-btn pv-fold${pvFolded(f.id) ? ' pv-folded' : ''}" data-fold="${f.id}"
-                onclick="pvToggleFold('${f.id}')" title="${esc(f.tip)}">${f.icon}</button>`).join('')}</span>
-          </div>
-          ${worldDecisionsHtml()}
+        <div class="pv-console${WORLD.timelineOpen ? ' pv-timeline-open' : ''}">
+          <header class="pv-topbar">
+            ${worldShotPickerHtml(shots)}
+            <div class="pv-view-switch"><div class="pv-seg">${worldModeButtonsHtml()}</div>${worldLookAroundButtonHtml()}
+              <button class="pv-btn pv-quiet" onclick="worldToggleOverlayMenu()">Overlays</button></div>
+            <div class="pv-top-actions">${worldDecisionSummaryHtml()}${worldMoreMenuHtml()}</div>
+          </header>
           <div class="pv-grid">
-            <div class="pv-rail">${rail}</div>
             <div class="pv-stage">
               <div class="pv-view" id="pvView">
                 <div class="we-frame pv-frame pv-mode-${esc(worldViewMode())}" id="weFrame">
@@ -17014,26 +17246,22 @@ THREE.GLTFLoader = GLTFLoader;
                   <div class="we-readout" id="weReadout"></div>
                   <div class="we-plate-note" id="pvModeNote">${esc(PV_MODE_NOTES[worldViewMode()] || PV_MODE_NOTES.geo)}</div>
                 </div>
+                ${worldToolRailHtml()}
+                ${worldViewMode() === 'plan' ? planFloorPickerHtml() : ''}
                 <div class="pv-float pv-float-l">
-                  <div class="pv-seg">${worldModeButtonsHtml()}</div>
-                  <button class="pv-btn${WALK.on ? ' pv-amber' : ''}" onclick="worldWalkToggle()"
-                          title="Move through the set with the keyboard and mouse. Nothing is kept until you say so."
-                          ${WORLD.shotId || WORLD.scout ? '' : 'disabled'}>${WALK.on ? 'Walking' : 'Walk'}</button>
                   <span class="we-live" id="weCamSpec"></span>
                 </div>
                 <div class="pv-float pv-walkbar" id="weWalkBar">${worldWalkBarHtml()}</div>
                 <div class="pv-float pv-stagebar" id="pvStageBar"></div>
                 <div class="pv-float pv-float-r">
-                  <button class="pv-btn" onclick="worldToggleOverlayMenu()">Overlays · <span id="weOvCount">0</span></button>
-                  ${worldRegionOn('match-reference-composition')
-                    ? '<button class="pv-btn pv-amber" onclick="worldOpenMatchReference()">Match reference</button>' : ''}
-                  <button class="pv-btn pv-primary" onclick="worldRenderPlate()">Render plate</button>
-                  <div class="we-ov-menu pv-ov-menu" id="weOverlayMenu" style="display:none;">${worldOverlayMenuHtml()}</div>
+                  <span class="pv-chip">${esc(project.aspect_ratio || '16:9')} · ${worldViewMode() === 'plan' ? 'plan' : 'camera view'}</span>
+                  <span class="pv-hidden-count" id="weOvCount">0</span>
                 </div>
+                <div class="we-ov-menu pv-ov-menu" id="weOverlayMenu" style="display:none;">${worldOverlayMenuHtml()}</div>
               </div>
-              <div class="pv-move">${worldTimelineHtml()}</div>
+              <div class="pv-move">${worldMoveDockHtml()}</div>
             </div>
-            <div class="pv-side">
+            <aside class="pv-side pv-inspector">
               <div class="pv-tabs">${tabs}</div>
               <div class="pv-tabbody">
                 ${pane('light', worldLightHtml())}
@@ -17075,7 +17303,7 @@ THREE.GLTFLoader = GLTFLoader;
                   </div>
                   ${worldAdvancedHtml()}`)}
               </div>
-            </div>
+            </aside>
           </div>
         </div>`;
     }
@@ -17163,15 +17391,21 @@ THREE.GLTFLoader = GLTFLoader;
     function worldModeButtonsHtml() {
         const vm = worldViewMode();
         const info = SPLAT.info;
-        return PV_MODES.map(m => {
-            let off = '';
-            if (m.splat && info && info.mesh) off = '';
-            else if (m.splat && info && !info.enabled) off = ' disabled title="Switch world_splats on in Setup to render the world itself"';
-            else if (m.id === 'look' && info && info.enabled && !info.splats.length) off = ' disabled title="This world version recorded no splat"';
-            else if (m.id === 'pano' && info && info.enabled && !info.panorama && !info.splats.length) off = ' disabled title="This world version has neither a splat nor a panorama"';
-            return `<button class="pv-seg-btn${vm === m.id ? ' active' : ''}"${off}
-                        onclick="worldSetViewMode('${m.id}')">${m.label}</button>`;
-        }).join('');
+        let shotOff = '';
+        if (info && !info.mesh && !info.enabled) shotOff = ' disabled title="Switch world_splats on in Setup to see the finished set"';
+        else if (info && !info.mesh && info.enabled && !info.splats.length) shotOff = ' disabled title="This world version recorded no splat"';
+        return `<button class="pv-seg-btn${vm !== 'plan' ? ' active' : ''}"${shotOff}
+                    onclick="worldSetViewMode('look')">Shot</button>
+                <button class="pv-seg-btn${vm === 'plan' ? ' active' : ''}"
+                    onclick="worldSetViewMode('plan')">Plan</button>`;
+    }
+
+    function worldLookAroundButtonHtml() {
+        const info = SPLAT.info;
+        const off = info && !info.mesh && info.enabled && !info.panorama && !info.splats.length
+            ? ' disabled title="This world version has neither a splat nor a panorama"' : '';
+        return `<button class="pv-btn pv-quiet${worldViewMode() === 'pano' ? ' active' : ''}"${off}
+                    onclick="worldSetViewMode('pano')">Look around</button>`;
     }
 
     async function worldSetViewMode(id) {
@@ -18321,10 +18555,10 @@ THREE.GLTFLoader = GLTFLoader;
         const bar = document.getElementById('pvStageBar');
         if (!bar) return;
         const plan = worldViewMode() === 'plan';
+        bar.classList.toggle('editing', plan && SETEDIT.on);
         if (plan && SETEDIT.on) return setEditRenderBar(bar);
         const su = STAGE.sel != null ? stageSubjects()[STAGE.sel] : null;
-        const html = !plan ? '' : `${planFloorPickerHtml()}
-            <button class="pv-btn" onclick="setEditStart()" title="Move, turn or remove the set's own furniture, then rebuild it">Edit set</button>
+        const html = !plan ? '' : `<button class="pv-btn" onclick="setEditStart()" title="Move, turn or remove the set's own furniture, then rebuild it">Edit set</button>
             <button class="pv-btn pv-primary" onclick="stageOpenAdd()">＋ Add people, furniture or a model</button>
             ${su ? `<input class="pv-stage-name" value="${esc(su.name || '')}" placeholder="Name (named subjects reach the prompt)"
                         onchange="stageRename(this.value)">
@@ -18825,9 +19059,28 @@ THREE.GLTFLoader = GLTFLoader;
     function planFloorPickerHtml() {
         const pl = WORLD.planFloors;
         if (!pl || !pl.levels || pl.levels.length < 2) return '';
-        const opts = pl.levels.map((l, i) => `<option value="${i}"${PLANVIEW.level === i ? ' selected' : ''}>Floor ${i + 1} · ${l.toFixed(1)} m</option>`).join('');
-        return `<label class="pv-dim pv-floor" title="The plan is cut 1.2 m above the chosen floor. Follow takes the selected subject's floor, else the camera's, and keeps up as the move plays.">Floor
-            <select id="pvFloorPick" onchange="planSetFloor(this.value)"><option value="auto"${PLANVIEW.level === 'auto' ? ' selected' : ''}>Follow (${pl.active + 1})</option>${opts}</select></label>`;
+        const floors = pl.levels.map((l, i) => ({ l, i })).reverse().map(({ l, i }) =>
+            `<button class="pv-floor-button${PLANVIEW.level === i ? ' active' : ''}" onclick="planSetFloor('${i}')">
+                <span>${i + 1}</span>Floor ${i + 1}<small>${l.toFixed(1)} m</small></button>`).join('');
+        return `<nav class="pv-floors" id="pvFloorPick" aria-label="Floors"
+            title="The plan is cut 1.2 m above the chosen floor.">
+              <b>Floors</b>${floors}
+              <button class="pv-floor-follow${PLANVIEW.level === 'auto' ? ' active' : ''}" onclick="planSetFloor('auto')">Follow (${pl.active + 1})</button>
+            </nav>`;
+    }
+
+    function planFloorPickerSync() {
+        const view = document.getElementById('pvView');
+        const current = document.getElementById('pvFloorPick');
+        const html = worldViewMode() === 'plan' ? planFloorPickerHtml() : '';
+        if (!html) { if (current) current.remove(); return; }
+        if (current && current.dataset.html === html) return;
+        const holder = document.createElement('div');
+        holder.innerHTML = html;
+        const next = holder.firstElementChild;
+        next.dataset.html = html;
+        if (current) current.replaceWith(next);
+        else if (view) view.appendChild(next);
     }
 
     /** The selected subject's path controls, in the Plan's staging bar. */
@@ -19174,6 +19427,17 @@ THREE.GLTFLoader = GLTFLoader;
             `<button class="we-ease${(WORLD.ease || 'ease-out') === e.id ? ' active' : ''}"
                      onclick="worldSetEase('${e.id}')">${e.label}</button>`).join('');
 
+        const blocking = (WORLD.blocking && WORLD.blocking.blocking) || {};
+        const pathSubjects = (blocking.subjects || []).filter(s => Array.isArray(s.path) && s.path.length);
+        const peopleKeys = pathSubjects.flatMap(s => s.path.map(k => {
+            const t = Math.max(0, Math.min(1, (Number(k.t) || 0) / (WORLD.durationMs || 4000)));
+            return `<button class="we-key we-key-person" style="left:${Math.round(t * 100)}%;"
+                onclick="worldSeekTo(${t})" title="${esc(s.name || 'person')} at ${(t * dur).toFixed(1)}s"></button>`;
+        })).join('');
+        const lighting = (WORLD.blocking && WORLD.blocking.lighting) || {};
+        const lightLabel = lighting.technique || lighting.type || 'holds for the shot';
+        const floorLabel = pathSubjects.length ? 'follows the moving subject' : 'follows the camera';
+
         return `
         <div class="we-panel we-timeline">
           <div class="we-panel-head">
@@ -19193,6 +19457,12 @@ THREE.GLTFLoader = GLTFLoader;
               <div class="we-playhead" style="left:${Math.round((WORLD.t || 0) * 100)}%;"></div></div></div>
           <div class="we-lane"><span class="we-lane-l">EASE</span>
             <div class="we-eases">${eases}</div></div>
+          <div class="we-lane pv-context-lane"><span class="we-lane-l">PEOPLE</span>
+            <div class="we-track">${peopleKeys || '<div class="we-clip-empty">no subject path</div>'}</div></div>
+          <div class="we-lane pv-context-lane"><span class="we-lane-l">LIGHTS</span>
+            <div class="we-track"><div class="we-clip-empty">${esc(lightLabel)}</div></div></div>
+          <div class="we-lane pv-context-lane"><span class="we-lane-l">FLOORS</span>
+            <div class="we-track"><div class="we-clip-empty">${esc(floorLabel)}</div></div></div>
           <canvas id="wePathCanvas" class="we-path"></canvas>
         </div>`;
     }
@@ -19725,7 +19995,7 @@ THREE.GLTFLoader = GLTFLoader;
         const viewMode = worldViewMode();
         c.style.pointerEvents = viewMode === 'plan' ? 'auto' : '';
         stageBindPlan();
-        if (viewMode === 'plan') { worldPaintPlan(ctx, c); worldSplatSync(); stageRenderBar(); return; }
+        if (viewMode === 'plan') { worldPaintPlan(ctx, c); planFloorPickerSync(); worldSplatSync(); stageRenderBar(); return; }
         const bar = document.getElementById('pvStageBar');
         if (bar && bar.innerHTML) bar.innerHTML = '';
         if (viewMode === 'geo' || viewMode === 'depth') worldPaintGeometry(ctx, c, viewMode === 'depth' ? 'depth' : undefined);

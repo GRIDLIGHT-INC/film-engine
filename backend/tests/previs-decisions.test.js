@@ -159,7 +159,8 @@ test('off, the console is the handoff layout; on, it is one screen', () => {
     assert.ok(!/pv-console/.test(off), 'previs_console off must leave the two-column console untouched');
     const on = renderConsole(ON);
     assert.match(on, /class="pv-console"/);
-    for (const tab of ['Camera', 'Direct', 'Explore', 'Scene']) assert.ok(on.includes(`>${tab}</button>`), `no ${tab} tab`);
+    for (const tab of ['Camera', 'Light', 'Direct', 'Explore']) assert.ok(on.includes(`>${tab}</button>`), `no ${tab} tab`);
+    assert.match(on, />Other versions of this set</, 'Scene and set-version controls did not move into More');
 });
 
 test('every element the writers find by id is still rendered', () => {

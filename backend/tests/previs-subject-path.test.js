@@ -291,7 +291,9 @@ test('the Plan view has a floor picker, path keys and Follow, and draws subjects
     assert.match(body('stageSave'), /previs\/subjects/, 'and that save is the subjects-only route');
     assert.match(body('stageFollow'), /previs\/timeline/, 'Follow goes through the timeline route');
     assert.match(body('stageRenderBar'), /stagePathBarHtml\(su\)/, 'the path controls are on the staging bar');
-    assert.match(body('stageRenderBar'), /planFloorPickerHtml\(\)/, 'the floor picker is on the plan');
+    assert.match(body('worldConsoleV2Html'), /planFloorPickerHtml\(\)/, 'the floor picker is on the Plan view');
+    assert.match(body('worldPaintFrame'), /planFloorPickerSync\(\)/, 'the floor picker is synchronized after the plan discovers its floors');
+    assert.match(body('worldTimelineHtml'), /Number\(k\.t\).*WORLD\.durationMs/s, 'subject path milliseconds are normalized on the timeline');
     assert.match(body('worldTimelineHtml'), /previzVideoExport\(this\)/, 'Export previz video is on the move timeline');
 });
 

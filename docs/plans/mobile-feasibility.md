@@ -25,7 +25,7 @@ What changed, and the measurements that replaced the ones above:
 | Phase track on a phone | unreachable | **moved** into the drawer, one node |
 | API base | literal `http://localhost:3100` | follows `location.hostname` |
 | Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
-| Shell-aware media queries | 0 of 6 | **1 of 16 media queries** — the phone breakpoint |
+| Shell-aware media queries | 0 of 6 | **1 of 22 media queries** — the phone breakpoint |
 
 Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
 still starts at 262px and the burger is hidden — **not one computed value above 700px
@@ -66,13 +66,12 @@ something. That is the single most useful thing to copy.
 | Rail entries | **7** | `var RAIL` |
 | MCP tools | **236** | `listTools()` |
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
-| Non-print media queries | **7** | six incidental + the phone breakpoint Option B added; see below |
+| Non-print media queries | **22** | 21 page-local queries + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 20 media queries that are not `print` (12 at
-the time of this assessment, plus the one the character sheet's two-up block
-added when its layout was brought back to the reference design, plus the one
-that stacks the one-screen Previs console below 1200px, plus two that stack the Setup page's providers and keys on a narrow window), and it
-is easy to read that as "already responsive". Not one of them touches the **app shell**. They
+**The responsive layout did not exist.** There are 22 media queries that are not `print` —
+21 page-local queries, including the Previs console's desktop and phone layouts, plus the
+single app-shell phone breakpoint — and it is easy to read that as "already responsive".
+Only that one breakpoint touches the **app shell**. The page-local queries include rules that
 govern:
 
 - `.home-phases` and `.home-row-2` — one home-page widget, at 1000px and 1200px and 700px

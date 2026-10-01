@@ -101,11 +101,13 @@ test('on, tiers come smallest first with the version scale, and a missing panora
 
 const ON = { world_engine: true, previs_console: true, cinematography_ai: true, camera_explore: true, reference_match: true };
 
-test('every view mode is a button, and the note under the frame is rendered', () => {
+test('the redesigned view switch keeps Shot and Plan primary, with 360 and technical views secondary', () => {
     const html = renderConsole(ON);
-    for (const label of ['Look', '360°', 'Geometry', 'Depth', 'Plan']) {
-        assert.ok(html.includes(`>${label}</button>`), `no ${label} button in the one-screen console`);
-    }
+    for (const label of ['Shot', 'Plan']) assert.ok(html.includes(`>${label}</button>`), `no ${label} view button`);
+    assert.match(html, />Look around</, '360° is not exposed as Look around');
+    assert.match(html, />Geometry</, 'Geometry is not available in Overlays');
+    assert.match(html, />Depth</, 'Depth is not available in Overlays');
+    assert.doesNotMatch(html, />360°</, 'the old technical 360° label is still in the primary switch');
     assert.ok(html.includes('id="pvModeNote"'), 'no note under the frame');
     assert.match(html, /pv-frame pv-mode-/, 'the frame does not carry its mode class');
 });

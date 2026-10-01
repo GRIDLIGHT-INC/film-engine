@@ -276,7 +276,7 @@ test('the server routes it ahead of the /film/locations/:id catch-all', () => {
 });
 
 test('Previs offers it, and the page says what to ask instead of guessing a room', () => {
-    assert.match(SPA, /onclick="setBuildOpen\(\)"[^>]*>Build set</);
+    assert.match(SPA, /onclick="setBuildOpen\(\)"[^>]*><b>Build or rebuild the set</);
     assert.match(SPA, /set_build_brief, then set_build_render/);
     assert.match(SPA, /\/set-builds\/\$\{buildId\}\/finish/);
     assert.match(SPA, /function setBuildHtml/);
