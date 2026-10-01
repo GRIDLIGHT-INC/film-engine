@@ -416,31 +416,48 @@ function runBlender(job, timeoutMs, opts = {}) {
     }
     fs.mkdirSync(job.out_dir, { recursive: true });
     const jobPath = path.join(job.out_dir, `job_${job.mode}.json`);
-    fs.writeFileSync(jobPath, JSON.stringify(job));
-    return new Promise((resolve, reject) => {
+    const resultPath = path.join(job.out_dir, `result_${job.mode}.json`);
+
+    const launch = (runJob, cpuFallback = false) => new Promise((resolve, reject) => {
+        fs.writeFileSync(jobPath, JSON.stringify(runJob));
+        try { fs.unlinkSync(resultPath); } catch (err) { if (err.code !== 'ENOENT') return reject(err); }
         const child = spawn(blender.bin, ['-b', '--factory-startup', '--python', opts.script || SCRIPT, '--', jobPath],
             { stdio: ['ignore', 'pipe', 'pipe'] });
-        let log = '';
+        let log = '', timedOut = false;
         child.stdout.on('data', b => {
             log += b; if (log.length > 400000) log = log.slice(-200000);
             if (opts.onLog) { try { opts.onLog(String(b)); } catch (_) { /* a listener never stops a render */ } }
         });
         child.stderr.on('data', b => { log += b; });
-        const timer = setTimeout(() => { child.kill('SIGKILL'); }, timeoutMs || 240000);
-        child.on('close', code => {
+        const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs || 240000);
+        child.on('close', (code, signal) => {
             clearTimeout(timer);
-            const resultPath = path.join(job.out_dir, `result_${job.mode}.json`);
             // The answer is the file the script wrote, not the exit code: Blender
             // can finish the work and then crash unloading an add-on.
             if (/SET-BUILD-DONE/.test(log) && fs.existsSync(resultPath)) {
                 return resolve(JSON.parse(fs.readFileSync(resultPath, 'utf8')));
             }
+            // Blender 4.5's Metal-backed Workbench/Eevee renderer can abort in
+            // background mode on otherwise supported AMD Macs. The geometry and
+            // export paths are healthy there, and Cycles on CPU is deterministic,
+            // so retry comparison renders once without the real-time GPU backend.
+            const nativeRenderCrash = !timedOut && ['render', 'previz'].includes(runJob.mode) && !cpuFallback
+                && (signal === 'SIGABRT' || signal === 'SIGSEGV' || code === 134 || code === 139);
+            if (nativeRenderCrash) {
+                if (opts.onLog) {
+                    try { opts.onLog(`Blender ${signal || code}; retrying comparison render on CPU.\n`); } catch (_) { /* listener */ }
+                }
+                return launch(Object.assign({}, runJob, { render_engine: 'CYCLES_CPU' }), true).then(resolve, reject);
+            }
             const tail = log.split('\n').filter(l => /Error|Traceback|line \d+/.test(l)).slice(-8).join('\n');
-            const e = new Error(`Blender did not finish the ${job.mode} (exit ${code}). ${tail || log.slice(-800)}`);
+            const ended = timedOut ? `timed out after ${timeoutMs || 240000} ms`
+                : signal ? `signal ${signal}` : `exit ${code}`;
+            const e = new Error(`Blender did not finish the ${runJob.mode} (${ended}). ${tail || log.slice(-800)}`);
             e.code = 'BLENDER_FAILED';
             reject(e);
         });
     });
+    return launch(job);
 }
 
 /** plate | render on top, the two blended beneath, at half size. */

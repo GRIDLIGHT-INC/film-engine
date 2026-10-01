@@ -494,12 +494,22 @@ def sample_palette():
 
 result = {'mode': MODE, 'renders': {}, 'objects': len([o for o in sc.objects if o.type == 'MESH'])}
 if MODE == 'render':
-    sc.render.engine = 'BLENDER_WORKBENCH'
-    sh = sc.display.shading
-    sh.light = 'STUDIO'
-    sh.color_type = 'MATERIAL'
-    sh.show_shadows = True
-    sh.show_cavity = True
+    if job.get('render_engine') == 'CYCLES_CPU':
+        # Safe fallback for background renders when Blender's Metal-backed
+        # real-time engines abort. One CPU sample is enough for the comparison
+        # sheet: it checks camera/geometry alignment, not final-picture quality.
+        sc.render.engine = 'CYCLES'
+        sc.cycles.device = 'CPU'
+        sc.cycles.samples = 1
+        sc.cycles.use_denoising = False
+        sc.render.resolution_percentage = 100
+    else:
+        sc.render.engine = 'BLENDER_WORKBENCH'
+        sh = sc.display.shading
+        sh.light = 'STUDIO'
+        sh.color_type = 'MATERIAL'
+        sh.show_shadows = True
+        sh.show_cavity = True
     for cam, plate in cams:
         set_res(plate)
         sc.camera = cam

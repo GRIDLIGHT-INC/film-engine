@@ -96,15 +96,21 @@ cam = bpy.data.objects.new('previz', cam_data)
 sc.collection.objects.link(cam)
 sc.camera = cam
 
-sc.render.engine = 'BLENDER_WORKBENCH'
-sh = sc.display.shading
-sh.light = 'STUDIO'
-sh.color_type = 'MATERIAL'
-try:
-    sh.show_shadows = True
-    sh.show_cavity = True
-except Exception:
-    pass
+if job.get('render_engine') == 'CYCLES_CPU':
+    sc.render.engine = 'CYCLES'
+    sc.cycles.device = 'CPU'
+    sc.cycles.samples = 1
+    sc.cycles.use_denoising = False
+else:
+    sc.render.engine = 'BLENDER_WORKBENCH'
+    sh = sc.display.shading
+    sh.light = 'STUDIO'
+    sh.color_type = 'MATERIAL'
+    try:
+        sh.show_shadows = True
+        sh.show_cavity = True
+    except Exception:
+        pass
 sc.render.resolution_x = int(job['width'])
 sc.render.resolution_y = int(job['height'])
 sc.render.resolution_percentage = 100
@@ -135,5 +141,6 @@ for i, fr in enumerate(frames):
     print('PREVIZ-FRAME %d/%d' % (i + 1, n), flush=True)
 
 with open(os.path.join(OUT, 'result_previz.json'), 'w') as f:
-    json.dump({'mode': 'previz', 'frames': n, 'frames_dir': FRAMES_DIR}, f)
+    json.dump({'mode': 'previz', 'frames': n, 'frames_dir': FRAMES_DIR,
+               'renderer': 'cycles-cpu' if job.get('render_engine') == 'CYCLES_CPU' else 'blender-workbench'}, f)
 print('SET-BUILD-DONE')

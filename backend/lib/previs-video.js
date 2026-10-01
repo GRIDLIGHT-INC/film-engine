@@ -192,7 +192,7 @@ function render(shotId, opts = {}) {
 async function renderNow(shotId, p, job, runBlender) {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'film-engine-previz-'));
     try {
-        await runBlender({
+        const rendered = await runBlender({
             mode: 'previz', out_dir: work, world_glb: p.world_glb, width: p.width, height: p.height,
             sensor_width_mm: p.sensor_width_mm, subjects: p.subjects, frames: p.frames,
         }, Math.max(600000, p.frame_count * 6000), {
@@ -211,7 +211,7 @@ async function renderNow(shotId, p, job, runBlender) {
         const fileName = `${code}_previz_v${version}.mp4`;
         const filePath = saveFile(p.project_id, 'previs', fileName, fs.readFileSync(mp4));
         const metadata = { kind: KIND, fps: p.fps, frames: p.frame_count, width: p.width, height: p.height,
-            world_version_id: p.world_version_id, renderer: 'blender-workbench', subjects: p.subjects.length };
+            world_version_id: p.world_version_id, renderer: rendered.renderer || 'blender-workbench', subjects: p.subjects.length };
         const id = generateId();
         db().prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_path, file_name, format, mime_type,
                       size_bytes, duration_ms, width, height, version, metadata)
