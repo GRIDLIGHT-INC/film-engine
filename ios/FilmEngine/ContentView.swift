@@ -13,7 +13,6 @@ struct ContentView: View {
     @StateObject private var store = ScanStore.shared
     @State private var showingSettings = false
     @State private var scanning = false
-    @State private var sending: SavedScan?
 
     /*
      * The phone does TWO things: scan a location in 3D (RoomPlan, drawing its
@@ -41,16 +40,18 @@ struct ContentView: View {
                         Text("None yet.").foregroundStyle(.secondary)
                     }
                     ForEach(store.scans) { scan in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(scan.name).font(.body.weight(.semibold))
-                            Text("\(scan.rooms) room\(scan.rooms == 1 ? "" : "s") · \(scan.photos.count) photo\(scan.photos.count == 1 ? "" : "s") · \(scan.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.footnote).foregroundStyle(.secondary)
-                            if let sent = scan.sent {
-                                Text("Sent to \(sent.location) · \(sent.at.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.footnote).foregroundStyle(.green)
+                        NavigationLink {
+                            ScanDetailView(scanId: scan.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(scan.name).font(.body.weight(.semibold))
+                                Text("\(scan.rooms) room\(scan.rooms == 1 ? "" : "s") · \(scan.photos.count) photo\(scan.photos.count == 1 ? "" : "s") · \(scan.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                if let sent = scan.sent {
+                                    Text("Sent to \(sent.location) · \(sent.at.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(.footnote).foregroundStyle(.green)
+                                }
                             }
-                            Button(scan.sent == nil ? "Send to Film Engine…" : "Send again…") { sending = scan }
-                                .font(.footnote.weight(.semibold))
                         }
                         .swipeActions { Button("Delete", role: .destructive) { store.delete(scan) } }
                     }
@@ -68,8 +69,78 @@ struct ContentView: View {
                 RoomScanView(request: nil) { _ in scanning = false; store.reload() }
             }
         }
-        .sheet(item: $sending) { scan in SendScanView(scan: scan) }
         .sheet(isPresented: $showingSettings) { SetupView(isSheet: true) }
+    }
+}
+
+/// One saved scan: rename it, look at its photos, take more, send it, or delete it.
+struct ScanDetailView: View {
+    let scanId: String
+    @ObservedObject private var store = ScanStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var adding = false
+    @State private var sending = false
+
+    private var scan: SavedScan? { store.scans.first { $0.id == scanId } }
+
+    var body: some View {
+        Group {
+            if let scan {
+                List {
+                    Section("Name") {
+                        TextField("Name", text: $name)
+                            .onSubmit { rename(scan) }
+                        if name != scan.name && !name.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Button("Save name") { rename(scan) }
+                        }
+                    }
+                    Section {
+                        Button { adding = true } label: { Label("Add photos", systemImage: "camera") }
+                            .disabled(!RoomScanSupport.available)
+                        Button { sending = true } label: { Label(scan.sent == nil ? "Send to Film Engine…" : "Send again…", systemImage: "paperplane") }
+                    } footer: {
+                        Text("Add photos opens the camera on this scan: point at the room you scanned until it recognises it, and new photos line up with the scan like the first ones.")
+                    }
+                    Section("Photos (\(scan.photos.count))") {
+                        if scan.photos.isEmpty { Text("No photos yet.").foregroundStyle(.secondary) }
+                        ForEach(scan.photos) { p in
+                            HStack(spacing: 12) {
+                                if let img = UIImage(contentsOfFile: store.folder(scan.id).appendingPathComponent(p.file).path) {
+                                    Image(uiImage: img).resizable().scaledToFill().frame(width: 72, height: 54).clipped().cornerRadius(6)
+                                }
+                                VStack(alignment: .leading) {
+                                    Text(p.guided ? p.view.replacingOccurrences(of: "scan-", with: "") : "extra").font(.body)
+                                    Text("\(p.width)×\(p.height)").font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                            .swipeActions { Button("Delete", role: .destructive) { store.deletePhoto(scan, view: p.view) } }
+                        }
+                    }
+                    Section {
+                        Button("Delete this scan", role: .destructive) { store.delete(scan); dismiss() }
+                    }
+                }
+                .navigationTitle(scan.name)
+                .onAppear { if name.isEmpty { name = scan.name } }
+                .fullScreenCover(isPresented: $adding) {
+                    if #available(iOS 17.0, *) {
+                        RoomScanView(request: nil, resume: scan) { _ in adding = false; store.reload() }
+                    }
+                }
+                .sheet(isPresented: $sending) { SendScanView(scan: scan) }
+            } else {
+                Text("This scan is no longer on the phone.").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func rename(_ scan: SavedScan) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, n != scan.name else { return }
+        var s = scan
+        s.name = n
+        try? store.write(s)
     }
 }
 

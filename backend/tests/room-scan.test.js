@@ -251,3 +251,43 @@ test('the iPhone app scans with RoomPlan and the page asks it under the same nam
     // The phone does two things: scan and photograph. The home offers no way into the full page.
     assert.ok(/Scan a location/.test(content) && !/Open Film Engine/.test(content), 'the phone\'s home is not just the scanner');
 });
+
+test('the phone files a photo to the wall it faces, worked out from the scan (compiled and run where Swift is here)', () => {
+    const fs = require('fs');
+    const { spawnSync } = require('child_process');
+    const root = path.join(__dirname, '..', '..');
+    const swift = fs.readFileSync(path.join(root, 'ios', 'FilmEngine', 'RoomScan.swift'), 'utf8');
+    const content = fs.readFileSync(path.join(root, 'ios', 'FilmEngine', 'ContentView.swift'), 'utf8');
+    // No walking to a spot: the photo goes to the wall the camera ray meets.
+    assert.ok(/func facedWall\(/.test(swift) && /facedWall\(targets, from: pos, looking: f\)/.test(swift), 'the faced wall is not worked out');
+    assert.ok(/facing != nil\) \? facing!\.id/.test(swift), 'a photo is not filed to the wall it shows');
+    assert.ok(!/let stand\b|stand: SIMD3/.test(swift), 'the app still asks you to stand on a spot');
+    // Go back, and edit later: back to rooms, the walls and the room map kept, a saved scan resumed and edited.
+    assert.ok(/func backToRooms\(\)/.test(swift) && /Back to scanning rooms/.test(swift), 'no way back to scanning rooms');
+    assert.ok(/targets\.json/.test(swift) && /worldmap\.arexperience/.test(swift) && /initialWorldMap = map/.test(swift),
+        'photos added later could not line up with the scan');
+    assert.ok(/guard !relocalizing/.test(swift), 'a photo can be taken before the saved room is recognised');
+    assert.ok(/struct ScanDetailView/.test(content) && /Add photos/.test(content) && /deletePhoto/.test(content) && /Save name/.test(content),
+        'a saved scan cannot be renamed, added to or have a photo removed');
+
+    // The geometry itself, run: a 4 x 6 m room, the phone at known spots.
+    const which = spawnSync('xcrun', ['--find', 'swiftc'], { encoding: 'utf8' });
+    if (which.status !== 0) return;   // no Swift on this machine: the checks above still hold
+    const a = swift.indexOf('struct PhotoTarget'), b = swift.indexOf('/// Every wall of every room');
+    const c = swift.indexOf("/// The wall the camera's centre ray meets first"), d = swift.indexOf('// ── the session ──');
+    const harness = `import Foundation\nimport simd\n${swift.slice(a, b)}${swift.slice(c, d)}
+func wall(_ id: String, _ a: SIMD2<Float>, _ b: SIMD2<Float>, _ n: SIMD2<Float>) -> PhotoTarget {
+    PhotoTarget(id: id, label: id, a: a, b: b, inward: n, centre: SIMD3<Float>((a.x+b.x)/2, 1.2, (a.y+b.y)/2)) }
+let ws = [wall("south", [0,0], [4,0], [0,1]), wall("north", [0,6], [4,6], [0,-1]), wall("west", [0,0], [0,6], [1,0]), wall("east", [4,0], [4,6], [-1,0])]
+for (p, f) in [(SIMD2<Float>(2,1), SIMD2<Float>(0,1)), (SIMD2<Float>(2,1), SIMD2<Float>(0,-1)), (SIMD2<Float>(2,3), SIMD2<Float>(1,0)), (SIMD2<Float>(3,4.5), simd_normalize(SIMD2<Float>(1,1)))] {
+    if let h = facedWall(ws, from: p, looking: simd_normalize(f)) { print(h.target.id, String(format: "%.2f", h.distance)) } else { print("none") } }
+`;
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'facedwall-'));
+    fs.writeFileSync(path.join(dir, 'w.swift'), harness);
+    const built = spawnSync('xcrun', ['swiftc', '-O', 'w.swift', '-o', 'w'], { cwd: dir, encoding: 'utf8', timeout: 240000 });
+    assert.equal(built.status, 0, built.stderr);
+    const out = spawnSync(path.join(dir, 'w'), [], { encoding: 'utf8' }).stdout.trim().split('\n');
+    assert.deepEqual(out, ['north 5.00', 'south 1.00', 'east 2.00', 'east 1.41'],
+        'looking north from near the south wall must face the north wall at 5 m; south at 1 m; east at 2 m; towards a corner, the nearer wall');
+});

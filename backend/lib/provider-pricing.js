@@ -384,6 +384,75 @@ const RATE_BOOK = {
         note: 'Magnific bills API credits per frame of output and publishes no per-frame figure. These are Runway\'s resale prices for Magnific\'s creative video upscaler: $0.007/frame at 720p and 1k, $0.009 at 2k, $0.012 at 4k. A 10s 24fps clip to 4K is about $2.88. Correct them in the rate overrides once your Magnific invoice says otherwise.',
     },
 
+    /*
+     * PRICED, NOT CONNECTED. These vendors have no adapter here, so nothing in
+     * Film Engine can generate with them; they are in the book so the film
+     * estimate and Compare Generators can say what the same work would cost
+     * there. `connected: false` and `not_connected_why` travel with every row,
+     * so a price is never mistaken for a choice that can run.
+     */
+    'higgsfield:image': {
+        unit: 'image', native_unit: 'image', native_per_unit: 1,
+        usd_per_native: 0.0032,
+        connected: false,
+        not_connected_why: 'Higgsfield has a self-serve API (cloud.higgsfield.ai) but no adapter is wired in Film Engine yet: priced to compare, it cannot run here.',
+        models: {
+            'soul-2':                 { usd_per_native: 0.0032 },
+            'soul-cinema':            { usd_per_native: 0.0032 },
+            'marketing-studio-image': { usd_per_native: 0.0059 },
+        },
+        source: 'https://higgsfield.ai/blog/higgsfield-api',
+        checked: '2026-10-01',
+        note: 'Higgsfield\'s own API price table (post of 16 Sep 2026): Soul 2 and Soul Cinema $0.0032 per image, Marketing Studio $0.0059. Pay-as-you-go USD, failed requests refunded. The live table (open.higgsfield.ai/pricing) renders in the browser and could not be read directly.',
+    },
+    'higgsfield:video': {
+        unit: 'second', native_unit: 'second', native_per_unit: 1,
+        usd_per_native: 0.112,
+        connected: false,
+        not_connected_why: 'Higgsfield has a self-serve API (cloud.higgsfield.ai) but no adapter is wired in Film Engine yet: priced to compare, it cannot run here.',
+        models: {
+            'kling-2.5':    { usd_per_native: 0.042 },
+            'kling-2.6':    { usd_per_native: 0.07 },
+            'seedance-2.5': { usd_per_native: 0.0738 },
+            'kling-3.0':    { usd_per_native: 0.112 },
+            'pixverse-6':   { usd_per_native: 0.115 },
+            'minimax-h3':   { usd_per_native: 0.13 },
+            'ltx-2.5-pro':  { usd_per_native: 0.17 },
+            'wan-3.0':      { usd_per_native: 0.20 },
+            'seedance-2.0': { usd_per_native: 0.9332 },
+        },
+        source: 'https://higgsfield.ai/blog/higgsfield-api',
+        checked: '2026-10-01',
+        note: 'Per second, from Higgsfield\'s own API price table (16 Sep 2026). DoP is $0.125 per generation and is not listed per second. A later third-party check (27 Sep 2026, omidsaffari.com) read Seedance 2.5 at $0.2056/s for 480p and $0.4622/s for 720p, far above the table\'s $0.0738: confirm in the Higgsfield console before budgeting against Seedance 2.5 there.',
+    },
+    'midjourney:image': {
+        unit: 'image', native_unit: 'gpu_minute', native_per_unit: 1,
+        usd_per_native: 0.0333,
+        connected: false,
+        not_connected_why: 'Midjourney has no API and its terms forbid automated access, so it can never run from Film Engine. Make the picture in Midjourney and upload it.',
+        models: {
+            'midjourney-v7': { usd_per_native: 0.0333 },
+        },
+        inferred: true,
+        source: 'https://docs.midjourney.com/hc/en-us/articles/27870484040333-Comparing-Midjourney-Plans',
+        checked: '2026-10-01',
+        note: 'Midjourney sells GPU time, not images: Standard is $30 a month for 15 fast hours (Basic $10/3.3 h, Pro $60/30 h, Mega $120/60 h; 20% off annually). An image job (a grid of four, of which you keep one) takes about one GPU minute, so one usable picture is about $0.033 on Standard. Inferred from the plan prices; relax mode on Standard and above costs nothing extra but is slow.',
+    },
+    'midjourney:video': {
+        unit: 'second', native_unit: 'gpu_minute', native_per_unit: 1,
+        usd_per_native: 0.0533,
+        connected: false,
+        not_connected_why: 'Midjourney has no API and its terms forbid automated access, so it can never run from Film Engine. Make the clip in Midjourney and upload it.',
+        models: {
+            'midjourney-video-480p': { usd_per_native: 0.0533 },
+            'midjourney-video-720p': { usd_per_native: 0.1707 },
+        },
+        inferred: true,
+        source: 'https://docs.midjourney.com/hc/en-us/articles/27870484040333-Comparing-Midjourney-Plans',
+        checked: '2026-10-01',
+        note: 'A video job costs about eight image jobs and gives four 5-second clips at 480p; HD (720p) about 3.2 times that. At Standard\'s $0.0333 per GPU minute, a kept 5-second clip is about $0.27 at 480p ($0.053/s) and $0.85 at 720p ($0.17/s). Inferred from the plan prices.',
+    },
+
     'openai:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.042,

@@ -27,6 +27,7 @@ ensureSchema();
 const providers = require('../lib/providers');
 const E = require('../lib/production-estimate');
 
+const round = n => Math.round(n * 100) / 100;
 const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
 
 /** A fake image and video provider with simple, known prices. */
@@ -187,4 +188,46 @@ test('attempts: usually 3-4 per picture (sometimes 6) and 2-3 per clip, counted 
     const HTML = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'index.html'), 'utf8');
     assert.ok(/d\.range\.low\.total/.test(HTML) && /d\.range\.high\.total/.test(HTML), 'the tab does not show the range');
     assert.ok(/'takes_plates', 'Attempts per plate', d\.takes\.plates, '[^']*', 0\.5\)/.test(HTML), 'attempts cannot be set in half steps');
+});
+
+rates['testpost:post'] = { unit: 'second', native_unit: 'second', native_per_unit: 1, usd_per_native: 0.10,
+    models: { 'up-a': { usd_per_native: 0.10 } }, source: 'test', checked: '2026-10-01' };
+providers.register({
+    id: 'testpost', label: 'Test upscaler', kind: 'generator', requiresKey: false, capabilities: ['post'],
+    models: ['up-a'], defaultModel: 'up-a',
+    supports: c => c === 'post', generate: async () => ({ ok: false }),
+    meter: (cap, p) => (cap === 'post' ? { unit: 'second', quantity: p.source_seconds, model: 'up-a' } : null),
+});
+
+test('an upscaler chosen here is priced once over the footage and joins every total', () => {
+    const id = project({ shots: [4000, 6000] });
+    const plain = E.estimateProduction(id, { alternatives: false });
+    const up = E.estimateProduction(id, { upscale_provider: 'testpost', alternatives: false });
+    assert.equal(up.upscale.usd, 1, '10 s at $0.10 a second');
+    assert.equal(up.totals.total, round(plain.totals.total + 1));
+    for (const k of ['low', 'likely', 'high', 'first_attempt']) {
+        assert.equal(up.range[k].total, round(plain.range[k].total + 1), `the ${k} range leaves the upscale out`);
+    }
+    assert.equal(plain.upscale, null);
+});
+
+test('every upscaler, and every vendor priced without an adapter, is in the comparison or named', () => {
+    const id = project({ shots: [5000] });
+    const d = E.estimateProduction(id);
+    for (const a of providers.list().filter(x => (x.capabilities || []).includes('post'))) {
+        assert.ok(d.alternatives.post.some(r => r.provider === a.id) || d.excluded.some(x => x.provider === a.id && x.capability === 'post'),
+            `upscaler ${a.id} is neither priced nor named`);
+    }
+    const { RATE_BOOK } = require('../lib/provider-pricing');
+    const unconnected = Object.keys(RATE_BOOK).filter(k => /:(image|video)$/.test(k) && !providers.get(k.split(':')[0]));
+    assert.ok(unconnected.includes('higgsfield:video') && unconnected.includes('midjourney:image'), 'Higgsfield or Midjourney is not priced');
+    const { compareGenerators } = require('../lib/generator-costs');
+    for (const key of unconnected) {
+        const [p, cap] = key.split(':');
+        const e = RATE_BOOK[key];
+        assert.ok(e.not_connected_why && e.source && e.checked, `${key} does not say why it cannot run, or where its price is from`);
+        const rows = d.alternatives[cap].filter(r => r.provider === p);
+        assert.ok(rows.length && rows.every(r => r.connected === false && r.not_connected_why), `${key} is not in the estimate as not connected`);
+        assert.ok(compareGenerators(cap).rows.some(r => r.provider === p && r.connected === false && !r.available), `${key} is not in Compare Generators`);
+    }
 });

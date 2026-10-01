@@ -47,6 +47,7 @@ function productionEstimate(req, res, projectId, query) {
         const out = require('../lib/production-estimate').estimateProduction(projectId, {
             image_provider: q.image_provider || undefined, image_model: q.image_model || undefined,
             video_provider: q.video_provider || undefined, video_model: q.video_model || undefined,
+            upscale_provider: q.upscale_provider || undefined, upscale_model: q.upscale_model || undefined,
             resolution: q.resolution || undefined,
             views: { character: n(q.character_views), location: n(q.location_views), prop: n(q.prop_views) },
             takes: { plates: n(q.takes_plates), storyboard: n(q.takes_storyboard), footage: n(q.takes_footage) },

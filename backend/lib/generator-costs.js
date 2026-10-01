@@ -232,6 +232,38 @@ function compareGenerators(capability, opts = {}) {
     }
 
     /*
+     * PRICED, NOT CONNECTED. A vendor in the rate book with no adapter here
+     * (Higgsfield, Midjourney) is listed with its price and the reason it
+     * cannot run, so "what would this cost there" has an answer without the
+     * row ever reading as a choice.
+     */
+    const { RATE_BOOK } = require('./provider-pricing');
+    for (const [key, entry] of Object.entries(RATE_BOOK)) {
+        const [providerId, cap] = key.split(':');
+        if (cap !== capability || providers.get(providerId)) continue;
+        const models = entry.models && Object.keys(entry.models).length ? Object.keys(entry.models) : [null];
+        for (const model of models) {
+            const r = rateFor(providerId, capability, model) || entry;
+            const usdPerUnit = Number(r.usd_per_unit ?? r.usd_per_native ?? 0);
+            const unit = r.unit || entry.unit || 'call';
+            const units = unitsPerWork(unit, capability, { frame, clip_seconds: seconds });
+            rows.push({
+                provider: providerId, provider_label: providerId.charAt(0).toUpperCase() + providerId.slice(1),
+                model: model || '(default)', unit, units_per_work: units,
+                usd_per_unit: usdPerUnit, usd_per_work: usdPerUnit * units, usd_per_scene: usdPerUnit * units * work.scene_count,
+                self_hosted: false, inferred: !!r.inferred,
+                credentialed: false, available: false, connected: false,
+                needs: entry.not_connected_why || 'no adapter in Film Engine',
+                size_control: null, honours_resolution: false,
+                size_note: 'Not connected to Film Engine: no adapter sends it a size, so whether your resolution reaches it is unknown.',
+                max_size: null, tier: null,
+                source: entry.source || null, checked: entry.checked || null,
+                checked_age_days: ageDays(entry.checked || null, now), note: entry.note || null,
+            });
+        }
+    }
+
+    /*
      * Cheapest first, but a self-hosted zero does NOT lead the table: it is
      * zero because nobody bills for it, not because it is a bargain, and
      * putting it at the top reads as a recommendation. It sorts last with its

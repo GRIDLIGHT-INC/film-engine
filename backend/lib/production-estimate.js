@@ -280,6 +280,52 @@ function priceWork(work, imageGen, videoGen, raster, takes) {
         delivered: { image: imageSmaller ? 'smaller than asked' : null, video: downgraded ? delivered : null } };
 }
 
+/**
+ * One upscale of the footage to the delivery size, through the upscaler's own
+ * meter (Topaz from its credit table, Magnific by tier, MuAPI's upscalers per
+ * second). The source is the frame the footage generator really makes.
+ */
+function priceUpscale(gen, clips, source, raster) {
+    const adapter = providers.get(gen.provider);
+    if (!adapter || typeof adapter.meter !== 'function') return { usd: null, why: `${gen.provider} cannot price an upscale` };
+    const src = /^(\d+)x(\d+)$/.exec(String(source || '')) || [null, raster.width, raster.height];
+    let usd = 0; let model = null;
+    for (const secs of clips) {
+        let usage = null;
+        try {
+            usage = adapter.meter('post', {
+                type: 'upscale', model: gen.model || undefined, upscaler: gen.model || undefined,
+                source_seconds: secs, duration_s: secs, duration_ms: secs * 1000, source_fps: 24,
+                source_width: Number(src[1]), source_height: Number(src[2]),
+                source_video: 'https://estimate.invalid/clip.mp4',
+                target_resolution: `${raster.width}x${raster.height}`,
+            }, null);
+        } catch (_) { usage = null; }
+        if (!usage) return { usd: null, why: `${gen.provider_label || gen.provider} could not price an upscale here` };
+        const p = priceUsage({ provider: gen.provider, capability: 'post', ...usage });
+        if (!p || !p.priced) return { usd: null, why: `no rate for ${gen.provider} ${usage.model || ''}`.trim() };
+        usd += p.amount_usd; model = usage.model || model;
+    }
+    return { usd, model };
+}
+
+/**
+ * Vendors in the rate book with no adapter: priced from the book alone, so the
+ * comparison can say what the same work would cost there, and marked so the
+ * price is never mistaken for a choice that can run.
+ */
+function unconnectedRates(cap) {
+    const { RATE_BOOK } = require('./provider-pricing');
+    const out = [];
+    for (const [key, entry] of Object.entries(RATE_BOOK)) {
+        const [provider, capability] = key.split(':');
+        if (capability !== cap || providers.get(provider)) continue;
+        const models = entry.models && Object.keys(entry.models).length ? Object.keys(entry.models) : [null];
+        for (const model of models) out.push({ provider, model, rate: rateFor(provider, cap, model), entry });
+    }
+    return out;
+}
+
 /** The model a priced estimate actually used for a capability. */
 function pricedModel(p, cap) {
     const l = p.lines.find(x => x.category === (cap === 'image' ? 'storyboard' : 'footage'));
@@ -320,8 +366,26 @@ function estimateProduction(projectId, opts = {}) {
     };
     const range = { low: at('low'), likely: at('likely'), high: at('high'), first_attempt: once.totals };
 
-    // What the same work costs on every other connected generator, at this size.
-    const alternatives = { image: [], video: [] };
+    // Upscaling the footage to the delivery size: chosen here, or none.
+    const foot = priced.lines.find(l => l.category === 'footage') || {};
+    let upscale = null;
+    if (opts.upscale_provider) {
+        const gen = chooseGenerator('post', config, { provider: opts.upscale_provider, model: opts.upscale_model });
+        const u = gen.error ? { usd: null, why: gen.error } : priceUpscale(gen, work.clips, foot.delivered, raster);
+        upscale = { provider: gen.provider, provider_label: gen.provider_label || gen.provider, model: u.model || gen.model || null,
+            from: foot.delivered || `${raster.width}x${raster.height}`, to: `${raster.width}x${raster.height}`,
+            seconds: foot.seconds || 0, usd: u.usd == null ? null : round2(u.usd), why: u.why || null };
+        if (upscale.usd != null) {
+            priced.totals.upscale = upscale.usd;
+            priced.totals.total = round2(priced.totals.total + upscale.usd);
+            for (const k of ['low', 'likely', 'high', 'first_attempt']) {
+                range[k] = { ...range[k], upscale: upscale.usd, total: round2(range[k].total + upscale.usd) };
+            }
+        }
+    }
+
+    // What the same work costs on every other generator, at this size.
+    const alternatives = { image: [], video: [], post: [] };
     const excluded = [];
     if (opts.alternatives !== false) {
         for (const cap of ['image', 'video']) {
@@ -350,8 +414,48 @@ function estimateProduction(projectId, opts = {}) {
                             && pricedModel(p, cap) === pricedModel(priced, cap) });
                 }
             }
+            // Vendors with a price and no adapter (Higgsfield, Midjourney): the same work, priced from the book.
+            for (const u of unconnectedRates(cap)) {
+                if (!u.rate) continue;
+                const per = u.rate.usd_per_unit;
+                let usd;
+                if (cap === 'image') {
+                    const pictures = work.clips.length * takes.storyboard
+                        + Object.keys(DEFAULT_VIEWS).reduce((n, k) => n + work.subjects[k] * work.views[k], 0) * takes.plates;
+                    usd = round2(per * pictures);
+                } else {
+                    usd = round2(per * work.clips.reduce((n, x) => n + Math.max(1, Math.round(x)), 0) * takes.footage);
+                }
+                const other = cap === 'image' ? round2(priced.totals.footage) : round2(priced.totals.plates + priced.totals.storyboard);
+                alternatives[cap].push({ provider: u.provider, provider_label: u.provider.charAt(0).toUpperCase() + u.provider.slice(1),
+                    model: u.model, usd, total: round2(usd + other), connected: false,
+                    not_connected_why: u.entry.not_connected_why || 'no adapter in Film Engine', inferred: !!u.rate.inferred,
+                    source: u.entry.source || null, current: false });
+            }
             alternatives[cap].sort((a, b) => a.usd - b.usd);
         }
+        // Upscalers: the same footage taken from what the generator makes to the delivery size.
+        for (const adapter of providers.list()) {
+            if (!(adapter.capabilities || []).includes('post')) continue;
+            if (adapter.id === 'gridlight' && !providers.localGatewayEnabled()) {
+                excluded.push({ capability: 'post', provider: adapter.id, why: 'the local Gridlight gateway is switched off' });
+                continue;
+            }
+            const needsKey = !!(adapter.requiresKey && !providers.isProviderConfigured(adapter.id));
+            const models = providers.modelIdsFor(adapter, 'post') || [null];
+            for (const model of models) {
+                const gen = chooseGenerator('post', config, { provider: adapter.id, model });
+                if (gen.error) continue;
+                const u = priceUpscale(gen, work.clips, foot.delivered, raster);
+                if (u.usd == null) { excluded.push({ capability: 'post', provider: adapter.id, model, why: u.why }); continue; }
+                alternatives.post.push({ needs_key: needsKey, provider: adapter.id, provider_label: adapter.label || adapter.id,
+                    model, usd: round2(u.usd),
+                    // The model the chosen upscale runs: the one asked for, else the adapter's default.
+                    current: !!(upscale && upscale.provider === adapter.id
+                        && model === (opts.upscale_model || adapter.defaultModel || models[0])) });
+            }
+        }
+        alternatives.post.sort((a, b) => a.usd - b.usd);
     }
 
     const { RESOLUTIONS } = require('./project-presets');
@@ -373,6 +477,8 @@ function estimateProduction(projectId, opts = {}) {
         attempts: ATTEMPTS,
         range,
         lines: priced.lines,
+        upscale,
+        upscale_needed: !!foot.downgraded,
         totals: priced.totals,
         priced: priced.priced,
         alternatives,
@@ -383,10 +489,13 @@ function estimateProduction(projectId, opts = {}) {
                 + `Usually ${ATTEMPTS.image.low}-4 attempts per picture (sometimes ${ATTEMPTS.image.high}) and `
                 + `${ATTEMPTS.footage.low}-${ATTEMPTS.footage.high} per clip: the range runs from the low end to the high. `
                 + 'Published list rates; a refused generation is not billed.',
-            'Plates, frames and footage only: voice, music, effects and upscaling are not in this figure.',
+            upscale ? `Upscaling the footage to ${raster.width}x${raster.height} on ${upscale.provider_label} is included.`
+                : (foot.downgraded ? `The footage generator makes ${foot.delivered}, below ${raster.width}x${raster.height}: choose an upscaler to add the finishing pass.`
+                    : 'No upscaling is included; choose an upscaler to add one.'),
+            'Voice, music and effects are not in this figure.',
         ],
     };
 }
 
-module.exports = { ATTEMPTS, estimateProduction, countWork, chooseGenerator, priceImage, priceClip, resolveRaster,
+module.exports = { priceUpscale, unconnectedRates, ATTEMPTS, estimateProduction, countWork, chooseGenerator, priceImage, priceClip, resolveRaster,
     DEFAULT_VIEWS, DEFAULT_SHOT_SECONDS, CATEGORIES };

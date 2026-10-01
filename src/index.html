@@ -34531,7 +34531,7 @@ ${fountainText.slice(0, 50000)}`;
 
     /** One choice changed: keep it and price again. */
     function prodEstSet(key, value) {
-        if (key === 'image' || key === 'video') {
+        if (key === 'image' || key === 'video' || key === 'upscale') {
             const [provider, model] = String(value || '').split('|');
             PROD_EST.params[key + '_provider'] = provider || '';
             PROD_EST.params[key + '_model'] = model || '';
@@ -34574,6 +34574,11 @@ ${fountainText.slice(0, 50000)}`;
               <select onchange="prodEstSet('image', this.value)">${optFor('image')}</select></label>
             <label class="text-sm" style="display:flex;flex-direction:column;gap:4px;min-width:240px;"><span class="text-muted">Footage</span>
               <select onchange="prodEstSet('video', this.value)">${optFor('video')}</select></label>
+            <label class="text-sm" style="display:flex;flex-direction:column;gap:4px;min-width:240px;"><span class="text-muted">Upscale footage to ${esc(d.resolution.label)}</span>
+              <select onchange="prodEstSet('upscale', this.value)"><option value="|">No upscale${d.upscale_needed ? ' (footage is made smaller)' : ''}</option>${((d.alternatives && d.alternatives.post) || []).map(a => {
+                const key = a.provider + '|' + (a.model || '');
+                const cur = !!a.current;
+                return `<option value="${esc(key)}" ${cur ? 'selected' : ''}>${esc(a.provider_label)} · ${esc(a.model || 'default')} — ${usd(a.usd)}${a.needs_key ? ' (no key)' : ''}</option>`; }).join('')}</select></label>
             ${num('character_views', 'Views per character', c.views ? c.views.character : 4, 'front, two profiles, back')}
             ${num('location_views', 'Views per location', c.views ? c.views.location : 4)}
             ${num('prop_views', 'Views per prop', c.views ? c.views.prop : 1)}
@@ -34604,12 +34609,12 @@ ${fountainText.slice(0, 50000)}`;
             <td>${esc(model || '')}</td><td>${unit}</td><td style="text-align:right;">${usd(total)}</td></tr>`;
         const names = { character: 'Character plates', location: 'Location plates', prop: 'Prop plates' };
         const alt = cap => {
-            const rows = ((d.alternatives || {})[cap] || []).slice(0, 8);
+            const rows = ((d.alternatives || {})[cap] || []).slice(0, 14);
             if (!rows.length) return '<p class="text-sm text-muted">No other connected generator can price this.</p>';
             return '<table class="render-table" style="width:100%;"><tbody>' + rows.map(a => `<tr${a.current ? ' style="font-weight:600;"' : ''}>
-                <td>${esc(a.provider_label)} · ${esc(a.model || 'default')}${a.current ? ' (selected)' : ''}${a.needs_key ? ' <span class="badge" title="No API key for this account yet: priced so you can compare, but it cannot run until one is added in Setup">no key</span>' : ''}${a.delivers_less ? ` <span class="badge" style="background:var(--gl-warning);color:#111;" title="Cannot deliver ${esc(d.resolution.label)}">${cap === 'video' ? 'makes ' + esc(a.delivers_less) : 'smaller than asked'}</span>` : ''}</td>
+                <td>${esc(a.provider_label)} · ${esc(a.model || 'default')}${a.current ? ' (selected)' : ''}${a.needs_key ? ' <span class="badge" title="No API key for this account yet: priced so you can compare, but it cannot run until one is added in Setup">no key</span>' : ''}${a.connected === false ? ` <span class="badge" title="${esc(a.not_connected_why || '')}">not connected</span>` : ''}${a.inferred ? ' <span class="badge" title="Worked out from the vendor plan prices, not a published per-item rate">estimated</span>' : ''}${a.delivers_less ? ` <span class="badge" style="background:var(--gl-warning);color:#111;" title="Cannot deliver ${esc(d.resolution.label)}">${cap === 'video' ? 'makes ' + esc(a.delivers_less) : 'smaller than asked'}</span>` : ''}</td>
                 <td style="text-align:right;">${usd(a.usd)}</td><td style="text-align:right;white-space:nowrap;" class="text-muted">film ${usd(a.total)}</td>
-                <td>${a.current ? '' : `<button class="btn btn-secondary btn-sm" onclick="prodEstSet('${cap}', ${jsAttr(a.provider + '|' + (a.model || ''))})">Use</button>`}</td></tr>`).join('')
+                <td>${a.current || a.connected === false ? '' : `<button class="btn btn-secondary btn-sm" onclick="prodEstSet('${cap}', ${jsAttr(a.provider + '|' + (a.model || ''))})">Use</button>`}</td></tr>`).join('')
                 + '</tbody></table>';
         };
         const rt = d.runtime;
@@ -34620,6 +34625,8 @@ ${fountainText.slice(0, 50000)}`;
                   + `<br>first attempts only: ${usd(d.range.first_attempt.total)}` : ''))}
               ${card('Plates', t.plates, `${plateCount} pictures on ${esc(g.image && g.image.provider_label || '?')}`)}
               ${card('Storyboard', t.storyboard, `${board.count || 0} frames`)}
+              ${d.upscale ? card('Upscale', t.upscale || 0, d.upscale.usd == null ? esc(d.upscale.why || 'not priced')
+                  : `${Math.round(d.upscale.seconds)}s from ${esc(d.upscale.from)} to ${esc(d.upscale.to)} on ${esc(d.upscale.provider_label)}`) : ''}
               ${card('Footage', t.footage, `${Math.round(foot.seconds || 0)}s on ${esc(g.video && g.video.provider_label || '?')}${foot.per_second_usd ? ' · ' + usd(foot.per_second_usd) + '/s' : ''}`)}
             </div>
             <div class="card mb-16"><table class="render-table" style="width:100%;">
@@ -34631,6 +34638,8 @@ ${fountainText.slice(0, 50000)}`;
                     board.unit_usd == null ? esc(board.why || 'not priced') : usd(board.unit_usd), board.usd)}
                 ${row(`Footage <span class="text-muted">(${Math.round(foot.seconds || 0)}s${foot.takes !== 1 ? ' × ' + foot.takes + ' attempts' : ''})</span>`, foot.count || 0,
                     foot.downgraded ? foot.delivered + ' (asked ' + foot.size + ')' : (foot.resolution_tier || foot.size), foot.model, foot.per_second_usd ? usd(foot.per_second_usd) + '/s' : '', foot.usd)}
+                ${d.upscale && d.upscale.usd != null ? row('Upscale <span class="text-muted">(once)</span>', foot.count || 0,
+                    d.upscale.from + ' → ' + d.upscale.to, d.upscale.model, '', d.upscale.usd) : ''}
               </tbody></table></div>
             <p class="text-sm text-muted mb-16">Running time: ${rt ? Math.round(rt.seconds) + 's, from ' + esc(rt.source)
                 + (rt.range ? ` (likely; ${rt.range[0]}–${rt.range[1]}s)` : '') : 'unknown'}. Shots: ${esc(c.shot_source || '')}.</p>
@@ -34669,7 +34678,7 @@ ${fountainText.slice(0, 50000)}`;
                            >max ${esc(x.max_size)}</span>` : ''}
                     ${x.inferred ? '<span class="badge" title="Not published by the provider — inferred, and may be wrong">inferred</span>' : ''}
                     ${x.self_hosted ? '<span class="badge" title="No per-call charge. Zero because nobody bills for it, not because it is cheap.">self-hosted</span>' : ''}
-                    ${x.available ? '' : `<span class="badge" style="background:var(--gl-warning);" title="${esc(x.needs || '')}">no key</span>`}
+                    ${x.available ? '' : `<span class="badge" style="background:var(--gl-warning);" title="${esc(x.needs || '')}">${x.connected === false ? 'not connected' : 'no key'}</span>`}
                 </td>
                 <td class="text-sm text-muted" style="text-align:right;white-space:nowrap;">
                     ${usd(x.usd_per_unit)}<span class="text-muted">/${esc(x.unit)}</span>

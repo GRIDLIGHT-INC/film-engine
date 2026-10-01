@@ -36,6 +36,8 @@ const NOT_FFMPEG = {
     'tests/instrument-host.test.js|venv': 'starts the Python instrument sidecar',
     "tests/music-bundle.test.js|'tar'": 'unpacks a bundle with tar',
     "tests/music-rights.test.js|'zip'": 'builds an archive with zip',
+    "tests/room-scan.test.js|'xcrun'": 'finds and runs swiftc to compile the phone\'s wall geometry',
+    "tests/room-scan.test.js|path.join(dir, 'w')": 'runs that compiled geometry harness',
 };
 
 function jsFiles(dir, out = []) {

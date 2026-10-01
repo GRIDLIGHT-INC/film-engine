@@ -121,6 +121,16 @@ final class ScanStore: ObservableObject {
         reload()
     }
 
+    /// Remove one photo from a saved scan: its file and its entry.
+    func deletePhoto(_ scan: SavedScan, view: String) {
+        var s = scan
+        if let p = s.photos.first(where: { $0.view == view }) {
+            try? FileManager.default.removeItem(at: folder(scan.id).appendingPathComponent(p.file))
+        }
+        s.photos.removeAll { $0.view == view }
+        try? write(s)
+    }
+
     func delete(_ scan: SavedScan) {
         try? FileManager.default.removeItem(at: folder(scan.id))
         reload()
@@ -190,18 +200,27 @@ func postScan(_ endpoint: URL, body: Data, rooms: Int, photos: Int) async -> Roo
     }
 }
 
-// ── where to stand for each photograph ──────────────────────────────────────
+// ── which wall the phone is looking at ──────────────────────────────────────
 
-/// One wall to photograph: stand at `stand`, face `facing` (horizontal, unit).
-struct PhotoTarget: Identifiable {
+/*
+ * NO WALKING TO A SPOT. "I like the directions, but I would have to move
+ * through the wall: couldn't the app calculate from the distance from the wall
+ * which wall it is?" It can: every wall of the scan is a measured segment in
+ * the same AR space as the phone, so the ray the camera looks along hits one
+ * of them, at a distance and an angle. Stand wherever is comfortable, point at
+ * a wall, and the photo is filed to the wall it actually shows.
+ */
+struct PhotoTarget: Identifiable, Codable {
     let id: String
     let label: String
-    let stand: SIMD3<Float>
-    let facing: SIMD3<Float>
+    /// The wall's two ends on the floor plan (x, z), its inward normal, and how tall it is.
+    let a: SIMD2<Float>
+    let b: SIMD2<Float>
+    let inward: SIMD2<Float>
+    let centre: SIMD3<Float>
 }
 
-/// Across the room from every wall, at eye height, facing it. From the rooms as
-/// captured (session coordinates), so the targets and the phone share one world.
+/// Every wall of every room, as a target. Session coordinates, so the walls and the phone share one world.
 @available(iOS 17.0, *)
 func photoTargets(for rooms: [CapturedRoom]) -> [PhotoTarget] {
     var out: [PhotoTarget] = []
@@ -210,25 +229,47 @@ func photoTargets(for rooms: [CapturedRoom]) -> [PhotoTarget] {
         guard !walls.isEmpty else { continue }
         let centres = walls.map { SIMD3<Float>($0.transform.columns.3.x, $0.transform.columns.3.y, $0.transform.columns.3.z) }
         let mid = centres.reduce(SIMD3<Float>(repeating: 0), +) / Float(centres.count)
-        let floorY = walls.map { $0.transform.columns.3.y - $0.dimensions.y / 2 }.min() ?? 0
-        let names = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"]
+        let names = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
         var n = 0
-        for (i, w) in walls.enumerated() where w.dimensions.x >= 1.2 {
+        for (i, w) in walls.enumerated() where w.dimensions.x >= 1.0 {
             let c = centres[i]
-            var inward = SIMD3<Float>(mid.x - c.x, 0, mid.z - c.z)
-            let toMid = simd_length(inward)
-            guard toMid > 0.2 else { continue }
-            inward /= toMid
-            let back = max(1.2, min(toMid * 1.7, 6))
-            let stand = SIMD3<Float>(c.x + inward.x * back, floorY + 1.5, c.z + inward.z * back)
+            let along = SIMD2<Float>(w.transform.columns.0.x, w.transform.columns.0.z)
+            let dir = simd_length(along) > 0 ? simd_normalize(along) : SIMD2<Float>(1, 0)
+            let half = w.dimensions.x / 2
+            let a = SIMD2<Float>(c.x, c.z) - dir * half
+            let b = SIMD2<Float>(c.x, c.z) + dir * half
+            // The normal that points into the room (towards the room's middle).
+            var inward = SIMD2<Float>(-dir.y, dir.x)
+            if simd_dot(inward, SIMD2<Float>(mid.x - c.x, mid.z - c.z)) < 0 { inward = -inward }
             let label = rooms.count > 1
                 ? "Room \(r + 1), \(n < names.count ? names[n] : "next") wall"
                 : "The \(n < names.count ? names[n] : "next") wall"
-            out.append(PhotoTarget(id: "scan-r\(r + 1)-w\(n + 1)", label: label, stand: stand, facing: -inward))
+            out.append(PhotoTarget(id: "scan-r\(r + 1)-w\(n + 1)", label: label, a: a, b: b, inward: inward, centre: c))
             n += 1
         }
     }
     return out
+}
+
+/// The wall the camera's centre ray meets first, how far away, and how squarely (0° is straight on).
+func facedWall(_ targets: [PhotoTarget], from p: SIMD2<Float>, looking f: SIMD2<Float>) -> (target: PhotoTarget, distance: Float, angle: Float)? {
+    var best: (PhotoTarget, Float, Float)? = nil
+    for t in targets {
+        let e = t.b - t.a
+        let denom = f.x * e.y - f.y * e.x
+        if abs(denom) < 1e-5 { continue }
+        let w = t.a - p
+        let dist = (w.x * e.y - w.y * e.x) / denom      // along the camera ray
+        let u = (w.x * f.y - w.y * f.x) / denom          // along the wall, 0..1
+        guard dist > 0.2, u >= -0.02, u <= 1.02 else { continue }
+        // Only the side of the wall that faces into the room.
+        guard simd_dot(f, t.inward) < 0 else { continue }
+        if best == nil || dist < best!.1 {
+            let angle = acos(max(-1, min(1, simd_dot(-f, t.inward)))) * 180 / .pi
+            best = (t, dist, angle)
+        }
+    }
+    return best.map { (target: $0.0, distance: $0.1, angle: $0.2) }
 }
 
 // ── the session ─────────────────────────────────────────────────────────────
@@ -257,11 +298,54 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
     @Published var onMark = false
     @Published var flash = false
 
-    let scanId = UUID().uuidString
+    var scanId = UUID().uuidString
+    /// A saved scan being added to: its photos and walls are loaded, and the room is found again from its world map.
+    private(set) var resuming: SavedScan?
     private var timer: Timer?
     private let ci = CIContext()
 
     override init() { super.init() }
+
+    /// Add photos to a scan saved earlier: same walls, same coordinates, once the phone recognises the room.
+    convenience init(resume scan: SavedScan) {
+        self.init()
+        scanId = scan.id
+        resuming = scan
+        photos = scan.photos
+        if let data = try? Data(contentsOf: ScanStore.root.appendingPathComponent(scan.id).appendingPathComponent("targets.json")),
+           let saved = try? JSONDecoder().decode([PhotoTarget].self, from: data) {
+            targets = saved
+        }
+    }
+
+    /// Start the camera on the saved world map, so new photos land in the scan's own space.
+    func resume() {
+        let config = ARWorldTrackingConfiguration()
+        let mapURL = folder.appendingPathComponent("worldmap.arexperience")
+        if let data = try? Data(contentsOf: mapURL),
+           let map = try? NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data) {
+            config.initialWorldMap = map
+            relocalizing = true
+        } else {
+            message = "This scan was saved without its room map, so new photos cannot be lined up with it."
+        }
+        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
+        phase = .photos
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateGuide() }
+        }
+    }
+
+    /// True until the phone has recognised the saved room; photos taken before that would not line up.
+    @Published var relocalizing = false
+
+    /// Back from the photos to scanning rooms (a fresh scan only): the AR session and its space carry on.
+    func backToRooms() {
+        timer?.invalidate()
+        phase = .rooms
+        message = "\(rooms.count) room\(rooms.count == 1 ? "" : "s") scanned. Tap Scan another room, or Take photos."
+    }
     // RoomCaptureViewDelegate inherits NSCoding; this object is never archived.
     required init?(coder: NSCoder) { super.init() }
     nonisolated func encode(with coder: NSCoder) { }
@@ -303,6 +387,8 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
     func beginPhotos() {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         targets = photoTargets(for: rooms)
+        // Kept with the scan, so photos can be added later against the same walls.
+        if let data = try? JSONEncoder().encode(targets) { try? data.write(to: folder.appendingPathComponent("targets.json")) }
         phase = .photos
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
@@ -311,53 +397,68 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
         updateGuide()
     }
 
-    var nextTarget: PhotoTarget? { targets.first { t in !photos.contains { $0.view == t.id } } }
+    var wallsLeft: Int { targets.filter { t in !photos.contains { $0.view == t.id } }.count }
 
-    func skipTarget() {
-        guard let t = nextTarget else { return }
-        targets.removeAll { $0.id == t.id }
-        updateGuide()
-    }
+    /// The wall the phone faces now, if any, with its distance and angle.
+    @Published var facing: PhotoTarget?
 
     func updateGuide() {
-        guard let frame = arSession.currentFrame else { guide = "Waiting for the camera…"; onMark = false; return }
-        if case .limited = frame.camera.trackingState { guide = "Move the phone slowly so it can find its place again."; onMark = false; return }
+        guard let frame = arSession.currentFrame else { guide = "Waiting for the camera…"; onMark = false; facing = nil; return }
+        if case .limited(let reason) = frame.camera.trackingState {
+            guide = reason == .relocalizing
+                ? "Point at the room you scanned and move slowly until it recognises it."
+                : "Move the phone slowly so it can find its place again."
+            onMark = false; return
+        }
+        if relocalizing { relocalizing = false }
         if case .notAvailable = frame.camera.trackingState { guide = "Tracking lost. Point at the room you scanned."; onMark = false; return }
         let m = frame.camera.transform
-        let pos = SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
+        let pos = SIMD2<Float>(m.columns.3.x, m.columns.3.z)
         let fwd3 = -SIMD3<Float>(m.columns.2.x, m.columns.2.y, m.columns.2.z)
-        guard let t = nextTarget else {
-            guide = "Every wall is photographed. Take extra photos of anything detailed, then tap Done."
-            onMark = false
+        var f = SIMD2<Float>(fwd3.x, fwd3.z)
+        guard simd_length(f) > 0.05 else { guide = "Hold the phone upright, pointing at a wall."; onMark = false; facing = nil; return }
+        f = simd_normalize(f)
+        let done = Set(photos.map { $0.view })
+        let left = targets.filter { !done.contains($0.id) }
+        let tilt = asin(max(-1, min(1, fwd3.y))) * 180 / .pi
+
+        guard let hit = facedWall(targets, from: pos, looking: f) else {
+            facing = nil; onMark = false
+            guide = left.isEmpty ? "Every wall is photographed. Take extras of anything detailed, then tap Done."
+                : "Point at a wall. \(left.count) still to photograph." + turnHint(left, pos, f)
             return
         }
-        let d = SIMD3<Float>(t.stand.x - pos.x, 0, t.stand.z - pos.z)
-        let dist = simd_length(d)
-        var fwd = SIMD3<Float>(fwd3.x, 0, fwd3.z)
-        if simd_length(fwd) > 0.01 { fwd = simd_normalize(fwd) }
-        // Signed turn from where the phone looks to where it should look (left positive).
-        let cross = fwd.z * t.facing.x - fwd.x * t.facing.z
-        let turn = atan2(cross, simd_dot(fwd, t.facing)) * 180 / .pi
+        facing = hit.target
+        let isDone = done.contains(hit.target.id)
         var parts: [String] = []
-        if dist > 0.6 {
-            // Which way to walk, said relative to where the phone is facing.
-            let dn = simd_normalize(d)
-            let side = fwd.z * dn.x - fwd.x * dn.z
-            let ahead = simd_dot(fwd, dn)
-            let way = ahead > 0.7 ? "ahead" : ahead < -0.7 ? "behind you" : (side > 0 ? "to your left" : "to your right")
-            parts.append(String(format: "Walk %.1f m %@", dist, way))
-        }
-        if abs(turn) > 12 { parts.append(String(format: "turn %@ %.0f°", turn > 0 ? "left" : "right", abs(turn))) }
-        let tilt = asin(max(-1, min(1, fwd3.y))) * 180 / .pi
+        if hit.distance < 1.2 { parts.append(String(format: "step back (%.1f m away)", hit.distance)) }
+        if hit.angle > 35 { parts.append(String(format: "face it more squarely (%.0f° off)", hit.angle)) }
         if abs(tilt) > 15 { parts.append(tilt > 0 ? "tilt down a little" : "tilt up a little") }
-        onMark = parts.isEmpty
-        guide = onMark ? "\(t.label): good, take it." : "\(t.label): " + parts.joined(separator: ", ")
+        onMark = parts.isEmpty && !isDone
+        let head = String(format: "%@ · %.1f m", hit.target.label, hit.distance)
+        if isDone {
+            guide = "\(head): already photographed." + (left.isEmpty ? " All walls done." : turnHint(left, pos, f))
+        } else {
+            guide = parts.isEmpty ? "\(head): good, take it." : "\(head): " + parts.joined(separator: ", ")
+        }
+    }
+
+    /// Which way to turn, from where you stand, for the nearest wall still to photograph.
+    private func turnHint(_ left: [PhotoTarget], _ pos: SIMD2<Float>, _ f: SIMD2<Float>) -> String {
+        guard let next = left.min(by: { simd_distance(SIMD2($0.centre.x, $0.centre.z), pos) < simd_distance(SIMD2($1.centre.x, $1.centre.z), pos) }) else { return "" }
+        let to = SIMD2<Float>(next.centre.x, next.centre.z) - pos
+        guard simd_length(to) > 0.1 else { return "" }
+        let d = simd_normalize(to)
+        let turn = atan2(f.y * d.x - f.x * d.y, simd_dot(f, d)) * 180 / .pi
+        return abs(turn) < 15 ? " \(next.label) is ahead." : String(format: " Turn %@ %.0f° for %@.", turn > 0 ? "left" : "right", abs(turn), next.label.lowercased())
     }
 
     /// Keep the frame and the pose it was taken from, upright as the phone was held.
     func capture(extra: Bool) {
-        guard let frame = arSession.currentFrame else { return }
-        let view = extra ? "scan-extra-\(photos.filter { !$0.guided }.count + 1)" : (nextTarget?.id ?? "scan-extra-\(photos.count + 1)")
+        // Before the saved room is recognised, a pose would not line up with the scan.
+        guard !relocalizing, let frame = arSession.currentFrame else { return }
+        // Filed to the wall the camera actually shows; anything else is an extra.
+        let view = (!extra && facing != nil) ? facing!.id : "scan-extra-\(photos.filter { !$0.guided }.count + 1)"
         let portrait = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation.isPortrait ?? true
         let landscapeLeft = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation == .landscapeLeft
         var image = CIImage(cvPixelBuffer: frame.capturedImage)
@@ -388,7 +489,7 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
         let flat = cols.flatMap { [$0.x, $0.y, $0.z, $0.w] }
         photos.removeAll { $0.view == view }
         photos.append(ScanPhoto(view: view, file: file, cameraToWorld: flat, focalPx: fx,
-                                width: Int(width), height: Int(height), guided: !extra))
+                                width: Int(width), height: Int(height), guided: !extra && facing != nil))
         flash = true
         Task { try? await Task.sleep(nanoseconds: 150_000_000); flash = false }
         updateGuide()
@@ -398,6 +499,16 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
 
     /// Merge the rooms and write everything to the phone. Needs no connection.
     func save(name: String) async -> SavedScan? {
+        if var scan = resuming {
+            timer?.invalidate()
+            scan.photos = photos
+            if !name.trimmingCharacters(in: .whitespaces).isEmpty { scan.name = name }
+            do { try ScanStore.shared.write(scan) } catch { message = "Could not save: \(error.localizedDescription)"; return nil }
+            arSession.pause()
+            phase = .done
+            message = "Saved: \(scan.photos.count) photo\(scan.photos.count == 1 ? "" : "s") on \(scan.name)."
+            return scan
+        }
         guard !rooms.isEmpty else { return nil }
         timer?.invalidate()
         busy = true
@@ -409,6 +520,11 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
             let structure = try await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: rooms)
             try JSONEncoder().encode(structure).write(to: folder.appendingPathComponent("structure.json"))
             try? structure.export(to: folder.appendingPathComponent("scan.usdz"))
+            // The room map, so photos can be added later and still line up with the scan.
+            if let map = await currentWorldMap(),
+               let data = try? NSKeyedArchiver.archivedData(withRootObject: map, requiringSecureCoding: true) {
+                try? data.write(to: folder.appendingPathComponent("worldmap.arexperience"))
+            }
             let scan = SavedScan(id: scanId, name: name, createdAt: Date(), rooms: rooms.count, photos: photos, sent: nil)
             try ScanStore.shared.write(scan)
             arSession.pause()
@@ -422,11 +538,17 @@ final class RoomScanModel: NSObject, ObservableObject, RoomCaptureViewDelegate {
         }
     }
 
+    private func currentWorldMap() async -> ARWorldMap? {
+        await withCheckedContinuation { cont in
+            arSession.getCurrentWorldMap { map, _ in cont.resume(returning: map) }
+        }
+    }
+
     func cancel() {
         timer?.invalidate()
         if scanning { captureView.captureSession.stop() }
         arSession.pause()
-        if !FileManager.default.fileExists(atPath: folder.appendingPathComponent("scan.json").path) {
+        if resuming == nil && !FileManager.default.fileExists(atPath: folder.appendingPathComponent("scan.json").path) {
             try? FileManager.default.removeItem(at: folder)
         }
     }
@@ -457,11 +579,20 @@ struct RoomScanView: View {
     /// From the Previs page: send to its location as soon as it is saved. Nil: keep it on the phone.
     let request: RoomScanRequest?
     let done: (RoomScanResult) -> Void
-    @StateObject private var model = RoomScanModel()
+    @StateObject private var model: RoomScanModel
     @State private var name = ""
+    private let resuming: SavedScan?
+
+    init(request: RoomScanRequest?, resume: SavedScan? = nil, done: @escaping (RoomScanResult) -> Void) {
+        self.request = request
+        self.done = done
+        self.resuming = resume
+        _model = StateObject(wrappedValue: resume.map { RoomScanModel(resume: $0) } ?? RoomScanModel())
+    }
 
     var title: String {
         if let r = request, !r.location.isEmpty { return "Scan: \(r.location)" }
+        if let s = resuming { return "More photos: \(s.name)" }
         return "Scan a location"
     }
 
@@ -478,7 +609,7 @@ struct RoomScanView: View {
                 if model.phase == .photos {
                     Text(model.guide).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
                         .foregroundStyle(model.onMark ? .green : .primary)
-                    Text("\(model.photos.count) photo\(model.photos.count == 1 ? "" : "s") · \(max(0, model.targets.count - model.photos.filter { $0.guided }.count)) wall\(model.targets.count - model.photos.filter { $0.guided }.count == 1 ? "" : "s") to go. Hold the phone level at eye height.")
+                    Text("\(model.photos.count) photo\(model.photos.count == 1 ? "" : "s") · \(model.wallsLeft) wall\(model.wallsLeft == 1 ? "" : "s") to go. Stand anywhere, point at a wall, hold the phone level.")
                         .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 } else {
                     Text(model.message).font(.subheadline).multilineTextAlignment(.center)
@@ -489,6 +620,9 @@ struct RoomScanView: View {
             .padding(16)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
             .padding(16)
+        }
+        .onAppear {
+            if let r = resuming { name = r.name; model.resume() }
         }
     }
 
@@ -510,11 +644,11 @@ struct RoomScanView: View {
         case .photos:
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
-                    if model.nextTarget != nil {
-                        Button { model.capture(extra: false) } label: { Label("Take this wall", systemImage: "camera.fill") }
-                            .buttonStyle(.borderedProminent).tint(model.onMark ? .green : .blue)
-                        Button("Skip") { model.skipTarget() }.buttonStyle(.bordered)
+                    Button { model.capture(extra: false) } label: {
+                        Label(model.facing == nil ? "Take photo" : (model.photos.contains { $0.view == model.facing!.id } ? "Retake this wall" : "Take this wall"),
+                              systemImage: "camera.fill")
                     }
+                    .buttonStyle(.borderedProminent).tint(model.onMark ? .green : .blue)
                     Button { model.capture(extra: true) } label: { Label("Extra", systemImage: "plus.viewfinder") }
                         .buttonStyle(.bordered)
                 }
@@ -523,7 +657,12 @@ struct RoomScanView: View {
                     Button(request == nil ? "Done, save" : "Done, send") { Task { await finish() } }
                         .buttonStyle(.borderedProminent).tint(.green)
                 }
-                Button("Cancel") { model.cancel(); done(RoomScanResult(cancelled: true)) }.font(.footnote)
+                HStack(spacing: 16) {
+                    if resuming == nil {
+                        Button("Back to scanning rooms") { model.backToRooms() }.font(.footnote)
+                    }
+                    Button("Cancel") { model.cancel(); done(RoomScanResult(cancelled: true)) }.font(.footnote)
+                }
             }
         case .saving:
             EmptyView()
