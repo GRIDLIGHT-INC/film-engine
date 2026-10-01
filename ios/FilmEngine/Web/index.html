@@ -15369,10 +15369,16 @@ THREE.GLTFLoader = GLTFLoader;
         if (note) note.style.display = worldEngineOn() ? 'none' : '';
         if (!state.currentProject || !worldEngineOn()) return worldConsoleRender();
         try { if (!PREVIS.taxonomy) PREVIS.taxonomy = await api('/previs/taxonomy'); } catch (_) { /* the timeline shows its moves without it */ }
-        await worldLoadShots(state.currentProject.id);
+        await Promise.all([worldLoadShots(state.currentProject.id), worldLoadScoutable(state.currentProject.id)]);
         const shots = WORLD.shots || [];
+        if (WORLD.scout && (WORLD.scoutable || []).some(w => w.world.id === WORLD.scout.worldId)) {
+            return worldScoutSelect(WORLD.scout.worldId);
+        }
         const pick = WORLD.shotId && shots.some(s => s.id === WORLD.shotId) ? WORLD.shotId : (shots[0] && shots[0].id);
         if (pick) await worldRailSelect(pick);
+        // No shot yet, but a location has a set (a phone scan, a Blender
+        // build): open it to walk, rather than a console with nothing in it.
+        else if ((WORLD.scoutable || []).length) await worldScoutSelect(WORLD.scoutable[0].world.id);
         else worldConsoleRender();
     }
 
@@ -16135,6 +16141,7 @@ THREE.GLTFLoader = GLTFLoader;
      * moving between six shots cheap.
      */
     async function worldRailSelect(shotId) {
+        if (WORLD.scout) { WORLD.scout = null; WALK.on = false; WALK.from = null; WALK.moved = false; }
         WORLD.blocking = null;
         WORLD.pin = null;
         try { WORLD.blocking = await api(`/shots/${shotId}/previs`); } catch (_) { /* never blocked */ }
@@ -16864,6 +16871,13 @@ THREE.GLTFLoader = GLTFLoader;
     function worldDecisionsHtml() {
         const shot = (WORLD.shots || []).find(s => s.id === WORLD.shotId);
         const decisions = (WORLD.blocking && WORLD.blocking.decisions) || [];
+        if (!shot && WORLD.scout) {
+            return `<div class="pv-decisions"><span class="pv-shot-code">SET</span>
+                <span class="pv-shot-name">${esc(WORLD.scout.name)}</span>
+                <span class="pv-dim">Scouting: walk the set as the camera. Nothing is kept until you make a shot from a view.</span>
+                <div class="pv-spacer"></div>
+                <button class="pv-btn pv-primary" onclick="worldScoutMakeShot()">Make a shot from this camera</button></div>`;
+        }
         if (!shot) {
             return `<div class="pv-decisions"><span class="pv-dec-label">DECISIONS</span>
                 <span class="pv-dim">Pick a shot to see what is decided for it.</span></div>`;
@@ -16990,7 +17004,7 @@ THREE.GLTFLoader = GLTFLoader;
                   <div class="pv-seg">${worldModeButtonsHtml()}</div>
                   <button class="pv-btn${WALK.on ? ' pv-amber' : ''}" onclick="worldWalkToggle()"
                           title="Move through the set with the keyboard and mouse. Nothing is kept until you say so."
-                          ${WORLD.shotId ? '' : 'disabled'}>${WALK.on ? 'Walking' : 'Walk'}</button>
+                          ${WORLD.shotId || WORLD.scout ? '' : 'disabled'}>${WALK.on ? 'Walking' : 'Walk'}</button>
                   <span class="we-live" id="weCamSpec"></span>
                 </div>
                 <div class="pv-float pv-walkbar" id="weWalkBar">${worldWalkBarHtml()}</div>
@@ -17429,6 +17443,16 @@ THREE.GLTFLoader = GLTFLoader;
             MESHLOOK.scene.add(sun);
             MESHLOOK.sun = sun;
             MESHLOOK.camera = new T.PerspectiveCamera(40, 16 / 9, 0.02, 2000);
+            /*
+             * A WORK LIGHT ON THE CAMERA. Inside a room the sun is outside the
+             * walls and the sky light is the same on every wall, so a scanned
+             * office read as one flat grey from eye height. A soft light that
+             * travels with the camera shades each surface by its angle and its
+             * distance, which is what makes a room readable while walking it.
+             * It steps back whenever the shot has its own lighting rig.
+             */
+            MESHLOOK.work = new T.PointLight(0xfff4e6, 0.45, 0, 1.2);
+            MESHLOOK.scene.add(MESHLOOK.work);
         }
         const box = frame.getBoundingClientRect();
         MESHLOOK.renderer.setSize(Math.max(2, Math.round(box.width)), Math.max(2, Math.round(box.height)), false);
@@ -17482,6 +17506,10 @@ THREE.GLTFLoader = GLTFLoader;
             worldAimCamera(cam, p, window.THREE);
         }
         meshLookRig();
+        if (MESHLOOK.work) {
+            MESHLOOK.work.position.copy(cam.position);
+            MESHLOOK.work.visible = !MESHLOOK.rig;
+        }
         MESHLOOK.renderer.render(MESHLOOK.scene, cam);
     }
 
@@ -17601,6 +17629,24 @@ THREE.GLTFLoader = GLTFLoader;
         worldSplatRenderOnce();
         const bar = document.getElementById('weWalkBar');
         if (bar) bar.innerHTML = worldWalkBarHtml();
+        worldOperateRefreshValues();
+    }
+
+    /*
+     * CAMERA OPERATE FOLLOWS THE WALK. Every move -- a key, the wheel, a drag,
+     * a nudge -- rewrites the panel's numbers in place, so the right panel
+     * always says where the camera is standing. In place rather than a full
+     * render, which would rebuild the canvas the gesture is on.
+     */
+    function worldOperateRefreshValues() {
+        if (typeof document === 'undefined' || !document.querySelectorAll) return;
+        for (const a of OPERATE_SCRUB) {
+            const v = worldOperateValue(a.id);
+            document.querySelectorAll(`.we-scrub[data-scrub="${a.id}"]`).forEach(n => {
+                if (n.classList && n.classList.contains('dragging')) return;
+                n.textContent = v == null ? '—' : v.toFixed(a.fmt);
+            });
+        }
     }
 
     /*
@@ -17638,7 +17684,7 @@ THREE.GLTFLoader = GLTFLoader;
         if (!target.closest('#weFrame')) return false;
         if (target.closest('.pv-float, .pv-btn, button, input, select, textarea')) return false;
         const vm = worldViewMode();
-        return vm !== 'plan' && vm !== 'pano' && !!WORLD.shotId;
+        return vm !== 'plan' && vm !== 'pano' && (!!WORLD.shotId || !!WORLD.scout);
     }
     document.addEventListener('wheel', e => {
         if (!worldGestureView(e.target)) return;
@@ -17711,6 +17757,10 @@ THREE.GLTFLoader = GLTFLoader;
         const f = Number(WORLD.version && WORLD.version.scale_factor);
         const k = Number.isFinite(f) && f > 0 ? f : null;
         const at = c && k ? c.position.map(n => (n * k).toFixed(2)).join(' / ') + ' m' : '';
+        if (WORLD.scout) {
+            return `<span class="we-live">SCOUTING ${esc(WORLD.scout.name)} · W/S A/D R/F · arrows or drag to turn · Shift faster${at ? ' · ' + esc(at) : ''}</span>
+            <button class="pv-btn pv-primary" onclick="worldScoutMakeShot()">Make a shot from this camera</button>`;
+        }
         return `<span class="we-live">WALK · W/S A/D R/F · arrows or drag to turn · Shift faster${at ? ' · ' + esc(at) : ''}</span>
             <button class="pv-btn pv-primary" onclick="worldWalkKeep()"${WALK.moved ? '' : ' disabled'}>Use this camera</button>
             <button class="pv-btn" onclick="worldWalkUndo()"${WALK.moved ? '' : ' disabled'}>Put it back</button>`;
@@ -17764,6 +17814,118 @@ THREE.GLTFLoader = GLTFLoader;
     window.worldWalkToggle = worldWalkToggle;
     window.worldWalkKeep = worldWalkKeep;
     window.worldWalkUndo = worldWalkUndo;
+
+    /*
+     * SCOUTING A LOCATION. Previs belongs to shots, so a location whose set
+     * exists (a phone scan, a Blender build) and no shot yet was visible only
+     * as a 3D asset. Scouting opens the location's newest set version with a
+     * free camera: walk it, look, choose an angle, and "Make a shot from this
+     * camera" turns the view into a shot in a scene at that location, pinned
+     * to this version, with the camera saved on it. Nothing is written until
+     * then.
+     */
+    async function worldLoadScoutable(projectId) {
+        WORLD.scoutable = [];
+        try {
+            const [ws, ls] = await Promise.all([
+                api(`/projects/${projectId}/worlds`),
+                api(`/projects/${projectId}/locations`).catch(() => ({ locations: [] })),
+            ]);
+            const names = new Map(((ls && ls.locations) || []).map(l => [l.id, l.name]));
+            WORLD.scoutable = scoutableWorlds((ws && ws.worlds) || [], names);
+        } catch (_) { WORLD.scoutable = []; }
+    }
+
+    /** The worlds a person can walk: those with a version, newest version first. */
+    function scoutableWorlds(worlds, names) {
+        return worlds.map(w => {
+            const vs = (w.versions || []).slice().sort((a, b) => (b.version || 0) - (a.version || 0));
+            if (!vs.length) return null;
+            return { world: w, version: vs[0], name: (w.location_id && names.get(w.location_id)) || w.name || 'Location' };
+        }).filter(Boolean);
+    }
+
+    async function worldScoutSelect(worldId) {
+        const s = (WORLD.scoutable || []).find(x => x.world.id === worldId);
+        if (!s) return;
+        WORLD.shotId = null;
+        WORLD.pin = null;
+        WORLD.scout = { worldId, versionId: s.version.id, locationId: s.world.location_id || null, name: s.name };
+        WORLD.world = s.world;
+        WORLD.version = s.version;
+        WORLD.blocking = { blocking: { camera: null, subjects: [] }, decisions: [], scout: true };
+        if (WORLD.geometryFor !== s.version.id) {
+            WORLD.geometry = null;
+            WORLD.geometryFor = s.version.id;
+            try { WORLD.geometry = await api(`/world-versions/${s.version.id}/geometry?budget=250000`); }
+            catch (_) { WORLD.geometry = null; }
+        }
+        WALK.on = true; WALK.moved = false;
+        WALK.from = { position: [0, 0, 0], rotation: [0, 0, 0], saved: false };
+        const start = scoutStartCamera(WORLD.geometry);
+        if (start) {
+            // /geometry is already in metres; the stored camera is divided by the scale.
+            const k = Number(s.version.scale_factor) > 0 ? Number(s.version.scale_factor) : 1;
+            WORLD.blocking.blocking.camera = { position: start.position.map(n => n / k), rotation: start.rotation };
+        }
+        worldWalkCamera();
+        worldConsoleRender();
+        setStatus(`Scouting ${s.name}: walk it with W/S/A/D or the mouse; "Make a shot from this camera" keeps a view.`);
+    }
+
+    /** The next free shot code in a scene: 1A, 1B, ... */
+    function scoutShotCode(sceneNumber, taken) {
+        const used = new Set((taken || []).map(c => String(c).toUpperCase()));
+        for (let i = 0; i < 26 * 27; i++) {
+            const letters = i < 26 ? String.fromCharCode(65 + i)
+                : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26));
+            const code = `${sceneNumber}${letters}`;
+            if (!used.has(code.toUpperCase())) return code;
+        }
+        return `${sceneNumber}X${Date.now() % 1000}`;
+    }
+
+    /** The scene a scouted shot belongs in: one at this location, by its heading. */
+    function scoutSceneFor(scenes, locationName) {
+        const want = String(locationName || '').trim().toUpperCase();
+        const at = (scenes || []).filter(sc => sc.status !== 'removed');
+        return at.find(sc => String(sc.location || '').trim().toUpperCase() === want)
+            || at.find(sc => want && String(sc.location || '').toUpperCase().includes(want))
+            || null;
+    }
+
+    async function worldScoutMakeShot() {
+        const sc = WORLD.scout;
+        const c = worldWalkCamera();
+        if (!sc || !c || !state.currentProject) return;
+        let scenes = [];
+        try { scenes = ((await api(`/projects/${state.currentProject.id}/scenes`)) || {}).scenes || []; } catch (_) { scenes = []; }
+        const scene = scoutSceneFor(scenes, sc.name);
+        if (!scene) {
+            return setStatus(`No scene is set at ${sc.name} yet. Write one in the screenplay (a heading such as `
+                + `"INT. ${String(sc.name).toUpperCase()} - DAY"), and this camera can become its shot. You can keep walking meanwhile.`, true);
+        }
+        const taken = (WORLD.shots || []).filter(x => x.scene_id === scene.id).map(x => x.shot_code);
+        const code = scoutShotCode(scene.scene_number, taken);
+        try {
+            const made = await api('/shots', { method: 'POST', body: JSON.stringify({
+                scene_id: scene.id,
+                cards: [{ shot_code: code, description: `Chosen by walking the ${sc.name} set in Previs.` }],
+            }) });
+            const shot = made && made.shots && made.shots[0];
+            if (!shot) throw new Error('the shot was not created');
+            await api(`/shots/${shot.id}/world`, { method: 'POST', body: JSON.stringify({ world_version_id: sc.versionId }) });
+            await api(`/shots/${shot.id}/previs`, { method: 'PUT', body: JSON.stringify({
+                camera: { position: c.position.slice(), rotation: (c.rotation || [0, 0, 0]).slice(), focalMm: WORLD.lens || 35 },
+            }) });
+            WORLD.scout = null; WALK.on = false; WALK.from = null; WALK.moved = false;
+            await worldLoadShots(state.currentProject.id);
+            await worldRailSelect(shot.id);
+            setStatus(`Shot ${code} made from this camera, in scene ${scene.scene_number} at ${sc.name}. Apply it to the card when you are happy with it.`);
+        } catch (err) { setStatus('Could not make the shot: ' + err.message, true); }
+    }
+    window.worldScoutSelect = worldScoutSelect;
+    window.worldScoutMakeShot = worldScoutMakeShot;
 
     /*
      * EXPLORE, RENDERED. Each accepted camera is drawn through its own lens
@@ -18337,10 +18499,20 @@ THREE.GLTFLoader = GLTFLoader;
             panel.appendChild(box);
         }
         const shots = WORLD.shots || [];
-        const sig = shots.map(s => s.id).join(',') + '|' + WORLD.shotId;
+        const scout = WORLD.scoutable || [];
+        const sig = shots.map(s => s.id).join(',') + '|' + WORLD.shotId + '|'
+            + scout.map(x => x.world.id).join(',') + '|' + (WORLD.scout ? WORLD.scout.worldId : '');
         if (box.dataset.sig === sig) return;
         box.dataset.sig = sig;
-        box.innerHTML = `
+        box.innerHTML = `${scout.length ? `
+            <div class="nav-group-label"><span>Locations · walk the set</span><span class="nav-group-count">${scout.length}</span></div>
+            <div class="fe-panel-shotlist">${scout.map(x => `
+              <button class="pv-shot${WORLD.scout && WORLD.scout.worldId === x.world.id ? ' active' : ''}" onclick="worldScoutSelect('${x.world.id}')"
+                      title="Walk this location's set with a free camera; make a shot from any view">
+                <span class="pv-shot-id">SET</span>
+                <span class="pv-shot-loc">${esc(x.name)} · v${esc(String(x.version.version || 1))}</span>
+              </button>`).join('')}
+            </div>` : ''}
             <div class="nav-group-label"><span>Shots</span><span class="nav-group-count">${shots.length}</span></div>
             <div class="fe-panel-shotlist">${shots.length ? shots.map(sh => `
               <button class="pv-shot${sh.id === WORLD.shotId ? ' active' : ''}" onclick="worldRailSelect('${sh.id}')">
@@ -18710,6 +18882,8 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     function worldSetLens(mm) {
+        // Scouting: the lens is part of the view being chosen, kept with the shot.
+        if (WORLD.scout) { worldOperateLens(mm); return worldConsoleRender(); }
         if (WORLD.shotId && WORLD.blocking && WORLD.blocking.blocking) {
             worldOperateLens(mm);
             return worldWalkKeep();
@@ -18858,6 +19032,81 @@ THREE.GLTFLoader = GLTFLoader;
     }
 
     /** A standing eye in the middle of the world, looking down its long axis. */
+    /*
+     * WHERE A SCOUT STANDS. A scanned location is not one box: The Lodgers'
+     * office came back as 26 walls, and the middle of its bounding box was a
+     * pocket 40 cm from a wall, so walking it opened on one flat slab. The
+     * collider is sliced at eye height and at desk height; a spot counts only
+     * if a ray from it hits a wall in every direction (inside, not out in the
+     * empty corner of an L), the most open such spot is chosen, and the camera
+     * faces the longest clear view. Null when the geometry says nothing.
+     */
+    function scoutStartCamera(geo) {
+        const b = geo && geo.bounds;
+        const V = geo && geo.vertices, Tr = geo && geo.triangles;
+        if (!b || !Array.isArray(V) || !Array.isArray(Tr) || !Tr.length) return null;
+        const floor = b.min[1];
+        const eye = floor + 1.6, desk = floor + 0.9;
+        const slice = h => {
+            const segs = [];
+            for (const t of Tr) {
+                const p = t.map(i => V[i]);
+                if (p.some(q => !q)) continue;
+                const pts = [];
+                for (let e = 0; e < 3; e++) {
+                    const a = p[e], c = p[(e + 1) % 3];
+                    if ((a[1] - h) * (c[1] - h) < 0) {
+                        const u = (h - a[1]) / (c[1] - a[1]);
+                        pts.push([a[0] + u * (c[0] - a[0]), a[2] + u * (c[2] - a[2])]);
+                    }
+                }
+                if (pts.length === 2) segs.push(pts);
+            }
+            return segs;
+        };
+        const eyeSegs = slice(eye), all = eyeSegs.concat(slice(desk));
+        if (!eyeSegs.length) return null;
+        const segDist = (x, z, s) => {
+            const [a, c] = s, dx = c[0] - a[0], dz = c[1] - a[1];
+            const L = dx * dx + dz * dz || 1e-9;
+            const u = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L));
+            return Math.hypot(x - a[0] - u * dx, z - a[1] - u * dz);
+        };
+        const ray = (x, z, dx, dz, segs) => {
+            let best = Infinity;
+            for (const [a, c] of segs) {
+                const ex = c[0] - a[0], ez = c[1] - a[1];
+                const den = dx * ez - dz * ex;
+                if (Math.abs(den) < 1e-9) continue;
+                const t = ((a[0] - x) * ez - (a[1] - z) * ex) / den;
+                const u = ((a[0] - x) * dz - (a[1] - z) * dx) / den;
+                if (t > 1e-6 && u >= 0 && u <= 1 && t < best) best = t;
+            }
+            return best;
+        };
+        const dirs = n => Array.from({ length: n }, (_, i) => [Math.sin(i * 2 * Math.PI / n), Math.cos(i * 2 * Math.PI / n)]);
+        const eight = dirs(8);
+        const step = Math.max(0.2, Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]) / 30);
+        let pick = null;
+        for (let x = b.min[0] + step / 2; x < b.max[0]; x += step) {
+            for (let z = b.min[2] + step / 2; z < b.max[2]; z += step) {
+                if (!eight.every(([dx, dz]) => Number.isFinite(ray(x, z, dx, dz, eyeSegs)))) continue;
+                let clear = Infinity;
+                for (const sg of all) { clear = Math.min(clear, segDist(x, z, sg)); if (clear < (pick ? pick.clear : 0)) break; }
+                if (!pick || clear > pick.clear) pick = { x, z, clear };
+            }
+        }
+        if (!pick) return null;
+        let view = null;
+        for (const [dx, dz] of dirs(48)) {
+            const d = ray(pick.x, pick.z, dx, dz, eyeSegs);
+            if (Number.isFinite(d) && (!view || d > view.d)) view = { dx, dz, d };
+        }
+        if (!view) return null;
+        const yaw = Math.atan2(-view.dx, -view.dz) * 180 / Math.PI;
+        return { position: [pick.x, eye, pick.z], rotation: [yaw, -4, 0], clear: pick.clear, view: view.d };
+    }
+
     function worldDefaultCamera(geo) {
         const b = geo && geo.bounds;
         if (!b || !Array.isArray(b.min) || !Array.isArray(b.max)) return null;
