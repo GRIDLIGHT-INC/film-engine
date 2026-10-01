@@ -302,12 +302,19 @@ function estimateProduction(projectId, opts = {}) {
 
     // What the same work costs on every other connected generator, at this size.
     const alternatives = { image: [], video: [] };
+    const excluded = [];
     if (opts.alternatives !== false) {
         for (const cap of ['image', 'video']) {
             for (const adapter of providers.list()) {
                 if (!(adapter.capabilities || []).includes(cap)) continue;
-                if (adapter.requiresKey && !providers.isProviderConfigured(adapter.id)) continue;
-                if (adapter.id === 'gridlight' && !providers.localGatewayEnabled()) continue;
+                // A generator with no key is still priced, and marked: "this one is half the
+                // price if you sign up" is part of the decision. A switched-off local gateway
+                // is not a choice at all, and says so in `excluded`.
+                if (adapter.id === 'gridlight' && !providers.localGatewayEnabled()) {
+                    excluded.push({ capability: cap, provider: adapter.id, why: 'the local Gridlight gateway is switched off' });
+                    continue;
+                }
+                const needsKey = !!(adapter.requiresKey && !providers.isProviderConfigured(adapter.id));
                 const models = providers.modelIdsFor(adapter, cap) || [null];
                 for (const model of models) {
                     const gen = chooseGenerator(cap, config, { provider: adapter.id, model });
@@ -315,8 +322,8 @@ function estimateProduction(projectId, opts = {}) {
                     const p = priceWork(work, cap === 'image' ? gen : imageGen, cap === 'video' ? gen : videoGen, raster, takes);
                     const usd = cap === 'image' ? round2(p.totals.plates + p.totals.storyboard) : p.totals.footage;
                     const ok = cap === 'image' ? (p.priced.plates && p.priced.storyboard) : p.priced.footage;
-                    if (!ok) continue;
-                    alternatives[cap].push({ provider: adapter.id, provider_label: adapter.label || adapter.id, model,
+                    if (!ok) { excluded.push({ capability: cap, provider: adapter.id, model, why: 'could not be priced from the rate book' }); continue; }
+                    alternatives[cap].push({ needs_key: needsKey, provider: adapter.id, provider_label: adapter.label || adapter.id, model,
                         usd, total: p.totals.total, delivers_less: p.delivered[cap],
                         // The model actually priced, so "its default model" is still recognised.
                         current: gen.provider === (cap === 'image' ? imageGen : videoGen).provider
@@ -347,6 +354,7 @@ function estimateProduction(projectId, opts = {}) {
         totals: priced.totals,
         priced: priced.priced,
         alternatives,
+        excluded,
         notes: [
             ...priced.notes,
             'First attempts at published list rates. Raise "takes" for the regenerations you expect; a refused generation is not billed.',

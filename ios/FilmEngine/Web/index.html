@@ -34607,7 +34607,7 @@ ${fountainText.slice(0, 50000)}`;
             const rows = ((d.alternatives || {})[cap] || []).slice(0, 8);
             if (!rows.length) return '<p class="text-sm text-muted">No other connected generator can price this.</p>';
             return '<table class="render-table" style="width:100%;"><tbody>' + rows.map(a => `<tr${a.current ? ' style="font-weight:600;"' : ''}>
-                <td>${esc(a.provider_label)} · ${esc(a.model || 'default')}${a.current ? ' (selected)' : ''}${a.delivers_less ? ` <span class="badge" style="background:var(--gl-warning);color:#111;" title="Cannot deliver ${esc(d.resolution.label)}">${cap === 'video' ? 'makes ' + esc(a.delivers_less) : 'smaller than asked'}</span>` : ''}</td>
+                <td>${esc(a.provider_label)} · ${esc(a.model || 'default')}${a.current ? ' (selected)' : ''}${a.needs_key ? ' <span class="badge" title="No API key for this account yet: priced so you can compare, but it cannot run until one is added in Setup">no key</span>' : ''}${a.delivers_less ? ` <span class="badge" style="background:var(--gl-warning);color:#111;" title="Cannot deliver ${esc(d.resolution.label)}">${cap === 'video' ? 'makes ' + esc(a.delivers_less) : 'smaller than asked'}</span>` : ''}</td>
                 <td style="text-align:right;">${usd(a.usd)}</td><td style="text-align:right;white-space:nowrap;" class="text-muted">film ${usd(a.total)}</td>
                 <td>${a.current ? '' : `<button class="btn btn-secondary btn-sm" onclick="prodEstSet('${cap}', ${jsAttr(a.provider + '|' + (a.model || ''))})">Use</button>`}</td></tr>`).join('')
                 + '</tbody></table>';

@@ -152,3 +152,17 @@ test('the route, the tool and the Budget tab serve it, free', async () => {
     assert.ok(/prodEstSet\('resolution'/.test(HTML) && /prodEstSet\('image'/.test(HTML) && /prodEstSet\('video'/.test(HTML),
         'the tab cannot change the resolution or a generator');
 });
+
+test('the set is the registry\'s: every plate kind, and every image and video adapter priced or named', () => {
+    const { PLATE_KINDS } = require('../lib/image-standard');
+    assert.deepEqual(Object.keys(E.DEFAULT_VIEWS).sort(), [...PLATE_KINDS].sort(), 'a plate kind is not counted');
+    const id = project({ shots: [5000] });
+    const d = E.estimateProduction(id);
+    assert.deepEqual(d.lines.filter(l => l.category === 'plates').map(l => l.kind).sort(), [...PLATE_KINDS].sort());
+    for (const cap of ['image', 'video']) {
+        for (const a of providers.list().filter(x => (x.capabilities || []).includes(cap))) {
+            const listed = d.alternatives[cap].some(r => r.provider === a.id) || d.excluded.some(x => x.provider === a.id && x.capability === cap);
+            assert.ok(listed, `${cap} adapter ${a.id} is neither priced nor named as excluded`);
+        }
+    }
+});
