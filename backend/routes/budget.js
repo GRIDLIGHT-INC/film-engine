@@ -5,6 +5,7 @@
  * GET    /film/projects/:id/budget/ledger   — paginated cost entries
  * GET    /film/projects/:id/budget/forecast  — spend forecast
  * PUT    /film/projects/:id/budget/limit    — set budget limit
+ * GET    /film/projects/:id/budget/production — free: plates, storyboard and footage priced on this project's generators
  * DELETE /film/budget/:id                   — delete cost entry
  * GET    /film/projects/:id/spend           — AI spend: units, money, per minute
  * GET    /film/projects/:id/spend/usage     — the raw usage-event ledger
@@ -34,6 +35,33 @@ const VALID_COST_TYPES = [
     'post_production', 'model3d_generation'
 ];
 
+/**
+ * GET /film/projects/:id/budget/production — free: what the plates, the storyboard
+ * and the footage will cost on the generators this project would use, at its
+ * resolution, or at another resolution and on other generators to compare.
+ */
+function productionEstimate(req, res, projectId, query) {
+    const q = query || {};
+    const n = v => (v === undefined || v === '' ? undefined : Number(v));
+    try {
+        const out = require('../lib/production-estimate').estimateProduction(projectId, {
+            image_provider: q.image_provider || undefined, image_model: q.image_model || undefined,
+            video_provider: q.video_provider || undefined, video_model: q.video_model || undefined,
+            resolution: q.resolution || undefined,
+            views: { character: n(q.character_views), location: n(q.location_views), prop: n(q.prop_views) },
+            takes: { plates: n(q.takes_plates), storyboard: n(q.takes_storyboard), footage: n(q.takes_footage) },
+            shot_seconds: n(q.shot_seconds), runtime_seconds: n(q.runtime_seconds),
+            alternatives: q.alternatives !== 'false',
+        });
+        if (!out) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Project not found' })); }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(out));
+    } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: err.message }));
+    }
+}
+
 function handleBudget(req, res, urlParts, query) {
     // /film/projects/:id/budget[/ledger|/forecast|/limit]
     if (urlParts[1] === 'projects' && urlParts[3] === 'budget') {
@@ -45,6 +73,7 @@ function handleBudget(req, res, urlParts, query) {
         if (sub === 'ledger' && req.method === 'GET') return listCostEntries(req, res, projectId, query);
         if (sub === 'forecast' && req.method === 'GET') return budgetForecast(req, res, projectId);
         if (sub === 'limit' && req.method === 'PUT') return setBudgetLimit(req, res, projectId);
+        if (sub === 'production' && req.method === 'GET') return productionEstimate(req, res, projectId, query);
 
         if (!sub) {
             if (req.method === 'GET') return budgetSummary(req, res, projectId);

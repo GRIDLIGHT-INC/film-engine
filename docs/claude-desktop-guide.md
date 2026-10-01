@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**420 tools, 83 families.** Everything the app can do, you can ask for in a
+**421 tools, 83 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -1235,7 +1235,7 @@ The self-hosted models (MiniMax H3, FLUX.2 [dev], Fish Audio S2 Pro, Stable Audi
 ### What it actually cost
 
 `spend_report` · `spend_usage` · `spend_backfill` · `spend_rates` · `spend_compare` ·
-`spend_record`
+`spend_record` · `budget_production_estimate`
 
 Every provider call is metered automatically — nothing to enter by hand.
 `spend_report` gives dollars *and* the provider's own units (credits at Meshy
@@ -1265,6 +1265,18 @@ and marked rather than hidden, because "this one is half the price if you sign
 up" is part of the decision. Cheapest is not best — each row carries the tier
 it serves, and a draft model exists to be rolled repeatedly while a precision
 one exists to be right once.
+
+`budget_production_estimate` answers the question before the film is made:
+what will its plates, storyboard and footage cost. It counts the work from the
+project (every character, location and prop times the views its sheet holds,
+one frame per shot, the footage at each shot's own length, or the screenplay's
+measured screen time when there are no shots yet) and prices it on the
+generators this project would use, at its resolution. Pass another `resolution`
+or another image or video provider to see the difference; the answer
+also lists the same work on every connected generator, and says when one cannot
+deliver the size asked for. Free, first attempts only (raise `takes_*`), and
+voice, music and upscaling are not in it. The Budget page's **Film Estimate**
+tab is the same estimate.
 
 `spend_backfill` reconstructs what a project spent *before* metering existed, by
 pricing the assets already on record. It is a floor: a generation that failed

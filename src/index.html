@@ -6797,6 +6797,7 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                 <h2>Budget</h2>
                 <div class="tab-bar" id="budgetTabs">
                     <button class="tab-btn active" data-tab="spend" onclick="switchBudgetTab('spend')">AI Spend</button>
+                    <button class="tab-btn" data-tab="film" onclick="switchBudgetTab('film')">Film Estimate</button>
                     <button class="tab-btn" data-tab="tracking" onclick="switchBudgetTab('tracking')">Ledger</button>
                     <button class="tab-btn" data-tab="compare" onclick="switchBudgetTab('compare')">Compare Generators</button>
                     <button class="tab-btn" data-tab="rates" onclick="switchBudgetTab('rates')">Rates</button>
@@ -6821,6 +6822,13 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                 <div id="spendOverTime" class="mb-16"></div>
                 <div id="spendByModel" class="mb-16"></div>
                 <div id="spendByShot" class="mb-16"></div>
+            </div>
+
+            <!-- Film Estimate Tab — plates, storyboard and footage for THIS film, priced before anything is made -->
+            <div id="budgetTabFilm" class="budget-tab-content" style="display:none;">
+                <p class="text-sm text-muted mb-16">What the plates, the storyboard and the footage of this film will cost, counted from the project and priced on the generator each would use, at the project's resolution. Change the resolution or a generator to see the difference. Free: nothing is generated.</p>
+                <div id="prodEstControls" class="mb-16"></div>
+                <div id="prodEstResult"></div>
             </div>
 
             <!-- Compare Tab — which generator to use, priced per unit of real work -->
@@ -34317,6 +34325,142 @@ ${fountainText.slice(0, 50000)}`;
      * distinction the cheapest two image models differ by, flattened away by
      * the formatter.
      */
+    /*
+     * THE FILM ESTIMATE. Counted from the project (subjects x their views, one
+     * frame per shot, the footage's own length) and priced through the same
+     * meters that bill a real generation, so changing the resolution or a
+     * generator here shows exactly the difference it would make. The choices
+     * live in PROD_EST and are sent as the query; the server owns every number.
+     */
+    const PROD_EST = { params: {} };
+
+    async function loadProductionEstimate() {
+        if (!state.currentProject) return;
+        const out = document.getElementById('prodEstResult');
+        if (!out) return;
+        out.innerHTML = '<p class="text-sm text-muted">Counting and pricing…</p>';
+        const q = Object.entries(PROD_EST.params).filter(([, v]) => v !== '' && v != null)
+            .map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+        try {
+            const d = await api('/projects/' + state.currentProject.id + '/budget/production' + (q ? '?' + q : ''));
+            PROD_EST.last = d;
+            renderProductionEstimateControls(d);
+            renderProductionEstimate(d);
+        } catch (err) {
+            out.innerHTML = '<p class="text-sm">Could not estimate: ' + esc(err.message) + '</p>';
+        }
+    }
+
+    /** One choice changed: keep it and price again. */
+    function prodEstSet(key, value) {
+        if (key === 'image' || key === 'video') {
+            const [provider, model] = String(value || '').split('|');
+            PROD_EST.params[key + '_provider'] = provider || '';
+            PROD_EST.params[key + '_model'] = model || '';
+        } else {
+            PROD_EST.params[key] = value;
+        }
+        loadProductionEstimate();
+    }
+
+    function prodEstReset() {
+        PROD_EST.params = {};
+        loadProductionEstimate();
+    }
+
+    function renderProductionEstimateControls(d) {
+        const el = document.getElementById('prodEstControls');
+        if (!el) return;
+        const g = d.generators || {};
+        const optFor = cap => {
+            const cur = g[cap] || {};
+            const curKey = (cur.provider || '') + '|' + (cur.model || '');
+            const rows = (d.alternatives && d.alternatives[cap]) || [];
+            const seen = new Set();
+            const opts = [];
+            const add = (key, label) => { if (seen.has(key)) return; seen.add(key); opts.push(`<option value="${esc(key)}" ${key === curKey ? 'selected' : ''}>${esc(label)}</option>`); };
+            add(curKey, `${cur.provider_label || cur.provider || 'none'} · ${cur.model || 'its default model'}`);
+            for (const a of rows) add(a.provider + '|' + (a.model || ''), `${a.provider_label} · ${a.model || 'default'} — ${usd(a.usd)}`);
+            return opts.join('');
+        };
+        const num = (key, label, val, help) => `<label class="text-sm" style="display:flex;flex-direction:column;gap:4px;">
+            <span class="text-muted">${esc(label)}</span>
+            <input type="number" min="0" step="1" value="${esc(String(val))}" style="width:90px;" title="${esc(help || '')}"
+                   onchange="prodEstSet('${key}', this.value)"></label>`;
+        const c = d.counts || {};
+        el.innerHTML = `<div class="card" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
+            <label class="text-sm" style="display:flex;flex-direction:column;gap:4px;"><span class="text-muted">Resolution</span>
+              <select onchange="prodEstSet('resolution', this.value)">${(d.resolutions || []).map(r =>
+                `<option value="${esc(r.id)}" ${r.id === d.resolution.id ? 'selected' : ''}>${esc(r.label)}${d.project_resolution && r.id === d.resolution.id && !PROD_EST.params.resolution ? ' (project)' : ''}</option>`).join('')}</select></label>
+            <label class="text-sm" style="display:flex;flex-direction:column;gap:4px;min-width:240px;"><span class="text-muted">Plates and storyboard</span>
+              <select onchange="prodEstSet('image', this.value)">${optFor('image')}</select></label>
+            <label class="text-sm" style="display:flex;flex-direction:column;gap:4px;min-width:240px;"><span class="text-muted">Footage</span>
+              <select onchange="prodEstSet('video', this.value)">${optFor('video')}</select></label>
+            ${num('character_views', 'Views per character', c.views ? c.views.character : 4, 'front, two profiles, back')}
+            ${num('location_views', 'Views per location', c.views ? c.views.location : 4)}
+            ${num('prop_views', 'Views per prop', c.views ? c.views.prop : 1)}
+            ${num('takes_plates', 'Takes per plate', d.takes.plates)}
+            ${num('takes_storyboard', 'Takes per frame', d.takes.storyboard)}
+            ${num('takes_footage', 'Takes per clip', d.takes.footage)}
+            ${c.shots ? '' : num('shot_seconds', 'Average shot (s)', c.shot_seconds)}
+            ${num('runtime_seconds', 'Running time (s)', d.runtime ? Math.round(d.runtime.seconds) : 0, 'leave as measured, or type the length you expect')}
+            <button class="btn btn-secondary" onclick="prodEstReset()">Back to the project's choices</button>
+        </div>`;
+    }
+
+    function renderProductionEstimate(d) {
+        const el = document.getElementById('prodEstResult');
+        if (!el) return;
+        const t = d.totals || {};
+        const g = d.generators || {};
+        const c = d.counts || {};
+        const card = (label, v, sub) => `<div class="card" style="flex:1;min-width:160px;">
+            <div class="text-sm text-muted">${esc(label)}</div>
+            <div style="font-size:24px;font-weight:600;">${usd(v)}</div>
+            <div class="text-sm text-muted">${sub}</div></div>`;
+        const plates = (d.lines || []).filter(l => l.category === 'plates');
+        const board = (d.lines || []).find(l => l.category === 'storyboard') || {};
+        const foot = (d.lines || []).find(l => l.category === 'footage') || {};
+        const plateCount = plates.reduce((n, l) => n + l.count, 0);
+        const row = (what, n, size, model, unit, total) => `<tr><td>${what}</td><td>${n}</td><td>${esc(size || '')}</td>
+            <td>${esc(model || '')}</td><td>${unit}</td><td style="text-align:right;">${usd(total)}</td></tr>`;
+        const names = { character: 'Character plates', location: 'Location plates', prop: 'Prop plates' };
+        const alt = cap => {
+            const rows = ((d.alternatives || {})[cap] || []).slice(0, 8);
+            if (!rows.length) return '<p class="text-sm text-muted">No other connected generator can price this.</p>';
+            return '<table class="render-table" style="width:100%;"><tbody>' + rows.map(a => `<tr${a.current ? ' style="font-weight:600;"' : ''}>
+                <td>${esc(a.provider_label)} · ${esc(a.model || 'default')}${a.current ? ' (selected)' : ''}${a.delivers_less ? ` <span class="badge" style="background:var(--gl-warning);color:#111;" title="Cannot deliver ${esc(d.resolution.label)}">${cap === 'video' ? 'makes ' + esc(a.delivers_less) : 'smaller than asked'}</span>` : ''}</td>
+                <td style="text-align:right;">${usd(a.usd)}</td><td style="text-align:right;white-space:nowrap;" class="text-muted">film ${usd(a.total)}</td>
+                <td>${a.current ? '' : `<button class="btn btn-secondary btn-sm" onclick="prodEstSet('${cap}', ${jsAttr(a.provider + '|' + (a.model || ''))})">Use</button>`}</td></tr>`).join('')
+                + '</tbody></table>';
+        };
+        const rt = d.runtime;
+        el.innerHTML = `
+            <div style="display:flex;flex-wrap:wrap;gap:12px;" class="mb-16">
+              ${card('The film', t.total, `${esc(d.resolution.label)} · ${c.frames} shots · ${Math.round(c.footage_seconds)}s of footage`)}
+              ${card('Plates', t.plates, `${plateCount} pictures on ${esc(g.image && g.image.provider_label || '?')}`)}
+              ${card('Storyboard', t.storyboard, `${board.count || 0} frames`)}
+              ${card('Footage', t.footage, `${Math.round(foot.seconds || 0)}s on ${esc(g.video && g.video.provider_label || '?')}${foot.per_second_usd ? ' · ' + usd(foot.per_second_usd) + '/s' : ''}`)}
+            </div>
+            <div class="card mb-16"><table class="render-table" style="width:100%;">
+              <thead><tr><th>What</th><th>Count</th><th>Size</th><th>Model</th><th>Each</th><th style="text-align:right;">Cost</th></tr></thead>
+              <tbody>
+                ${plates.map(l => row(`${names[l.kind]} <span class="text-muted">(${l.subjects} × ${l.views} view${l.views === 1 ? '' : 's'}${l.takes > 1 ? ' × ' + l.takes + ' takes' : ''})</span>`,
+                    l.count, l.size, l.model, l.unit_usd == null ? esc(l.why || 'not priced') : usd(l.unit_usd), l.usd)).join('')}
+                ${row(`Storyboard frames${board.takes > 1 ? ` <span class="text-muted">(× ${board.takes} takes)</span>` : ''}`, board.count || 0, board.size, board.model,
+                    board.unit_usd == null ? esc(board.why || 'not priced') : usd(board.unit_usd), board.usd)}
+                ${row(`Footage <span class="text-muted">(${Math.round(foot.seconds || 0)}s${foot.takes > 1 ? ' × ' + foot.takes + ' takes' : ''})</span>`, foot.count || 0,
+                    foot.downgraded ? foot.delivered + ' (asked ' + foot.size + ')' : (foot.resolution_tier || foot.size), foot.model, foot.per_second_usd ? usd(foot.per_second_usd) + '/s' : '', foot.usd)}
+              </tbody></table></div>
+            <p class="text-sm text-muted mb-16">Running time: ${rt ? Math.round(rt.seconds) + 's, from ' + esc(rt.source)
+                + (rt.range ? ` (likely; ${rt.range[0]}–${rt.range[1]}s)` : '') : 'unknown'}. Shots: ${esc(c.shot_source || '')}.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;" class="mb-16">
+              <div class="card" style="flex:1;min-width:300px;"><h3 class="mb-8">Plates and storyboard on other generators</h3>${alt('image')}</div>
+              <div class="card" style="flex:1;min-width:300px;"><h3 class="mb-8">Footage on other generators</h3>${alt('video')}</div>
+            </div>
+            ${(d.notes || []).map(n => `<p class="text-sm text-muted">${esc(n)}</p>`).join('')}`;
+    }
+
     function usd(n) {
         if (!(n > 0)) return '$0.00';
         if (n < 0.01) return '$' + n.toFixed(4);
@@ -34579,7 +34723,7 @@ ${fountainText.slice(0, 50000)}`;
     // Panels are derived from the tab buttons rather than listed here, so a tab
     // added later cannot end up with nothing to show — which is exactly how the
     // previous two-tab version would have failed the moment a third arrived.
-    const BUDGET_PANELS = { spend: 'budgetTabSpend', tracking: 'budgetTabTracking',
+    const BUDGET_PANELS = { spend: 'budgetTabSpend', film: 'budgetTabFilm', tracking: 'budgetTabTracking',
                             compare: 'budgetTabCompare',
                             rates: 'budgetTabRates', estimation: 'budgetTabEstimation' };
 
@@ -34594,6 +34738,7 @@ ${fountainText.slice(0, 50000)}`;
         if (tab === 'spend') loadSpend();
         if (tab === 'rates') loadSpendRates();
         if (tab === 'compare') loadGeneratorCompare(currentCompareCapability);
+        if (tab === 'film') loadProductionEstimate();
         if (tab === 'estimation' && !currentBudgetEstimate) generateBudgetEstimate();
     }
 

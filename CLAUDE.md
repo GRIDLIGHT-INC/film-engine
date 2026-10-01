@@ -299,6 +299,7 @@ film-engine/
 │   │   ├── world-export.js    # Seven files, and every one names the geometry it came from
 │   │   ├── llm-client.js         # Shared LLM call helper
 │   │   ├── budget-estimator.js   # Pre-flight cost estimation
+│   │   ├── production-estimate.js # The film's plates, storyboard and footage, counted from the project and priced on its generators at its resolution
 │   │   ├── provider-pricing.js  # What a generation costs, in the provider's own units
 │   │   ├── generator-costs.js   # Which generator to use: every price, one comparable unit
 │   │   ├── prop-categories.js   # What a prop may be, said once for the picker, the tool and the CHECK
@@ -761,6 +762,7 @@ film-engine/
 │       ├── ops-compliance.test.js        # Ops/compliance jobs + provenance
 │       ├── budget-estimator.test.js      # Cost estimation
 │       ├── ai-spend.test.js              # Every provider call is metered, priced and attributed
+│       ├── production-estimate.test.js   # Plates, frames and footage counted from the project, priced through each adapter's meter, at any resolution and on any generator
 │       ├── prompt-diff.test.js           # Prompt/parameter diffing
 │       ├── fountain-parser.test.js       # Fountain parser
 │       ├── docx-text.test.js             # DOCX text extraction
@@ -897,7 +899,7 @@ All routes prefixed with `/film`:
 | Marketing | `POST /marketing/:id/{generate,import}`, `GET /marketing/:id/preview` |
 | Budget | `GET /projects/:id/budget`, `POST /projects/:id/budget` |
 | Budget | `GET /projects/:id/budget/ledger`, `GET /projects/:id/budget/forecast` |
-| Budget | `PUT /projects/:id/budget/limit`, `DELETE /budget/:id` |
+| Budget | `PUT /projects/:id/budget/limit`, `DELETE /budget/:id`, `GET /projects/:id/budget/production` (free: the film estimate) |
 | Spend | `GET /projects/:id/spend`, `GET /projects/:id/spend/usage` |
 | Spend | `POST /projects/:id/spend/backfill`, `GET/PUT/DELETE /spend/rates` |
 | Spend | `GET /spend/subscription` |
@@ -3914,6 +3916,15 @@ Two pre-existing breaks surfaced while wiring the page, both shipped and neither
 Two honesty constraints shape that gauge, and both are enforced by test. The counts are **estimates and say so**: this process sees the JSON going out and coming back, not the host's system prompt, its history, or its tokeniser, so four characters per token is an approximation and what it counts is a **floor** on what the host actually processed. And there is **no published ceiling to gauge against** — Anthropic publishes plan *multipliers* (Pro at 5x free, Max 5x at five times Pro, Max 20x at twenty) plus a rolling five-hour session window and a weekly reset, and deliberately publishes no token count for any plan. So `allowance_tokens` starts NULL and the report shows consumption with **no percentage at all** until the user calibrates it from what they observe. A bar reading "62% of your Max plan" against a number this codebase invented would be worse than no bar, because it would be believed and planned around. Calibration is stored per person in `film_app_settings` beside `author` — one pool is shared across every film, so a per-project ceiling would let two projects each show comfortable headroom while the account is out of capacity — and a single Pro-equivalent baseline scales to every plan through those multipliers, so one measurement calibrates all of them.
 
 Served at `GET /projects/:id/spend`, `GET /projects/:id/spend/usage`, `POST /projects/:id/spend/backfill` and `GET|PUT|DELETE /spend/rates`, plus `GET /spend/subscription`, and as `spend_report`, `spend_usage`, `spend_backfill`, `spend_rates`.
+
+### What the Film Will Cost, Before It Is Made
+*"When we have a script and know the time of the movie, in the budget section we should see an estimate of the cost based on the number of images we'll have to generate for all the plates, storyboard and footage, based on what provider is currently selected for each type and their costs per image or footage per second at the resolution of the project. We could select different resolution and provider to see the difference in cost."*
+
+`lib/production-estimate.js` counts the work from the project and prices it the way it will be billed. **Plates** are every character, location and prop times the views its sheet holds (4, 4 and 1 by default, editable); a location plate keeps its 2K floor. **Storyboard** is one frame per shot. **Footage** is each shot at its own length; a shot with none takes its share of the running time, and with no shots yet the running time is cut into shots of a stated average (4 s). The running time is, in order: what was typed, the shots' own lengths, the screenplay's likely screen time (`screenplay-timing`, with its range), the project's target length.
+
+**Priced through the adapter's own meter**, at the size each picture is really asked for (`plateSize`, `storyboardSize`), then the rate book: the path the video preview prices a clip by, so the estimate and the confirmation cannot disagree about one shot. Runway footage goes through `estimateVideoCost`, at the tier of the frame Runway will really send, with its minimum charges per clip. The generators are the project's own (`resolveIdWithReason`, the pinned model, the house image standard) unless another is chosen. **What a generator cannot deliver is said**: a video provider whose `deliverableFrame` is below the asked size is priced at what it makes and marked ("makes 1280x720"), and an image provider that takes no size or whose ceiling is below it is marked smaller than asked; upscaling is not in the figure. `alternatives` prices the same work on every connected generator and model at the chosen size.
+
+Free and first attempts only (`takes` multiplies each category). Voice, music, effects and upscaling are not included, and the answer says so. Served at `GET /projects/:id/budget/production` (resolution, image/video provider and model, views, takes, shot length and running time as query parameters), as `budget_production_estimate` (**421 tools**), and on the Budget page's **Film Estimate** tab: resolution and generator pickers, the editable counts, a line per kind and every other generator with a Use button. Measured on The Glass Harbour: 13 shots, 364 s of screen time from the screenplay, $313 at 2K and $622 at 4K on MuAPI, almost all of it Seedance footage. `tests/production-estimate.test.js`.
 
 ### Conform: shots into a film
 `assembly` has been a no-op since it was written, returning `"use export endpoints to finalize"` — so an orchestrated run reports success and there is no movie, and the `video_master` QA check goes green on shot 1 of N.

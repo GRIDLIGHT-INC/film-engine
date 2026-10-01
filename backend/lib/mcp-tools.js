@@ -3068,6 +3068,45 @@ const PRODUCTION_TOOLS = [
         required: [],
     },
     {
+        name: 'budget_production_estimate',
+        handler: handleBudget, method: 'GET',
+        description:
+            'What making this film will cost: every reference plate (characters x their views, '
+            + 'locations, props), one storyboard frame per shot, and the footage, priced on the '
+            + 'generators this project would use, at its resolution. FREE: counts and reads the rate '
+            + 'book, generates nothing. Counts come from the project: the shots and their lengths, '
+            + 'else the screenplay’s measured screen time cut into shots, else the target length. '
+            + 'Pass resolution, image_provider/image_model or video_provider/video_model to see what '
+            + 'another choice costs; `alternatives` prices the same work on every connected generator. '
+            + 'First attempts only: raise takes_* for regenerations. Voice, music and upscaling are not '
+            + 'included.',
+        path: a => {
+            const keys = ['resolution', 'image_provider', 'image_model', 'video_provider', 'video_model',
+                'character_views', 'location_views', 'prop_views', 'takes_plates', 'takes_storyboard',
+                'takes_footage', 'shot_seconds', 'runtime_seconds'];
+            const q = keys.filter(k => a[k] !== undefined && a[k] !== null && a[k] !== '')
+                .map(k => `${k}=${encodeURIComponent(a[k])}`);
+            return `/film/projects/${a.project_id}/budget/production${q.length ? '?' + q.join('&') : ''}`;
+        },
+        schema: {
+            project_id: { type: 'string', description: 'The project.' },
+            resolution: { type: 'string', description: 'A resolution preset id (720p, 1080p, 2k, 4k_uhd, 4k_dci, 8k) or WxH. Defaults to the project’s.' },
+            image_provider: { type: 'string', description: 'Price plates and frames on this provider instead.' },
+            image_model: { type: 'string', description: 'And this model of it.' },
+            video_provider: { type: 'string', description: 'Price the footage on this provider instead.' },
+            video_model: { type: 'string', description: 'And this model of it.' },
+            character_views: { type: 'number', description: 'Pictures per character (default 4: front, two profiles, back).' },
+            location_views: { type: 'number', description: 'Pictures per location (default 4).' },
+            prop_views: { type: 'number', description: 'Pictures per prop (default 1).' },
+            takes_plates: { type: 'number', description: 'Attempts per plate (default 1).' },
+            takes_storyboard: { type: 'number', description: 'Attempts per frame (default 1).' },
+            takes_footage: { type: 'number', description: 'Attempts per clip (default 1).' },
+            shot_seconds: { type: 'number', description: 'Average shot length when the film has no shots yet (default 4).' },
+            runtime_seconds: { type: 'number', description: 'The running time, overriding what the screenplay measures.' },
+        },
+        required: ['project_id'],
+    },
+    {
         name: 'gridlight_video_capabilities',
         handler: handleProviders, method: 'GET',
         description:
