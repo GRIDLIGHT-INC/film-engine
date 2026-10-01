@@ -2690,6 +2690,29 @@
         }
 
         /* Editor Scroll Container */
+        /* Distraction-free writing: the page alone, full screen. */
+        body.sp-focus #editorViewContainer {
+            /* !important: the gutter sets an inline position on this container. */
+            position: fixed !important; inset: 0 !important; z-index: 2400 !important; border: 0; border-radius: 0;
+            padding: 64px 20px 120px; background: #121214; overflow: auto;
+        }
+        body.sp-focus #editorViewContainer .title-page-card,
+        body.sp-focus #editorViewContainer .sp-gutter { display: none !important; }
+        body.sp-focus #editorViewContainer .screenplay-page { box-shadow: 0 8px 40px rgba(0,0,0,.55); }
+        /* The app's own chrome steps away too: the top bar, the phase panel and the status bar. */
+        body.sp-focus .fe-top, body.sp-focus .fe-panel, body.sp-focus #statusBar { display: none !important; }
+        .sp-focus-bar { display: none; }
+        body.sp-focus .sp-focus-bar {
+            display: flex; position: fixed; z-index: 2401; top: 14px; right: 18px; gap: 8px; align-items: center;
+            opacity: .25; transition: opacity .2s;
+        }
+        body.sp-focus .sp-focus-bar:hover { opacity: 1; }
+        .sp-focus-bar button, .sp-focus-bar span {
+            font-size: 12px; color: #c9c9cf; background: rgba(40,40,46,.9); border: 1px solid #3a3a42;
+            border-radius: 6px; padding: 5px 10px;
+        }
+        .sp-focus-bar button { cursor: pointer; }
+        .toolbar-btn.on { color: var(--gl-accent, #6aa9ff); }
         .screenplay-scroll-container {
             flex: 1;
             overflow: auto;
@@ -5862,6 +5885,8 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
                         <button class="toolbar-btn suggestions-btn" id="suggestionsBtn" onclick="openSuggestionsPanel()" data-tooltip="Auto-detected character and location names from your screenplay" style="display:none;">
                             <span id="suggestionsBadge" class="suggestions-badge">0</span>
                         </button>
+                        <button class="toolbar-btn" onclick="toggleWriterFocus()" data-tooltip="Distraction-free: the page alone, full screen (Ctrl+Shift+F; Esc leaves)">Focus</button>
+                        <button class="toolbar-btn" id="typewriterBtn" onclick="toggleTypewriterSound()" data-tooltip="Typewriter sound as you type">Typewriter</button>
                         <button class="toolbar-btn" onclick="toggleShortcutHelp()" data-tooltip="Show keyboard shortcut reference (Ctrl+/)">?</button>
                         <!-- FILM-129: Revision Indicator -->
                         <div class="revision-indicator" id="revisionIndicator" style="display:none;">
@@ -5883,6 +5908,11 @@ body.pv-shots-in-panel .pv-grid { grid-template-columns:minmax(0,1fr) 360px; }
 
                     <!-- Editor Container -->
                     <div class="screenplay-scroll-container" id="editorViewContainer">
+                        <div class="sp-focus-bar">
+                            <span id="focusWordCount"></span>
+                            <button id="typewriterFocusBtn" onclick="toggleTypewriterSound()">Typewriter</button>
+                            <button onclick="toggleWriterFocus(false)">Leave focus (Esc)</button>
+                        </div>
                         <button type="button" class="title-page-card" id="titlePageCard" onclick="openTitlePageModal()"
                             title="Edit the title page: title, credit, author, source, draft date, contact, copyright, notes. It prints as the first page of the PDF.">
                             <span class="tpc-label">Title page</span><span class="tpc-edit">Edit</span></button>
@@ -19792,6 +19822,8 @@ THREE.GLTFLoader = GLTFLoader;
     function navigateTo(page) {
         // On a phone the drawer covers the page you just chose.
         if (window.closeDrawer) window.closeDrawer();
+        // Focus mode hides the app's chrome; any other page needs it back.
+        if (page !== 'screenplay' && document.body.classList.contains('sp-focus') && window.toggleWriterFocus) toggleWriterFocus(false);
         applyNavFlow();
         state.currentPage = page;
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -22446,8 +22478,154 @@ THREE.GLTFLoader = GLTFLoader;
         return lines.join('\n').trim();
     }
 
+    /*
+     * DISTRACTION-FREE WRITING. The page alone, full screen: a class on the
+     * body lifts the editor's own container over everything (nothing is moved
+     * or re-rendered, so the caret, the undo stack and the autosave are the
+     * ones already working), and the browser's full screen hides the rest.
+     * Esc, Ctrl+Shift+F or leaving full screen ends it.
+     */
+    function toggleWriterFocus(on) {
+        const want = typeof on === 'boolean' ? on : !document.body.classList.contains('sp-focus');
+        document.body.classList.toggle('sp-focus', want);
+        try {
+            if (want && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else if (!want && document.fullscreenElement && document.exitFullscreen) {
+                document.exitFullscreen().catch(() => {});
+            }
+        } catch (_) { /* a browser without full screen still gets the focused page */ }
+        if (want) {
+            // The sound is part of the mode unless it was switched off on purpose.
+            if (TYPEWRITER.pref() === null) TYPEWRITER.set(true);
+            const ed = document.getElementById('screenplayEditor');
+            if (ed) ed.focus();
+        }
+        typewriterButtons();
+        focusWordCount();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => { try { typewriterButtons(); } catch (_) { /* before the editor exists */ } });
+
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement && document.body.classList.contains('sp-focus')) toggleWriterFocus(false);
+    });
+
+    function focusWordCount() {
+        const el = document.getElementById('focusWordCount');
+        const src = document.getElementById('editorWordCount');
+        if (el) el.textContent = src ? src.textContent : '';
+    }
+
+    /*
+     * THE TYPEWRITER. Synthesised with Web Audio rather than sampled, because
+     * the page ships as one file: each key is a short burst of filtered noise
+     * (the type bar striking) over a low thump (the platen), varied a little
+     * so a run of keys does not sound like a machine gun. The space bar is a
+     * softer thump, Backspace a light tick, Enter the carriage return: a
+     * ratchet and the bell. It only listens; nothing it does touches the text.
+     */
+    const TYPEWRITER = {
+        ctx: null, noise: null, last: 0,
+        pref() { try { const v = localStorage.getItem('sp_typewriter'); return v === null ? null : v === '1'; } catch (_) { return null; } },
+        on() { return this.pref() === true; },
+        set(v) { try { localStorage.setItem('sp_typewriter', v ? '1' : '0'); } catch (_) { /* per-browser only */ } },
+        audio() {
+            if (!this.ctx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return null;
+                this.ctx = new AC();
+                const len = Math.floor(this.ctx.sampleRate * 0.25);
+                this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+                const d = this.noise.getChannelData(0);
+                for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+            }
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            return this.ctx;
+        },
+    };
+
+    function twBurst(ctx, at, { freq = 2600, q = 1.2, dur = 0.035, gain = 0.5 }) {
+        const src = ctx.createBufferSource(); src.buffer = TYPEWRITER.noise;
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+        src.connect(bp).connect(g).connect(ctx.destination);
+        src.start(at, Math.random() * 0.2); src.stop(at + dur + 0.01);
+    }
+
+    function twThump(ctx, at, { freq = 140, dur = 0.06, gain = 0.35 }) {
+        const o = ctx.createOscillator(); o.type = 'sine';
+        o.frequency.setValueAtTime(freq, at); o.frequency.exponentialRampToValueAtTime(freq * 0.5, at + dur);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+        o.connect(g).connect(ctx.destination); o.start(at); o.stop(at + dur + 0.01);
+    }
+
+    function twBell(ctx, at) {
+        for (const [f, gain] of [[2093, 0.18], [4186, 0.05]]) {
+            const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+            const g = ctx.createGain();
+            g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0008, at + 1.1);
+            o.connect(g).connect(ctx.destination); o.start(at); o.stop(at + 1.15);
+        }
+    }
+
+    /** One key's sound, or none: modifiers, shortcuts and arrows stay silent. */
+    function typewriterKey(event) {
+        if (!TYPEWRITER.on() || event.ctrlKey || event.metaKey || event.altKey) return;
+        const k = event.key || '';
+        const printable = k.length === 1;
+        if (!printable && !['Enter', 'Backspace', 'Tab', 'Delete'].includes(k)) return;
+        const ctx = TYPEWRITER.audio();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        if (now - TYPEWRITER.last < 0.025) return;   // a held key is a rattle, not a roar
+        TYPEWRITER.last = now;
+        const vary = 0.85 + Math.random() * 0.3;
+        if (k === 'Enter') {
+            for (let i = 0; i < 6; i++) twBurst(ctx, now + i * 0.03, { freq: 1800 * vary, dur: 0.02, gain: 0.18 });
+            twThump(ctx, now + 0.2, { freq: 90, dur: 0.12, gain: 0.4 });
+            twBell(ctx, now + 0.02);
+        } else if (k === ' ') {
+            twThump(ctx, now, { freq: 110 * vary, dur: 0.08, gain: 0.3 });
+            twBurst(ctx, now, { freq: 1200 * vary, dur: 0.03, gain: 0.15 });
+        } else if (k === 'Backspace' || k === 'Delete') {
+            twBurst(ctx, now, { freq: 3400 * vary, dur: 0.02, gain: 0.22 });
+        } else {
+            twBurst(ctx, now, { freq: 2600 * vary, dur: 0.035, gain: 0.45 });
+            twThump(ctx, now + 0.004, { freq: 160 * vary, dur: 0.05, gain: 0.28 });
+        }
+        if (document.body.classList.contains('sp-focus')) setTimeout(focusWordCount, 50);
+    }
+
+    function toggleTypewriterSound() {
+        TYPEWRITER.set(!TYPEWRITER.on());
+        if (TYPEWRITER.on()) TYPEWRITER.audio();
+        typewriterButtons();
+        const ed = document.getElementById('screenplayEditor');
+        if (ed && document.body.classList.contains('sp-focus')) ed.focus();
+    }
+
+    function typewriterButtons() {
+        const on = TYPEWRITER.on();
+        for (const id of ['typewriterBtn', 'typewriterFocusBtn']) {
+            const b = document.getElementById(id);
+            if (!b) continue;
+            b.classList.toggle('on', on);
+            b.textContent = on ? 'Typewriter: on' : 'Typewriter: off';
+        }
+    }
+
     function onEditorKeydown(event) {
         const isMod = event.ctrlKey || event.metaKey;
+        if (isMod && event.shiftKey && (event.key === 'f' || event.key === 'F')) {
+            event.preventDefault(); toggleWriterFocus(); return;
+        }
+        if (event.key === 'Escape' && document.body.classList.contains('sp-focus')) {
+            event.preventDefault(); toggleWriterFocus(false); return;
+        }
+        typewriterKey(event);
 
         // FILM-102: Keyboard shortcuts with Ctrl/Cmd modifier
         if (isMod) {

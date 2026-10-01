@@ -736,6 +736,7 @@ film-engine/
 │       ├── screenplay-furniture.test.js # The editor's own furniture is not content
 │       ├── screenplay-mutators.test.js # Every way a screenplay is written leaves the editor sound
 │       ├── screenplay-continuous.test.js # The editor scrolls; pages are for the count and the print
+│       ├── screenplay-focus.test.js # Focus mode covers the page and every way out ends it; the typewriter sounds each kind of key and writes nothing
 │       ├── mcp-first-writing.test.js # MCP is the default path; HTTP says it cost you something
 │       ├── act-structure.test.js   # Acts are sections; the table and its readers are gone
 │       ├── frame-versions.test.js  # Which attempt is which, and which can be chosen
@@ -3718,6 +3719,13 @@ After the replace-by-default fix, an audit of every path that writes the screenp
 `timingRowsForHeadings` is the one rule for matching timing rows to headings. The report opens with a heading-less row for whatever precedes the first heading, and matching by raw position shifted every scene by one — the gutter had shown the preamble's 1/8 beside scene 1.
 
 **The title page opens.** The form's field was `titlePageDraft` while every function used `titlePageDraftDate`, so the open threw before the modal showed; save closed it with `active`, which displays nothing; Copyright and Notes were on the form and read by nothing. A **Title page** card above the editor — outside the contenteditable, refreshed by `normalizeEditor` — shows what the title page holds and opens the modal. `tests/title-page-and-print.test.js` holds every field id the functions touch to the form, and Copyright and Notes to a round trip through Fountain.
+
+### Writing With Nothing Else on Screen, and a Typewriter
+*"When we work in screenplay mode could we do distraction free mode where the screenplay goes full screen, and add an old typewriter sound when we type?"*
+
+**Focus** on the screenplay toolbar (or Ctrl+Shift+F) puts the page alone on a dark screen, full screen. A class on the body lifts the editor's own container over everything and hides the top bar, the phase panel and the status bar; nothing is moved or re-rendered, so the caret, undo and autosave are the ones already running. The container's position is `!important` because the gutter sets an inline `position: relative` on it, which otherwise wins and leaves the page where it was. Esc, Ctrl+Shift+F, leaving the browser's full screen or going to another page all end it. A faint bar at the top right (brighter on hover) shows the word count, the typewriter switch and the way out.
+
+**The typewriter** is synthesised with Web Audio, since the page ships as one file: a key is a burst of band-passed noise (the type bar) over a low thump (the platen), varied a little each time; the space bar is a softer thump, Backspace a light tick, and Enter the carriage return, a ratchet and the bell. Shortcuts, arrows and modifiers are silent, and a held key rattles rather than roars. It is on by default the first time focus mode opens, switched with **Typewriter** on the toolbar or the focus bar, and remembered per browser. It only listens: `tests/screenplay-focus.test.js` runs it against a fake audio engine and refuses any write to the page from it.
 
 ### The Title Page Is for Printing
 It sat at the top of the editor as a non-editable slab you scrolled past on every open and clicked by accident when you meant to put the cursor on FADE IN. It is now `display: none` on screen and `display: block` in `@media print`, which is the one moment a title page is read. Hidden rather than removed — the block carries the data the Fountain serialiser writes back, so deleting it would lose the title page itself — and the toolbar's **Title Page** button was always the real way to edit it.
@@ -6712,6 +6720,7 @@ node --test backend/tests/screenplay-empty-blocks.test.js
 node --test backend/tests/screenplay-furniture.test.js
 node --test backend/tests/screenplay-mutators.test.js
 node --test backend/tests/screenplay-continuous.test.js
+node --test backend/tests/screenplay-focus.test.js
 node --test backend/tests/mcp-first-writing.test.js
 node --test backend/tests/act-structure.test.js
 node --test backend/tests/frame-versions.test.js
