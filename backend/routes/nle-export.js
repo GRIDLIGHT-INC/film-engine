@@ -111,7 +111,7 @@ function handleNLEExport(req, res, urlParts, query) {
     }
 
     // Writing the per-scene handover is the one POST here; its plan is a GET.
-    if (req.method !== 'GET' && !(req.method === 'POST' && format === 'premiere-scenes')) {
+    if (req.method !== 'GET' && !(req.method === 'POST' && (format === 'premiere-scenes' || format === 'resolve'))) {
         res.writeHead(405, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Method not allowed' }));
         return;
@@ -132,6 +132,7 @@ function handleNLEExport(req, res, urlParts, query) {
                 { id: 'preflight', name: 'Export preflight (free — nothing is written)', extension: '', content_type: 'application/json' },
                 { id: 'package', name: 'Packaged handover (XML + copied media)', extension: '/', content_type: 'application/json' },
                 { id: 'premiere-scenes', name: 'Premiere, one folder per scene (GET plans free, POST writes)', extension: '/', content_type: 'application/json' },
+                { id: 'resolve', name: 'DaVinci Resolve: first edit, media per scene, metadata and an import script (GET plans free, POST writes)', extension: '/', content_type: 'application/json' },
                 { id: 'fdx', name: 'Final Draft XML', extension: '.fdx', content_type: 'application/xml' },
             ],
         }));
@@ -206,6 +207,31 @@ function handleNLEExport(req, res, urlParts, query) {
                     ...(err.preflight ? { preflight: err.preflight } : {}) }));
             });
         return;
+    }
+
+    /*
+     * DAVINCI RESOLVE: the cut Playback plays as a first edit (clip, else its
+     * storyboard frame), the media per scene, the shot information as markers
+     * and metadata, and a script that loads it all into Resolve. GET is the free
+     * plan; POST writes it under the project's Exports folder.
+     */
+    if (format === 'resolve') {
+        const rx = require('../lib/resolve-export');
+        const send = (code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+        if (req.method === 'GET') {
+            const { _files, video, lanes, ...plan } = rx.planResolve(db, projectId);
+            return send(200, { ...plan, spends: false });
+        }
+        try {
+            const { ensureDir } = require('../lib/file-storage');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const dest = path.join(ensureDir(projectId, 'exports'), `${safeTitle}_Resolve_${stamp}`);
+            const { video, lanes, ...out } = rx.writeResolve(db, projectId, { dest });
+            return send(200, out);
+        } catch (err) {
+            const { _files, video, lanes, ...plan } = err.plan || {};
+            return send(err.code ? 409 : 500, { error: err.code || 'RESOLVE_EXPORT_FAILED', message: err.message, ...(err.plan ? { plan } : {}) });
+        }
     }
 
     /*

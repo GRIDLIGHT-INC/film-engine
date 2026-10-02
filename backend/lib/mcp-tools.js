@@ -3982,6 +3982,20 @@ const PRODUCTION_TOOLS = [
         schema: { project_id: { type: 'string' } }, required: ['project_id'],
     },
     {
+        name: 'export_resolve_plan',
+        handler: handleNLEExport, method: 'GET',
+        description: 'FREE. What the DaVinci Resolve export would hold: the first edit (the cut Playback plays: each shot\u2019s selected clip, or its storyboard frame where there is no footage yet, with dialogue, effects, music and ambience on their own lanes), the media per scene, the shot markers, and anything missing. Nothing is written. Read it before export_resolve.',
+        path: a => `/film/projects/${a.project_id}/export/resolve`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'export_resolve',
+        handler: handleNLEExport, method: 'POST',
+        description: 'Write the DaVinci Resolve export into the project\u2019s Exports folder: the first edit as FCP 7 XML (Resolve imports it with stills and levels), the media COPIED into a folder per scene, a metadata CSV (scene, shot, description, dialogue, camera, cast per file), and "Import into Resolve.py", which, run from Resolve\u2019s Workspace > Scripts, makes the project, a bin per scene, imports everything and puts a marker with each shot\u2019s information on the timeline. Spends nothing. Refuses when no shot has a clip or a storyboard frame.',
+        path: a => `/film/projects/${a.project_id}/export/resolve`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
         name: 'shot_upscale_preview',
         handler: handlePostProduction, method: 'GET',
         description: 'FREE. What upscaling a shot\'s clip would do: the clip (the SELECTED one, or asset_id), measured from the file; the project\'s delivery size; the factor or tier the upscaler picks to reach it; the request, and the price. `model` names an upscaler. On MuAPI: topaz-video-upscale (2x or 4x), ai-video-upscaler or ai-video-upscaler-pro (to 1080p, 2K or 4K), flux-3-video-upscaler (prompted). On Topaz\'s own API (needs a Topaz key): slp-2.6 Starlight Precise 2.6 (the best finish for generated footage, to 4K), slf-3 Starlight Fast 3 (same price, about 4x faster), ast-2 Astra 2 (creative: adds detail, takes prompt/creativity/realism/sharp), prob-4 Proteus (precision, cheapest). On Magnific (needs a Magnific key): magnific-video-upscaler (creative; creativity, flavor), magnific-video-upscaler-turbo (the same, faster), magnific-video-upscaler-precision (faithful; strength), magnific-video-upscaler-topaz (Starlight through Magnific; enhancement_model). `upscalers` lists each with its price for THIS clip. Read this before shot_upscale.',

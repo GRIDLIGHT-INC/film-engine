@@ -6785,6 +6785,13 @@ body.pv-hide-left:not(.pv-hide-right) .pv-grid { grid-template-columns:minmax(0,
                     <div id="premiereScenesResult" class="text-sm" style="margin-top:8px;text-align:left;"></div>
                 </div>
                 <div class="card" style="text-align:center;padding:30px;">
+                    <div style="font-size:32px;margin-bottom:8px;">&#127902;</div>
+                    <h3>DaVinci Resolve</h3>
+                    <p class="text-sm text-muted mb-8">A first edit from your shots and footage (storyboard frames where there is no clip yet), the media per scene, every shot's information as markers and metadata, and a script that loads it all into Resolve. Free.</p>
+                    <button class="btn btn-primary btn-sm" onclick="exportResolve()">Make the Resolve project</button>
+                    <div id="resolveExportResult" class="text-sm" style="margin-top:8px;text-align:left;"></div>
+                </div>
+                <div class="card" style="text-align:center;padding:30px;">
                     <div style="font-size:32px;margin-bottom:8px;">&#128264;</div>
                     <h3>SRT Subtitles</h3>
                     <p class="text-sm text-muted mb-8">Subtitle file from dialogue</p>
@@ -45669,6 +45676,29 @@ ${fountainText.slice(0, 50000)}`;
             box.innerHTML = `Written to <code>${esc(r.dest)}</code><br>${r.copied} files, ${esc(r.xml)}`
                 + (r.missing && r.missing.length ? `<br><span class="text-muted">${r.missing.length} missing, listed in READ ME.txt</span>` : '');
         } catch (err) { box.textContent = 'Could not make the folders: ' + err.message; }
+    }
+
+    /*
+     * DAVINCI RESOLVE. The plan is read first (free) so the question says what
+     * the first edit holds; then it writes into the project's Exports folder.
+     */
+    async function exportResolve() {
+        if (!state.currentProject) return;
+        const box = document.getElementById('resolveExportResult');
+        const url = '/projects/' + state.currentProject.id + '/export/resolve';
+        try {
+            const plan = await api(url);
+            const c = plan.counts || {};
+            const miss = (plan.missing || []).length;
+            if (!confirm(`Make the Resolve project: ${c.shots} shots (${c.clips} with footage, ${c.storyboard_frames} on their storyboard frame${c.gaps ? `, ${c.gaps} gap${c.gaps === 1 ? '' : 's'}` : ''}), `
+                + `${c.dialogue_lines} dialogue line${c.dialogue_lines === 1 ? '' : 's'}, ${c.beds} music/ambience bed${c.beds === 1 ? '' : 's'}; ${plan.file_count} files copied.`
+                + (miss ? `\n${miss} item${miss === 1 ? ' is' : 's are'} missing and will be named in the READ ME.` : ''))) return;
+            box.textContent = 'Copying…';
+            const r = await api(url, { method: 'POST', body: '{}' });
+            box.innerHTML = `Written to <code>${esc(r.dest)}</code><br>${r.copied} files, ${esc(r.xml)}, ${esc(r.metadata)}`
+                + `<br>In Resolve: copy <strong>${esc(r.script)}</strong> into Resolve's Scripts/Utility folder and run it from Workspace &gt; Scripts. The READ ME has the steps.`
+                + (r.missing && r.missing.length ? `<br><span class="text-muted">${r.missing.length} missing, listed in READ ME.txt</span>` : '');
+        } catch (err) { box.textContent = 'Could not make the Resolve project: ' + err.message; }
     }
 
     function downloadExport(format) {

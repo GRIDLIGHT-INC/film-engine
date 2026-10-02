@@ -269,6 +269,7 @@ film-engine/
 │   │   ├── conform.js             # Shots → one film: pure plan, probed executors
 │   │   ├── export-package.js     # The XML plus the media it names, and what is wrong before you hand it over
 │   │   ├── premiere-scenes.js    # Premiere, one folder per scene: each shot's selected clip and sound copied in, an XML with a bin per scene
+│   │   ├── resolve-export.js     # DaVinci Resolve: the Playback cut as a first edit (clip, else storyboard frame), media per scene, shot markers, metadata CSV and an import script
 │   │   ├── deliverables.js       # A commercial is a fan-out: one row per file that leaves the job
 │   │   ├── brand-kit.js         # A brand outlives a project; every field says what it reaches
 │   │   ├── draft-video.js       # Draft while working, finish at the end — and what 480p actually costs
@@ -531,6 +532,7 @@ film-engine/
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── premiere-scenes.test.js     # A folder per scene holding the SELECTED clip of every shot, an XML with a bin per scene, and every NLE export naming the selected clip
+│       ├── resolve-export.test.js      # The Resolve first edit: running order, clip else storyboard frame, dialogue not laid over a clip's own sound, beds at level, markers, CSV, a script that compiles
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
 │       ├── deliverables.test.js        # Fourteen to twenty-two files, planned before anything is boarded
 │       ├── shot-aspect.test.js         # A vertical hero shot is generated vertical, or it is lost
@@ -862,7 +864,7 @@ All routes prefixed with `/film`:
 | Breakdown | `POST /projects/:id/breakdown[/stream]` (SSE) |
 | Screenplay AI | `POST /projects/:id/screenplay-ai[/stream]` |
 | Text Convert | `POST /projects/:id/text-to-screenplay[/preview]` |
-| Export | `GET /projects/:id/export[/fcpxml\|edl\|premiere\|fdx]`, `GET\|POST /projects/:id/export/premiere-scenes` (GET is the free plan) |
+| Export | `GET /projects/:id/export[/fcpxml\|edl\|premiere\|fdx]`, `GET\|POST /projects/:id/export/{premiere-scenes,resolve}` (GET is the free plan) |
 | Bundle | `GET /projects/:id/bundle`, `POST /projects/import` |
 | Comments | `GET/POST /scripts/:id/comments`, `PUT/DELETE /comments/:id` |
 | Storyboard | `POST /projects/:id/storyboard/generate[/stream]`, `GET /projects/:id/storyboard` |
@@ -2397,6 +2399,11 @@ A backup is `VACUUM INTO` a `.part` file renamed when complete: a consistent sna
 `POST /projects/:id/export/premiere-scenes` (`export_premiere_scenes`, and **Premiere, by scene** on the Export page) writes into `07 Delivery/Exports`: a `Scene_NN_<heading>` folder per scene, with `Video/<shot code>.<ext>` holding each shot's **selected** clip and `Sound/` its dialogue, effects and the scene's beds; an approved score in `Score/`; a READ ME naming anything missing; and a Premiere XML (xmeml v5) with the cut as a sequence **and a bin per scene**. The sequence defines each file and the bins reference it by id, so a clip is one master clip in its bin and on the timeline, never two. The file URLs point at the copies, so the project opens online. Media is copied, never moved. The GET is the free plan, and a project with no clip is refused `NO_CLIPS`.
 
 **Every NLE export was handing over the wrong take.** The generators take the first video asset they find for a shot, which was the oldest row, while playback and the master play the one the director selected. `conform.selectedClip` is now the one rule: the master, the delivery check and all three exports read it. `tests/premiere-scenes.test.js` gives one shot three takes and selects the middle one, so neither "first" nor "newest" can pass.
+
+### DaVinci Resolve, Ready to Edit
+*"I'd like to be able to export to DaVinci Resolve and be ready to edit with all the information, and even a first edit based on shots and footage."*
+
+`POST /projects/:id/export/resolve` (`export_resolve`, and **DaVinci Resolve** on the Export page; the GET is the free plan) writes into `07 Delivery/Exports`. **The first edit is the cut Playback already plays** (`routes/timeline.loadTimeline`), not a second assembly: each shot in running order at the length Playback holds it, its selected clip or, with no footage yet, its storyboard frame held for that length; dialogue lines where Playback speaks them, with the card's pauses; the shot's effects; every scene bed and an approved score at its offset and level. Audio lanes in a fixed order: production sound, dialogue, effects, music, ambience. Dialogue follows Playback's rule: a clip that carries its own sound is not spoken over. The timeline is FCP 7 XML, which Resolve imports with stills and levels. Every shot carries a marker with its description, direction, dialogue, camera, cast and lighting (green for footage, yellow for a storyboard frame), a scene starts with a blue marker, and an open note is red. A metadata CSV (File Name, Clip Name, Scene, Shot, Description, Comments, Keywords, Camera) is for Resolve's Import Metadata. **The connection is `Import into Resolve.py`**: copied into Resolve's `Fusion/Scripts/Utility` folder and run from Workspace > Scripts (free version included), or from a terminal with Resolve Studio open, it creates the project at the film's rate and resolution, a bin per scene, imports the media and the first edit, and adds every marker. Media is copied, never moved. A project with no clip and no storyboard frame is refused `NOTHING_TO_EDIT`. Resolve was not installed on the machine this was written on, so the script is checked to compile and is not yet proven against Resolve itself.
 
 ### The Register That Was Removed, and the Station Nobody Could Correct
 
@@ -6628,6 +6635,7 @@ node --test backend/tests/flow-apply.test.js
 node --test backend/tests/nle-import-validity.test.js
 node --test backend/tests/export-package.test.js
 node --test backend/tests/premiere-scenes.test.js
+node --test backend/tests/resolve-export.test.js
 node --test backend/tests/spot-duration.test.js
 node --test backend/tests/deliverables.test.js
 node --test backend/tests/shot-aspect.test.js

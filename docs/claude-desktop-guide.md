@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**426 tools, 88 families.** Everything the app can do, you can ask for in a
+**428 tools, 88 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -454,7 +454,7 @@ leg at a time. `sequence_generate_native` is a different Runway operation: one
 `node_tf_stitch` · `node_tf_encode` · `node_tf_fanout` · `node_tf_select` ·
 `node_in_prompt` · `node_in_asset` · `node_in_scene` · `node_in_subject` ·
 `run_plan` · `run_report` · `conform_plan` · `conform_run` · `delivery_check` · `export_preflight` · `export_package` ·
-`export_premiere_scenes_plan` · `export_premiere_scenes` ·
+`export_premiere_scenes_plan` · `export_premiere_scenes` · `export_resolve_plan` · `export_resolve` ·
 `deliverable_list` · `deliverable_plan` · `deliverable_create` · `deliverable_update` ·
 `deliverable_delete` · `deliverable_check` · `brand_list` · `brand_get` ·
 `brand_create` · `brand_update` · `brand_delete` · `claim_list` · `claim_create` ·
@@ -472,6 +472,14 @@ code, `Sound` its dialogue, effects and the scene's beds, and the XML carries
 the cut plus a bin per scene. `export_premiere_scenes_plan` says what it would
 copy and what is missing, for free. Every NLE export now plays the selected
 clip, the same rule as the master.
+
+`export_resolve` writes a DaVinci Resolve project ready to edit: a first edit
+that is the cut Playback plays (each shot's selected clip, or its storyboard
+frame where there is no footage yet), dialogue, effects, music and ambience on
+their own lanes at their levels, the media copied into a folder per scene, a
+marker on every shot with its description, dialogue, camera and cast, a
+metadata CSV, and `Import into Resolve.py`, which builds the project inside
+Resolve. `export_resolve_plan` says what it would hold, for free.
 
 **Before you spend on a spot, read `compliance_check`.** It is free, and it is
 where an automated pipeline gets a client sued: it catches a phrase the brand
