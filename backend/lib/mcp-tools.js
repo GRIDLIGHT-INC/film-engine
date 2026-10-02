@@ -33,6 +33,7 @@ const { handleFlows, runContext } = require('../routes/flows');
 // anything to be consistent about.
 const { handleProjects } = require('../routes/projects');
 const { handleSetBuilds } = require('../routes/set-builds');
+const { handleInbetweens } = require('../routes/inbetweens');
 const { handlePrevisLibrary } = require('../routes/previs-library');
 const { handleBackups } = require('../routes/backups');
 const { handlePostProduction } = require('../routes/post-production');
@@ -524,6 +525,97 @@ const PRODUCTION_TOOLS = [
         description: 'The set-build attempt a world version was made from, with its layout (walls, openings, floors, '
             + 'objects, cameras), or 404 when the version did not come from a set layout. FREE.',
         schema: { world_version_id: { type: 'string' } }, required: ['world_version_id'],
+    },
+    {
+        name: 'inbetweens_list',
+        handler: handleInbetweens, method: 'GET',
+        path: a => `/film/projects/${a.project_id}/inbetweens`,
+        description: 'FREE. Every in-betweens span in the project: two key shots (from, to), the seconds between them, the frames placed between (each with its second, its direction and its current picture), the directions over stretches of time (ranges on the movement, emotion, camera and other lanes), and whether the strip is approved. Also the price of one picture on the project\u2019s image generator.',
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'inbetweens_create',
+        handler: handleInbetweens, method: 'POST',
+        path: a => `/film/projects/${a.project_id}/inbetweens`,
+        body: a => ({ from_shot_id: a.from_shot_id, to_shot_id: a.to_shot_id, gap_s: a.gap_s, count: a.count, every_s: a.every_s }),
+        description: 'FREE. Place in-betweens between two key shots of this project: from_shot_id (e.g. 1A) to to_shot_id (e.g. 1B). gap_s is the seconds between them (default: the first shot\u2019s length). Give count (frames, spread evenly) or every_s (one frame every N seconds: 10 s every 2 s is 4 frames at 2, 4, 6, 8). Nothing is generated; inbetweens_generate makes the pictures.',
+        schema: { project_id: { type: 'string' }, from_shot_id: { type: 'string' }, to_shot_id: { type: 'string' },
+            gap_s: { type: 'number' }, count: { type: 'integer' }, every_s: { type: 'number' } },
+        required: ['project_id', 'from_shot_id', 'to_shot_id'],
+    },
+    {
+        name: 'inbetweens_get',
+        handler: handleInbetweens, method: 'GET',
+        path: a => `/film/inbetweens/${a.inbetween_id}`,
+        description: 'FREE. One in-betweens span: the two key frames, every frame with its second, direction, current picture and older takes, the ranges, and the approval.',
+        schema: { inbetween_id: { type: 'string' } }, required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_update',
+        handler: handleInbetweens, method: 'PUT',
+        path: a => `/film/inbetweens/${a.inbetween_id}`,
+        body: a => ({ gap_s: a.gap_s, count: a.count, every_s: a.every_s, frames: a.frames, ranges: a.ranges }),
+        description: 'FREE. Direct a span. frames: the FULL list [{ at_ms, direction }], each strictly inside the gap (a frame\u2019s own direction, e.g. "her eyes well up"). ranges: the FULL list [{ lane: movement|emotion|camera|other, start_ms, end_ms, text }], e.g. { lane: "movement", start_ms: 2000, end_ms: 4000, text: "head turns fast to the door" }; every frame inside a range is made with it. count or every_s respaces the frames evenly (a frame that stays at its second keeps its direction). Nothing is generated.',
+        schema: { inbetween_id: { type: 'string' }, gap_s: { type: 'number' }, count: { type: 'integer' }, every_s: { type: 'number' },
+            frames: { type: 'array', items: { type: 'object' } }, ranges: { type: 'array', items: { type: 'object' } } },
+        required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_delete',
+        handler: handleInbetweens, method: 'DELETE',
+        path: a => `/film/inbetweens/${a.inbetween_id}`,
+        description: 'Remove an in-betweens span. The pictures it made stay in the asset list, and a clip made from it stays on its first shot.',
+        schema: { inbetween_id: { type: 'string' } }, required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_generate_plan',
+        handler: handleInbetweens, method: 'GET',
+        path: a => `/film/inbetweens/${a.inbetween_id}/generate?from_index=${a.from_index || 0}${a.only ? '&only=true' : ''}`,
+        description: 'FREE. What making the in-between pictures would send and cost: for each frame, the exact instruction and the two pictures it goes with (the frame before it, and the shot it is heading for). from_index starts at that frame (0 = the first); only makes just that frame. Read it before inbetweens_generate.',
+        schema: { inbetween_id: { type: 'string' }, from_index: { type: 'integer' }, only: { type: 'boolean' } },
+        required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_generate',
+        handler: handleInbetweens, method: 'POST',
+        path: a => `/film/inbetweens/${a.inbetween_id}/generate`,
+        body: a => ({ from_index: a.from_index, only: a.only }),
+        description: 'SPENDS (one image per frame, on the project\u2019s image generator). Make the in-between pictures: each frame is made FROM the one before it (the first from the first key shot) and toward the second key shot, with the directions that cover its second and its own. from_index starts at that frame and makes every later one again so the move stays continuous; only makes just that frame. A new take never deletes the old one. Read inbetweens_generate_plan first.',
+        schema: { inbetween_id: { type: 'string' }, from_index: { type: 'integer' }, only: { type: 'boolean' } },
+        required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_select_take',
+        handler: handleInbetweens, method: 'POST',
+        path: a => `/film/inbetweens/${a.inbetween_id}/frames/${a.index}/select`,
+        body: a => ({ asset_id: a.asset_id }),
+        description: 'FREE. Use an older take of one frame (index from 0). The takes are listed by inbetweens_get.',
+        schema: { inbetween_id: { type: 'string' }, index: { type: 'integer' }, asset_id: { type: 'string' } },
+        required: ['inbetween_id', 'index', 'asset_id'],
+    },
+    {
+        name: 'inbetweens_approve',
+        handler: handleInbetweens, method: 'POST',
+        path: a => `/film/inbetweens/${a.inbetween_id}/approve`,
+        description: 'FREE. Sign off the strip. Refused while a frame has no picture. The clip refuses if the strip changes afterwards, until it is approved again.',
+        schema: { inbetween_id: { type: 'string' } }, required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_video_plan',
+        handler: handleInbetweens, method: 'GET',
+        path: a => `/film/inbetweens/${a.inbetween_id}/video${a.shape ? `?shape=${encodeURIComponent(a.shape)}` : ''}`,
+        description: 'FREE. What the clip from the strip would send and cost: shape "one" (every picture in one generation, on a model whose own contract takes in-between pictures) or "legs" (a clip between each pair of neighbouring pictures, first and last frame exact, joined into one file), each call\u2019s prompt with the directions over its stretch, and anything that blocks it. Read it before inbetweens_video.',
+        schema: { inbetween_id: { type: 'string' }, shape: { type: 'string', enum: ['one', 'legs'] } },
+        required: ['inbetween_id'],
+    },
+    {
+        name: 'inbetweens_video',
+        handler: handleInbetweens, method: 'POST',
+        path: a => `/film/inbetweens/${a.inbetween_id}/video`,
+        body: a => ({ shape: a.shape, prompt: a.prompt, ignore_approval: a.ignore_approval }),
+        description: 'SPENDS (the video generator, per second). Make the clip from the first key shot through every in-between to the second, as one file filed on the first shot and selected as the clip it plays. Refused while a frame has no picture, or when an approved strip changed since. Read inbetweens_video_plan first.',
+        schema: { inbetween_id: { type: 'string' }, shape: { type: 'string', enum: ['one', 'legs'] }, prompt: { type: 'string' }, ignore_approval: { type: 'boolean' } },
+        required: ['inbetween_id'],
     },
     {
         name: 'set_build_edit',

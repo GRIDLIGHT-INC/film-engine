@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**428 tools, 88 families.** Everything the app can do, you can ask for in a
+**439 tools, 89 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -1171,6 +1171,13 @@ where to put.
 `repair_run` **spends**, and registers the result as a **new version** — the
 take being repaired was paid for and survives the attempt. Every failure names
 the stage it happened at, so "it failed" is never the whole answer.
+
+### Directing the seconds between two shots
+`inbetweens_list` · `inbetweens_create` · `inbetweens_get` · `inbetweens_update` · `inbetweens_delete` ·
+`inbetweens_generate_plan` · `inbetweens_generate` · `inbetweens_select_take` · `inbetweens_approve` ·
+`inbetweens_video_plan` · `inbetweens_video`
+
+Say *"put 4 in-betweens between 1A and 1B, one every 2 seconds; 2 to 4 seconds her head turns fast to the door, 4 to 10 she starts crying, and at 4 seconds her eyes well up"*. `inbetweens_create` places the frames (free), `inbetweens_update` writes the directions: `ranges` on the movement, emotion, camera and other lanes, and each frame's own `direction`. `inbetweens_generate_plan` shows each frame's instruction and the two pictures it goes with, for free; `inbetweens_generate` spends one image per frame, each made from the one before it and toward 1B (a start frame and "only this one" remake one frame, or one onwards). `inbetweens_video_plan` and `inbetweens_video` make the clip from 1A through every frame to 1B, filed as 1A's clip.
 
 ### Handing somebody a decision
 

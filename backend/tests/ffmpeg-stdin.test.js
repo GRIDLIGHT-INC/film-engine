@@ -34,6 +34,7 @@ const NOT_FFMPEG = {
     'lib/set-build.js|bin': 'probes Blender (`--version`), not ffmpeg',
     'lib/set-build.js|blender.bin': 'runs Blender headless to build a set',
     'tests/set-build.test.js|blender.bin': 'runs Blender headless to check where a turned box lands',
+    "tests/resolve-export.test.js|'python3'": 'compiles the Resolve import script with python3; no encoder is run',
     'tests/instrument-host.test.js|venv': 'starts the Python instrument sidecar',
     "tests/music-bundle.test.js|'tar'": 'unpacks a bundle with tar',
     "tests/music-rights.test.js|'zip'": 'builds an archive with zip',

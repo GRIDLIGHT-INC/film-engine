@@ -34,7 +34,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (122 migrations)
+│   │   └── migrations/     # SQL migration files (123 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -99,6 +99,7 @@ film-engine/
 │   │   ├── media-import.js     # Footage and sound made outside Film Engine: one route, all seven kinds
 │   │   ├── uploads.js          # Resumable transfer: create, append, ask where you got to, finalise
 │   │   ├── sequences.js        # Several shots, one continuous move: plan free, generate, or upload
+│   │   ├── inbetweens.js       # In-betweens between two key shots: spacing, directions over time, frames made in a chain, the clip
 │   │   ├── music-sessions.js   # The score session over a picture sequence: sessions, tracks, clips, batch, brief, drift, rebase
 │   │   ├── deliverables.js     # The output list, and which ratios must be shot rather than cropped
 │   │   ├── brands.js           # The brand library, the claims register, and the free compliance report
@@ -180,6 +181,7 @@ film-engine/
 │   │   ├── generation-cancel.js   # Cancel only where the provider really stops; otherwise stop waiting, collectable, with the billing warning
 │   │   ├── inbetweens.js        # A shot as a strip of stations, not a still
 │   │   ├── inbetween-run.js     # Walking a strip: each station refined from the one before it
+│   │   ├── inbetween-span.js    # In-betweens between two key shots: frames at chosen seconds, directions on lanes over time, what each frame and leg is asked for
 │   │   ├── ffmpeg.js              # Finding an encoder, and joining clips into one file
 │   │   ├── clip-coverage.js       # One clip containing several shots, read by all five assemblies
 │   │   ├── running-order.js       # The order the film plays in, said once for all five assemblies
@@ -491,6 +493,7 @@ film-engine/
 │       ├── inbetweens.test.js        # What a shot's stations are, derived from its own blocking
 │       ├── inbetween-plan.test.js    # The strip, planned for free, capped by the model's own contract
 │       ├── inbetween-run.test.js     # The chain, the refusal, the correction and the approval
+│       ├── inbetween-span.test.js    # In-betweens between two key shots: spacing, directions by lane over time, each frame made from the one before, takes kept, the clip in legs, the graph node
 │       ├── clip-coverage.test.js        # One clip, several shots, honoured by every assembly surface
 │       ├── production-graph.test.js     # Joins, linked frames, version pointers, playback order and pinned layout, through a real server
 │       ├── production-graph-progress.test.js # Every running job lands on its node; a real bar only when the provider sent a percentage
@@ -844,6 +847,7 @@ All routes prefixed with `/film`:
 | Delivery | `GET /projects/:id/delivery-check` (free: each selected clip measured against the delivery size) |
 | Dashboard | `GET /projects/:id/home`, `GET /projects/:id/dashboard`, `GET /projects/:id/status-board` |
 | Conform | `GET /projects/:id/conform` (free plan), `POST /projects/:id/conform` (the project master) |
+| In-betweens | `GET/POST /projects/:id/inbetweens`, `GET/PUT/DELETE /inbetweens/:id`, `GET\|POST /inbetweens/:id/generate` (GET free), `POST /inbetweens/:id/frames/:i/select`, `POST /inbetweens/:id/approve`, `GET\|POST /inbetweens/:id/video` (GET free) |
 | Production graph | `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy`, `POST\|DELETE /shots/:id/video/select`, `POST\|DELETE /sequences/:id/video/select`, `POST\|DELETE /music-cues/:id/select` |
 | Production graph | `GET …/production-graph/{running,queue,run-changed/plan,patterns}` (free), `GET …/nodes/:key/run-to-here/plan` (free), `GET …/match?sha256=&size=` (free), `GET …/patterns/:id/preview?after=` (free), `POST …/run-changed`, `GET …/run-changed/:runId`, `POST …/nodes/:key/run-to-here`, `POST …/runs/:runId/cancel`, `POST …/patterns/:id`, `PUT …/groups/:groupKey`, `POST /generation-jobs/:id/cancel`, `GET /assets/:id/provenance` (free) |
 | Score Sessions | `GET/POST /projects/:id/music-sessions`, `GET/PUT/DELETE /music-sessions/:id` |
@@ -3329,6 +3333,15 @@ Served at `GET /projects/:id/production-graph`, `PUT …/layout`, `POST …/tidy
 **Agents (FOG-012).** `flow_apply_plan` and `flow_form` are free, `flow_apply` spends and requires the plan's fingerprint, and `flow_apply_get` reads an apply. A pick is `flow_run_select` and a cancel is `flow_run_cancel`. All of them dispatch through the routes, and none reaches a server-side model.
 
 **Proven end to end (FOG-013).** `tests/flows-on-graph-e2e.test.js` spawns `server.js` against a mock gateway. It selects two shots, plans, and applies the shipped "Multi-model video" template, with its fan-out pointed at the gateway because a test holds no other credentials. It checks that both runs pause with three candidates each and nothing selected, and that both wait on the queue. Then it picks one variation and checks three results: that shot's `selected_video_asset_id` is that asset, the other shot is untouched, and the queue moves the picked run to "done today" while the other still waits.
+
+### In-Betweens Between Two Key Shots
+*"Say we have a storyboard shot 1A and then 1B, and in between those shots we have 10 seconds. I could connect the two nodes, add an in-betweens node, say 4 shots every 2 seconds, and direct those frames individually: more smile, tears. And decide where the changes apply: between second 2 and 4 the head turns quickly, from 4 to 10 the character starts crying."*
+
+`lib/inbetweens.js` densifies ONE shot from its own camera move; this is the other meaning, the seconds BETWEEN two approved pictures, with frames placed where the director chooses (`film_inbetweens`, migration 126; `lib/inbetween-span.js`; `routes/inbetweens.js`). On the Production graph, drag a shot's image port onto another shot, or use **In-betweens to the next shot…** on a shot's menu. The dialog says how many seconds lie between them (the first shot's length, editable) and links **how many frames** to **one every N seconds** (10 s with 4 is 2, 4, 6, 8). The span is a node wired 1A → in-betweens → 1B, drawn as a strip of thumbnails in time.
+
+**Direct the stretch** opens the strip horizontally with lanes for movement, emotion, camera and other: a direction covers a stretch of seconds, and every frame inside it is made with it (a range's end belongs to it, so 2–4 s covers the frame at 4 s). Each frame has its own direction on top, quick picks, its second (movable), and its takes. **Each frame is made FROM the one before it** (the first from 1A) with 1B attached as where the move arrives, each picture named by its job in the prompt and the frame said as a fraction of the way between them. Remaking one frame either remakes the later ones from it, so the move stays continuous, or only that frame. A new take never deletes the old one; a picked take is the one used. In-between pictures are `other` assets (`kind: inbetween_frame`), never storyboard versions, so they cannot replace a shot's board frame.
+
+**The clip** goes from 1A through every frame to 1B. On a generator whose own reference contract takes in-between pictures (Seedance 2.5 on MuAPI) every picture goes in ONE generation as ordered references; otherwise in LEGS, a clip between each pair of neighbouring pictures with the first and last frame exact and the directions over that stretch, joined into one file with no cut. The file is a `video_raw` on 1A (`kind: inbetween_clip`) and becomes 1A's selected clip. An approved strip that changed refuses until approved again or `ignore_approval`. Both spending paths read the route's free plan first and go through the one confirmation. Served as `inbetweens_list`, `_create`, `_get`, `_update`, `_delete`, `_generate_plan`, `_generate`, `_select_take`, `_approve`, `_video_plan` and `_video`. `tests/inbetween-span.test.js` runs it through the route with the image and video generators stubbed.
 
 ### One Clip, Several Shots
 *"I generated a video that includes 1A-B-C… when playing a video in playback it should be playing the entire video, not a few seconds and then switch to the next image. And if I option select which other shots are part of the video, it shouldn't play any of the images that are part of the video."*
@@ -6335,7 +6348,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (122 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (123 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6391,6 +6404,7 @@ SQLite via `better-sqlite3`. Schema auto-migrates on startup (122 migrations).
 - `film_music_automation` — a parameter over time, per track or per clip
 - `film_music_operations` — every generate, separate, bounce, import, push, pull, rebase and approval, with lineage
 - `film_music_daw_links` — one DAW item per Film Engine key per adapter, with the DAW revision last written
+- `film_inbetweens` — frames between two key shots: the gap, each frame's second and direction, directions over stretches of time, the approval and the clip made from it
 - `film_set_builds` — every attempt at building a location's set in Blender: the layout, the comparison sheets, and the world version and 3D asset it became
 
 ## Epic Status
@@ -6592,6 +6606,7 @@ node --test backend/tests/video-sequence.test.js
 node --test backend/tests/inbetweens.test.js
 node --test backend/tests/inbetween-plan.test.js
 node --test backend/tests/inbetween-run.test.js
+node --test backend/tests/inbetween-span.test.js
 node --test backend/tests/clip-coverage.test.js
 node --test backend/tests/production-graph.test.js
 node --test backend/tests/production-graph-progress.test.js

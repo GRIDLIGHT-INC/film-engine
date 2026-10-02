@@ -61,6 +61,14 @@ const FREE_ENDPOINTS = {
     worldExploreAccept: 'validates candidate cameras against the geometry; cinematography.js '
         + 'reaches no provider and generates nothing',
     worldExploreLoad: 'applies an already-validated camera to the shot; it writes a camera, not media',
+    /*
+     * In-betweens between two key shots: these write the span's spacing, which
+     * take of a frame is used, and the approval. The paid paths, ibGenerate and
+     * ibMakeClip, go through the shared confirmation and are in the denominator.
+     */
+    ibSaveSetup: 'writes the span row (how many frames, how often); "save and make frames" hands off to ibGenerate, which is gated',
+    ibPickTake: 'points a frame at a take it already has; nothing is generated',
+    ibApprove: 'records the strip\'s approval fingerprint',
 };
 
 /**

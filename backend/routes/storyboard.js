@@ -3910,6 +3910,8 @@ module.exports = {
     // The shared refine request, so a strip station and the refine button
     // cannot come to ask for different things.
     generateRefinedFrame, registerStoryboardAsset, ensureStoryboardDir, storyboardImagePath,
+    // The one image funnel, for in-between frames between two key shots.
+    callImageGen,
     // A flow variation picked onto the board archives what it replaces, as a pick of an angle does.
     archiveExistingFrame,
     // A frame collected after its call was abandoned is filed by the same rule.

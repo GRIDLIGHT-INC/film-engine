@@ -364,6 +364,7 @@ const CREATE_DELETE_PAIRS = [
     { create: 'music_marker_create',  remove: 'music_marker_delete' },
     { create: 'music_emotion_create', remove: 'music_emotion_delete' },
     { create: 'music_automation_create', remove: 'music_automation_delete' },
+    { create: 'inbetweens_create', remove: 'inbetweens_delete' },
 ];
 
 test('the pair list covers every create tool on the surface', () => {

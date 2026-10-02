@@ -26,6 +26,8 @@ const NODE_SIZE = Object.freeze({
     sound: { w: 200, h: 130 },
     audio: { w: 180, h: 110 },
     link: { w: 200, h: 150 },
+    // In-betweens between two key shots: a strip of thumbnails, in time.
+    inbetween: { w: 360, h: 150 },
 });
 
 const VIDEO_TYPES = ['video_final', 'video_synced', 'video_raw'];
@@ -298,8 +300,11 @@ function autoLayout(graph, collapsed) {
         // Versions and sounds share the next column; each sound's own versions
         // sit to its right, on its row.
         let vy = y0;
-        for (const key of g.versions) { put(key, nextX, vy); vy += h(key) + GAP; }
         let widest = 200;
+        for (const key of g.versions) {
+            put(key, nextX, vy); vy += h(key) + GAP;
+            widest = Math.max(widest, (NODE_SIZE[(nodeOf.get(key) || {}).type] || { w: 200 }).w);
+        }
         for (const s of g.sounds) {
             put(s.key, nextX, vy);
             let sx = nextX + 200 + 40;
@@ -606,6 +611,34 @@ function buildGraph(db, projectId) {
      * sound is decided above and must not change with the order.
      */
     groups.sort((a, b) => (a.order === b.order ? 0 : a.order - b.order));
+    /*
+     * IN-BETWEENS between two key shots: a node in the group of the shot it
+     * leaves from, wired from that shot's picture and on to the shot it arrives
+     * at. The strip is the span's own frames, each at its second.
+     */
+    let spans = [];
+    try { spans = db.prepare('SELECT id FROM film_inbetweens WHERE project_id = ? ORDER BY created_at').all(projectId); } catch (_) { spans = []; }
+    for (const sp of spans) {
+        let l = null;
+        try { l = require('../routes/inbetweens').load(sp.id); } catch (_) { l = null; }
+        if (!l || !shotNode.has(l.span.from_shot_id) || !shotNode.has(l.span.to_shot_id)) continue;
+        const key = `ib:${sp.id}`;
+        const urlOfKey = k => (k && k.frame ? urlFor(k.frame.file_path) : null);
+        nodes.push({
+            key, type: 'inbetween', id: sp.id,
+            from_shot_id: l.span.from_shot_id, to_shot_id: l.span.to_shot_id,
+            from_code: l.span.from_code, to_code: l.span.to_code, gap_ms: l.span.gap_ms,
+            count: l.span.frames.length, made: l.span.frames.filter(f => f.asset_id).length,
+            frames: [{ at_ms: 0, url: urlOfKey(l.from), key: true },
+                ...l.span.frames.map(f => ({ at_ms: f.at_ms, url: f.url, directed: !!f.direction })),
+                { at_ms: l.span.gap_ms, url: urlOfKey(l.to), key: true }],
+            ranges: l.span.ranges.length, approval: l.approval, clip_asset_id: l.row.clip_asset_id || null,
+        });
+        edge(`shot:${l.span.from_shot_id}`, 'image', key, 'in', 'image', 'solid');
+        edge(key, 'out', `shot:${l.span.to_shot_id}`, 'plates', 'image', 'dotted');
+        const home = groups.find(g => (g.shots || []).includes(`shot:${l.span.from_shot_id}`)) || groups[0];
+        if (home) home.versions = [key, ...(home.versions || [])];
+    }
     const loose = nodes.filter(n => n.type === 'sound' && !placedSound.has(n.key));
     if (loose.length) {
         groups.push({ id: 'sounds', label: 'SOUNDS', shots: [], sequence: null, links_start: [], links_end: [], versions: [],
@@ -703,6 +736,12 @@ const NODE_IMPACT = Object.freeze({
         return out_('current');
     },
     link(n) { return n.stale ? out_('redo', IMPACT_WHY.link) : out_('current'); },
+    inbetween(n) {
+        if (!n.made) return out_('never');
+        if (n.approval && n.approval.stale) return out_('redo', 'The strip changed after it was approved.');
+        if (n.made < n.count) return out_('waiting', `${n.count - n.made} of ${n.count} frames have no picture yet.`);
+        return out_('current');
+    },
     sound(n, ctx) {
         if (!n.selected_asset_id) return out_('never');
         const own = assetOf(n.selected_asset_id, ctx);

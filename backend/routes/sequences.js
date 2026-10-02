@@ -1660,4 +1660,4 @@ async function handleSequences(req, res, urlParts, query) {
     return false;
 }
 
-module.exports = { handleSequences, shotsOf, sequenceFileName };
+module.exports = { handleSequences, shotsOf, sequenceFileName, sequenceFrame, seqConfig };

@@ -16,7 +16,7 @@ URLs. Until now nothing drew them.
 ADR-006 rejected splats because of three constraints. None of them has changed:
 
 - `gridlight.json` still pins `build.target: single-html`. The page is one file,
-  now **3.1 MB**, and every visitor downloads all of it.
+  now **3.3 MB**, and every visitor downloads all of it.
 - The page vendors three.js **r149** as a classic script for the GLB stage and
   GLTFLoader. Spark needs a modern three.
 - The backend deliberately has only two dependencies, and no devDependencies.

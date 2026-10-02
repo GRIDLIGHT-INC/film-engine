@@ -93,6 +93,7 @@ const { handleBrands } = require('./routes/brands');
 const { handleMediaImport } = require('./routes/media-import');
 const { handleUploads } = require('./routes/uploads');
 const { handleSequences } = require('./routes/sequences');
+const { handleInbetweens } = require('./routes/inbetweens');
 const { handleMusicSessions } = require('./routes/music-sessions');
 const { handleAnnotations } = require('./routes/annotations');
 const { handleScreenplayAI } = require('./routes/screenplay-ai');
@@ -509,6 +510,11 @@ const server = http.createServer(async (req, res) => {
             if (!parts[4] && req.method === 'GET') {
                 return await sounds.listSounds(req, res, parts[2]);
             }
+        }
+
+        // In-betweens between two key shots: registered before the project catch-all.
+        if ((parts[1] === 'projects' && parts[2] && parts[3] === 'inbetweens') || (parts[1] === 'inbetweens' && parts[2])) {
+            return await handleInbetweens(req, res, parts, query);
         }
 
         if ((parts[1] === 'projects' && parts[2] && parts[3] === 'sequences')

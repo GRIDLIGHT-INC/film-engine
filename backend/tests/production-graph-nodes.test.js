@@ -87,6 +87,9 @@ db.prepare("INSERT INTO film_sequences (id, project_id, name, shot_ids, start_fr
     .run(SEQ2, P, JSON.stringify([S.D]), JSON.stringify({ sequence_id: SEQ, mode: 'shot_image' }));
 // A score cue with one generated version: a sound node and an audio version.
 db.prepare("INSERT INTO film_music_cues (id, project_id, scene_id, cue_type, title) VALUES (?, ?, ?, 'score', 'Diner theme')").run(CUE, P, SC);
+// In-betweens between A and B, so the in-betweens node is drawn too.
+db.prepare(`INSERT INTO film_inbetweens (id, project_id, from_shot_id, to_shot_id, gap_ms, frames_json) VALUES (?, ?, ?, ?, 4000, '[{"at_ms":2000,"direction":""}]')`)
+    .run(generateId(), P, S.A, S.B);
 const MUSIC = asset('audio_music', { scene: SC, file: path.join(mdir, 'theme.mp3'), meta: { cue_id: CUE } });
 db.prepare('UPDATE film_music_cues SET generated_asset_id = ? WHERE id = ?').run(MUSIC, CUE);
 // A job running on 1C, heard from just now.

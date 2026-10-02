@@ -29,12 +29,14 @@ const APPLY_TARGETS = Object.freeze({
     audio: false,
     sound: false,
     link: false,
+    inbetween: false,
 });
 const APPLY_REFUSED = Object.freeze({
     video: 'A clip version is an output of its shot or sequence; apply the flow to that shot or sequence instead.',
     audio: 'A sound version is an output of its sound cue; a flow run binds one shot, so apply it to the shots of that scene instead.',
     sound: 'A sound cue belongs to a scene, and a flow run binds one shot\'s context; apply the flow to the scene\'s shots instead.',
     link: 'A borrowed frame is a reference between sequences, not a shot; apply the flow to the sequence that uses it instead.',
+    inbetween: 'In-betweens are frames between two shots, made by their own node; apply the flow to either of the two shots instead.',
 });
 
 const parseJson = (text, fallback) => { try { return text ? JSON.parse(text) : fallback; } catch (_) { return fallback; } };

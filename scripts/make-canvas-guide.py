@@ -474,12 +474,15 @@ table(['Item', 'What it does'], [
     ['Generate frame / Regenerate frame, Generate sequence, Generate sound', 'The node\'s own generate — the same confirmation as its drawer button.'],
     ['Play this version', 'On a video or audio version: selects it.'],
     ['Open the source sequence', 'On a linked frame: jumps to the sequence it borrows from.'],
+    ['In-betweens to the next shot…', 'On a shot: frames between it and the next shot, how many and how often, each directed on its own. Dragging a shot\'s image port onto another shot does the same.'],
+    ['Make the frames / Make the frames again', 'On an in-betweens node: each frame made from the one before it and toward the second shot, after one confirmation.'],
+    ['Direct the stretch…, Spacing…', 'On an in-betweens node: the strip in time with directions on movement, emotion, camera and other lanes; or how many frames and how often.'],
     ['Run to here', 'Everything this node still needs, in order, after one confirmation (section 8).'],
     ['Duplicate', 'Shot: a new shot after it with the same description. Sequence: a copy WITHOUT its shots. Sound: a copy with the same direction.'],
     ['Upscale…', 'On a shot, or one of a shot\'s clip versions: enlarges the clip to the delivery size on MuAPI, after one confirmation (section 27).'],
     ['Hold / Release hold', 'Batch runs skip it, or stop skipping it (section 11). Also Ctrl+B.'],
     ['Remove from its sequence', 'On a shot in a sequence: takes it out. The shot and its frames are kept.'],
-    ['Remove from graph', 'Sequence: deletes the sequence — its shots and clips stay. Sound: deletes the cue — its audio stays. Linked frame: unlinks.'],
+    ['Remove from graph', 'Sequence: deletes the sequence — its shots and clips stay. Sound: deletes the cue — its audio stays. Linked frame: unlinks. In-betweens: removes the span — its pictures and any clip stay.'],
     ['Right-click a box: Run pending, Tidy layout', 'Run pending for what is in view; re-place the nodes nobody moved.'],
 ], widths=[Inches(2.3), Inches(4.4)])
 

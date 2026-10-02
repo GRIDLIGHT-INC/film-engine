@@ -17,10 +17,11 @@
 const { COST_PER_CALL, budgetStatus } = require('./flow-cost');
 
 /** Which node types can be pointed at. `false` means refused, with why. */
-const TARGETS = Object.freeze({ shot: true, video: true, sequence: true, sound: true, link: false, audio: false });
+const TARGETS = Object.freeze({ shot: true, video: true, sequence: true, sound: true, link: false, audio: false, inbetween: false });
 const REFUSED = Object.freeze({
     link: 'A borrowed frame is not made; run to the sequence that uses it instead.',
     audio: 'A sound version is an output; run to its sound instead.',
+    inbetween: 'In-betweens are made from their own node (Make the frames, then Make the clip); run to either of the two shots instead.',
 });
 
 const behind = n => !!(n && n.impact && (n.impact.state === 'redo' || n.impact.state === 'waiting'));

@@ -5411,6 +5411,41 @@ body.pv-hide-left:not(.pv-hide-right) .pv-grid { grid-template-columns:minmax(0,
 .pg-node.ver { background:#1d1d22; }
 .pg-node.sel { border-color:#f5c451; box-shadow:0 0 0 1px #f5c451, 0 0 0 5px rgba(245,196,81,.12); }
 .pg-node.failed { border-color:rgba(240,138,138,.45); }
+/* In-betweens between two key shots */
+.pg-node.pg-ib { background:#201d16; border-color:#5a4d2a; }
+.pg-ib-strip { display:flex; gap:4px; padding:6px 8px 4px; overflow:hidden; }
+.pg-ib-strip .t { flex:1 1 0; min-width:0; aspect-ratio:16/9; border-radius:4px; background:#2b2a24; border:1px dashed #5a4d2a; background-size:cover; background-position:center; }
+.pg-ib-strip .t.key { border:1.5px solid #6aa8ff; background-color:#2a3140; }
+.pg-ib-strip .t.has { border-style:solid; }
+.pg-ib-strip .t.dir { box-shadow:inset 0 -3px 0 #e0864c; }
+.pg-ib-ticks { display:flex; justify-content:space-between; padding:0 8px; font:500 10px 'IBM Plex Mono', ui-monospace, monospace; color:#8a8a96; }
+.ib-overlay .modal-content { max-width:1240px; width:96vw; }
+.ib-row { display:grid; gap:10px; }
+.ib-strip { display:grid; gap:10px; grid-auto-flow:column; grid-auto-columns:minmax(110px,1fr); overflow-x:auto; padding-bottom:4px; }
+.ib-cell { display:flex; flex-direction:column; gap:4px; cursor:pointer; background:none; border:0; padding:0; color:inherit; text-align:left; }
+.ib-cell .pic { aspect-ratio:16/9; border-radius:6px; background:#2b2a24 center/cover no-repeat; border:1px dashed #5a4d2a; display:flex; align-items:center; justify-content:center; font-size:11px; color:#a99d80; }
+.ib-cell.key .pic { border:2px solid #6aa8ff; background-color:#2a3140; color:#8d95a8; }
+.ib-cell.has .pic { border-style:solid; }
+.ib-cell.sel .pic { border:3px solid #f0b44c; }
+.ib-cell .tm { font:600 12px 'IBM Plex Mono', ui-monospace, monospace; color:#f0b44c; }
+.ib-cell.key .tm { color:inherit; }
+.ib-lanes { display:grid; grid-template-columns:110px minmax(0,1fr); gap:8px; align-items:center; }
+.ib-lane { position:relative; height:34px; border-radius:6px; background:#1d2029; cursor:crosshair; }
+.ib-bar { position:absolute; top:3px; bottom:3px; border-radius:5px; font-size:12px; display:block; line-height:26px; padding:0 8px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; border:1px solid transparent; color:#fff; }
+.ib-bar.movement { background:#20345a; border-color:#5b8def; color:#cfe0ff; }
+.ib-bar.emotion { background:#4a2c1c; border-color:#e0864c; color:#ffd9c2; }
+.ib-bar.camera { background:#1f3a33; border-color:#4fb39a; color:#c8f0e4; }
+.ib-bar.other { background:#33303f; border-color:#9a8fd0; color:#e3dcff; }
+.ib-tick { position:absolute; top:0; bottom:0; width:2px; background:#f0b44c; opacity:.55; pointer-events:none; }
+.ib-ruler { display:flex; justify-content:space-between; font:500 11px 'IBM Plex Mono', ui-monospace, monospace; color:#7a7a86; }
+.ib-side { border-left:1px solid #2c2f39; padding-left:16px; display:flex; flex-direction:column; gap:10px; }
+.ib-chip { height:30px; padding:0 10px; border-radius:15px; border:1px solid #3a3e4b; background:#1d2029; color:#c4c6d0; font-size:12px; cursor:pointer; }
+.ib-step { display:flex; align-items:center; gap:8px; }
+.ib-step button { width:40px; height:40px; border-radius:8px; border:1px solid #3a3e4b; background:#1d2029; color:inherit; font-size:18px; cursor:pointer; }
+.ib-step input { width:84px; height:40px; text-align:center; font:600 16px 'IBM Plex Mono', ui-monospace, monospace; }
+.ib-where { position:relative; height:44px; border-radius:8px; background:#101218; border:1px solid #2c2f39; }
+.ib-where .k { position:absolute; top:10px; width:24px; height:24px; border-radius:5px; background:#6aa8ff; color:#0b1a33; font:600 10px 'IBM Plex Mono', monospace; display:flex; align-items:center; justify-content:center; }
+.ib-where .m { position:absolute; top:16px; width:12px; height:12px; border-radius:3px; background:#f0b44c; margin-left:-6px; }
 .pg-node.link { border:1.5px dashed #c07ce0; background:#1d1d22; }
 .pg-node.empty { border:1.5px dashed #3a3a44; background:transparent; }
 .pg-node.drop-ok { box-shadow:0 0 0 2px #f5c451; }
@@ -7866,6 +7901,29 @@ body.pv-hide-left:not(.pv-hide-right) .pv-grid { grid-template-columns:minmax(0,
 
     <!-- Every attempt at one shot. They have always been kept on disk; this is
          the way back to one. -->
+
+    <!-- In-betweens: how many frames, how often, between two key shots -->
+    <div class="modal-overlay ib-overlay" id="ibSetupModal" onclick="ibCloseSetup()">
+        <div class="modal-content" style="max-width:600px;" onclick="event.stopPropagation()" role="dialog" aria-labelledby="ibSetupTitle">
+            <div class="flex-between mb-16">
+                <h2 id="ibSetupTitle">In-betweens</h2>
+                <button class="modal-close" onclick="ibCloseSetup()" aria-label="Close">&times;</button>
+            </div>
+            <div id="ibSetupBody"></div>
+        </div>
+    </div>
+
+    <!-- In-betweens: direct the stretch, frame by frame and over time -->
+    <div class="modal-overlay ib-overlay" id="ibDirectModal" onclick="ibCloseDirect()">
+        <div class="modal-content" onclick="event.stopPropagation()" role="dialog" aria-labelledby="ibDirectTitle">
+            <div class="flex-between mb-16">
+                <h2 id="ibDirectTitle">Direct the stretch</h2>
+                <button class="modal-close" onclick="ibCloseDirect()" aria-label="Close">&times;</button>
+            </div>
+            <div id="ibDirectBody"></div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="frameVersionsModal" onclick="closeFrameVersions()">
         <div class="modal-content" style="max-width:900px;" onclick="event.stopPropagation()">
             <div class="flex-between mb-16">
@@ -47838,6 +47896,7 @@ function pgNodeHtml(n, raw) {
     // second or so without re-rendering the canvas (PGN-003).
     const live = PG.running.get(n.key);
     const run = (busy || live) ? `<div class="pg-run" data-run="${esc(n.key)}">${pgProgressHtml(live, busy)}</div>` : '';
+    if (n.type === 'inbetween') return pgInbetweenNodeHtml(n, sel, pos, run);
     if (n.type === 'shot') {
         const f = n.selected_frame;
         const inSeq = n.sequence_id ? pgNode('seq:' + n.sequence_id) : null;
@@ -48265,6 +48324,8 @@ function pgCanWire(g, toKey, toPort, toType) {
     const from = pgNode(g.from), to = pgNode(toKey);
     if (!from || !to || from.key === to.key) return false;
     if (g.type === 'image' && from.type === 'shot' && to.type === 'sequence' && /^slot:/.test(toPort)) return true;
+    // Shot picture onto another shot: in-betweens between the two.
+    if (g.type === 'image' && from.type === 'shot' && to.type === 'shot' && toPort === 'plates') return true;
     if (g.type === 'scene' && (from.type === 'shot' || from.type === 'sequence') && to.type === 'sound') return true;
     if (g.port === 'end' && from.type === 'sequence' && to.type === 'sequence' && (toPort === 'start' || toPort === 'endlink')) return true;
     return false;
@@ -48290,6 +48351,7 @@ async function pgWire(g, toKey, toPort, toType) {
         return;
     }
     const from = pgNode(g.from), to = pgNode(toKey);
+    if (from.type === 'shot' && to.type === 'shot') return ibOpenSetup(from, to);
     try {
         if (from.type === 'shot' && to.type === 'sequence') {
             if (to.shot_ids.includes(from.id)) return;
@@ -48868,17 +48930,20 @@ function pgOpenMenu(x, y, key, group) {
     if (n) {
         PG.menuFor = key;
         const runLabel = { shot: n.frames && n.frames.length ? 'Regenerate frame' : 'Generate frame', sequence: 'Generate sequence',
-            sound: 'Generate sound', video: 'Play this version', audio: 'Play this version', link: 'Open the source sequence' }[n.type];
+            sound: 'Generate sound', video: 'Play this version', audio: 'Play this version', link: 'Open the source sequence',
+            inbetween: n.made ? 'Make the frames again' : 'Make the frames' }[n.type];
         if (runLabel) items.push(`<button onclick="pgMenuDo('run')">${runLabel}</button>`);
         // Only where the server can plan it (PGN-009); the set is held equal to run-to-here TARGETS.
         if (PG_RUN_TO_HERE_TYPES.includes(n.type)) items.push(`<button onclick="pgMenuDo('to-here')" title="Make everything this still needs, in order, after one confirmation">Run to here</button>`);
         if (n.type === 'shot' || n.type === 'sequence' || n.type === 'sound') items.push(`<button onclick="pgMenuDo('dup')">Duplicate</button>`);
+        if (n.type === 'shot') items.push(`<button onclick="pgMenuDo('ib-next')" title="Frames between this shot and the next, each directed on its own">In-betweens to the next shot…</button>`);
+        if (n.type === 'inbetween') items.push(`<button onclick="pgMenuDo('ib-direct')">Direct the stretch…</button>`, `<button onclick="pgMenuDo('ib-spacing')">Spacing…</button>`);
         const upWhy = pgUpscaleWhyNot(n);
         if (upWhy !== undefined) items.push(upWhy ? `<button disabled title="${esc(upWhy)}">Upscale…</button>`
             : `<button onclick="pgMenuDo('upscale')" title="Enlarge this clip to the delivery size on MuAPI, after one confirmation">Upscale…</button>`);
         items.push(pgApplyMenuItem(n, PG.picked.size));
         if (PG_HOLD_ROUTES[n.type]) items.push(`<button onclick="pgMenuDo('hold')" title="Batch runs skip a held node; the film keeps it (Ctrl+B)">${n.held ? 'Release hold' : 'Hold'}</button>`);
-        const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || (n.type === 'shot' && n.sequence_id);
+        const removable = n.type === 'sequence' || n.type === 'sound' || n.type === 'link' || n.type === 'inbetween' || (n.type === 'shot' && n.sequence_id);
         items.push(`<button onclick="pgMenuDo('remove')" ${removable ? '' : 'disabled title="A shot leaves the film on the Scenes page, not here"'}>${
             n.type === 'shot' ? 'Remove from its sequence' : 'Remove from graph'}</button>`);
     } else if (group) {
@@ -48899,9 +48964,13 @@ async function pgMenuDo(what) {
     if (what === 'run') {
         if (n.type === 'link') { const src = pgNode('seq:' + n.source_sequence_id); if (src) { pgSelect(src.key); pgPanTo(src.key); } return; }
         if (n.type === 'video' || n.type === 'audio') { pgSelect(n.key); pgSelectVersion(n.key); return; }
+        if (n.type === 'inbetween') return ibGenerate(n.id, 0, false);
         return pgRunNode(n.key);
     }
     if (what === 'to-here') return pgRunToHere(n.key);
+    if (what === 'ib-next') return ibStartFromShot(n);
+    if (what === 'ib-direct') return ibOpenDirect(n.id);
+    if (what === 'ib-spacing') return ibOpenSetupFor(n.id);
     if (what === 'apply') return pgOpenApplyFlow(n.key);
     if (what === 'hold') return pgToggleHold(n.key);
     if (what === 'dup') return pgDuplicate(n);
@@ -48968,6 +49037,7 @@ function pgApplyMenuItem(n, pickedCount) {
         audio: 'A sound version is an output of its sound cue; a flow run binds one shot, so apply it to the shots of that scene instead.',
         sound: 'A sound cue belongs to a scene, and a flow run binds one shot\'s context; apply the flow to the scene\'s shots instead.',
         link: 'A borrowed frame is a reference between sequences, not a shot; apply the flow to the sequence that uses it instead.',
+        inbetween: 'In-betweens are frames between two shots, made by their own node; apply the flow to either of the two shots instead.',
     }[n.type] || `A ${n.type} node cannot take a flow; apply it to a shot or a sequence.`;
     return `<button disabled title="${esc(why)}">Apply flow…</button>`;
 }
@@ -49230,6 +49300,9 @@ async function pgRemove(n) {
             await api('/music-cues/' + n.id, { method: 'DELETE' });
         } else if (n.type === 'link') {
             await api('/sequences/' + n.sequence_id, { method: 'PUT', body: JSON.stringify({ [n.side + '_frame_ref']: null }) });
+        } else if (n.type === 'inbetween') {
+            if (!confirm(`Remove the in-betweens ${n.from_code} → ${n.to_code}?\n\nThe pictures it made stay in the asset list, and a clip made from it stays on ${n.from_code}.`)) return;
+            await api('/inbetweens/' + n.id, { method: 'DELETE' });
         }
         if (PG.sel === n.key) PG.sel = null;
         loadProductionGraph();
@@ -49440,6 +49513,7 @@ function pgRenderDrawer() {
     else if (n.type === 'sound') pgDrawerSound(n, body, foot, close);
     else if (n.type === 'video' || n.type === 'audio') pgDrawerVersion(n, body, foot, close);
     else if (n.type === 'link') pgDrawerLink(n, body, foot, close);
+    else if (n.type === 'inbetween') pgDrawerInbetween(n, body, foot, close);
     const why = pgImpactDrawerHtml(n);
     if (why) {
         const head = body.querySelector('.pg-dhead');
@@ -50255,6 +50329,386 @@ function pgDrawerLink(n, body, foot, close) {
         ${into && into.links.stale ? '<div class="pg-warn">The source changed since the receiving sequence last generated.</div>' : ''}</div>`;
     foot.innerHTML = `<button class="pg-hbtn" onclick="pgRemove(pgNode('${n.key}'))">Unlink</button><div class="grow"></div>
         <button class="pg-hbtn primary" onclick="pgSelect('seq:${n.source_sequence_id}');pgPanTo('seq:${n.source_sequence_id}')">Open the source</button>`;
+}
+
+// ── In-betweens between two key shots ────────────────────────────────────
+/*
+ * Connect 1A to 1B (drag 1A's image port onto 1B, or "In-betweens to the next
+ * shot" on 1A), say how many frames and how often, and direct them: each frame
+ * on its own, and stretches of time on their lanes. Everything that spends goes
+ * through the one confirmation, reading the route's own free plan first.
+ */
+const IB = { setup: null, span: null, sel: 0, rangeEdit: null, price: null };
+const ibSecs = ms => (Math.round(Number(ms) / 100) / 10).toFixed(1);
+
+function pgInbetweenNodeHtml(n, sel, pos, run) {
+    const frames = n.frames || [];
+    const cells = frames.map(f => `<span class="t${f.key ? ' key' : ''}${f.url ? ' has' : ''}${f.directed ? ' dir' : ''}"
+        ${f.url ? `style="background-image:url('${esc(pgThumb(f.url, 120))}')"` : ''} title="${ibSecs(f.at_ms)} s"></span>`).join('');
+    const status = n.made ? `${n.made} of ${n.count} made${n.approval && n.approval.approved ? (n.approval.stale ? ' · changed since approval' : ' · approved') : ''}`
+        : `${n.count} frames, none made yet`;
+    return `<div class="pg-node pg-ib${sel}" data-key="${n.key}" style="${pos}width:360px;height:150px;">
+        <div class="pg-nh"><div class="pg-nt"><span class="pg-title">${esc(n.from_code)} → ${esc(n.to_code)}</span>
+          <span class="pg-vtag">${ibSecs(n.gap_ms)} s</span></div>
+          <div class="pg-sub">in-betweens · ${esc(status)}${n.ranges ? ` · ${n.ranges} direction${n.ranges === 1 ? '' : 's'}` : ''}</div></div>
+        <div class="pg-ib-strip">${cells}</div>
+        <div class="pg-ib-ticks"><span>0 s</span><span>${ibSecs(n.gap_ms)} s</span></div>
+        <div class="pg-row">${pgPort('in', 'image', 'in')}<span>from ${esc(n.from_code)}</span><span>to ${esc(n.to_code)}</span>${pgPort('out', 'image', 'out')}</div>
+        ${run}</div>`;
+}
+
+function pgDrawerInbetween(n, body, foot, close) {
+    body.innerHTML = `
+      <div class="pg-dhead">${close}<h3 class="pg-dtitle">In-betweens ${esc(n.from_code)} → ${esc(n.to_code)}</h3>
+        <div class="pg-dsub">${ibSecs(n.gap_ms)} s between the two shots · ${n.count} frame${n.count === 1 ? '' : 's'} · ${n.made} made</div></div>
+      <div class="pg-dsec"><div class="pg-ib-strip" style="padding:0;">${(n.frames || []).map(f => `<span class="t${f.key ? ' key' : ''}${f.url ? ' has' : ''}"
+          ${f.url ? `style="background-image:url('${esc(pgThumb(f.url, 160))}')"` : ''}></span>`).join('')}</div>
+        <p class="pg-note" style="margin-top:8px;">Each frame is made from the one before it, starting at ${esc(n.from_code)} and heading for ${esc(n.to_code)}.
+          Direct each frame, or a stretch of time, then make the clip from all of them.</p></div>`;
+    foot.innerHTML = `<button class="pg-hbtn" onclick="pgRemove(pgNode('${n.key}'))">Remove</button>
+        <button class="pg-hbtn" onclick="ibOpenSetupFor('${n.id}')">Spacing</button><div class="grow"></div>
+        <button class="pg-hbtn primary" onclick="ibOpenDirect('${n.id}')">Direct the stretch</button>`;
+}
+
+/** The next shot in running order, for "In-betweens to the next shot". */
+function ibNextShot(n) {
+    const order = (PG.graph && PG.graph.running_order) || [];
+    const i = order.indexOf(n.id);
+    return i >= 0 && order[i + 1] ? pgNode('shot:' + order[i + 1]) : null;
+}
+
+async function ibStartFromShot(n) {
+    const next = ibNextShot(n);
+    if (!next) return setStatus(`${n.shot_code} is the last shot; drag its image port onto the shot it should run to.`);
+    return ibOpenSetup(n, next);
+}
+
+/** Open the spacing dialog for a new pair, or for a span that exists. */
+async function ibOpenSetup(from, to) {
+    const existing = ((PG.graph && PG.graph.nodes) || []).find(x => x.type === 'inbetween' && x.from_shot_id === from.id && x.to_shot_id === to.id);
+    if (existing) return ibOpenSetupFor(existing.id);
+    IB.setup = { id: null, from_code: from.shot_code, to_code: to.shot_code, from_id: from.id, to_id: to.id,
+        gap_ms: Number(from.duration_ms) || 5000, count: 4 };
+    await ibLoadPrice();
+    ibRenderSetup();
+    showModal('ibSetupModal');
+}
+
+async function ibOpenSetupFor(id) {
+    try {
+        const s = await api('/inbetweens/' + id);
+        IB.setup = { id, from_code: s.from.shot_code, to_code: s.to.shot_code, from_id: s.from.shot_id, to_id: s.to.shot_id,
+            gap_ms: s.gap_ms, count: s.frames.length || 1 };
+        await ibLoadPrice();
+        ibRenderSetup();
+        showModal('ibSetupModal');
+    } catch (err) { setStatus('Could not open the in-betweens: ' + err.message); }
+}
+
+async function ibLoadPrice() {
+    try { const r = await api('/projects/' + state.currentProject.id + '/inbetweens'); IB.price = r.image_price || null; } catch (_) { IB.price = null; }
+}
+
+function ibCloseSetup() { closeModal('ibSetupModal'); }
+
+function ibRenderSetup() {
+    const s = IB.setup;
+    if (!s) return;
+    const count = Math.max(1, Math.min(29, s.count));
+    const every = s.gap_ms / (count + 1);
+    const times = Array.from({ length: count }, (_, i) => every * (i + 1));
+    const cost = IB.price ? `${count} frame${count === 1 ? '' : 's'} · about $${(IB.price.usd * count).toFixed(2)}`
+        : `${count} frame${count === 1 ? '' : 's'}`;
+    document.getElementById('ibSetupTitle').textContent = `In-betweens ${s.from_code} → ${s.to_code}`;
+    document.getElementById('ibSetupBody').innerHTML = `
+      <p style="margin:0 0 14px;font-size:15px;">There ${s.id ? 'are' : 'are'} <strong>
+        <input id="ibGap" type="number" min="0.5" max="120" step="0.5" value="${ibSecs(s.gap_ms)}" style="width:72px;"
+          onchange="IB.setup.gap_ms=Math.max(500,Math.round(Number(this.value)*1000)||IB.setup.gap_ms);ibRenderSetup()"
+          aria-label="Seconds between the shots"> seconds</strong> between ${esc(s.from_code)} and ${esc(s.to_code)}.</p>
+      <div class="ib-row" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+        <div><label class="text-sm text-muted" for="ibCount">How many frames</label>
+          <div class="ib-step"><button onclick="ibStep(-1)" aria-label="Fewer frames">−</button>
+            <input id="ibCount" value="${count}" onchange="IB.setup.count=Math.round(Number(this.value))||1;ibRenderSetup()">
+            <button onclick="ibStep(1)" aria-label="More frames">+</button></div></div>
+        <div><label class="text-sm text-muted" for="ibEvery">One every</label>
+          <div class="ib-step"><button onclick="ibEvery(1.5)" aria-label="Shorter spacing">−</button>
+            <input id="ibEvery" value="${ibSecs(every)} s" onchange="ibEveryTo(parseFloat(this.value))">
+            <button onclick="ibEvery(1/1.5)" aria-label="Longer spacing">+</button></div></div>
+      </div>
+      <div class="text-sm text-muted" style="margin:14px 0 6px;">Where they land</div>
+      <div class="ib-where"><span class="k" style="left:4px;">${esc(s.from_code)}</span><span class="k" style="right:4px;">${esc(s.to_code)}</span>
+        ${times.map(t => `<span class="m" style="left:calc(16px + (100% - 32px) * ${t / s.gap_ms});"></span>`).join('')}</div>
+      <div style="font:500 12px 'IBM Plex Mono',monospace;color:#f0b44c;margin-top:6px;">${times.map(t => ibSecs(t) + ' s').join(' · ')}</div>
+      <p class="text-sm text-muted" style="margin:14px 0 0;line-height:1.5;">Each frame is made from the one before it, starting at ${esc(s.from_code)}, so the move stays continuous.
+        ${s.id ? 'Changing the spacing keeps the direction of a frame that stays at its second; a frame that moves is made again.' : ''}</p>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:18px;">
+        <div><div style="font:600 14px 'IBM Plex Mono',monospace;">${esc(cost)}</div>
+          <div class="text-sm text-muted">${IB.price ? esc((IB.price.model || IB.price.provider || '') + ' at the project’s resolution') : 'The price shows in the confirmation'}</div></div>
+        <div style="flex-grow:1;"></div>
+        <button class="btn" onclick="ibSaveSetup(false)">${s.id ? 'Save spacing' : 'Create'}</button>
+        <button class="btn btn-primary" onclick="ibSaveSetup(true)">${s.id ? 'Save and make frames' : `Generate ${count} frame${count === 1 ? '' : 's'}`}</button>
+      </div>`;
+}
+
+function ibStep(d) { IB.setup.count = Math.max(1, Math.min(29, IB.setup.count + d)); ibRenderSetup(); }
+function ibEveryTo(sec) {
+    if (!(sec > 0)) return ibRenderSetup();
+    IB.setup.count = Math.max(1, Math.min(29, Math.round(IB.setup.gap_ms / (sec * 1000)) - 1));
+    ibRenderSetup();
+}
+function ibEvery(f) { ibEveryTo((IB.setup.gap_ms / (IB.setup.count + 1)) / 1000 * f); }
+
+async function ibSaveSetup(thenGenerate) {
+    const s = IB.setup;
+    try {
+        const body = { gap_s: s.gap_ms / 1000, count: s.count };
+        const r = s.id
+            ? await api('/inbetweens/' + s.id, { method: 'PUT', body: JSON.stringify(body) })
+            : await api('/projects/' + state.currentProject.id + '/inbetweens', { method: 'POST',
+                body: JSON.stringify({ from_shot_id: s.from_id, to_shot_id: s.to_id, ...body }) });
+        closeModal('ibSetupModal');
+        await loadProductionGraph();
+        setStatus(`${s.from_code} → ${s.to_code}: ${r.frames.length} in-between${r.frames.length === 1 ? '' : 's'} placed.`);
+        if (thenGenerate) return ibGenerate(r.id, 0, false);
+        return ibOpenDirect(r.id);
+    } catch (err) { setStatus('Could not save the in-betweens: ' + err.message); }
+}
+
+/** Make frames: from one frame on, or only that frame. Free plan first, one confirmation. */
+function ibGenerate(id, fromIndex, only) {
+    const q = `?from_index=${fromIndex || 0}${only ? '&only=true' : ''}`;
+    return confirmPaidImage({
+        title: only ? 'Make this in-between again' : 'Make the in-betweens', capability: 'image',
+        previewUrl: '/inbetweens/' + id + '/generate' + q,
+        armable: d => !!d.ready,
+        describe: d => `<div class="text-sm" style="line-height:1.55;">
+            ${(d.blockers || []).map(b => `<div style="color:var(--gl-danger,#ef4444);">${esc(b)}</div>`).join('')}
+            <div><strong>${d.count} frame${d.count === 1 ? '' : 's'}</strong>${d.estimated_usd != null ? ` · about $${Number(d.estimated_usd).toFixed(2)}` : ''}
+              ${d.provider ? ` · ${esc(d.model || d.provider)}` : ''}</div>
+            <div class="text-muted" style="margin:4px 0 8px;">${esc(d.note || '')}</div>
+            ${(d.frames || []).map(f => `<details style="margin-bottom:6px;"><summary>${ibSecs(f.at_ms)} s · from ${esc(f.references[0])}, toward ${esc(f.references[1])}${f.replaces_take ? ' · a new take, the old one is kept' : ''}</summary>
+              <div style="white-space:pre-wrap;font-size:12px;opacity:.85;margin-top:4px;">${esc(f.instruction)}</div></details>`).join('')}</div>`,
+        send: async (choice) => {
+            setStatus('Making the in-betweens…', true);
+            try {
+                const r = await api('/inbetweens/' + id + '/generate', { method: 'POST',
+                    body: JSON.stringify({ from_index: fromIndex || 0, only: !!only, ...(choice || {}) }) });
+                setStatus(`${(r.generated || []).length} in-between${(r.generated || []).length === 1 ? '' : 's'} made.`);
+            } catch (err) { setStatus('In-betweens stopped: ' + err.message); }
+            await loadProductionGraph();
+            if (IB.span && IB.span.id === id) await ibOpenDirect(id, true);
+        },
+    });
+}
+
+// ── Direct the stretch ─────────────────────────────────────────────────────
+
+async function ibOpenDirect(id, keepSel) {
+    try {
+        IB.span = await api('/inbetweens/' + id);
+        if (!keepSel) { IB.sel = 0; IB.rangeEdit = null; }
+        IB.sel = Math.min(IB.sel, Math.max(0, IB.span.frames.length - 1));
+        ibRenderDirect();
+        showModal('ibDirectModal');
+    } catch (err) { setStatus('Could not open the in-betweens: ' + err.message); }
+}
+function ibCloseDirect() { closeModal('ibDirectModal'); }
+
+function ibPct(ms) { return (100 * ms / IB.span.gap_ms).toFixed(3); }
+
+function ibRenderDirect() {
+    const s = IB.span;
+    if (!s) return;
+    const sel = s.frames[IB.sel] || null;
+    const cell = (label, at, url, cls, onclick) => `<button class="ib-cell ${cls}" ${onclick ? `onclick="${onclick}"` : 'disabled'}>
+        <span class="pic" ${url ? `style="background-image:url('${esc(pgThumb(url, 320))}')"` : ''}>${url ? '' : esc(label)}</span>
+        <span class="tm">${ibSecs(at)} s${cls.includes('key') ? ' · ' + esc(label) : ''}</span></button>`;
+    const strip = [cell(s.from.shot_code, 0, s.from.url, 'key', null),
+        ...s.frames.map((f, i) => cell(f.asset_id ? '' : 'not made', f.at_ms, f.url,
+            `${f.asset_id ? 'has' : ''}${i === IB.sel ? ' sel' : ''}`, `IB.sel=${i};IB.rangeEdit=null;ibRenderDirect()`)),
+        cell(s.to.shot_code, s.gap_ms, s.to.url, 'key', null)].join('');
+    const lane = name => `<div class="text-sm">${{ movement: 'Movement', emotion: 'Emotion', camera: 'Camera', other: 'Also' }[name]}</div>
+        <div class="ib-lane" title="Click to add a direction here" onclick="ibLaneClick(event,'${name}')">
+          ${s.frames.map(f => `<span class="ib-tick" style="left:${ibPct(f.at_ms)}%;"></span>`).join('')}
+          ${s.ranges.filter(r => r.lane === name).map(r => `<span class="ib-bar ${name}" style="left:${ibPct(r.start_ms)}%;width:${ibPct(r.end_ms - r.start_ms)}%;"
+            title="${esc(ibSecs(r.start_ms) + '–' + ibSecs(r.end_ms) + ' s: ' + r.text)}" onclick="event.stopPropagation();ibEditRange('${esc(r.id)}')">${ibSecs(r.start_ms)}–${ibSecs(r.end_ms)} s · ${esc(r.text)}</span>`).join('')}
+        </div>`;
+    const re = IB.rangeEdit;
+    const rangeForm = re ? `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:10px;padding:10px;border-radius:8px;background:#1d2029;">
+        <label class="text-sm">Lane<br><select id="ibRLane">${s.lanes.map(l => `<option value="${l}" ${l === re.lane ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="text-sm">From (s)<br><input id="ibRFrom" type="number" step="0.1" min="0" max="${ibSecs(s.gap_ms)}" value="${ibSecs(re.start_ms)}" style="width:80px;"></label>
+        <label class="text-sm">To (s)<br><input id="ibRTo" type="number" step="0.1" min="0" max="${ibSecs(s.gap_ms)}" value="${ibSecs(re.end_ms)}" style="width:80px;"></label>
+        <label class="text-sm" style="flex:1 1 260px;">What happens<br><input id="ibRText" type="text" maxlength="500" value="${esc(re.text || '')}" style="width:100%;" placeholder="e.g. her head turns fast toward the door"></label>
+        <button class="btn btn-primary btn-sm" onclick="ibSaveRange()">${re.id ? 'Save' : 'Add'}</button>
+        ${re.id ? `<button class="btn btn-sm" onclick="ibDeleteRange('${esc(re.id)}')">Delete</button>` : ''}
+        <button class="btn btn-sm" onclick="IB.rangeEdit=null;ibRenderDirect()">Cancel</button></div>` : '';
+    const acting = sel ? s.ranges.filter(r => sel.at_ms >= r.start_ms && sel.at_ms <= r.end_ms) : [];
+    const side = sel ? `<div class="ib-side">
+        <div style="display:flex;align-items:baseline;gap:8px;"><h3 style="margin:0;">Frame at ${ibSecs(sel.at_ms)} s</h3>
+          <span class="text-sm text-muted">${IB.sel + 1} of ${s.frames.length}</span></div>
+        <div class="ib-cell"><span class="pic" style="aspect-ratio:16/9;${sel.url ? `background-image:url('${esc(pgSrc(sel.url))}')` : ''}">${sel.url ? '' : 'Not made yet'}</span></div>
+        <div class="text-sm"><div class="text-muted" style="font:600 11px 'IBM Plex Mono',monospace;">FROM THE DIRECTIONS</div>
+          ${acting.length ? acting.map(r => `<div>${esc(r.lane)} ${ibSecs(r.start_ms)}–${ibSecs(r.end_ms)} s: ${esc(r.text)}</div>`).join('') : '<div class="text-muted">No direction covers this second.</div>'}</div>
+        <label class="text-sm text-muted" for="ibFrameDir" style="font:600 11px 'IBM Plex Mono',monospace;">ONLY THIS FRAME</label>
+        <textarea id="ibFrameDir" rows="3" maxlength="500" placeholder="e.g. her eyes well up, first tear not yet falling">${esc(sel.direction || '')}</textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${['more smile', 'tears', 'looks at camera', 'hands to face', 'eyes closed'].map(c =>
+            `<button class="ib-chip" onclick="ibChip('${c}')">${c}</button>`).join('')}</div>
+        <label class="text-sm"><input type="number" id="ibAt" step="0.1" min="0.1" max="${ibSecs(s.gap_ms - 100)}" value="${ibSecs(sel.at_ms)}" style="width:80px;"> s on the move</label>
+        <fieldset style="border:1px solid #2c2f39;border-radius:8px;padding:8px 10px;margin:0;"><legend class="text-sm text-muted">After this frame</legend>
+          <label class="text-sm" style="display:block;"><input type="radio" name="ibAfter" value="chain" checked> Make the later frames again from it</label>
+          <label class="text-sm" style="display:block;"><input type="radio" name="ibAfter" value="only"> Only this frame</label></fieldset>
+        ${sel.takes.length > 1 ? `<div class="text-sm"><div class="text-muted" style="font:600 11px 'IBM Plex Mono',monospace;">TAKES</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">${sel.takes.map((t, i) => `<button class="ib-cell${t.selected ? ' sel' : ''}" style="width:72px;" onclick="ibPickTake('${esc(t.asset_id)}')" title="Take ${sel.takes.length - i}">
+            <span class="pic" style="background-image:url('${esc(pgThumb(t.url, 160))}')"></span></button>`).join('')}</div></div>` : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="ibSaveFrame()">Save</button>
+          <button class="btn btn-sm" onclick="ibRemoveFrame()">Remove frame</button>
+          <div style="flex-grow:1;"></div>
+          <button class="btn btn-primary btn-sm" onclick="ibRegenerate()">${sel.asset_id ? 'Make again' : 'Make'}</button></div>
+      </div>` : '<div class="ib-side text-sm text-muted">Add a frame to direct it.</div>';
+    const made = s.frames.filter(f => f.asset_id).length;
+    document.getElementById('ibDirectTitle').textContent = `Direct the stretch · ${s.from.shot_code} → ${s.to.shot_code} · ${ibSecs(s.gap_ms)} s`;
+    document.getElementById('ibDirectBody').innerHTML = `
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="text-sm">${s.frames.length} in-betweens · ${made} made${s.approval.approved ? (s.approval.stale ? ' · changed since approval' : ' · approved') : ''}</span>
+            <div style="flex-grow:1;"></div>
+            <button class="btn btn-sm" onclick="ibOpenSetupFor('${s.id}')">Spacing</button>
+            <button class="btn btn-sm" onclick="ibAddFrame()">Add a frame</button>
+            <button class="btn btn-sm" onclick="ibGenerate('${s.id}', 0, false)">${made ? 'Make all again' : 'Make all frames'}</button>
+            <button class="btn btn-sm" onclick="ibApprove()" ${made < s.frames.length || !s.frames.length ? 'disabled title="Every frame needs a picture first"' : ''}>${s.approval.approved && !s.approval.stale ? 'Approved' : 'Approve the strip'}</button>
+            <button class="btn btn-primary btn-sm" onclick="ibMakeClip()" ${made < s.frames.length ? 'disabled title="Every frame needs a picture first"' : ''}>Make the clip</button>
+          </div>
+          <div class="ib-strip">${strip}</div>
+          <div style="border:1px solid #2c2f39;border-radius:10px;padding:12px;">
+            <div class="text-sm text-muted" style="margin-bottom:8px;">What happens when: click a lane to add a direction for a stretch of time; click a bar to change it.</div>
+            <div class="ib-lanes">${s.lanes.map(lane).join('')}<div></div>
+              <div class="ib-ruler">${Array.from({ length: 6 }, (_, i) => `<span>${ibSecs(s.gap_ms * i / 5)} s</span>`).join('')}</div></div>
+            ${rangeForm}
+          </div>
+          <div class="text-sm text-muted">Every frame inside a direction's stretch is made with it. A frame's own direction is added on top.</div>
+        </div>
+        ${side}
+      </div>`;
+}
+
+function ibChip(c) {
+    const t = document.getElementById('ibFrameDir');
+    if (!t) return;
+    t.value = t.value.trim() ? `${t.value.trim()}, ${c}` : c;
+}
+
+function ibLaneClick(ev, laneName) {
+    const rect = ev.currentTarget.getBoundingClientRect();
+    const at = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * IB.span.gap_ms;
+    const len = Math.min(2000, IB.span.gap_ms);
+    const start = Math.max(0, Math.min(IB.span.gap_ms - len, Math.round(at / 100) * 100));
+    IB.rangeEdit = { id: null, lane: laneName, start_ms: start, end_ms: start + len, text: '' };
+    ibRenderDirect();
+    const t = document.getElementById('ibRText'); if (t) t.focus();
+}
+function ibEditRange(id) { const r = IB.span.ranges.find(x => x.id === id); if (r) { IB.rangeEdit = { ...r }; ibRenderDirect(); } }
+
+async function ibPutSpan(body, msg) {
+    try {
+        IB.span = await api('/inbetweens/' + IB.span.id, { method: 'PUT', body: JSON.stringify(body) });
+        IB.sel = Math.min(IB.sel, Math.max(0, IB.span.frames.length - 1));
+        ibRenderDirect();
+        if (msg) setStatus(msg);
+        loadProductionGraph();
+        return true;
+    } catch (err) { setStatus('Not saved: ' + err.message); return false; }
+}
+
+function ibSaveRange() {
+    const re = IB.rangeEdit;
+    const next = { id: re.id || undefined, lane: document.getElementById('ibRLane').value,
+        start_ms: Math.round(Number(document.getElementById('ibRFrom').value) * 1000),
+        end_ms: Math.round(Number(document.getElementById('ibRTo').value) * 1000),
+        text: document.getElementById('ibRText').value.trim() };
+    const ranges = IB.span.ranges.filter(r => r.id !== re.id).concat(next);
+    IB.rangeEdit = null;
+    return ibPutSpan({ ranges }, 'Direction saved. Frames inside it are made with it next time.');
+}
+function ibDeleteRange(id) { IB.rangeEdit = null; return ibPutSpan({ ranges: IB.span.ranges.filter(r => r.id !== id) }, 'Direction removed.'); }
+
+function ibFramesBody(edit) {
+    return IB.span.frames.map((f, i) => (i === IB.sel && edit ? { ...f, ...edit } : f))
+        .map(f => ({ at_ms: f.at_ms, direction: f.direction || '' }));
+}
+
+function ibSaveFrame() {
+    const dir = document.getElementById('ibFrameDir').value.trim();
+    const at = Math.round(Number(document.getElementById('ibAt').value) * 1000);
+    return ibPutSpan({ frames: ibFramesBody({ direction: dir, at_ms: at }) }, 'Frame saved.');
+}
+
+async function ibRegenerate() {
+    const dir = document.getElementById('ibFrameDir').value.trim();
+    const at = Math.round(Number(document.getElementById('ibAt').value) * 1000);
+    const only = (document.querySelector('input[name="ibAfter"]:checked') || {}).value === 'only';
+    const index = IB.sel;
+    if (!(await ibPutSpan({ frames: ibFramesBody({ direction: dir, at_ms: at }) }))) return;
+    const newIndex = IB.span.frames.findIndex(f => f.at_ms === at);
+    return ibGenerate(IB.span.id, newIndex >= 0 ? newIndex : index, only);
+}
+
+function ibAddFrame() {
+    const fr = IB.span.frames;
+    const cuts = [0, ...fr.map(f => f.at_ms), IB.span.gap_ms];
+    let best = 0;
+    for (let i = 1; i < cuts.length; i++) if (cuts[i] - cuts[i - 1] > cuts[best + 1] - cuts[best]) best = i - 1;
+    const at = Math.round((cuts[best] + cuts[best + 1]) / 2);
+    const frames = fr.map(f => ({ at_ms: f.at_ms, direction: f.direction || '' })).concat({ at_ms: at, direction: '' });
+    return ibPutSpan({ frames }, `A frame added at ${ibSecs(at)} s.`).then(() => {
+        IB.sel = IB.span.frames.findIndex(f => f.at_ms === at); ibRenderDirect();
+    });
+}
+
+function ibRemoveFrame() {
+    const frames = IB.span.frames.filter((_, i) => i !== IB.sel).map(f => ({ at_ms: f.at_ms, direction: f.direction || '' }));
+    return ibPutSpan({ frames }, 'Frame removed. Its pictures stay in the asset list.');
+}
+
+async function ibPickTake(assetId) {
+    try {
+        IB.span = await api(`/inbetweens/${IB.span.id}/frames/${IB.sel}/select`, { method: 'POST', body: JSON.stringify({ asset_id: assetId }) });
+        ibRenderDirect(); loadProductionGraph();
+    } catch (err) { setStatus('Could not pick that take: ' + err.message); }
+}
+
+async function ibApprove() {
+    try {
+        IB.span = await api(`/inbetweens/${IB.span.id}/approve`, { method: 'POST', body: '{}' });
+        ibRenderDirect(); loadProductionGraph();
+        setStatus('Strip approved. The clip will refuse if it changes.');
+    } catch (err) { setStatus('Not approved: ' + err.message); }
+}
+
+function ibMakeClip() {
+    const id = IB.span.id;
+    return confirmPaidImage({
+        title: 'Make the clip from the strip', capability: 'video',
+        previewUrl: '/inbetweens/' + id + '/video',
+        armable: d => !!d.ready,
+        describe: d => `<div class="text-sm" style="line-height:1.55;">
+            ${(d.blockers || []).map(b => `<div style="color:var(--gl-danger,#ef4444);">${esc(b)}</div>`).join('')}
+            <div><strong>${d.count} clip${d.count === 1 ? '' : 's'}</strong> on ${esc(d.provider || 'the video generator')}
+              ${d.estimated_usd != null ? ` · about $${Number(d.estimated_usd).toFixed(2)}` : ''}</div>
+            <div class="text-muted" style="margin:4px 0 8px;">${esc(d.note || '')}</div>
+            <div style="margin-bottom:6px;">Pictures, in order: ${(d.points || []).map(p => `${esc(p.label)}`).join(' → ')}</div>
+            ${(d.calls || []).map(c => `<details style="margin-bottom:6px;"><summary>${esc(c.from)} → ${esc(c.to)} · ${c.duration_s} s</summary>
+              <div style="white-space:pre-wrap;font-size:12px;opacity:.85;margin-top:4px;">${esc(c.prompt)}</div></details>`).join('')}</div>`,
+        send: async (choice) => {
+            setStatus('Making the clip…', true);
+            try {
+                const r = await api('/inbetweens/' + id + '/video', { method: 'POST', body: JSON.stringify({ ...(choice || {}) }) });
+                setStatus(r.note || 'Clip made.');
+            } catch (err) { setStatus('The clip stopped: ' + err.message); }
+            await loadProductionGraph();
+        },
+    });
 }
 
 // ── Playback ──────────────────────────────────────────────────────────────
