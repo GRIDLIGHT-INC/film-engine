@@ -82,7 +82,7 @@ async function film(title) {
         const file = `${code}.mp4`;
         const p = fileStorage.saveFile(pid, 'video', file, Buffer.from('clip'));
         db.prepare(`INSERT INTO film_assets (id, project_id, shot_id, asset_type, file_name, file_path, duration_ms)
-                    VALUES (?, ?, ?, 'video_raw', ?, ?, 2000)`).run(generateId(), pid, id, file, p);
+                    VALUES (?, ?, ?, 'video_raw', ?, ?, 3000)`).run(generateId(), pid, id, file, p);
         shots.push({ id, shot_code: code, scene_id: sceneId });
     }
     return { pid, sceneId, shots };

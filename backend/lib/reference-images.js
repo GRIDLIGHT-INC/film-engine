@@ -351,9 +351,15 @@ function selectReferences(candidates, options) {
     const tags = assignTags(ranked.map(c => c.name));
     const out = [];
     for (const c of ranked) {
-        if (out.length >= limit) break;
+        if (out.length >= limit) {
+            if (opts.diagnostics) opts.diagnostics.push({ code: 'REFERENCE_BUDGET', name: c.name, kind: c.kind, limit, action: 'Reduce subjects, use an anchor, or choose a provider with more reference slots.' });
+            continue;
+        }
         const uri = resolveUri(c);
-        if (!uri) continue;                    // unreadable plate — skip, don't fail
+        if (!uri) {
+            if (opts.diagnostics) opts.diagnostics.push({ code: 'REFERENCE_UNREADABLE', name: c.name, kind: c.kind, action: 'Restore or replace this approved reference before generating.' });
+            continue;
+        }
         const tag = tags.get(c.name);
         if (!tag) continue;
         /*
@@ -365,6 +371,7 @@ function selectReferences(candidates, options) {
          */
         out.push({ uri, tag, name: c.name, kind: c.kind, ...(c.view ? { view: c.view } : {}) });
     }
+    Object.defineProperty(out, 'diagnostics', { value: opts.diagnostics || [], enumerable: false });
     return out;
 }
 

@@ -47,6 +47,7 @@ function json(res, status, data) {
 function fail(res, err) {
     const msg = (err && err.message) || 'world request failed';
     if (err && err.code === 'WORLD_LOCKED') return json(res, 423, { error: msg, code: 'WORLD_LOCKED' });
+    if (err && ['WORLD_IN_USE', 'WORLD_ARCHIVED'].includes(err.code)) return json(res, 409, { error: msg, code: err.code });
     if (err && err.code === 'NO_COLLIDER') return json(res, 409, { error: msg, code: 'NO_COLLIDER' });
     if (/not found/i.test(msg)) return json(res, 404, { error: msg });
     return json(res, 400, { error: msg });
@@ -308,7 +309,7 @@ async function handleWorlds(req, res, urlParts, query) {
     if (urlParts[1] === 'projects' && urlParts[3] === 'worlds' && !urlParts[4]) {
         const projectId = urlParts[2];
         if (req.method === 'GET') {
-            return json(res, 200, { worlds: worlds.worldsFor(db, projectId).map(worldPayload) });
+            return json(res, 200, { worlds: worlds.worldsFor(db, projectId, { archived: q.archived }).map(worldPayload) });
         }
         if (req.method === 'POST') {
             const project = db.prepare('SELECT id FROM film_projects WHERE id = ?').get(projectId);

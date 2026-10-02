@@ -465,6 +465,9 @@ function updateProject(req, res, id) {
                 // pin is stored, sent, and silently ignored at generation time.
                 if (!providers.get(v)) { unknown.push(`${key}: ${v}`); continue; }
                 merged[key] = v;
+            } else if (key === 'video_audio_policy') {
+                if (!['no_music', 'silent'].includes(v)) { unknown.push(`${key}: ${v}`); continue; }
+                merged[key] = v;
             } else if (key === 'image_quality' || key === 'image_model') {
                 merged[key] = v.slice(0, 80);
             } else {

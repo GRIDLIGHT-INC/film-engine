@@ -1069,7 +1069,7 @@ function listRefsheetViews(res, charId) {
     }
 
     const rows = db.prepare(
-        `SELECT id, file_name, file_path, metadata, created_at FROM film_assets
+        `SELECT id, file_name, file_path, metadata, version, created_at FROM film_assets
           WHERE project_id = ? AND character_id = ?
             AND asset_type IN ('character_sheet', 'reference_image')
        ORDER BY created_at ASC`).all(ch.project_id, charId);
@@ -1095,6 +1095,9 @@ function listRefsheetViews(res, charId) {
             is_identity_plate: false,        // filled in below
             file_name: r.file_name,
             available,
+            role: require('../lib/subject-gallery').roleOf(r),
+            sendable: require('../lib/subject-gallery').isSendable(r),
+            version: r.version,
             unavailable_reason: available ? null : 'Picture unavailable — generate this view again.',
             image_url: (available && subdir)
                 ? getFileUrl(subdir, ch.project_id, r.file_name, r.created_at) : null,
@@ -1112,7 +1115,10 @@ function listRefsheetViews(res, charId) {
      * costs a slot a subject with no picture at all would otherwise get.
      * Which one that is used to be invisible, and it was the wrong one.
      */
-    const identity = views.find(v => v.available);
+    const canonical = views.filter(v => v.sendable).sort((a, b) =>
+        viewRank(a.view) - viewRank(b.view) || (Number(b.version) - Number(a.version))
+        || String(b.created_at).localeCompare(String(a.created_at)))[0];
+    const identity = canonical && canonical.available ? canonical : null;
     if (identity) identity.is_identity_plate = true;
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1122,7 +1128,7 @@ function listRefsheetViews(res, charId) {
         views,
         identity_plate: identity ? identity.view : null,
         note: identity
-            ? `Every frame ${ch.name} appears in is conditioned on the ${identity.view} view. `
+            ? `The approved identity reference for ${ch.name} is the ${identity.view} view, when the provider and reference budget permit. `
               + 'The others are kept for reference and for a shot that needs them.'
             : 'No usable plate yet — every frame will invent this character from the description alone.',
     }));

@@ -123,10 +123,7 @@ function activeAnchorFor(db, shotId) {
         return { shot: null, asset: null, reason: 'the anchored shot no longer exists' };
     }
 
-    const asset = db.prepare(
-        `SELECT file_path, file_name FROM film_assets
-          WHERE shot_id = ? AND asset_type IN ('storyboard', 'keyframe')
-          ORDER BY version DESC, created_at DESC LIMIT 1`).get(anchorShot.id);
+    const asset = require('./selected-frame').selectedFrame(db, anchorShot.id);
     if (!asset || !asset.file_path) {
         return { shot: null, asset: null,
             reason: `the anchor ${anchorShot.shot_code} has no generated frame yet` };

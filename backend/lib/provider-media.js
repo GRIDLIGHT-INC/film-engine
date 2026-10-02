@@ -102,24 +102,7 @@ function resolveMediaUrl(mediaUrl, serveDir) {
  * @param {{serveDir?: string}} [opts] - gateway serving dir for bare filenames
  * @returns {Promise<string>} absolute path to the saved file
  */
-/**
- * A VIDEO ARRIVES SILENT UNLESS SOMEBODY ASKED FOR SOUND — AND WE ENFORCE IT
- * OURSELVES.
- *
- * The adapter asks the provider for a silent render (`generate_audio: false`),
- * and MuAPI ignores it: the clip came back carrying a 32kHz stereo AAC track at
- * -34.7 LUFS of model-generated speech, effects and music. A request is not a
- * guarantee, and a flag whose effect cannot be verified is not a control.
- *
- * So the engine settles it locally, after the download, where the answer is
- * checkable: strip the audio stream with a stream COPY of the video. No
- * re-encode — the picture is bit-identical, it costs a fraction of a second,
- * and the result is certain in a way asking a vendor never is.
- *
- * Never throws and never blocks the save. If ffmpeg is not available the file
- * stays exactly as it arrived, with its audio; a clip that exists with an
- * unwanted track is recoverable, one that failed to save is not.
- */
+/** Explicit silence is enforced locally. A failed remux rejects persistence; audio requested by the caller is retained. */
 /**
  * KEEP THE TAKE THAT IS ABOUT TO BE REPLACED.
  *
@@ -195,8 +178,9 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
     // Kept when the CALLER asked for sound: `opts.keepAudio`, or an adapter
     // result that says audio was requested. Silence is only the default, never
     // an override of an explicit ask.
-    const asked = !!((opts && opts.keepAudio) || (data && typeof data === 'object' && data.audio === true));
-    const silence = subdir === 'video' && !asked;
+    const requested = opts && typeof opts.keepAudio === 'boolean' ? opts.keepAudio
+        : data && typeof data.audio === 'boolean' ? data.audio : true;
+    const silence = subdir === 'video' && !requested;
 
     /*
      * Before the write, not after: `saveFile` overwrites, so by the time we hold
@@ -220,7 +204,12 @@ async function persistProviderMedia(projectId, subdir, filename, data, opts) {
     const done = saved => {
         if (silence) {
             const p = typeof saved === 'string' ? saved : (saved && saved.path) || '';
-            if (p) stripAudioTrack(p);
+            const stripped = p && stripAudioTrack(p);
+            if (!stripped || !stripped.stripped) {
+                const err = new Error('Requested silent video could not be verified: ' + (stripped && stripped.reason || 'no saved path'));
+                err.code = 'VIDEO_AUDIO_STRIP_FAILED';
+                throw err;
+            }
         }
         return saved;
     };

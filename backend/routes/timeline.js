@@ -71,7 +71,7 @@ function loadTimeline(projectId) {
                -- file_name and created_at carry the dialogue: the line index is
                -- in the name, and the newest row for a name is the recording
                -- that actually exists on disk after a regeneration.
-               a.file_name, a.created_at, a.id,
+               a.file_name, a.created_at, a.id, a.metadata,
                sh.current_frame_version,
                -- The clip a person chose to play (the production graph's
                -- version pointer). Read before the type ranking.

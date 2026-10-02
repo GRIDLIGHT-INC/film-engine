@@ -319,30 +319,10 @@ function buildVideoRequest(payload) {
     // MuAPI's own draft switch, sent only when chosen on the dialog.
     if (typeof p.muapi_draft === 'boolean' && workflow !== 'text-to-video') body.draft = p.muapi_draft;
 
-    /*
-     * SILENT BY DEFAULT, AND THAT IS A DELIBERATE DEPARTURE FROM THE PROVIDER.
-     *
-     * Seedance 2.5 generates audio unless told not to: `generate_audio`
-     * defaults to TRUE upstream, and it is not an afterthought -- it synthesises
-     * synced speech, sound effects AND background music, mono, into every clip.
-     * Nothing here ever sent the field, so every generation this engine has
-     * bought came back scored by the model.
-     *
-     * That is wrong for THIS engine specifically. Film Engine owns audio: it
-     * has music cues, ambience, SFX and voice as separate capabilities, a mixer
-     * and a conform stage with LUFS targets. A mono bed the picture arrives
-     * with is a second, unasked-for score competing with the one the director
-     * commissioned, at a level nobody set, on a track the delivery spec does
-     * not account for. A studio ident with its own orchestral cue is the exact
-     * case: the clip would carry ByteDance's idea of the music underneath it.
-     *
-     * So the default is inverted here rather than inherited. `audio: true`
-     * (or `generate_audio: true`) asks for the provider's bed back, for the
-     * case where a director genuinely wants the model's synced diegetic sound.
-     */
     const wantsAudio = p.generate_audio !== undefined ? p.generate_audio
         : (p.audio !== undefined ? p.audio : false);
-    body.generate_audio = !!wantsAudio;
+    body.generate_audio = p.video_audio_policy === 'silent' ? false : !!wantsAudio;
+    if (body.generate_audio) body.prompt = require('../video-audio-policy').soundPrompt(body.prompt, 16000);
 
     const allowed = WORKFLOWS[workflow].images;
     const used = images.slice(0, allowed);
@@ -675,9 +655,7 @@ function describeVideoRequest(payload) {
             + 'never above it. Finish it up with the post/upscale pass if you need the full raster.');
     }
     if (built.body.generate_audio) {
-        notes.push('Audio ON: Seedance will synthesise synced speech, sound effects and a mono '
-            + 'music bed into this clip. Film Engine\'s own cues, ambience and mix are separate — '
-            + 'two scores will arrive on one timeline.');
+        notes.push('Audio ON: dialogue, diegetic effects and ambience requested, with NO MUSIC. The provider returns mixed clip audio; audition is required to verify music is absent.');
     }
     if (p.camera_control && Array.isArray(p.camera_control.path) && p.camera_control.path.length > 1) {
         notes.push('The approved 3D camera path is translated into prompt text; Seedance does not receive Film Engine coordinates.');

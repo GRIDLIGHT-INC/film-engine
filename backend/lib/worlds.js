@@ -62,8 +62,10 @@ function getWorld(db, id) {
     return db.prepare('SELECT * FROM film_worlds WHERE id = ?').get(id) || null;
 }
 
-function worldsFor(db, projectId) {
-    return db.prepare('SELECT * FROM film_worlds WHERE project_id = ? ORDER BY created_at').all(projectId);
+function worldsFor(db, projectId, opts) {
+    const mode = (opts || {}).archived;
+    const filter = mode === 'all' ? '' : mode === 'only' ? ' AND archived_at IS NOT NULL' : ' AND archived_at IS NULL';
+    return db.prepare(`SELECT * FROM film_worlds WHERE project_id = ?${filter} ORDER BY created_at`).all(projectId);
 }
 
 function updateWorld(db, id, patch) {
@@ -72,8 +74,16 @@ function updateWorld(db, id, patch) {
     const p = patch || {};
     const name = p.name === undefined ? w.name : String(p.name).trim();
     if (!name) throw new Error('a world needs a name');
-    db.prepare("UPDATE film_worlds SET name = ?, description = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(name, p.description === undefined ? w.description : String(p.description), id);
+    if (p.archived !== undefined && typeof p.archived !== 'boolean') throw new Error('archived must be a boolean');
+    let archived = w.archived_at;
+    if (p.archived === true) {
+        const pins = db.prepare(`SELECT COUNT(*) AS n FROM film_previs_blocking b
+            JOIN film_world_versions v ON v.id = b.world_version_id WHERE v.world_id = ?`).get(id).n;
+        if (pins) { const error = new Error(`This set is still pinned by ${pins} shot(s). Reassign their set versions before archiving.`); error.code = 'WORLD_IN_USE'; throw error; }
+        archived = archived || new Date().toISOString();
+    } else if (p.archived === false) archived = null;
+    db.prepare("UPDATE film_worlds SET name = ?, description = ?, archived_at = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(name, p.description === undefined ? w.description : String(p.description), archived, id);
     return getWorld(db, id);
 }
 
@@ -315,8 +325,11 @@ function worldGeometry(db, versionId, opts) {
 function pinShot(db, shotId, versionId) {
     const v = getVersion(db, versionId);
     if (!v) throw new Error('world version not found');
-    const shot = db.prepare('SELECT id FROM film_shots WHERE id = ?').get(shotId);
+    const world = getWorld(db, v.world_id);
+    if (world && world.archived_at) { const error = new Error('Restore this archived set before pinning a shot to it.'); error.code = 'WORLD_ARCHIVED'; throw error; }
+    const shot = db.prepare('SELECT s.id, sc.project_id FROM film_shots s JOIN film_scenes sc ON sc.id=s.scene_id WHERE s.id = ?').get(shotId);
     if (!shot) throw new Error('shot not found');
+    if (!world || world.project_id !== shot.project_id) throw new Error('The shot and set must belong to the same project.');
 
     const existing = db.prepare('SELECT id FROM film_previs_blocking WHERE shot_id = ?').get(shotId);
     if (existing) {

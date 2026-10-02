@@ -32,7 +32,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { escapeXml: esc, isNtscFps, msToFrames, msToTimecode } = require('./nle-export');
+const { escapeXml: esc, isNtscFps, elapsedFrames: msToFrames, msToTimecode, timecodeToFrames, isDropFrameFps, audioLevelXml } = require('./nle-export');
 const { sceneFolder } = require('./premiere-scenes');
 
 const DEFAULT_FPS = 24;
@@ -119,6 +119,8 @@ function planResolve(db, projectId) {
 
     const files = new Map();      // source path -> { from, to, kind }
     const missing = [];
+    const blocking = [];
+    const warnings = [{code:'INTERCHANGE_LIMITATIONS',message:'Caption tracks, grades/LUTs, compositing, transitions and plug-in effects do not transfer. Import SRT/VTT separately. Production sound and separate stems are both retained; audition and mute duplicates when mixing.'}];
     const fileFor = (from, rel, kind) => {
         if (!from || !fs.existsSync(from)) { missing.push({ kind, file: rel, reason: `there is no file at ${from || '(no path)'}` }); return null; }
         if (!files.has(from)) {
@@ -141,14 +143,18 @@ function planResolve(db, projectId) {
     // Shot effects (audio_sfx on the shot): the timeline carries one audio asset
     // per shot, so these come from the rows, newest per file, as the conform reads them.
     const sfxByShot = new Map();
-    for (const r of db.prepare(`SELECT shot_id, file_path, file_name, duration_ms FROM film_assets
+    for (const r of db.prepare(`SELECT id, shot_id, file_path, file_name, duration_ms, metadata, version FROM film_assets
         WHERE project_id = ? AND asset_type = 'audio_sfx' AND shot_id IS NOT NULL ORDER BY created_at DESC`).all(projectId)) {
+        if (require('./nle-media').metadata(r).selected === false) continue;
         const list = sfxByShot.get(r.shot_id) || [];
         if (!list.some(x => x.file_name === r.file_name)) list.push(r);
         sfxByShot.set(r.shot_id, list);
     }
 
-    for (const e of entries) {
+    let editorialOffset=0;
+    const timing=[];
+    for (const entry of entries) {
+        const e={...entry,start_ms:editorialOffset};
         const shot = shotById.get(e.shot_id) || {};
         const card = parseCard(shot.scene_card_yaml);
         const info = shotInfo(card);
@@ -156,6 +162,12 @@ function planResolve(db, projectId) {
         const code = e.shot_code || shot.shot_code || `shot${e.index + 1}`;
         const sc = sceneById.get(e.scene_id) || {};
         const heading = [sc.int_ext, sc.location, sc.time_of_day].filter(Boolean).join(' ');
+        const sourceAsset = e.video && db.prepare('SELECT * FROM film_assets WHERE file_path = ? AND project_id = ? ORDER BY created_at DESC LIMIT 1').get(e.video.path, projectId);
+        const range = sourceAsset ? require('./nle-media').sourceRange({ ...shot, duration_ms:e.duration_ms }, sourceAsset) : null;
+        if (range) e.duration_ms=range.duration_ms;
+        timing.push({oldStart:entry.start_ms,oldEnd:entry.start_ms+entry.duration_ms,start:e.start_ms,end:e.start_ms+e.duration_ms});
+        editorialOffset+=e.duration_ms;
+        if (sourceAsset) { const pending = require('./nle-media').audition(sourceAsset); if (pending) blocking.push(pending); }
         const row = { shot_id: e.shot_id, shot_code: code, scene: sc.scene_number, heading, start_ms: e.start_ms, duration_ms: e.duration_ms, info, picture: 'none', file: null };
 
         if (e.scene_id !== lastScene) {
@@ -169,8 +181,8 @@ function planResolve(db, projectId) {
             if (rel) {
                 let srcMs = Number(e.video.duration_ms) || 0;
                 try { const seen = inspectMedia(e.video.path); carries = !!(seen.ok && seen.hasAudio); if (!srcMs && seen.ok && seen.durationSeconds) srcMs = Math.round(seen.durationSeconds * 1000); } catch (_) { /* unreadable clips still go on the timeline */ }
-                video.push({ name: code, file: rel, start_ms: e.start_ms, duration_ms: e.duration_ms, source_ms: srcMs || e.duration_ms, still: false, note: markerNote(info) });
-                if (carries) lanes.clip.push({ name: code, file: rel, start_ms: e.start_ms, duration_ms: e.duration_ms, source_ms: srcMs || e.duration_ms, gain_db: 0 });
+                video.push({ name: code, file: rel, start_ms: e.start_ms, duration_ms: e.duration_ms, source_ms: srcMs || e.duration_ms, source_in_ms:range && range.source_in_ms || 0, still: false, note: markerNote(info) });
+                if (carries) lanes.clip.push({ name: code, file: rel, start_ms: e.start_ms, duration_ms: e.duration_ms, source_ms: srcMs || e.duration_ms, source_in_ms:range && range.source_in_ms || 0, gain_db: 0 });
                 row.picture = 'clip'; row.file = rel;
             }
         } else if (e.still && e.still.path) {
@@ -191,25 +203,36 @@ function planResolve(db, projectId) {
         // sound speaks for itself, and laying the generated lines over it says
         // every line twice.
         const end = e.start_ms + e.duration_ms;
-        if (!carries) {
+        {
             let t = e.start_ms;
             for (const [i, line] of (e.audio_lines || []).entries()) {
                 if (!line || !line.path || t >= end) continue;
                 const rel = fileFor(line.path, `${folder}/Sound/${code}_dialogue_${i + 1}.${extOf(line.path)}`, 'dialogue');
-                const dur = Number(line.duration_ms) || 0;
-                if (rel) lanes.dialogue.push({ name: `${code} line ${i + 1}`, file: rel, start_ms: t, duration_ms: dur > 0 ? Math.min(dur, end - t) : end - t, source_ms: dur || end - t, gain_db: 0 });
+                const raw=db.prepare('SELECT * FROM film_assets WHERE file_path = ? AND shot_id = ? ORDER BY created_at DESC LIMIT 1').get(line.path,e.shot_id);
+                const m=require('./nle-media').metadata(raw || {});
+                if (m.selected === false) continue;
+                const sourceIn=Number(m.source_in_ms) || 0;
+                const dur = Number(m.duration_ms) || Math.max(0,(Number(line.duration_ms) || 0)-sourceIn);
+                const placement=e.start_ms+Number(m.start_ms ?? (t-e.start_ms));
+                if (placement+dur>end) blocking.push({code:'DIALOGUE_OUTSIDE_PICTURE',message:`${code} dialogue extends beyond its picture; extend the picture or set explicit audio timing.`});
+                if (rel) lanes.dialogue.push({ name: `${code} line ${i + 1}`, file: rel, start_ms: placement, duration_ms: dur > 0 ? Math.min(dur, end - placement) : end - placement, source_ms: Number(line.duration_ms) || end-t, source_in_ms:sourceIn, gain_db:Number(m.gain_db) || 0, fade_in_ms:Number(m.fade_in_ms)||0, fade_out_ms:Number(m.fade_out_ms)||0 });
                 t += dur + (Number.isFinite(Number(line.pause_after_ms)) ? Number(line.pause_after_ms) : 700);
             }
             for (const [i, r] of (sfxByShot.get(e.shot_id) || []).entries()) {
                 const rel = fileFor(r.file_path, `${folder}/Sound/${code}_sfx_${i + 1}.${extOf(r.file_path)}`, 'sfx');
-                const dur = Number(r.duration_ms) || 0;
-                if (rel) lanes.sfx.push({ name: `${code} sfx ${i + 1}`, file: rel, start_ms: e.start_ms, duration_ms: dur > 0 ? Math.min(dur, e.duration_ms) : e.duration_ms, source_ms: dur || e.duration_ms, gain_db: -4 });
+                const m=require('./nle-media').metadata(r);
+                const sourceIn=Number(m.source_in_ms) || 0;
+                const dur = Number(m.duration_ms) || Math.max(0,(Number(r.duration_ms) || 0)-sourceIn);
+                if (rel) lanes.sfx.push({ name: `${code} sfx ${i + 1}`, file: rel, start_ms: e.start_ms+(Number(m.start_ms)||0), duration_ms: dur > 0 ? Math.min(dur, e.duration_ms) : e.duration_ms, source_ms: Number(r.duration_ms) || e.duration_ms, source_in_ms:sourceIn, gain_db:m.gain_db === undefined ? -4 : Number(m.gain_db), fade_in_ms:Number(m.fade_in_ms)||0, fade_out_ms:Number(m.fade_out_ms)||0 });
             }
         }
         shots.push(row);
     }
 
-    for (const [i, b] of ((timeline && timeline.beds) || []).entries()) {
+    const mapTime=ms => { const t=timing.find(t=>ms >= t.oldStart && ms <= t.oldEnd); return t ? t.start+Math.min(ms-t.oldStart,t.end-t.start) : editorialOffset; };
+    if (timing.some(t=>t.oldEnd-t.oldStart !== t.end-t.start)) warnings.push({code:'SCORE_RECONFORM_REQUIRED',message:'Source trims changed the cut. Beds have been repositioned; audition and reconform the score against this edit.'});
+    for (const [i, originalBed] of ((timeline && timeline.beds) || []).entries()) {
+        const b={...originalBed,start_ms:mapTime(originalBed.start_ms || 0),end_ms:mapTime(originalBed.end_ms || 0)};
         const kind = b.kind === 'ambient' ? 'ambient' : b.kind === 'sfx' ? 'sfx' : 'music';
         const isScore = b.source === 'score_session';
         const rel = fileFor(b.path, isScore ? `Score/${path.basename(b.path)}` : `${folderOf(b.scene_id)}/Sound/scene_${kind}_${i + 1}.${extOf(b.path)}`, kind);
@@ -219,12 +242,18 @@ function planResolve(db, projectId) {
         lanes[kind].push({ name: `${kind} ${path.basename(b.path)}`, file: rel, start_ms: b.start_ms, duration_ms: Math.min(span, srcMs) || span, source_ms: srcMs, gain_db: Number(b.gain_db) || 0, fade_in_ms: b.fade_in_ms || 0, fade_out_ms: b.fade_out_ms || 0 });
     }
 
+    for (const score of require('./music-approval').approvedScores(db,projectId).scores) {
+        for (const asset of require('./nle-media').scoreStems(db,score)) fileFor(asset.file_path,`Score/Stems/${asset.file_name || path.basename(asset.file_path)}`,'score_stem');
+    }
+
     return {
         project_id: projectId,
         title: project.title || 'Untitled',
         fps,
+        timecode_start: project.timecode_start || '01:00:00:00',
+        blocking, warnings,
         resolution: project.target_resolution || '1920x1080',
-        total_ms: (timeline && timeline.total_duration_ms) || 0,
+        total_ms: editorialOffset,
         shots,
         video,
         lanes,
@@ -281,12 +310,12 @@ function buildResolveXml(plan, urlOf) {
         n += 1;
         const dur = f(it.duration_ms);
         const start = f(it.start_ms);
-        const level = Number.isFinite(it.gain_db) && it.gain_db !== 0
-            ? `<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype><parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin><valuemax>3.98109</valuemax><value>${Math.pow(10, it.gain_db / 20).toFixed(5)}</value></parameter></effect></filter>` : '';
+        const sourceIn = f(it.source_in_ms || 0);
+        const level = kind === 'video' ? '' : audioLevelXml(it, fps);
         const marker = kind === 'video' && it.note
             ? `<marker><name>${esc(it.name)}</name><comment>${esc(it.note)}</comment><in>0</in><out>-1</out></marker>` : '';
         return `<clipitem id="clipitem-${n}"><name>${esc(it.name)}</name><enabled>TRUE</enabled><duration>${it.still ? dur : f(it.source_ms || it.duration_ms)}</duration>${rate}`
-            + `<start>${start}</start><end>${start + dur}</end><in>0</in><out>${dur}</out>`
+            + `<start>${start}</start><end>${start + dur}</end><in>${sourceIn}</in><out>${sourceIn+dur}</out>`
             + fileEl(it.file, !!it.still, it.source_ms, kind === 'video' ? undefined : true)
             + (kind !== 'video' ? '<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>' : '')
             + level + marker + `</clipitem>`;
@@ -302,7 +331,7 @@ function buildResolveXml(plan, urlOf) {
 <name>${esc(plan.title)} — first edit</name>
 <duration>${f(plan.total_ms)}</duration>
 ${rate}
-<timecode>${rate}<string>${msToTimecode(0, fps)}</string><frame>0</frame><displayformat>NDF</displayformat></timecode>
+<timecode>${rate}<string>${esc(plan.timecode_start || "01:00:00:00")}</string><frame>${timecodeToFrames(plan.timecode_start || "01:00:00:00",fps)}</frame><displayformat>${isDropFrameFps(fps) ? "DF" : "NDF"}</displayformat></timecode>
 <media>
 <video><format><samplecharacteristics>${rate}<width>${w || 1920}</width><height>${h || 1080}</height><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance></samplecharacteristics></format>${videoTrack}</video>
 <audio>${audioTracks}</audio>
@@ -439,6 +468,7 @@ function writeResolve(db, projectId, opts = {}) {
         const err = new Error('No shot has a clip or a storyboard frame yet, so there is no edit to hand over.');
         err.code = 'NOTHING_TO_EDIT'; err.plan = plan; throw err;
     }
+    if (plan.blocking.length) { const err = new Error(plan.blocking.map(b=>b.message).join('; ')); err.code=plan.blocking[0].code || 'EXPORT_PREFLIGHT_FAILED'; err.plan=plan; throw err; }
     fs.mkdirSync(dest, { recursive: true });
     for (const f of plan._files) {
         const to = path.join(dest, f.to);
@@ -467,10 +497,14 @@ function writeResolve(db, projectId, opts = {}) {
         'Every shot carries a marker with its description, dialogue, camera and cast; scenes start with a blue marker; open notes are red.',
         '',
         plan.missing.length ? 'Missing when this was made:' : 'Nothing was missing when this was made.',
+        ...plan.warnings.map(w=>`Warning ${w.code}: ${w.message}`),
+        'If this folder moves, relink media to its scene folders and update HERE in the copied import script.',
+        'Score/Stems contains any existing stems of the approved score bounce; import them manually to replace its mixed music lane.',
         ...plan.missing.map(m => `  ${m.shot_code || m.file || ''} ${m.kind}: ${m.reason}`),
         '',
     ].join('\n'), 'utf8');
     const { _files, ...pub } = plan;
+    fs.writeFileSync(path.join(dest,'manifest.json'),JSON.stringify({...pub,xml:xmlName,metadata:csvName,score_stems:'Sidecar files in Score/Stems: import manually when replacing the approved mix',relink:'After moving the package, relink media to these scene folders and update HERE in the import script if it is copied into Resolve Scripts.'},null,2));
     return { ...pub, dest, xml: xmlName, metadata: csvName, script: 'Import into Resolve.py', copied: _files.length };
 }
 

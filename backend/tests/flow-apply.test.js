@@ -248,3 +248,26 @@ test('a run left pending by a process that died is reported interrupted, not run
     assert.equal(r.body.status, 'interrupted');
     assert.equal(r.body.runs[0].status, 'interrupted');
 });
+
+
+test('design change after approval invalidates the plan before any work starts', async () => {
+    const targets = [`shot:${shot['1A']}`];
+    const plan = planFor(FREE, targets), before = runRows();
+    db.prepare('UPDATE film_projects SET style_preset = ? WHERE id = ?').run('noir', P);
+    try {
+        const res = await call('POST', `/film/flows/${FREE}/apply`, {}, { targets, project_id: P, fingerprint: plan.fingerprint });
+        assert.equal(res.statusCode, 409); assert.equal(res.body.code, 'PLAN_MOVED'); assert.equal(runRows(), before);
+    } finally { db.prepare('UPDATE film_projects SET style_preset = ? WHERE id = ?').run('', P); }
+});
+test('queued apply refuses changed design inputs and keeps the approved revision as provenance', async () => {
+    const targets = [`shot:${shot['1A']}`], plan = planFor(FREE, targets), hold = flowApply._testHold();
+    try {
+        const res = await call('POST', `/film/flows/${FREE}/apply`, {}, { targets, project_id: P, fingerprint: plan.fingerprint });
+        assert.equal(res.statusCode, 202);
+        const record = db.prepare('SELECT params FROM film_flow_runs WHERE apply_id = ?').get(res.body.apply_id);
+        assert.equal(JSON.parse(record.params).revision.fingerprint, plan.shots[0].revision.fingerprint);
+        db.prepare('UPDATE film_projects SET style_preset = ? WHERE id = ?').run('noir', P);
+        hold.release(); const done = await settle(res.body.apply_id);
+        assert.equal(done.status, 'failed'); assert.match(done.runs[0].error_message, /GENERATION_REVISION_MOVED/);
+    } finally { hold.release(); db.prepare('UPDATE film_projects SET style_preset = ? WHERE id = ?').run('', P); }
+});

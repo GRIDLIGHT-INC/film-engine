@@ -106,7 +106,7 @@ function dialogueLines(assets = []) {
  * Returns { kind, video, still, audio, missing } where kind is
  * 'video' | 'still' | 'empty'.
  */
-function resolveShotMedia(assets = []) {
+function resolveShotMedia(assets = [], shot = {}) {
     /*
      * THE SELECTED CLIP PLAYS. A shot with two generated clips used to play
      * whichever the type ranking and version order preferred, so choosing the
@@ -118,6 +118,9 @@ function resolveShotMedia(assets = []) {
         ? assets.find(a => a.id === selectedId && MEDIA_PREFERENCE.includes(a.asset_type) && a.file_path)
         : null;
     const video = chosen || pickAsset(assets, MEDIA_PREFERENCE);
+    const range = video && (Number(video.duration_ms) > 0 || Number(shot.duration_ms) > 0 || require('./nle-media').metadata(video).edit)
+        ? require('./nle-media').sourceRange({ ...shot, duration_ms: Number(video.duration_ms) || shot.duration_ms }, video)
+        : {duration_ms:0,source_in_ms:0,source_ms:0};
     const still = pickAsset(assets, STILL_PREFERENCE);
     const audio = pickAsset(assets, AUDIO_PREFERENCE);
 
@@ -131,7 +134,7 @@ function resolveShotMedia(assets = []) {
         // own length rather than the length its card asked for.
         video: video ? {
             type: video.asset_type, path: video.file_path,
-            duration_ms: Number(video.duration_ms) || 0,
+            duration_ms: range.duration_ms, source_in_ms: range.source_in_ms, source_out_ms: range.source_in_ms + range.duration_ms, source_duration_ms: range.source_ms,
         } : null,
         still: still ? { type: still.asset_type, path: still.file_path } : null,
         audio: audio ? { type: audio.asset_type, path: audio.file_path } : null,
@@ -392,7 +395,7 @@ function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
 
     let cursor = 0;
     const entries = ordered.map((shot, index) => {
-        const media = resolveShotMedia(assetsByShot[shot.id] || []);
+        const media = resolveShotMedia(assetsByShot[shot.id] || [], shot);
         /*
          * How long to hold after each line.
          *
@@ -415,6 +418,8 @@ function buildTimeline(shots = [], assetsByShot = {}, opts = {}) {
             start_ms: cursor,
             end_ms: cursor + duration,
             duration_ms: duration,
+            source_in_ms: media.video ? media.video.source_in_ms : 0,
+            source_out_ms: media.video ? media.video.source_out_ms : duration,
             start_timecode: msToTimecode(cursor, fps),
             // Which shots this one entry contains, so a viewer can see why 1B
             // and 1C are not in the playlist rather than assuming they are lost.

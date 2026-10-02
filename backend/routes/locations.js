@@ -336,6 +336,8 @@ function plateViewsFor(subjectId, kind) {
         } catch (_) { size = null; }
         return {
             id: r.id,
+            role: require('../lib/subject-gallery').roleOf(r),
+            sendable: require('../lib/subject-gallery').isSendable(r),
             view: String(meta.view || '').trim(),
             file_name: r.file_name,
             available,

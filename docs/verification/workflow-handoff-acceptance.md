@@ -1,0 +1,24 @@
+# Workflow handoff acceptance
+
+This verification covers the integrated design, storyboard, Previs, production-flow and editorial handoffs. Tests use temporary databases and local media. No paid generation was exercised.
+
+| Handoff | Implemented behavior | Evidence | Practical gate |
+| --- | --- | --- | --- |
+| Design → shot references | Canonical sendable identity plates, chosen location view, moodboard image, explicit kept plates reach primary and fallback adapters. Over-budget and missing references are disclosed. | `workflow-handoffs.test.js`, actual storyboard single/batch/streaming routes and node refresh | Review the actual provider preview and reference diagnostics before paying. |
+| Selected versions → generation | Explicit selected keyframe and anchor frame stay pinned; a broken pin does not silently select a newer attempt. | `selected-frame.js`, `shot-anchor.js`, selected-version fixture | Choose the intended frame and world version. |
+| Plan → production | Applied blocking and structured camera/style context feed generation; staged Previs refuses production generation. Wired direction adds once; explicit replace changes both still and motion prompts. | `capability-payloads.js`, `node-handlers/generate.js`, Seedance/Runway consumed-request regressions | Apply/re-seed blocking before generation. |
+| Preview → execution | A revision hashes design, assets and their bytes, selected frames, applied/blocking state and explicit flow inputs; changed inputs invalidate queued approval. Provider-specific reference and prompt ceilings are assembled afresh. | `generation-revision.js`, `flow-apply.test.js` | Re-preview after any design/reference/selection/blocking change. |
+| Shot navigation | Slow previous blocking/world/mesh responses cannot overwrite the active shot; locking/rebuilding retains its original target; unpinned shots clear geometry. | `previs-shot-navigation.test.js` actual UI functions; disposable Chrome fixture | Inspect the shot/set/version header before staging. |
+| Set lifecycle | Archived sets retain every version, leave active choices, refuse archive while pinned, and can be restored through the UI. | `workflow-handoffs.test.js`; Chrome restoration fixture | Re-pin all shots before archiving an old set. |
+| Clip audio | Default policy requests dialogue/effects/ambience without music; silent is explicit. Mixed clip audio requires human audition of the exact content fingerprint. | `video-audio-handoff.test.js`, `video-editorial-ui.test.js` | Listen before approving; stale file content requires another audition. |
+| Editorial range | Source-in/used-duration retain original source and handles. Post and Production playback use source-relative seeking and stop at the saved out. | `video-editorial-ui.test.js`, `nle-editorial-regressions.test.js`, disposable 4s source/1..3s cut fixture | Compare native imported source-in/out and duration with the manifest. |
+
+An image cannot encode all semantic constraints: identity, action, camera movement, timing, dialogue and style still require structured records and prompts. Existing records are inherited through these handoffs so the director need not retype them, but explicit reference/view/version choices remain meaningful.
+
+The current image/video adapters condition on reference images and compile camera/blocking geometry into language. This verifies what is sent; it does not guarantee a generative provider will reproduce metre-accurate positions, deterministic camera motion, or every requested visual detail. Paid provider output has not been verified.
+
+Native Resolve/Premiere import remains unverified: native computer control is unavailable in this environment, Resolve scripting handshake is unavailable, and no editor project was opened. A disposable silent 24fps package and import checklist are supplied separately. XML, copied media and source ranges are validated locally; native import is the remaining editorial acceptance gate.
+
+Full-suite testing during concurrent edits recorded 5,389 tests: 5,341 passed, 45 failed, 3 skipped. Subsequent focused checks and failing-file reruns must be used for the final state, rather than claiming this early snapshot was green. Local logs are retained under `/tmp/film-workflow-*` and `/tmp/workflow-*`.
+
+Final isolated checks: 162 combined generation/reference/flow/Previs/interface tests passed; 58 interface/reference/navigation/source tests passed; 43 production-graph/MCP server tests passed; 262 audio/editorial tests completed with 261 passes and one opt-in real-Live test skipped. Final native package URI checks resolve copied files relative to XML, including after relocation. Browser QA verifies source-in1s/used2s/original4s, both monitor source offsets, unchecked audition refusal, source range handles and archive restoration. No claim of whole-repository certification is made.

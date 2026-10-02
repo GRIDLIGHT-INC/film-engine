@@ -184,6 +184,8 @@ function writePremiereScenes(db, project, shots, assets, opts = {}) {
         throw err;
     }
     const plan = planPremiereScenes(db, project, shots, assets);
+    const preflight = require('./export-package').preflightExport(project,shots,assets,{format:'premiere',settings:opts.settings});
+    if (!preflight.ready) { const err=new Error(preflight.blocking.map(b=>b.message || b.detail || b.code).join('; ')); err.code='EXPORT_PREFLIGHT_FAILED'; err.plan={...plan,preflight}; throw err; }
     if (!plan.scenes.some(s => s.shots.some(x => x.asset_id))) {
         const err = new Error('No shot has a clip yet, so there is nothing to put in a scene folder.');
         err.code = 'NO_CLIPS';
@@ -200,7 +202,7 @@ function writePremiereScenes(db, project, shots, assets, opts = {}) {
         url.set(f.asset_id, 'file://' + encodeURI(to));
     }
     // The generator turns file_path into a file URL; an URL is left as it is.
-    const rewritten = assets.map(a => (url.has(a.id) ? { ...a, file_path: url.get(a.id) } : a));
+    const rewritten = assets.map(a => (url.has(a.id) ? { ...a, file_path: url.get(a.id), metadata:JSON.stringify({...require('./nle-media').metadata(a),has_audio:require('./nle-media').hasClipAudio(a)}) } : a));
     const settings = opts.settings || {};
     const sequence = sequenceOf(generatePremiereXML(project, shots, rewritten, settings, null));
     const xml = buildScenesXml(project, plan, sequence, settings.target_fps || project.target_fps);
@@ -217,12 +219,15 @@ function writePremiereScenes(db, project, shots, assets, opts = {}) {
         ...plan.scenes.map(s => `${s.folder}: ${s.shots.map(x => x.shot_code + (x.asset_id ? '' : ' (no clip)')).join(', ')}`),
         '',
         plan.missing.length ? 'Missing when this was made:' : 'Nothing was missing when this was made.',
+        ...preflight.warnings.map(w=>`Warning ${w.code}: ${w.detail || w.message}`),
+        'After moving this folder, relink media to the scene folders.',
         ...plan.missing.map(x => `  ${x.shot_code || x.asset_id || ''} ${x.kind}: ${x.reason}`),
         '',
     ].join('\n');
     fs.writeFileSync(path.join(dest, 'READ ME.txt'), readme, 'utf8');
 
     const { _files, ...pub } = plan;
+    fs.writeFileSync(path.join(dest,'manifest.json'),JSON.stringify({...pub,preflight,xml:path.basename(xmlPath),relink:'After moving the folder, relink to its scene media folders.'},null,2));
     return { ...pub, dest, xml: path.basename(xmlPath), copied: _files.length };
 }
 

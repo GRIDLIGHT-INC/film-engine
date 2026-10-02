@@ -148,7 +148,7 @@ test('clicking a shot loads its saved camera, its world pin and its move', () =>
     assert.ok(src, 'a shot in the rail cannot be selected');
     for (const [what, pattern] of [
         ['its saved blocking', /\/previs/],
-        ['its world pin', /\/world\b/],
+        ['its world pin', /worldLoadForShot/],
     ]) {
         assert.match(src, pattern, `selecting a shot does not load ${what}`);
     }

@@ -1570,6 +1570,27 @@ const PRODUCTION_TOOLS = [
         required: ['shot_id'],
     },
     {
+        name: 'video_audio_policy', handler: handleVideoGen, method: 'PUT',
+        path: a => `/film/projects/${a.project_id}/video/audio-policy`,
+        description: 'Set generated clip audio to dialogue/SFX/ambience without music, or silent. Free. Music remains a separate editorial stem; mixed clip audio still requires human audition.',
+        schema: { project_id: { type: 'string' }, video_audio_policy: { type: 'string', enum: ['no_music','silent'] } },
+        required: ['project_id','video_audio_policy'], bodyKeys: ['video_audio_policy'],
+    },
+    {
+        name: 'video_audio_review', handler: handleVideoGen, method: 'PUT',
+        path: a => `/film/shots/${a.shot_id}/video/audio-review`,
+        description: 'Record a human audio audition of a specific clip. Approve only on explicit human confirmation that the clip contains no music; never infer approval from its prompt or image. Free.',
+        schema: { shot_id: { type: 'string' }, asset_id: { type: 'string' }, status: { type: 'string', enum: ['approved','rejected','pending'] }, no_music: { type: 'boolean' }, expected_fingerprint: { type: 'string', description: 'Content fingerprint of the exact file the human auditioned, from production_graph or video audio review read model. Required when approving; stale files are refused.' }, reviewer: { type: 'string' }, note: { type: 'string' } },
+        required: ['shot_id','asset_id','status'], bodyKeys: ['asset_id','status','no_music','expected_fingerprint','reviewer','note'],
+    },
+    {
+        name: 'video_edit_range', handler: handleVideoGen, method: 'PUT',
+        path: a => `/film/shots/${a.shot_id}/video/edit`,
+        description: 'Set a clip source in and used duration in milliseconds. Validates source bounds and retains the whole original for editorial handles. Free.',
+        schema: { shot_id: { type: 'string' }, asset_id: { type: 'string' }, source_in_ms: { type: 'number' }, duration_ms: { type: 'number' } },
+        required: ['shot_id','asset_id','source_in_ms','duration_ms'], bodyKeys: ['asset_id','source_in_ms','duration_ms'],
+    },
+    {
         name: 'video_generate',
         handler: handleVideoGen, method: 'POST',
         description:

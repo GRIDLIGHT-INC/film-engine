@@ -105,7 +105,13 @@ test('an unblocked shot produces byte-identical output to before phase 3', () =>
          * to. Both are the same for a blocked shot and an unblocked one, so
          * neither can hide previs leaking — camera_control still carries that.
          */
-        const strip = o => { const { prompt, motion_prompt, model, fps, generate_audio, ...rest } = o; return rest; };
+        // The approved production-sound policy adds no-music constraints, not camera blocking.
+        const { MUSIC_NEGATIVE } = require('../lib/video-audio-policy');
+        assert.equal(actual.audio, true);
+        assert.equal(actual.video_audio_policy, 'no_music');
+        assert.equal(actual.video_negative_prompt, MUSIC_NEGATIVE);
+        assert.equal(actual.negative_prompt, expected.negative_prompt + ', ' + MUSIC_NEGATIVE);
+        const strip = o => { const { prompt, motion_prompt, model, fps, generate_audio, audio, video_audio_policy, video_negative_prompt, negative_prompt, ...rest } = o; return rest; };
         if (JSON.stringify(strip(actual)) !== JSON.stringify(strip(expected))) {
             drift.push({ key, expected: expected.camera_control, actual: actual.camera_control });
         }

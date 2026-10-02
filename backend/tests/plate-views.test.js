@@ -151,7 +151,9 @@ test('the views are listed, and the one that reaches a prompt is named', () => {
             // they are working when they are not.
             const flagged = j.views.filter(v => v.is_identity_plate);
             assert.strictEqual(flagged.length, 1, 'exactly one view can be the identity plate');
-            assert.match(j.note, /conditioned on the front view/);
+            assert.equal(flagged[0].view, 'front');
+            assert.equal(flagged[0].sendable, true);
+            assert.match(j.note, /provider|budget/i);
             resolve();
         } };
         handleCharacters({ method: 'GET' }, res,

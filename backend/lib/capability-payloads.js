@@ -138,6 +138,11 @@ function projectLockedContracts(ctx, shot) {
 
 /** Fail with a message that names the capability and what was missing. */
 function requireCtx(ctx, fields, capability) {
+    const ambiguous = ctx && (ctx.referenceDiagnostics || []).find(d => d.code === 'LOCATION_AMBIGUOUS');
+    if (ambiguous && ['image', 'video'].includes(capability)) {
+        const error = new Error(`Ambiguous scene location ${ambiguous.name}. ${ambiguous.action}`);
+        error.code = 'LOCATION_AMBIGUOUS'; throw error;
+    }
     const missing = fields.filter(f => !ctx || !ctx[f]);
     if (missing.length) {
         throw new Error(`cannot build ${capability} payload: context is missing ${missing.join(', ')}`);
@@ -643,6 +648,7 @@ const CAPABILITY_BUILDERS = {
 
         const built = buildVideoPayload(ctx.sceneCard, ctx.characters, ctx.location, ctx.project.style_preset, {
             init_image: ctx.initImage || undefined,
+            audio: overrides.audio,
             seed: overrides.seed !== undefined ? overrides.seed : cc.locked_seed,
             model: overrides.model,
             prompt_additions: cc.prompt_additions,
@@ -963,11 +969,29 @@ function buildImagePayloadForAdapter(ctx, adapter) {
     // where the payload is built for it, so the frame is as large as this
     // provider can actually make and no larger.
     const pixels = Number(adapter && adapter.maxImagePixels) || null;
-    const firstCtx = { ...(ctx || {}), imagePromptLimit: declared, maxImagePixels: pixels };
+    let referenceContext = {};
+    if (ctx && ctx.shot && ctx.shot.id && ctx.scene && ctx.project) {
+        const { db } = require('../db/database');
+        const refs = require('./shot-references');
+        const gathered = refs.shotReferencesFor(db, {
+            projectId: ctx.project.id,
+            support: { canAttach: !!adapter.supportsReferenceImages, canTag: !!adapter.supportsReferenceTags,
+                maxReferenceImages: adapter.maxReferenceImages },
+            characters: refs.matchCharacters(ctx.sceneCard.characters, ctx.characters),
+            location: ctx.location, props: refs.matchProps(ctx.sceneCard, ctx.props),
+            anchor: ctx.anchorAttached ? require('./shot-anchor').activeAnchorFor(db, ctx.shot.id) : null,
+            locationView: ctx.sceneCard.location_view || '', shotId: ctx.shot.id,
+            keepPlates: [...new Set([...(ctx.keepPlates || []), ...require('./shot-anchor').platesForcedBy(ctx.sceneCard)])],
+        });
+        referenceContext = { references: gathered.references, tagged: gathered.tagged,
+            anchorAttached: gathered.anchorAttached, anchorTag: gathered.anchorTag,
+            referenceDiagnostics: [...(ctx.referenceDiagnostics || []).filter(d => ['LOCATION_AMBIGUOUS', 'REFERENCE_LOOKUP'].includes(d.code)), ...(gathered.diagnostics || [])] };
+    }
+    const firstCtx = { ...(ctx || {}), ...referenceContext, imagePromptLimit: declared, maxImagePixels: pixels };
     const first = CAPABILITY_BUILDERS.image(firstCtx);
     // Who got what, carried back to the caller's context so a preview built
     // through this function can show the budget of the prompt really sent.
-    if (ctx && typeof ctx === 'object') ctx.__budget = firstCtx.__budget || null;
+    if (ctx && typeof ctx === 'object') { ctx.__budget = firstCtx.__budget || null; ctx.referenceDiagnostics = firstCtx.referenceDiagnostics || []; ctx.references = firstCtx.references; }
     const firstPayload = Array.isArray(first) ? first[0] : first;
     const negative = String((firstPayload && firstPayload.negative_prompt) || '').trim();
     const reserve = adapter && adapter.supportsNegativePrompt === 'folded' && negative
@@ -976,7 +1000,7 @@ function buildImagePayloadForAdapter(ctx, adapter) {
     const available = declared ? Math.max(1, declared - reserve) : declared;
     if (!declared || available === declared) return withTierModel(firstPayload, ctx, adapter);
 
-    const rebuiltCtx = { ...(ctx || {}), imagePromptLimit: available, maxImagePixels: pixels };
+    const rebuiltCtx = { ...firstCtx, imagePromptLimit: available, maxImagePixels: pixels };
     const rebuilt = CAPABILITY_BUILDERS.image(rebuiltCtx);
     if (ctx && typeof ctx === 'object') ctx.__budget = rebuiltCtx.__budget || null;
     return withTierModel(Array.isArray(rebuilt) ? rebuilt[0] : rebuilt, ctx, adapter);
@@ -1131,6 +1155,7 @@ function buildCapabilityPayload(capability, ctx) {
     if (override) {
         for (const one of (Array.isArray(payload) ? payload : [payload])) {
             if (one && typeof one.prompt === 'string') one.prompt = override;
+            if (one && typeof one.motion_prompt === 'string') one.motion_prompt = override;
         }
     }
 
@@ -1153,6 +1178,9 @@ function buildCapabilityPayload(capability, ctx) {
         meta: {
             capability,
             budget: context.__budget || [],
+            revision: context.generationRevision || null,
+            reference_diagnostics: context.referenceDiagnostics || (context.references && context.references.diagnostics) || [],
+            previs_application: context.previsApplication || null,
             cardinality: Array.isArray(payload) ? 'many' : 'one',
             count: Array.isArray(payload) ? payload.length : 1,
             project_id: projectIdOf(context),
@@ -1214,16 +1242,15 @@ function loadShotContext(shotId, opts) {
     let props = [];
     try { props = db.prepare('SELECT * FROM film_props WHERE project_id = ?').all(scene.project_id); }
     catch (_) { props = []; }
+    const locationDiagnostics = [];
     const location = scene.location_id
         ? db.prepare('SELECT * FROM film_locations WHERE id = ?').get(scene.location_id)
-        : null;
+        : require('./shot-references').matchLocation(scene.location, db.prepare('SELECT * FROM film_locations WHERE project_id = ?').all(scene.project_id), locationDiagnostics);
     const voiceProfiles = db.prepare(
         'SELECT vp.* FROM film_voice_profiles vp JOIN film_characters c ON c.id = vp.character_id WHERE c.project_id = ?'
     ).all(scene.project_id);
 
-    const keyframeAsset = db.prepare(
-        "SELECT * FROM film_assets WHERE shot_id = ? AND asset_type IN ('keyframe', 'storyboard') ORDER BY created_at DESC LIMIT 1"
-    ).get(shotId);
+    const keyframeAsset = require('./selected-frame').selectedFrame(db, shotId);
 
     const videoAsset = db.prepare(
         "SELECT * FROM film_assets WHERE shot_id = ? AND asset_type IN ('video_raw', 'video_synced', 'video_final') ORDER BY created_at DESC LIMIT 1"
@@ -1283,7 +1310,7 @@ function loadShotContext(shotId, opts) {
     let initImage = null;
     if (keyframeAsset && keyframeAsset.file_name) {
         try {
-            const imgPath = getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
+            const imgPath = keyframeAsset.file_path || getFilePath(scene.project_id, 'storyboards', keyframeAsset.file_name);
             if (fs.existsSync(imgPath)) {
                 const mime = /\.jpe?g$/i.test(imgPath) ? 'image/jpeg'
                     : /\.webp$/i.test(imgPath) ? 'image/webp' : 'image/png';
@@ -1393,7 +1420,8 @@ function loadShotContext(shotId, opts) {
      * prompt, and emitting the tag there replaces the appearance with a token
      * meaning nothing.
      */
-    let references = [], tagged = false, anchorTag = null, anchorAttached = false, anchorCovers = [];
+    const keepPlates = [...new Set([...(opts && Array.isArray(opts.keepPlates) ? opts.keepPlates : []), ...require('./shot-anchor').platesForcedBy(sceneCard)])];
+    let references = [], tagged = false, anchorTag = null, anchorAttached = false, anchorCovers = [], referenceDiagnostics = [...locationDiagnostics];
     try {
         const { shotReferencesFor, matchCharacters, matchLocation, matchProps } =
             require('./shot-references');
@@ -1405,13 +1433,10 @@ function loadShotContext(shotId, opts) {
          * if it shows them, and a wide with someone's back to camera shows no
          * face at all. A close-up built on that has nothing to go on.
          */
-        const keepPlates = [
-            ...(opts && Array.isArray(opts.keepPlates) ? opts.keepPlates : []),
-            ...require('./shot-anchor').platesForcedBy(sceneCard),
-        ];
         const gathered = shotReferencesFor(db, {
             projectId: scene.project_id,
-            providerConfig: providerConfigOf(project),
+            providerConfig: (opts && opts.providerConfig) || providerConfigOf(project),
+            support: opts && opts.referenceSupport,
             characters: matchCharacters(sceneCard.characters, characters),
             location: matchLocation(scene.location, locations),
             props: matchProps(sceneCard, props),
@@ -1434,10 +1459,12 @@ function loadShotContext(shotId, opts) {
         anchorCovers = anchor.shot
             ? [...require('./shot-anchor').subjectsCoveredBy(db, anchor, keepPlates)] : [];
         references = gathered.references;
+        referenceDiagnostics.push(...(gathered.diagnostics || []));
         tagged = gathered.tagged;
         anchorTag = gathered.anchorTag;
         anchorAttached = gathered.anchorAttached;
-    } catch (_) {
+    } catch (error) {
+        referenceDiagnostics.push({ code: 'REFERENCE_LOOKUP', message: error.message, action: 'Repair the reference lookup before generating.' });
         // A project with no plates, or a provider that cannot be resolved,
         // generates exactly as it did before rather than failing to build a
         // payload at all.
@@ -1452,7 +1479,8 @@ function loadShotContext(shotId, opts) {
         // State is useful for disclosure even when the durable payload rightly
         // excludes the unapplied blocking itself.
         previsApplication,
-        references, tagged, anchorTag, anchorAttached, anchorCovers,
+        references, tagged, anchorTag, anchorAttached, anchorCovers, referenceDiagnostics, keepPlates,
+        generationRevision: require('./generation-revision').generationRevision(db, shotId),
         annotations,
         // The project's standing answer to PAR-026. A route may override it per
         // request; nothing else may, because a default that turns itself on is
@@ -1498,8 +1526,10 @@ async function persistCapabilityResult(capability, result, ctx, filename) {
      * was there all along; a buffer still takes the buffer path unchanged.
      */
     const payload = (result && result.data) || result || null;
+    const keepAudio = typeof (result && result.audio) === 'boolean' ? result.audio : payload && payload.audio;
     const path = await persistProviderMedia(projectId, subdir, filename, payload, {
         serveDir: SERVE_DIR[capability],
+        ...(capability === 'video' && typeof keepAudio === 'boolean' ? { keepAudio } : {}),
     });
     return { path, subdir };
 }

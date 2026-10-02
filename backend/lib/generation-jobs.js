@@ -428,6 +428,10 @@ async function collect(jobId, opts) {
             const name = leg
                 ? require('./sequence-delivery').clipFileName(leg.sequence_id, leg.from, leg.to)
                 : `collected_${job.id}.${ext}`;
+            if (job.capability === 'video' && typeof meta.audio === 'boolean') {
+                out.audio = meta.audio;
+                if (out.data && typeof out.data === 'object') out.data.audio = meta.audio;
+            }
             stored = await persistCapabilityResult(job.capability, out,
                 { project: { id: job.project_id }, project_id: job.project_id }, name);
             const frame = !leg && job.capability === 'image' ? frameBindingOf(opts, meta) : null;

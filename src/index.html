@@ -16385,14 +16385,18 @@ THREE.GLTFLoader = GLTFLoader;
      */
     async function worldRailSelect(shotId) {
         if (WORLD.scout) { WORLD.scout = null; WALK.on = false; WALK.from = null; WALK.moved = false; }
+        const selection = WORLD.selectionRevision = (WORLD.selectionRevision || 0) + 1;
+        WORLD.shotId = shotId;
         WORLD.blocking = null;
         WORLD.pin = null;
-        try { WORLD.blocking = await api(`/shots/${shotId}/previs`); } catch (_) { /* never blocked */ }
+        const [blocking] = await Promise.all([
+            api(`/shots/${shotId}/previs`).catch(() => null),
+            worldLoadForShot(shotId, selection),
+        ]);
+        if (selection !== WORLD.selectionRevision || WORLD.shotId !== shotId) return;
+        WORLD.blocking = blocking;
         worldHydrateMove();
-        try { WORLD.pin = await api(`/shots/${shotId}/world`); } catch (_) { /* never pinned */ }
-        // The world pinned to THIS shot: the old stage loaded it on selection,
-        // and without it the console named one shot over another's geometry.
-        await worldLoadForShot(shotId);
+        worldConsoleRender();
     }
 
     /* ── Spatial World: the world's own geometry, not a splat ────────────── */
@@ -16749,6 +16753,7 @@ THREE.GLTFLoader = GLTFLoader;
             </div>`;
     }
     async function worldLightSet(change) {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         if (!WORLD.shotId) return;
         const lit = (WORLD.blocking && WORLD.blocking.lighting) || {};
         let next = null;
@@ -16759,10 +16764,10 @@ THREE.GLTFLoader = GLTFLoader;
             for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
         }
         try {
-            await api(`/shots/${WORLD.shotId}/previs/director`, { method: 'PUT',
+            await api(`/shots/${shotId}/previs/director`, { method: 'PUT',
                 body: JSON.stringify({ lighting: next }) });
         } catch (err) { return setStatus('Lighting not saved: ' + err.message, true); }
-        await worldRefreshBlocking();
+        if (WORLD.shotId === shotId && WORLD.selectionRevision === selection) await worldRefreshBlocking(shotId, selection);
         worldMeshRenderOnce();
     }
     function worldLightShow() { WORLD.showLights = WORLD.showLights === false; worldConsoleRender(); worldMeshRenderOnce(); worldPaintFrame(); }
@@ -16859,17 +16864,20 @@ THREE.GLTFLoader = GLTFLoader;
 
     /** A nudge is a PROPOSAL, validated like every other camera change. */
     async function worldNudge(field, amount) {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         if (!WORLD.shotId) return;
         const axis = OPERATE_AXES.find(a => a.field === field);
         try {
             // The proposal contract: the move under `changes`, and a rationale.
             // Sent flat, every nudge was refused ("the proposal changes
             // nothing") and the only sign was a line on the status bar.
-            await api(`/shots/${WORLD.shotId}/direct`, { method: 'POST', body: JSON.stringify({
+            await api(`/shots/${shotId}/direct`, { method: 'POST', body: JSON.stringify({
                 rationale: `Camera Operate: ${axis ? axis.label : field} ${amount > 0 ? '+' : ''}${amount}${axis ? axis.unit : ''}`,
                 changes: { [field]: amount }, apply: true,
             }) });
-            WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`);
+            const blocking = await api(`/shots/${shotId}/previs`);
+            if (WORLD.shotId !== shotId || WORLD.selectionRevision !== selection) return;
+            WORLD.blocking = blocking;
         } catch (err) { setStatus('That move was refused: ' + err.message); }
         worldConsoleRender();
     }
@@ -17149,24 +17157,31 @@ THREE.GLTFLoader = GLTFLoader;
           </div>`;
     }
 
-    async function worldRefreshBlocking() {
-        if (!WORLD.shotId) return;
-        try { WORLD.blocking = await api(`/shots/${WORLD.shotId}/previs`); } catch (_) { /* keep what we had */ }
+    async function worldRefreshBlocking(shotId = WORLD.shotId, selection = WORLD.selectionRevision) {
+        if (!shotId) return;
+        try {
+            const blocking = await api(`/shots/${shotId}/previs`);
+            if (WORLD.shotId !== shotId || WORLD.selectionRevision !== selection) return;
+            WORLD.blocking = blocking;
+        } catch (_) { /* keep this selection's existing blocking */ }
+        if (WORLD.shotId !== shotId || WORLD.selectionRevision !== selection) return;
         worldHydrateMove();
         worldConsoleRender();
     }
 
     async function worldApplyDecisions() {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         if (!WORLD.shotId) return;
         try {
-            await api(`/shots/${WORLD.shotId}/previs/apply`, { method: 'POST', body: '{}' });
+            await api(`/shots/${shotId}/previs/apply`, { method: 'POST', body: '{}' });
             setStatus('Applied to the shot — generation now sends it');
         } catch (err) { setStatus('Could not apply: ' + err.message, true); }
-        await worldRefreshBlocking();
+        if (WORLD.shotId === shotId && WORLD.selectionRevision === selection) await worldRefreshBlocking(shotId, selection);
     }
 
     /* Clicking a chip does the next sensible thing for it — never something that spends. */
     async function worldDecisionClick(id) {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         const d = ((WORLD.blocking && WORLD.blocking.decisions) || []).find(x => x.id === id);
         if (!d || !WORLD.shotId) return;
         if (d.state === 'trying') return worldApplyDecisions();
@@ -17176,26 +17191,27 @@ THREE.GLTFLoader = GLTFLoader;
                 : `${d.label}: re-seed from the Shot Board before locking`, d.state !== 'none');
         }
         try {
-            await api(`/shots/${WORLD.shotId}/previs/${route}`,
+            await api(`/shots/${shotId}/previs/${route}`,
                 { method: 'POST', body: JSON.stringify({ decisions: [id] }) });
             setStatus(`${d.label} ${route === 'lock' ? 'locked' : 'unlocked'}`);
         } catch (err) { setStatus(err.message, true); }
-        await worldRefreshBlocking();
+        if (WORLD.shotId === shotId && WORLD.selectionRevision === selection) await worldRefreshBlocking(shotId, selection);
     }
 
     /* Lock shot = apply what is still being tried, then lock everything applied and sign it off. */
     async function worldLockShot(lock) {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         if (!WORLD.shotId) return;
         const decisions = (WORLD.blocking && WORLD.blocking.decisions) || [];
         try {
             if (lock && decisions.some(d => d.state === 'trying')) {
-                await api(`/shots/${WORLD.shotId}/previs/apply`, { method: 'POST', body: '{}' });
+                await api(`/shots/${shotId}/previs/apply`, { method: 'POST', body: '{}' });
             }
-            await api(`/shots/${WORLD.shotId}/previs/${lock ? 'lock' : 'unlock'}`,
+            await api(`/shots/${shotId}/previs/${lock ? 'lock' : 'unlock'}`,
                 { method: 'POST', body: JSON.stringify({ all: true }) });
             setStatus(lock ? 'Shot locked — production will send exactly these decisions' : 'Shot unlocked');
         } catch (err) { setStatus(err.message, true); }
-        await worldRefreshBlocking();
+        if (WORLD.shotId === shotId && WORLD.selectionRevision === selection) await worldRefreshBlocking(shotId, selection);
     }
 
     function worldSetTab(id) {
@@ -18148,6 +18164,7 @@ THREE.GLTFLoader = GLTFLoader;
      * the camera from the saved blocking and validates it against the geometry.
      */
     async function worldWalkKeep() {
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision;
         const c = worldWalkCamera();
         if (!c || !WALK.from || !WORLD.shotId) return;
         const f = Number(WORLD.version && WORLD.version.scale_factor);
@@ -18171,7 +18188,8 @@ THREE.GLTFLoader = GLTFLoader;
             apply: true,
         };
         try {
-            await api(`/shots/${WORLD.shotId}/direct`, { method: 'POST', body: JSON.stringify(proposal) });
+            await api(`/shots/${shotId}/direct`, { method: 'POST', body: JSON.stringify(proposal) });
+            if (WORLD.shotId !== shotId || WORLD.selectionRevision !== selection) return;
             WALK.on = false; WALK.from = null; WALK.moved = false;
             setStatus('Camera kept on the shot. Apply it to the shot, then generate the board frame from it.');
         } catch (err) {
@@ -18180,7 +18198,7 @@ THREE.GLTFLoader = GLTFLoader;
                 ? err.data.failures.map(f => f.detail || f.check).join('; ') : '';
             return setStatus('That camera was refused: ' + (why || err.message) + ' — press "Put it back" or move it again.', true);
         }
-        await worldRefreshBlocking();
+        await worldRefreshBlocking(shotId, selection);
     }
 
     async function worldWalkUndo() {
@@ -18214,7 +18232,7 @@ THREE.GLTFLoader = GLTFLoader;
 
     /** The worlds a person can walk: those with a version, newest version first. */
     function scoutableWorlds(worlds, names) {
-        return worlds.map(w => {
+        return worlds.filter(w => !w.archived_at).map(w => {
             const vs = (w.versions || []).slice().sort((a, b) => (b.version || 0) - (a.version || 0));
             if (!vs.length) return null;
             return { world: w, version: vs[0], name: (w.location_id && names.get(w.location_id)) || w.name || 'Location' };
@@ -18224,6 +18242,7 @@ THREE.GLTFLoader = GLTFLoader;
     async function worldScoutSelect(worldId) {
         const s = (WORLD.scoutable || []).find(x => x.world.id === worldId);
         if (!s) return;
+        const selection = WORLD.selectionRevision = (WORLD.selectionRevision || 0) + 1;
         WORLD.shotId = null;
         WORLD.pin = null;
         WORLD.scout = { worldId, versionId: s.version.id, locationId: s.world.location_id || null, name: s.name };
@@ -18233,8 +18252,12 @@ THREE.GLTFLoader = GLTFLoader;
         if (WORLD.geometryFor !== s.version.id) {
             WORLD.geometry = null;
             WORLD.geometryFor = s.version.id;
-            try { WORLD.geometry = await api(`/world-versions/${s.version.id}/geometry?budget=250000`); }
-            catch (_) { WORLD.geometry = null; }
+            try {
+                const geometry = await api(`/world-versions/${s.version.id}/geometry?budget=250000`);
+                if (selection !== WORLD.selectionRevision) return;
+                WORLD.geometry = geometry;
+            }
+            catch (_) { if (selection !== WORLD.selectionRevision) return; WORLD.geometry = null; }
         }
         WALK.on = true; WALK.moved = false;
         WALK.from = { position: [0, 0, 0], rotation: [0, 0, 0], saved: false };
@@ -18788,20 +18811,21 @@ THREE.GLTFLoader = GLTFLoader;
     }
     async function setEditRebuild() {
         if (!SETEDIT.build || SETEDIT.busy) return;
+        const shotId = WORLD.shotId, selection = WORLD.selectionRevision, projectId = state.currentProject.id, scoutId = WORLD.scout && WORLD.scout.worldId, buildId = SETEDIT.build.id;
         SETEDIT.busy = true; stageRenderBar();
         setStatus('Rebuilding the set in Blender — about half a minute, free…', true);
         try {
-            const out = await api(`/set-builds/${SETEDIT.build.id}/edit`, { method: 'POST',
+            const out = await api(`/set-builds/${buildId}/edit`, { method: 'POST',
                 body: JSON.stringify({ objects: setEditObjects() }) });
             const vid = out && out.version && out.version.id;
             if (!vid) throw new Error('the rebuild made no world version');
             Object.assign(SETEDIT, { on: false, items: [], sel: null, drag: null, dirty: false, busy: false });
-            if (WORLD.shotId) {
-                await api(`/shots/${WORLD.shotId}/world`, { method: 'POST', body: JSON.stringify({ world_version_id: vid }) });
-                await worldRailSelect(WORLD.shotId);
-            } else if (WORLD.scout) {
-                await worldLoadScoutable(state.currentProject.id);
-                await worldScoutSelect(WORLD.scout.worldId);
+            if (shotId) {
+                await api(`/shots/${shotId}/world`, { method: 'POST', body: JSON.stringify({ world_version_id: vid }) });
+                if (WORLD.shotId === shotId && WORLD.selectionRevision === selection) await worldRailSelect(shotId);
+            } else if (scoutId && WORLD.selectionRevision === selection) {
+                await worldLoadScoutable(projectId);
+                await worldScoutSelect(scoutId);
             }
             setStatus(`Set rebuilt as version ${out.version.version}${WORLD.shotId ? ', and this shot is on it' : ''}. Earlier versions stay.`);
         } catch (err) {
@@ -19443,6 +19467,25 @@ THREE.GLTFLoader = GLTFLoader;
         requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     }
 
+    async function worldToggleArchived() {
+        WORLD.showArchived = !WORLD.showArchived;
+        WORLD.archived = [];
+        if (WORLD.showArchived && state.currentProject) {
+            try { WORLD.archived = (await api(`/projects/${state.currentProject.id}/worlds?archived=only`)).worlds || []; }
+            catch (err) { setStatus('Could not read archived sets: ' + err.message, true); }
+        }
+        worldSyncPanelShots(state.currentPage);
+    }
+    async function worldRestoreArchived(id) {
+        try {
+            await api(`/worlds/${id}`, { method: 'PATCH', body: JSON.stringify({ archived: false }) });
+            WORLD.archived = (WORLD.archived || []).filter(w => w.id !== id);
+            await worldLoadScoutable(state.currentProject.id);
+            worldConsoleRender();
+            setStatus('Set restored. Its versions are preserved.');
+        } catch (err) { setStatus('Could not restore set: ' + err.message, true); }
+    }
+
     function worldSyncPanelShots(page) {
         pvApplyFolds(page);
         const panel = document.querySelector('.fe-panel');
@@ -19459,7 +19502,8 @@ THREE.GLTFLoader = GLTFLoader;
         const shots = WORLD.shots || [];
         const scout = WORLD.scoutable || [];
         const sig = shots.map(s => s.id).join(',') + '|' + WORLD.shotId + '|'
-            + scout.map(x => x.world.id).join(',') + '|' + (WORLD.scout ? WORLD.scout.worldId : '');
+            + scout.map(x => x.world.id).join(',') + '|' + (WORLD.scout ? WORLD.scout.worldId : '')
+            + '|' + !!WORLD.showArchived + '|' + (WORLD.archived || []).map(w => w.id).join(',');
         if (box.dataset.sig === sig) return;
         box.dataset.sig = sig;
         box.innerHTML = `${scout.length ? `
@@ -19471,6 +19515,11 @@ THREE.GLTFLoader = GLTFLoader;
                 <span class="pv-shot-loc">${esc(x.name)} · v${esc(String(x.version.version || 1))}</span>
               </button>`).join('')}
             </div>` : ''}
+            <div class="nav-group-label"><button class="btn btn-secondary btn-sm" onclick="worldToggleArchived()">${WORLD.showArchived ? 'Hide archived sets' : 'Archived sets'}</button></div>
+            ${WORLD.showArchived ? `<div class="fe-panel-shotlist">${(WORLD.archived || []).length ? WORLD.archived.map(w => `
+                <div class="pv-shot"><span class="pv-shot-loc">${esc(w.name)}</span>
+                <button class="btn btn-secondary btn-sm" onclick="worldRestoreArchived('${w.id}')">Restore</button></div>`).join('')
+                : '<p class="text-sm text-muted">No archived sets.</p>'}</div>` : ''}
             <div class="nav-group-label"><span>Shots</span><span class="nav-group-count">${shots.length}</span></div>
             <div class="fe-panel-shotlist">${shots.length ? shots.map(sh => `
               <button class="pv-shot${sh.id === WORLD.shotId ? ' active' : ''}" onclick="worldRailSelect('${sh.id}')">
@@ -20651,61 +20700,39 @@ THREE.GLTFLoader = GLTFLoader;
      * A shot with no pin clears the pair rather than keeping the previous
      * shot's world, which would show one shot's geometry under another's name.
      */
-    async function worldLoadForShot(shotId) {
+    async function worldLoadForShot(shotId, selectionToken) {
         if (!worldEngineOn()) return;
+        const selection = selectionToken == null
+            ? (WORLD.selectionRevision = (WORLD.selectionRevision || 0) + 1) : selectionToken;
         WORLD.shotId = shotId || null;
         WORLD.world = null;
         WORLD.version = null;
-        if (!shotId) return worldConsoleRender();
+        WORLD.geometry = null;
+        WORLD.geometryFor = null;
+        WORLD.pin = null;
+        worldConsoleRender();
+        if (!shotId) return;
+        const current = () => selection === WORLD.selectionRevision && WORLD.shotId === shotId;
         try {
             const pin = await api(`/shots/${shotId}/world`);
+            if (!current()) return;
             if (pin && pin.world_version_id) {
-                /*
-                 * The pin says WHICH world; it carries neither the name the
-                 * header prints nor the scale the measurements read. Both are
-                 * fetched, so the console cannot show a world called
-                 * "undefined" at APPROXIMATE SCALE over calibrated geometry.
-                 */
-                const [w, vs] = await Promise.all([
+                const [w, vs, geometry] = await Promise.all([
                     api(`/worlds/${pin.world_id}`).catch(() => null),
                     api(`/worlds/${pin.world_id}/versions`).catch(() => null),
+                    api(`/world-versions/${pin.world_version_id}/geometry?budget=250000`).catch(() => null),
                 ]);
+                if (!current()) return;
+                WORLD.pin = pin;
                 WORLD.world = (w && w.world) || { id: pin.world_id };
-                WORLD.version = ((vs && vs.versions) || [])
-                    .find(v => v.id === pin.world_version_id) || pin;
-                // Whether a newer version exists is the pin's answer, and the
-                // console must not lose it by adopting the version record.
+                WORLD.version = ((vs && vs.versions) || []).find(v => v.id === pin.world_version_id) || pin;
                 WORLD.version.newer_version = pin.newer_version;
                 WORLD.version.newer_version_id = pin.newer_version_id;
-                /*
-                 * The COLLIDER, which is what a generation plate is a picture
-                 * of. Without it the camera view is an overlay layer over
-                 * nothing, and the plate — which leads every reference list
-                 * saying "reproduce that geometry exactly" — is a blank frame.
-                 *
-                 * Fetched once per version and cached on the pin, because the
-                 * pane repaints on every lens change and a mesh fetch inside a
-                 * paint loop is a stall the director feels.
-                 */
-                if (WORLD.geometryFor !== pin.world_version_id) {
-                    WORLD.geometry = null;
-                    WORLD.geometryFor = pin.world_version_id;
-                    try {
-                        WORLD.geometry = await api(
-                            /*
-                             * The WHOLE mesh. A plate is rendered once and
-                             * must be solid; an evenly decimated mesh fills as
-                             * disconnected shards rather than as a room.
-                             */
-                            `/world-versions/${pin.world_version_id}/geometry?budget=250000`);
-                    } catch (_) { WORLD.geometry = null; }
-                }
+                WORLD.geometry = geometry;
+                WORLD.geometryFor = pin.world_version_id;
             }
-        } catch (_) {
-            // A pin that cannot be read leaves the console saying there is no
-            // world, which is the honest answer — never a stale one.
-        }
-        worldConsoleRender();
+        } catch (_) { /* A failed read leaves this shot empty, never on another shot's set. */ }
+        if (current()) worldConsoleRender();
     }
 
     async function worldCreate() {
@@ -46553,6 +46580,7 @@ ${fountainText.slice(0, 50000)}`;
         const still = document.getElementById('pbStill');
         const gap = document.getElementById('pbGap');
 
+        video.pause();
         video.classList.add('hidden');
         still.classList.add('hidden');
         gap.classList.add('hidden');
@@ -46585,6 +46613,9 @@ ${fountainText.slice(0, 50000)}`;
         if (entry.kind === 'video' && entry.video) {
             video.classList.remove('hidden');
             video.src = mediaUrl(entry.video.path);
+            video.onloadedmetadata = () => {
+                if (pbEntry() === entry) video.currentTime = (Number(entry.video.source_in_ms) || 0) / 1000;
+            };
             video.load();
             if (pb.playing) video.play().catch(() => {});
         } else if (entry.kind === 'still' && entry.still) {
@@ -47082,7 +47113,7 @@ ${fountainText.slice(0, 50000)}`;
 
         const video = document.getElementById('pbVideo');
         if (entry.kind === 'video' && !video.paused && video.duration) {
-            pb.localMs = video.currentTime * 1000;
+            pb.localMs = Math.max(0, video.currentTime * 1000 - (Number(entry.video.source_in_ms) || 0));
         } else if (ts && pbLastFrame) {
             pb.localMs += ts - pbLastFrame;
         }
@@ -47097,6 +47128,10 @@ ${fountainText.slice(0, 50000)}`;
                 }
             } else {
                 pb.playing = false;
+                video.pause();
+                document.getElementById('pbAudio').pause();
+                if (pb.lineTimer) { clearTimeout(pb.lineTimer); pb.lineTimer = null; }
+                pbSyncBeds();
                 document.getElementById('pbPlayBtn').textContent = 'Play';
                 return;
             }
@@ -47378,7 +47413,7 @@ ${fountainText.slice(0, 50000)}`;
 
         const video = document.getElementById('pbVideo');
         if (entry.kind === 'video' && video.readyState > 0) {
-            video.currentTime = pb.localMs / 1000;
+            video.currentTime = ((Number(entry.video.source_in_ms) || 0) + pb.localMs) / 1000;
         }
         // The dialogue follows the scrub. Without this, dragging the playhead
         // leaves the line playing from wherever it happened to be.
@@ -50095,15 +50130,17 @@ function pgDrawerVersion(n, body, foot, close) {
     const parent = pgNode(n.parent);
     // A flow's sound hangs off a SHOT, which has no cue versions (FOG-004).
     const siblings = (parent ? (n.type === 'audio' ? parent.versions : parent.videos) : null) || [];
+    const auditionUrl = pgSrc(n.url || '') + (String(n.url || '').includes('?') ? '&' : '?') + 'content=' + encodeURIComponent(n.audio_fingerprint || '');
     const media = n.url ? (n.type === 'audio'
         ? `<audio src="${esc(pgSrc(n.url))}" controls style="width:100%;"></audio>`
-        : `<video src="${esc(pgSrc(n.url))}" controls playsinline style="width:100%;border-radius:8px;background:#08080a;"></video>`) : '<div class="pg-warn">The file is missing.</div>';
+        : `<video src="${esc(auditionUrl)}" controls playsinline style="width:100%;border-radius:8px;background:#08080a;"></video>`) : '<div class="pg-warn">The file is missing.</div>';
     body.innerHTML = `
       <div class="pg-dhead">${close}<h3 class="pg-dtitle">${n.source === 'flow' ? 'Made by a flow' : `Version ${n.version}`}</h3>
         <div class="pg-dsub">${n.type} · ${esc(n.parent_label || '')} · ${pgSecs(n.duration_ms)}</div>
         ${pgFlowPickControls(n)}
         <div class="${n.selected ? 'pg-okline' : 'pg-note'}" style="margin-top:6px;">${n.selected ? 'Selected — playback uses this version' : 'Not selected — playback uses another'}</div></div>
       <div class="pg-dsec">${media}</div>
+      ${n.type === 'video' && parent && parent.type === 'shot' ? `<div class="pg-dsec" id="pgClipEditorial"></div>` : ''}
       <div class="pg-dsec"><div class="pg-list">
         <div class="pg-li"><span class="grow">Parent</span><span class="m">${esc(parent ? (parent.type === 'sequence' ? 'Sequence · ' + parent.name : parent.type === 'sound' ? (parent.title || 'Sound') : 'Shot · ' + parent.shot_code) : '—')}</span></div>
         <div class="pg-li"><span class="grow">Generator</span><span class="m">${esc(n.provider || 'uploaded')}${n.model ? ' · ' + esc(n.model) : ''}</span></div>
@@ -50121,10 +50158,54 @@ function pgDrawerVersion(n, body, foot, close) {
       <div class="pg-dsec"><div class="pg-kicker"><span>All versions of ${esc(n.parent_label || '')}</span></div>
         <div class="pg-list">${siblings.map(v => pgVersionRow(v, 'ver:' + v.asset_id)).join('')}</div></div>`;
     pgLoadHowMade(n.asset_id, n.type, n.parent);
+    if (n.type === 'video' && parent && parent.type === 'shot') pgLoadClipEditorial(n, parent);
     foot.innerHTML = `${n.url ? `<a class="pg-hbtn" style="display:inline-flex;align-items:center;text-decoration:none;" href="${esc(pgSrc(n.url))}" download>Download</a>` : ''}
         <div class="grow"></div>
         ${n.selected ? `<button class="pg-hbtn" onclick="pgSelectVersion('${n.key}', true)">Unselect</button><button class="pg-hbtn primary" disabled>Playing ✓</button>`
                      : `<button class="pg-hbtn primary" onclick="pgSelectVersion('${n.key}')">Select — play this version</button>`}`;
+}
+
+async function pgLoadClipEditorial(n, parent) {
+    const box = document.getElementById('pgClipEditorial');
+    if (!box) return;
+    let policy;
+    try { policy = await api('/projects/' + state.currentProject.id + '/video/audio-policy'); }
+    catch (err) { if (box.isConnected) box.textContent = err.message; return; }
+    if (!box.isConnected) return;
+    const edit = n.edit || {}, start = Number(edit.source_in_ms) || 0, length = Number(edit.duration_ms) || Number(n.duration_ms) || 0;
+    box.innerHTML = `<div class="pg-kicker"><span>Clip audio and edit</span></div>
+      <label>Generated clip audio <select onchange="pgSetClipAudioPolicy(this.value)">
+        <option value="no_music" ${policy.video_audio_policy === 'no_music' ? 'selected' : ''}>Dialogue, effects and ambience · no music</option>
+        <option value="silent" ${policy.video_audio_policy === 'silent' ? 'selected' : ''}>Silent</option></select></label>
+      <p class="pg-note">Listen to this version before approving mixed audio. Music is supplied separately in Post.</p>
+      <label><input id="pgNoMusicAudition" type="checkbox"> I listened to this version and heard no music</label>
+      <button class="pg-hbtn" onclick="pgReviewClipAudio('${parent.id}','${n.asset_id}',${esc(JSON.stringify(n.audio_fingerprint || ''))})">Approve audio audition</button>
+      <p class="pg-note">Recorded audition: ${esc(n.audio_review && n.audio_review.status || 'pending')}. Export verifies the current file.</p>
+      <label>Source in (seconds) <input id="pgClipSourceIn" type="number" min="0" step="0.001" value="${start/1000}"></label>
+      <label>Used duration (seconds) <input id="pgClipUsedDuration" type="number" min="0.001" step="0.001" value="${length/1000}"></label>
+      <button class="pg-hbtn" onclick="pgSaveClipEdit('${parent.id}','${n.asset_id}')">Save source range</button>
+      <p class="pg-note">Original source: ${pgSecs(n.duration_ms)}. The whole original is retained for handles.</p>`;
+    const player = box.previousElementSibling && box.previousElementSibling.querySelector('video');
+    if (player && length > 0) {
+        const seek = () => { player.currentTime = start/1000; };
+        if (player.readyState >= 1) seek(); else player.addEventListener('loadedmetadata', seek, { once: true });
+        player.addEventListener('timeupdate', () => { if (player.currentTime >= (start+length)/1000) player.pause(); });
+    }
+}
+async function pgSetClipAudioPolicy(value) {
+    try { await api('/projects/' + state.currentProject.id + '/video/audio-policy', {method:'PUT',body:JSON.stringify({video_audio_policy:value})});setStatus('Clip audio policy saved.'); }
+    catch(err) { setStatus(err.message,true); }
+}
+async function pgReviewClipAudio(shotId, assetId, expectedFingerprint) {
+    const checked = document.getElementById('pgNoMusicAudition');
+    if (!checked || !checked.checked) return setStatus('Listen to this clip and confirm the audition before approving.',true);
+    try { await api('/shots/' + shotId + '/video/audio-review',{method:'PUT',body:JSON.stringify({asset_id:assetId,status:'approved',no_music:true,expected_fingerprint:expectedFingerprint,reviewer:'Human audition via Production'})});setStatus('Audio audition recorded for this version.');await pgLoad(); }
+    catch(err) { setStatus(err.message,true); }
+}
+async function pgSaveClipEdit(shotId, assetId) {
+    const source_in_ms = Number(document.getElementById('pgClipSourceIn').value)*1000, duration_ms = Number(document.getElementById('pgClipUsedDuration').value)*1000;
+    try { const range=await api('/shots/' + shotId + '/video/edit',{method:'PUT',body:JSON.stringify({asset_id:assetId,source_in_ms,duration_ms})});setStatus('Source range saved · head handle '+pgSecs(range.head_handle_ms)+' · tail handle '+pgSecs(range.tail_handle_ms));await pgLoad(); }
+    catch(err) { setStatus(err.message,true); }
 }
 
 // ── How was this made (PGN-014) ────────────────────────────────────────────
@@ -50859,6 +50940,7 @@ async function pgRenderPlayback() {
           <div class="pg-playhead" id="pgPlayhead" style="left:${cur ? cur.start / total * 100 : 0}%;"></div>
         </div>
       </div>`;
+    if (cur) pgPrepareVideo(cur);
 }
 
 /** Where a sound plays: under its parent's span, or its whole scene's. */
@@ -50890,6 +50972,18 @@ function pgMonitorHtml(t) {
     return `<div class="pg-slate"><strong>${esc(e.shot_code)}</strong><span>no frame · ${pgSecs(t.dur)}</span></div>`;
 }
 
+function pgPrepareVideo(tile, onEnd) {
+    const video = document.getElementById('pgMonVideo');
+    if (!video || !tile || !tile.entry || !tile.entry.video) return;
+    const start = Number(tile.entry.video.source_in_ms) || 0, end = start + tile.dur;
+    const seek = () => { video.currentTime = start / 1000; };
+    if (video.readyState > 0) seek(); else video.onloadedmetadata = seek;
+    let ended = false;
+    const finish = () => { if (ended) return; ended = true; video.pause(); if (onEnd) onEnd(); };
+    video.onended = finish;
+    video.ontimeupdate = () => { if (video.currentTime * 1000 >= end) finish(); };
+}
+
 function pgShowTile(i) {
     const tiles = pgTiles();
     if (!tiles.length) return;
@@ -50897,6 +50991,7 @@ function pgShowTile(i) {
     const mon = document.getElementById('pgMonitor');
     const t = tiles[PG.play.index];
     if (mon) mon.innerHTML = pgMonitorHtml(t);
+    pgPrepareVideo(t);
     document.querySelectorAll('#pgPlayback .pg-tile').forEach((el, k) => el.classList.toggle('cur', k === PG.play.index));
     const total = tiles.reduce((m, x) => Math.max(m, x.start + x.dur), 0) || 1;
     const ph = document.getElementById('pgPlayhead');
@@ -50954,7 +51049,7 @@ function pgPlayCurrent() {
         pgPlayCurrent();
     };
     const v = document.getElementById('pgMonVideo');
-    if (v) { v.onended = next; v.play().catch(() => { PG.play.timer = setTimeout(next, t.dur); }); }
+    if (v) { pgPrepareVideo(t, next); v.play().catch(() => { PG.play.timer = setTimeout(next, t.dur); }); }
     else PG.play.timer = setTimeout(next, PG.play.stills ? t.dur : 800);
 }
 

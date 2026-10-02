@@ -198,11 +198,13 @@ test('video generates silent unless audio is asked for', () => {
     assert.strictEqual(seedance.buildVideoRequest({ ...shot, generate_audio: true }).body.generate_audio, true);
 });
 
-test('asking for the provider bed is said out loud', () => {
+test('provider sound is described as dialogue and effects with no music', () => {
     const d = seedance.describeVideoRequest({ prompt: 'x', duration_s: 5, audio: true,
         keyframes: [{ uri: 'https://a/b.png', position: 'first' }] });
     assert.strictEqual(d.audio, true);
-    assert.ok(d.notes.some(n => /two scores/i.test(n)));
+    assert.ok(d.notes.some(n => /NO MUSIC/.test(n)));
+    assert.ok(d.notes.some(n => /dialogue.*effects/i.test(n)));
+    assert.ok(d.notes.some(n => /audition/i.test(n)));
 });
 
 test('the settings that decide what a second costs are writable', () => {
@@ -252,15 +254,13 @@ test('collecting posts the spend exactly once', () => {
  * effects and music at -34.7 dB mean. A flag whose effect cannot be verified is
  * not a control, so the engine settles it locally with a stream copy.
  */
-test('every saved video is stripped of audio unless sound was asked for', () => {
+test('saved video retains dialogue/effects by default and strips only explicit silence', () => {
     const src = read('lib/provider-media.js');
-    assert.ok(/subdir === 'video' && !asked/.test(src),
-        'the strip belongs on the ONE funnel every saved video passes through, not on each caller');
-    assert.ok(/'-c', 'copy', '-an'/.test(src),
-        'stream copy — the picture must be bit-identical; a re-encode would degrade footage that '
-        + 'was just paid for');
-    assert.ok(/data\.audio === true/.test(src) && /opts && opts\.keepAudio/.test(src),
-        'an explicit ask for sound must survive: silence is the default, not an override');
+    assert.ok(/subdir === 'video' && !requested/.test(src));
+    assert.ok(/'-c', 'copy', '-an'/.test(src), 'explicit silence preserves picture through stream copy');
+    assert.ok(/typeof opts.keepAudio === 'boolean'/.test(src) && /typeof data.audio === 'boolean'/.test(src));
+    assert.ok(/data.audio : true/.test(src), 'sound defaults on to preserve dialogue and effects');
+    assert.ok(/VIDEO_AUDIO_STRIP_FAILED/.test(src), 'failed silence enforcement refuses persistence');
 });
 
 test('the adapter reports whether sound was asked for', () => {

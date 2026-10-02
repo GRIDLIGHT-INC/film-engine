@@ -21,7 +21,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function getProjectShots(projectId) {
     return db.prepare(`
         SELECT s.id, s.shot_code, s.duration_ms, s.scene_id, s.status,
-               s.sort_order, s.transition_in_type, s.transition_in_duration_ms,
+               s.sort_order, s.scene_card_yaml, s.transition_in_type, s.transition_in_duration_ms,
                s.transition_out_type, s.transition_out_duration_ms,
                sc.scene_number, sc.int_ext, sc.location, sc.time_of_day,
                sc.description, sc.characters_present
@@ -38,7 +38,7 @@ function getProjectShots(projectId) {
 function getProjectAssets(projectId) {
     return db.prepare(`
         SELECT id, shot_id, scene_id, asset_type, file_path, file_name, format,
-               mime_type, size_bytes, duration_ms, width, height, metadata
+               mime_type, size_bytes, duration_ms, width, height, metadata, version, created_at
         FROM film_assets
         WHERE project_id = ?
         ORDER BY created_at
@@ -62,6 +62,7 @@ function withApprovedScore(projectId, shots, assets) {
     for (const p of placements) {
         kept.push({ id: p.asset_id, shot_id: null, scene_id: null, lay_on_shot_id: p.first_shot_id, asset_type: 'audio_music',
             file_path: p.file_path, file_name: path.basename(p.file_path), format: 'wav', duration_ms: p.duration_ms, metadata: '{"kind":"approved_score"}' });
+        for (const asset of require('../lib/nle-media').scoreStems(db,p)) kept.push({...asset,shot_id:null,scene_id:null,lay_on_shot_id:p.first_shot_id,asset_type:'audio_music'});
     }
     return kept;
 }
@@ -175,7 +176,7 @@ function handleNLEExport(req, res, urlParts, query) {
      */
     if (format === 'preflight') {
         const { preflightExport } = require('../lib/export-package');
-        const out = preflightExport(project, shots, assets, { settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export'),
+        const out = preflightExport(project, shots, assets, { format:query.target || 'premiere', settings, rights: require('../lib/music-rights').evaluateProject(db, projectId, 'final_export'),
             deliveryCheck: require('../lib/delivery-quality').deliveryCheck(db, projectId) });
         res.writeHead(out.ready ? 200 : 409, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ project_id: projectId, ...out }));
@@ -265,6 +266,11 @@ function handleNLEExport(req, res, urlParts, query) {
     const deliverables = db.prepare(
         'SELECT * FROM film_deliverables WHERE project_id = ? ORDER BY sort_order, created_at')
         .all(projectId);
+
+    if (['fcpxml','premiere','edl'].includes(format)) {
+        const pre=require('../lib/export-package').preflightExport(project,shots,assets,{format,settings});
+        if (!pre.ready) { res.writeHead(409, {'Content-Type':'application/json'}); res.end(JSON.stringify(pre)); return; }
+    }
 
     if (format === 'fcpxml') {
         const content = generateFCPXML(project, shots, assets, settings);

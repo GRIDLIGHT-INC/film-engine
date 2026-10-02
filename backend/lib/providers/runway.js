@@ -762,7 +762,9 @@ function buildVideoRequest(payload) {
     }
     // A model whose schema has no ratio field (the shape follows the picture) is sent none.
     if (specOf(model) && !spec.ratio && mode === 'image_to_video') delete body.ratio;
-    if (typeof p.audio === 'boolean' && spec.audio) body.audio = p.audio;
+    const generatedSound = p.video_audio_policy === 'silent' ? false : (p.audio !== undefined ? p.audio : p.generate_audio);
+    if (typeof generatedSound === 'boolean' && spec.audio) body.audio = generatedSound;
+    if (generatedSound !== false && (p.video_audio_policy === 'no_music' || spec.audio)) body.promptText = require('../video-audio-policy').soundPrompt(body.promptText, 1000);
     if (p.output_format && spec.outputFormat && (spec.outputFormat.enum || []).includes(p.output_format)) {
         body.outputFormat = p.output_format;
     }
@@ -1381,7 +1383,7 @@ const adapter = {
             return {
                 ok: true,
                 status: 200,
-                data: mediaResult(capability, done.url),
+                data: Object.assign(mediaResult(capability, done.url), capability === 'video' ? { audio: request.body.audio !== false } : {}),
                 provider: 'runway',
                 provider_model: request.body.model || request.mode,
                 provider_job_id: submitted.id,

@@ -34,7 +34,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (123 migrations)
+│   │   └── migrations/     # SQL migration files (124 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -6361,7 +6361,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (123 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (124 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6962,3 +6962,7 @@ The screenplay epic provides a full-featured screenplay editor:
 - **FDX Export** (FILM-124): `lib/fdx-generator.js` — Fountain AST → Final Draft XML v5
 - **Inline Comments** (FILM-126): Add/view/resolve/delete comments anchored to script elements
 - **Scene Nav Drag-Drop**: Reorder scenes via drag-and-drop in sidebar
+
+### Workflow handoff additions
+
+`generation-revision.js`, `nle-editorial-regressions.test.js`, `nle-media.js`, `previs-shot-navigation.test.js`, `selected-frame.js`, `video-audio-handoff.test.js`, `video-audio-policy.js`, `video-editorial-ui.test.js`, `workflow-handoffs.test.js`.

@@ -33,6 +33,7 @@ const ACCEPTANCE_RUBRIC = {
 
 // All available QA checks
 const QA_CHECKS = [
+    { id:'video_audio_no_music_review', scope:'shot', severity:SEVERITY.error, label:'Embedded production sound auditioned with no music' },
     { id: 'shot_has_video', scope: 'shot', severity: SEVERITY.error, label: 'Shot has generated video' },
     { id: 'shot_has_keyframe', scope: 'shot', severity: SEVERITY.error, label: 'Shot has storyboard keyframe' },
     { id: 'shot_has_dialogue_audio', scope: 'shot', severity: SEVERITY.warning, label: 'Shot dialogue has audio (if dialogue exists)' },
@@ -84,6 +85,13 @@ function runShotQA(shotId, db) {
         severity: SEVERITY.error,
         message: assetTypes.has('video_raw') ? 'Video present' : 'Missing generated video',
     });
+
+    const selected = require('./conform').selectedClip(db,shotId);
+    const chosen = selected && db.prepare('SELECT * FROM film_assets WHERE id = ?').get(selected.id);
+    if (chosen && require('./nle-media').hasClipAudio(chosen)) {
+        const pending=require('./nle-media').audition(chosen);
+        checks.push({id:'video_audio_no_music_review',passed:!pending,severity:SEVERITY.error,message:pending ? pending.message : 'Current clip audition approved: no music; dialogue and effects allowed'});
+    }
 
     // Shot has dialogue audio (only if dialogue exists)
     if (hasDialogue) {

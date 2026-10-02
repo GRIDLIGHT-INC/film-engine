@@ -197,10 +197,12 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
     // location, so with three slots a look plate never displaces the actor — a
     // viewer notices a different face long before a different grade.
     try {
-        for (const ref of require('./look-development').styleReferences(db, projectId, 1)) {
+        for (const ref of require('./look-development').styleReferences(database(), projectId, 1)) {
             candidates.push(ref);
         }
-    } catch (_) { /* a project with no board generates exactly as before */ }
+    } catch (error) {
+        if (opts && opts.diagnostics) opts.diagnostics.push({ code: 'STYLE_REFERENCE_LOOKUP', message: error.message, action: 'Check the moodboard records before generating.' });
+    }
 
     // Props named on the scene card. Ranked below character and location by
     // lib/reference-images, so with the 3-reference cap they only claim a slot
@@ -225,7 +227,7 @@ function gatherShotReferences(projectId, matchedChars, matchedLocation, sceneCar
 
     // The ceiling belongs to the provider about to receive this, not to a
     // constant chosen from the strictest one wired here.
-    return selectReferences(candidates, { limit: opts && opts.limit });
+    return selectReferences(candidates, { limit: opts && opts.limit, diagnostics: opts && opts.diagnostics });
 }
 
 /**
@@ -370,11 +372,14 @@ function matchCharacters(cardCharacters, dbCharacters) {
         .filter(Boolean);
 }
 
-function matchLocation(locationName, dbLocations) {
+function matchLocation(locationName, dbLocations, diagnostics) {
     if (!locationName) return null;
-    return (dbLocations || []).find(
-        l => l.name && l.name.toUpperCase() === locationName.toUpperCase()
-    ) || null;
+    const matches = (dbLocations || []).filter(l => l.name && l.name.toUpperCase() === String(locationName).toUpperCase());
+    if (matches.length > 1) {
+        if (diagnostics) diagnostics.push({ code: 'LOCATION_AMBIGUOUS', name: locationName, ids: matches.map(l => l.id), action: 'Give these locations distinct names and update this scene before generating.' });
+        return null;
+    }
+    return matches[0] || null;
 }
 
 
@@ -412,19 +417,21 @@ function providerReferenceSupport(providerConfig) {
  */
 function shotReferencesFor(db, opts) {
     const o = opts || {};
-    const support = providerReferenceSupport(o.providerConfig);
+    const support = o.support || providerReferenceSupport(o.providerConfig);
+    const diagnostics = [];
     if (!support.canAttach) {
-        return { references: [], tagged: false, anchorTag: null, support };
+        return { references: [], tagged: false, anchorTag: null, support, diagnostics: [{ code: 'REFERENCES_UNSUPPORTED', action: 'Choose an image provider that supports reference images to preserve visual identity.' }] };
     }
     const references = gatherShotReferences(
         o.projectId, o.characters || [], o.location || null, o.props || [], o.anchor || null,
         // The ceiling of the provider this config resolves to, so the shared
         // path agrees with the per-route ones about how many plates fit.
         { limit: support.maxReferenceImages, keepPlates: o.keepPlates || [],
-          locationView: o.locationView || '', shotId: o.shotId || null });
+          locationView: o.locationView || '', shotId: o.shotId || null, diagnostics });
     const anchorRef = references.find(r => r && r.kind === 'anchor');
     return {
         references,
+        diagnostics,
         tagged: support.canTag,
         // Two separate facts, because they gate different things.
         //

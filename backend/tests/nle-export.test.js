@@ -193,14 +193,14 @@ describe('generateEDL', () => {
     });
 
     it('starts record timecode at 00:00:00:00', () => {
-        const edl = generateEDL(testProject, testShots);
+        const edl = generateEDL(testProject, testShots, {timecode_start:'00:00:00:00'});
         const lines = edl.split('\n').filter(l => /^\d{3}/.test(l));
         // First event: record in starts at 00:00:00:00
         assert.ok(lines[0].includes('00:00:00:00'));
     });
 
     it('accumulates record timecodes correctly', () => {
-        const edl = generateEDL(testProject, testShots);
+        const edl = generateEDL(testProject, testShots, {timecode_start:'00:00:00:00'});
         const lines = edl.split('\n').filter(l => /^\d{3}/.test(l));
         // Shot 1: 3000ms = 00:00:03:00, so shot 2 record-in = 00:00:03:00
         assert.ok(lines[1].includes('00:00:03:00'));
@@ -559,18 +559,18 @@ describe('generateFCPXML with transitions', () => {
 
 describe('generatePremiereXML with transitions', () => {
     it('includes transitionitem for dissolve', () => {
-        const xml = generatePremiereXML(testProject, transitionShots, []);
+        const xml = generatePremiereXML(testProject, transitionShots, transitionShots.map(sh => ({id:sh.id,shot_id:sh.id,asset_type:'video_raw',file_path:'/fixture/'+sh.id+'.mp4',file_name:sh.id+'.mp4',duration_ms:sh.duration_ms})));
         assert.ok(xml.includes('<transitionitem>'));
         assert.ok(xml.includes('Cross Dissolve'));
     });
 
     it('includes transitionitem for wipe', () => {
-        const xml = generatePremiereXML(testProject, transitionShots, []);
+        const xml = generatePremiereXML(testProject, transitionShots, transitionShots.map(sh => ({id:sh.id,shot_id:sh.id,asset_type:'video_raw',file_path:'/fixture/'+sh.id+'.mp4',file_name:sh.id+'.mp4',duration_ms:sh.duration_ms})));
         assert.ok(xml.includes('Wipe'));
     });
 
     it('has correct transition count', () => {
-        const xml = generatePremiereXML(testProject, transitionShots, []);
+        const xml = generatePremiereXML(testProject, transitionShots, transitionShots.map(sh => ({id:sh.id,shot_id:sh.id,asset_type:'video_raw',file_path:'/fixture/'+sh.id+'.mp4',file_name:sh.id+'.mp4',duration_ms:sh.duration_ms})));
         const transCount = (xml.match(/<transitionitem>/g) || []).length;
         assert.equal(transCount, 2);
     });

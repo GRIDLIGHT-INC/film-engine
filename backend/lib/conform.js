@@ -108,6 +108,9 @@ function planConform(projectId) {
         const asset = selectedClip(db, shot.id);
 
         if (!asset) { missing.push({ shot_id: shot.id, shot_code: shot.shot_code }); continue; }
+        let range;
+        try { range = require('./nle-media').sourceRange(shot, asset); }
+        catch (e) { return {ok:false,error:e.message,code:'SOURCE_RANGE_INVALID',clips,missing}; }
         clips.push({
             shot_id: shot.id,
             shot_code: shot.shot_code,
@@ -118,7 +121,8 @@ function planConform(projectId) {
             // The clip's own measured length where the fold supplied one, so a
             // nine-second clip is not laid into a three-second slot and every
             // cut after it pulled six seconds early.
-            duration_ms: shot.duration_ms || 0,
+            duration_ms: range.duration_ms,
+            source_in_ms: range.source_in_ms, source_out_ms: range.source_in_ms + range.duration_ms, source_duration_ms: range.source_ms,
             ...(shot.covers ? { covers: shot.covers } : {}),
         });
     }
@@ -338,6 +342,18 @@ function engineSound(projectId, clips) {
 function buildFfmpegArgs(plan, outputPath) {
     const { buildConcatArgs, resolveFfmpeg } = require('./ffmpeg');
     const cmd = buildConcatArgs(plan.clips, outputPath, { fps: plan.fps, audio: plan.audio });
+    // Per-input seeking trims both decoded picture and embedded production sound.
+    let input = 0;
+    for (let i = 0; i < cmd.args.length; i++) {
+        if (cmd.args[i] !== '-i') continue;
+        const clip = plan.clips[input++];
+        if (!clip) break;
+        if (clip.source_in_ms > 0 || (clip.source_duration_ms > 0 && clip.duration_ms < clip.source_duration_ms)) {
+            const flags = ['-ss', String((clip.source_in_ms || 0)/1000), '-t', String(clip.duration_ms/1000)];
+            cmd.args.splice(i, 0, ...flags); i += flags.length;
+        }
+        i++;
+    }
     const found = resolveFfmpeg();
     return { bin: found.bin || 'ffmpeg', args: cmd.args, output: outputPath };
 }
@@ -479,9 +495,27 @@ async function runConform(projectId, options) {
      * containing one silent clip failed to conform at all, with an error that
      * quoted the ffmpeg banner rather than the line that said why.
      */
-    let joined = await stitchClips(plan.clips, outputPath, {
-        fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
-    });
+    // The shared join currently accepts full files. Materialize only explicit
+    // editorial ranges through its existing trim helper before that join, so
+    // picture and embedded audio use the same source window.
+    const trimDir = fs.mkdtempSync(path.join(dir, '.conform-trims-'));
+    let joined;
+    try {
+        const inputs = [];
+        for (const [index, clip] of plan.clips.entries()) {
+            if (clip.source_in_ms > 0 || (clip.source_duration_ms > 0 && clip.duration_ms < clip.source_duration_ms)) {
+                const trimmed = path.join(trimDir, `${index}.mp4`);
+                const result = await require('./ffmpeg').trimClip(clip.file_path, trimmed, {
+                    startSec: (clip.source_in_ms || 0)/1000, endSec: clip.source_out_ms/1000, fps: plan.fps,
+                });
+                if (!result.ok) { joined = result; break; }
+                inputs.push({...clip,file_path:trimmed,source_in_ms:0,source_out_ms:clip.duration_ms,source_duration_ms:clip.duration_ms});
+            } else inputs.push(clip);
+        }
+        if (!joined) joined = await stitchClips(inputs, outputPath, {
+            fps: plan.fps, audio: plan.audio, timeoutMs: opts.timeoutMs,
+        });
+    } finally { fs.rmSync(trimDir, {recursive:true,force:true}); }
     // The approved score (MUS-020) and the film's own generated sound, over
     // the joined film in ONE pass, each at its offset.
     const laid = [...((plan.score && plan.score.placements) || []), ...((plan.sound && plan.sound.placements) || [])];
@@ -581,7 +615,7 @@ async function runConform(projectId, options) {
  */
 function selectedClip(db, shotId) {
     return db.prepare(
-        `SELECT id, shot_id, asset_type, file_path, file_name, format, duration_ms, width, height, created_at
+        `SELECT id, shot_id, asset_type, file_path, file_name, format, duration_ms, width, height, created_at, metadata
            FROM film_assets
           WHERE shot_id = ? AND asset_type IN (${VIDEO_PRECEDENCE.map(() => '?').join(',')})
        ORDER BY (id = COALESCE((SELECT selected_video_asset_id FROM film_shots WHERE id = ?), '')) DESC,

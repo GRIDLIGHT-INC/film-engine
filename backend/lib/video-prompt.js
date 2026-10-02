@@ -371,22 +371,9 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
          * defaults to its own. An explicitly requested model still travels.
          */
         ...(opts.model ? { model: opts.model } : {}),
-        /*
-         * SOUND ON, unless the caller says otherwise.
-         *
-         * Nothing ever set this, so `lib/providers/seedance.js` fell to its own
-         * `false` default and lib/provider-media.js then stripped the track for
-         * certainty. Every clip this engine has ever produced was silent, and
-         * the reason recorded in the adapter -- that the model lays "a mono
-         * music bed" under everything -- is not true of Seedance 2.5, which
-         * documents DIEGETIC SOUND ONLY and an explicit "NO MUSIC".
-         *
-         * So the default is inverted. Rain on a roof, rotor wash, a beacon
-         * ticking: synced to picture by the model that drew the picture, which
-         * is the one thing a separate sound pass cannot do. `audio: false` on
-         * the options still buys silence for anyone who wants a clean plate.
-         */
         generate_audio: opts.audio === undefined ? true : !!opts.audio,
+        audio: opts.audio === undefined ? true : !!opts.audio,
+        video_audio_policy: require('./video-audio-policy').policyOf(opts.project),
         width: params.width,
         height: params.height,
         /*
@@ -448,6 +435,7 @@ function buildVideoPayload(sceneCard, characters, location, stylePreset, options
     // adapters continue to receive the exact payload they received before.
     Object.defineProperty(payload, 'motion', { value: motion, enumerable: false });
 
+    Object.assign(payload, require('./video-audio-policy').applyVideoAudioPolicy(payload, opts.project));
     return payload;
 }
 

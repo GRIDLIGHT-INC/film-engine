@@ -9,23 +9,9 @@
  * All functions accept data objects (no DB dependency) and return strings.
  */
 
-/**
- * The rate a FRAME COUNT is counted at.
- *
- * NTSC rates are nominal in every timecode system there is: 29.97 is written as
- * a timebase of 30 with an ntsc flag, and drop-frame drops NUMBERS rather than
- * frames. So a :30 spot at 29.97 DF is 900 frames, not 899 — and multiplying
- * 30.000s by 29.97 gives 899.1, which rounds to 899.
- *
- * That was a live defect rather than a new requirement: both generators already
- * write `timebase = Math.round(fps)` with `ntsc TRUE`, and then computed every
- * duration against 29.97, so the file declared 30 frames a second and laid
- * durations counted at 29.97. It only shows at exactly thirty seconds — :15 and
- * :06 round back to the right answer — which is the commonest spot length there
- * is, and a station rejects a :30 that arrives one frame short.
- */
+/** Validate the declared rate. Physical durations use the actual rate; SMPTE labels use nominal rates. */
 function countingRate(fps) {
-    if (fps === undefined || fps === null || !Number.isFinite(Number(fps))) {
+    if (fps === undefined || fps === null || !Number.isFinite(Number(fps)) || Number(fps) <= 0) {
         throw new Error('a frame rate is required: a frame count means nothing without one, '
             + 'and defaulting to 24 turns "the caller forgot" into a rejected broadcast delivery');
     }
@@ -112,6 +98,8 @@ const DEFAULT_SETTINGS = {
 };
 
 /** Check if an fps value is NTSC (29.97, 23.976, 59.94) */
+function isDropFrameFps(fps) { return [29.97, 59.94].includes(Number(fps)); }
+
 function isNtscFps(fps) {
     return [23.976, 29.97, 59.94].includes(fps);
 }
@@ -169,7 +157,7 @@ function msToTimecode(ms, fps) {
     }
 
     const roundedFps = Math.round(fps);
-    const totalFrames = Math.round((ms / 1000) * fps);
+    const totalFrames = elapsedFrames(ms,fps);
     const ff = totalFrames % roundedFps;
     const totalSeconds = Math.floor(totalFrames / roundedFps);
     const ss = totalSeconds % 60;
@@ -194,7 +182,7 @@ function msToTimecodeDF(ms, fps = 29.97) {
     const dropFrames = roundedFps === 60 ? 4 : 2;
 
     // Total real frames elapsed
-    let frameCount = Math.round((ms / 1000) * fps);
+    let frameCount = elapsedFrames(ms,fps);
 
     // Drop-frame algorithm: convert real frame count to DF display
     // Frames per 10-minute chunk (accounting for drops)
@@ -253,9 +241,11 @@ function msToTimecodeDF(ms, fps = 29.97) {
  * @param {number} fps
  * @returns {number}
  */
-function msToFrames(ms, fps) {
-    return Math.round((ms / 1000) * countingRate(fps));
-}
+// Broadcast slot labels retain their existing nominal counting contract.
+function msToFrames(ms, fps) { return Math.round((ms / 1000) * countingRate(fps)); }
+// Media durations are elapsed milliseconds, so editorial positions use actual FPS.
+function actualRate(fps) { countingRate(fps); const rational=fpsToRational(Number(fps)); return rational.den/rational.num; }
+function elapsedFrames(ms, fps) { return Math.round((ms / 1000) * actualRate(fps)); }
 
 /**
  * Convert SMPTE timecode string to frame count.
@@ -265,13 +255,15 @@ function msToFrames(ms, fps) {
  */
 function timecodeToFrames(tc, fps) {
     countingRate(fps);
-    const m = String(tc || '').match(/^(\d{2}):(\d{2}):(\d{2}):(\d{2})$/);
+    const m = String(tc || '').match(/^(\d{2}):(\d{2}):(\d{2})[:;](\d{2})$/);
     if (!m) return 0;
     const roundedFps = Math.round(fps);
-    return parseInt(m[1]) * 3600 * roundedFps +
-           parseInt(m[2]) * 60 * roundedFps +
-           parseInt(m[3]) * roundedFps +
-           parseInt(m[4]);
+    const hours=Number(m[1]), minutes=Number(m[2]), seconds=Number(m[3]), frames=Number(m[4]);
+    if (minutes > 59 || seconds > 59 || frames >= roundedFps) throw new Error('Invalid timecode');
+    const totalMinutes=hours * 60 + minutes;
+    const drops = isDropFrameFps(fps) ? (fps === 59.94 ? 4 : 2) : 0;
+    if (drops && seconds === 0 && minutes % 10 !== 0 && frames < drops) throw new Error('Invalid drop-frame timecode');
+    return (hours * 3600 + minutes * 60 + seconds) * roundedFps + frames - drops * (totalMinutes - Math.floor(totalMinutes / 10));
 }
 
 // ── Transition Helpers ───────────────────────────────────────────────
@@ -330,8 +322,9 @@ function escapeXml(str) {
 function toFileUrl(filePath) {
     if (!filePath) return '';
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(filePath)) return filePath; // already a URL
-    const withLeadingSlash = filePath.startsWith('/') ? filePath : `/${filePath}`;
-    return `file://${withLeadingSlash}`;
+    // A package path is relative to the XML document, never filesystem root.
+    if (!filePath.startsWith('/')) return filePath.split('/').map(part => encodeURIComponent(part)).join('/');
+    return require('url').pathToFileURL(filePath).href;
 }
 
 // ── EDL (CMX 3600) ──────────────────────────────────────────────────
@@ -412,22 +405,24 @@ function generateEDL(project, shots, settings = {}) {
     // shot for no frames, and a dropped event is a missing shot nobody is told
     // about. Assets arrive via settings because this signature has no slot for
     // them and all three formats must apply one rule.
-    shots = shootableShots(shots, byShot(s.assets)).shots;
+    shots = require('./nle-media').editorialShots(shootableShots(shots, byShot(s.assets)).shots, s.assets || []);
     const lines = [];
 
     lines.push(`TITLE: ${project.title || 'Untitled'}`);
-    lines.push(isNtscFps(fps) ? 'FCM: DROP FRAME' : 'FCM: NON-DROP FRAME');
+    lines.push(isDropFrameFps(fps) ? 'FCM: DROP FRAME' : 'FCM: NON-DROP FRAME');
     lines.push('');
 
-    let recordOffsetMs = 0;
+    let recordOffsetMs = timecodeToFrames(s.timecode_start, fps) / actualRate(fps) * 1000;
 
     shots.forEach((shot, i) => {
         const eventNum = String(i + 1).padStart(3, '0');
         const reel = (shot.shot_code || `SHOT${i + 1}`).substring(0, 8).padEnd(8, ' ');
         const durationMs = shot.duration_ms || 0;
 
-        const srcIn = '00:00:00:00';
-        const srcOut = msToTimecode(durationMs, fps);
+        const va = (s.assets || []).find(a => a.shot_id === shot.id && ['video_final','video_synced','video_raw'].includes(a.asset_type));
+        const sourceInMs = va ? require('./nle-media').sourceRange(shot,va).source_in_ms : 0;
+        const srcIn = msToTimecode(sourceInMs, fps);
+        const srcOut = msToTimecode(sourceInMs + durationMs, fps);
         const recIn = msToTimecode(recordOffsetMs, fps);
         const recOut = msToTimecode(recordOffsetMs + durationMs, fps);
 
@@ -435,7 +430,7 @@ function generateEDL(project, shots, settings = {}) {
         const transType = edlTransitionType(shot.transition_in_type);
         let editField = transType.padEnd(9, ' ');
         if (transType !== 'C' && shot.transition_in_duration_ms > 0) {
-            const transDurFrames = String(msToFrames(shot.transition_in_duration_ms, fps)).padStart(3, '0');
+            const transDurFrames = String(elapsedFrames(shot.transition_in_duration_ms, fps)).padStart(3, '0');
             editField = `${transType}    ${transDurFrames}`;
         }
 
@@ -472,11 +467,11 @@ function generateEDL(project, shots, settings = {}) {
 function generateFCPXML(project, shots, assets = [], settings = {}) {
     const s = { ...DEFAULT_SETTINGS, ...settings };
     const fps = s.target_fps;
-    shots = shootableShots(shots, byShot(assets)).shots;
+    shots = require('./nle-media').editorialShots(shootableShots(shots, byShot(assets)).shots, assets);
     const { num: frameDurNum, den: frameDurDen } = fpsToRational(fps);
     const { width, height } = parseResolution(s.target_resolution);
     const formatName = fcpxmlFormatName(width, height, fps);
-    const tcFormat = isNtscFps(fps) ? 'DF' : 'NDF';
+    const tcFormat = isDropFrameFps(fps) ? 'DF' : 'NDF';
 
     // Convert timecode_start to rational (parse SMPTE → frames → rational)
     const tcStartFrames = timecodeToFrames(s.timecode_start, fps);
@@ -484,7 +479,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
 
     const title = escapeXml(project.title || 'Untitled');
     const totalDurationMs = shots.reduce((sum, sh) => sum + (sh.duration_ms || 0), 0);
-    const totalFrames = msToFrames(totalDurationMs, fps);
+    const totalFrames = shots.reduce((sum,shot)=>sum+elapsedFrames(shot.duration_ms || 0,fps),0);
 
     // Build asset lookup: shot_id → assets by type
     const assetsByShot = {};
@@ -524,18 +519,16 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
         if (videoAsset) {
             const refId = `a${assetIndex++}`;
             assetIdMap[`${shot.id}_video`] = refId;
-            const durFrames = msToFrames(videoAsset.duration_ms || shot.duration_ms || 0, fps);
+            const durFrames = elapsedFrames(videoAsset.duration_ms || shot.duration_ms || 0, fps);
             xml += `    <asset id="${refId}" name="${escapeXml(videoAsset.file_name || shot.shot_code)}" src="${escapeXml(toFileUrl(videoAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s" format="r1"/>\n`;
         }
 
-        for (const { type: audioType } of AUDIO_LANES) {
-            const audioAsset = shotAssets.find(a => a.asset_type === audioType);
-            if (audioAsset) {
-                const refId = `a${assetIndex++}`;
-                assetIdMap[`${shot.id}_${audioType}`] = refId;
-                const durFrames = msToFrames(audioAsset.duration_ms || shot.duration_ms || 0, fps);
-                xml += `    <asset id="${refId}" name="${escapeXml(audioAsset.file_name || audioType)}" src="${escapeXml(toFileUrl(audioAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s"/>\n`;
-            }
+        for (const audioType of AUDIO_LANES.map(l => l.type)) for (const audioAsset of require('./nle-media').selectedAudio(shotAssets, audioType)) {
+            if (assetIdMap[audioAsset.id || audioAsset.file_path]) continue;
+            const refId = `a${assetIndex++}`;
+            assetIdMap[audioAsset.id || audioAsset.file_path] = refId;
+            const durFrames = elapsedFrames(audioAsset.duration_ms || shot.duration_ms || 0, fps);
+            xml += `    <asset id="${refId}" name="${escapeXml(audioAsset.file_name || audioType)}" src="${escapeXml(toFileUrl(audioAsset.file_path))}" start="0/1s" duration="${durFrames * frameDurNum}/${frameDurDen}s"/>\n`;
         }
     }
 
@@ -548,12 +541,14 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
     xml += `        <sequence format="r1" duration="${totalFrames * frameDurNum}/${frameDurDen}s" tcStart="${tcStartRational}" tcFormat="${tcFormat}">\n`;
     xml += `          <spine>\n`;
 
+    const audioEvents = require('./nle-media').audioEvents(shots, assets, bedsByShot, fps);
+    let shotOffsetMs = 0;
     let currentScene = null;
 
     for (let si = 0; si < shots.length; si++) {
         const shot = shots[si];
         const durationMs = shot.duration_ms || 0;
-        const durFrames = msToFrames(durationMs, fps);
+        const durFrames = elapsedFrames(durationMs, fps);
         const durRational = `${durFrames * frameDurNum}/${frameDurDen}s`;
         const clipName = escapeXml(shot.shot_code || shot.id);
 
@@ -565,7 +560,7 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
         const transIn = shot.transition_in_type;
         const transInMs = shot.transition_in_duration_ms || 0;
         if (transIn && transIn !== 'cut' && transInMs > 0 && si > 0) {
-            const transFrames = msToFrames(transInMs, fps);
+            const transFrames = elapsedFrames(transInMs, fps);
             const transRational = `${transFrames * frameDurNum}/${frameDurDen}s`;
             const effectUid = FCPXML_TRANSITION_EFFECTS[transIn] || FCPXML_TRANSITION_EFFECTS['dissolve'];
             xml += `            <transition name="${escapeXml(transIn)}" duration="${transRational}">\n`;
@@ -577,27 +572,16 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
 
         if (videoRef) {
             xml += `            <clip name="${clipName}" duration="${durRational}" start="0/1s" format="r1">\n`;
-            xml += `              <video ref="${videoRef}" duration="${durRational}"/>\n`;
+            const va = (assetsByShot[shot.id] || []).find(a => ['video_final','video_synced','video_raw'].includes(a.asset_type));
+            const sourceIn = elapsedFrames(require('./nle-media').sourceRange(shot, va).source_in_ms, fps);
+            xml += `              <video ref="${videoRef}" start="${sourceIn * frameDurNum}/${frameDurDen}s" duration="${durRational}"/>\n`;
 
             let lane = 1;
-            for (const { type: audioType } of AUDIO_LANES) {
-                const audioRef = assetIdMap[`${shot.id}_${audioType}`];
-                if (audioRef) {
-                    /*
-                     * A scene BED runs its own length, not the shot's. It is
-                     * laid on the scene's first shot and spans the scene, so
-                     * clipping it to that one shot's duration would cut a score
-                     * off at the first cut — which is the same "it plays and it
-                     * is wrong" failure as dropping it entirely, and harder to
-                     * spot because a few seconds of music do arrive.
-                     */
-                    const bedAsset = (bedsByShot[shot.id] || []).find(a => a.asset_type === audioType);
-                    const audioDur = bedAsset && bedAsset.duration_ms
-                        ? `${msToFrames(bedAsset.duration_ms, fps) * frameDurNum}/${frameDurDen}s`
-                        : durRational;
-                    xml += `              <audio ref="${audioRef}" lane="${lane}" duration="${audioDur}"/>\n`;
-                    lane++;
-                }
+            for (const e of audioEvents.filter(e => e.start_ms >= shotOffsetMs && e.start_ms < shotOffsetMs + durationMs)) {
+                const ref = e.type === 'clip' ? videoRef : assetIdMap[e.asset.id || e.asset.file_path];
+                if (!ref) continue;
+                const offset = elapsedFrames(e.start_ms-shotOffsetMs, fps), source=elapsedFrames(e.source_in_ms, fps), length=elapsedFrames(e.duration_ms, fps);
+                xml += `<audio ref="${ref}" lane="${lane++}" offset="${offset * frameDurNum}/${frameDurDen}s" start="${source * frameDurNum}/${frameDurDen}s" duration="${length * frameDurNum}/${frameDurDen}s"><adjust-volume amount="${e.gain_db}dB"/></audio>\n`;
             }
 
             if (shot.scene_number !== undefined) {
@@ -610,8 +594,14 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
             if (shot.scene_number !== undefined) {
                 xml += `              <marker start="0/1s" duration="${frameDurNum}/${frameDurDen}s" value="${escapeXml(`Scene ${shot.scene_number}`)}"/>\n`;
             }
+            let lane=1;
+            for (const e of audioEvents.filter(e => e.start_ms >= shotOffsetMs && e.start_ms < shotOffsetMs + durationMs)) {
+                const ref=assetIdMap[e.asset.id || e.asset.file_path]; if (!ref) continue;
+                xml += `<audio ref="${ref}" lane="${lane++}" offset="${elapsedFrames(e.start_ms-shotOffsetMs,fps)*frameDurNum}/${frameDurDen}s" start="${elapsedFrames(e.source_in_ms,fps)*frameDurNum}/${frameDurDen}s" duration="${elapsedFrames(e.duration_ms,fps)*frameDurNum}/${frameDurDen}s"/>\n`;
+            }
             xml += `            </gap>\n`;
         }
+        shotOffsetMs += elapsedFrames(durationMs,fps)/actualRate(fps)*1000;
     }
 
     xml += `          </spine>\n`;
@@ -647,6 +637,15 @@ function generateFCPXML(project, shots, assets = [], settings = {}) {
  * has no deliverable rows, and a feature that changes what an existing project
  * exports the moment it ships is one nobody can adopt deliberately.
  */
+function audioLevelXml(e, fps) {
+    const gain = Number(Math.pow(10, (Number(e.gain_db) || 0) / 20).toFixed(5));
+    const dur = elapsedFrames(e.duration_ms, fps), source = elapsedFrames(e.source_in_ms || 0, fps);
+    const fi = Math.min(dur, elapsedFrames(e.fade_in_ms || 0, fps)), fo = Math.min(dur-fi, elapsedFrames(e.fade_out_ms || 0, fps));
+    if (!fi && !fo && gain === 1) return '';
+    const keyframes = fi || fo ? [[source,fi ? 0 : gain],[source+fi,gain],[source+dur-fo,gain],[source+dur,fo ? 0 : gain]].map(([when,value]) => `<keyframe><when>${when}</when><value>${value}</value><interpolation><name>linear</name></interpolation></keyframe>`).join('') : '';
+    return `<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype><parameter><parameterid>level</parameterid><name>Level</name><value>${gain}</value>${keyframes}</parameter></effect></filter>`;
+}
+
 function generatePremiereXML(project, shots, assets = [], settings = {}, deliverables = null) {
     const list = Array.isArray(deliverables) ? deliverables : [];
     let out = `<?xml version="1.0" encoding="UTF-8"?>\n<xmeml version="5">\n`;
@@ -674,14 +673,14 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
     const se = { ...DEFAULT_SETTINGS, ...settings };
     const fps = se.target_fps;
     // xmeml has no gap element, so a shot with no media cannot be represented.
-    shots = shootableShots(shots, byShot(assets), true).shots;
+    shots = require('./nle-media').editorialShots(shootableShots(shots, byShot(assets)).shots, assets);
     const timebase = Math.round(fps);
     const ntsc = isNtscFps(fps) ? 'TRUE' : 'FALSE';
     const { width, height } = parseResolution(se.target_resolution);
 
     const title = escapeXml(project.title || 'Untitled');
     const totalDurationMs = shots.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
-    const totalFrames = msToFrames(totalDurationMs, fps);
+    const totalFrames = shots.reduce((sum,shot)=>sum+elapsedFrames(shot.duration_ms || 0,fps),0);
 
     // Build asset lookup
     const assetsByShot = {};
@@ -713,6 +712,7 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
     xml += `      <timebase>${timebase}</timebase>\n`;
     xml += `      <ntsc>${ntsc}</ntsc>\n`;
     xml += `    </rate>\n`;
+    xml += `    <timecode><rate><timebase>${timebase}</timebase><ntsc>${ntsc}</ntsc></rate><string>${escapeXml(se.timecode_start)}</string><frame>${timecodeToFrames(se.timecode_start, fps)}</frame><displayformat>${isDropFrameFps(fps) ? 'DF' : 'NDF'}</displayformat></timecode>\n`;
     xml += `    <media>\n`;
 
     // Video track
@@ -746,18 +746,21 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
     for (let si = 0; si < shots.length; si++) {
         const shot = shots[si];
         const durationMs = shot.duration_ms || 0;
-        const durFrames = msToFrames(durationMs, fps);
+        const durFrames = elapsedFrames(durationMs, fps);
         const clipName = escapeXml(shot.shot_code || shot.id);
         const shotAssets = assetsByShot[shot.id] || [];
         const videoAsset = shotAssets.find(a =>
             a.asset_type === 'video_final' || a.asset_type === 'video_synced' || a.asset_type === 'video_raw'
         );
 
+        if (!videoAsset) { videoOffset += durFrames; continue; }
+        const range = require('./nle-media').sourceRange(shot, videoAsset);
+        const sourceIn = elapsedFrames(range.source_in_ms, fps);
         // Insert transitionitem before this clip (if not a cut and not first shot)
         const transIn = shot.transition_in_type;
         const transInMs = shot.transition_in_duration_ms || 0;
         if (transIn && transIn !== 'cut' && transInMs > 0 && si > 0) {
-            const transFrames = msToFrames(transInMs, fps);
+            const transFrames = elapsedFrames(transInMs, fps);
             xml += `          <transitionitem>\n`;
             xml += `            <name>${escapeXml(premiereTransitionName(transIn))}</name>\n`;
             xml += `            <rate>\n`;
@@ -772,21 +775,21 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
 
         xml += `          <clipitem id="clipitem-${fileIndex}">\n`;
         xml += `            <name>${clipName}</name>\n`;
-        xml += `            <duration>${durFrames}</duration>\n`;
+        xml += `            <duration>${elapsedFrames(range.source_ms, fps)}</duration>\n`;
         xml += `            <rate>\n`;
         xml += `              <timebase>${timebase}</timebase>\n`;
         xml += `              <ntsc>${ntsc}</ntsc>\n`;
         xml += `            </rate>\n`;
         xml += `            <start>${videoOffset}</start>\n`;
         xml += `            <end>${videoOffset + durFrames}</end>\n`;
-        xml += `            <in>0</in>\n`;
-        xml += `            <out>${durFrames}</out>\n`;
+        xml += `            <in>${sourceIn}</in>\n`;
+        xml += `            <out>${sourceIn + durFrames}</out>\n`;
 
         if (videoAsset) {
             xml += `            <file id="file-${fileIndex}">\n`;
             xml += `              <name>${escapeXml(videoAsset.file_name || shot.shot_code)}</name>\n`;
             xml += `              <pathurl>${escapeXml(toFileUrl(videoAsset.file_path))}</pathurl>\n`;
-            xml += `              <duration>${durFrames}</duration>\n`;
+            xml += `              <duration>${elapsedFrames(range.source_ms, fps)}</duration>\n`;
             xml += `              <rate>\n`;
             xml += `                <timebase>${timebase}</timebase>\n`;
             xml += `                <ntsc>${ntsc}</ntsc>\n`;
@@ -820,68 +823,21 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
     xml += `        </track>\n`;
     xml += `      </video>\n`;
 
-    // One track per element, from the shared lane list.
-    const audioTypes = AUDIO_LANES;
-
+    const { audioEvents, stack } = require('./nle-media');
+    const events = audioEvents(shots, assets, bedsByShot, fps);
     xml += `      <audio>\n`;
-
-    for (const audioTrack of audioTypes) {
-        /*
-         * EVERY lane gets a track, empty or not.
-         *
-         * Skipping empty ones was tried and reverted: AUDIO_LANES exists
-         * because Premiere XML once laid out three lanes where FCPXML laid out
-         * four, so every Premiere export silently dropped the ambient bed —
-         * nothing failed, the file opened, and the missing layer looked like a
-         * creative choice. A lane that is empty today is where the sound pass
-         * will land tomorrow, and an empty <track> is legal xmeml.
-         *
-         * It was also a guess: the evidence for the import failure is the
-         * fileless clipitems and the missing sequence <format>, not this.
-         */
-        xml += `        <track>\n`;
-
-        let audioOffset = 0;
-        for (const shot of shots) {
-            const durationMs = shot.duration_ms || 0;
-            const shotAssets = assetsByShot[shot.id] || [];
-            const audioAsset = shotAssets.find(a => a.asset_type === audioTrack.type);
-            /*
-             * A scene BED runs its own length, not the shot's. It is laid on
-             * the scene's first shot and spans the scene, so clipping it there
-             * would cut a score off at the first cut — which plays, and is
-             * wrong, and is harder to notice than silence because some of the
-             * music does arrive. The same rule as the FCPXML lane above.
-             */
-            const isBed = !!(bedsByShot[shot.id] || []).find(a => a.asset_type === audioTrack.type);
-            const durFrames = msToFrames(
-                isBed && audioAsset && audioAsset.duration_ms ? audioAsset.duration_ms : durationMs, fps);
-
-            if (audioAsset) {
-                xml += `          <clipitem>\n`;
-                xml += `            <name>${escapeXml(audioAsset.file_name || audioTrack.label)}</name>\n`;
-                xml += `            <duration>${durFrames}</duration>\n`;
-                xml += `            <rate>\n`;
-                xml += `              <timebase>${timebase}</timebase>\n`;
-                xml += `              <ntsc>${ntsc}</ntsc>\n`;
-                xml += `            </rate>\n`;
-                xml += `            <start>${audioOffset}</start>\n`;
-                xml += `            <end>${audioOffset + durFrames}</end>\n`;
-                xml += `            <in>0</in>\n`;
-                xml += `            <out>${durFrames}</out>\n`;
-                xml += `            <file>\n`;
-                xml += `              <name>${escapeXml(audioAsset.file_name || audioTrack.label)}</name>\n`;
-                xml += `              <pathurl>${escapeXml(toFileUrl(audioAsset.file_path))}</pathurl>\n`;
-                xml += `            </file>\n`;
-                xml += `          </clipitem>\n`;
+    for (const type of ['clip', ...AUDIO_LANES.map(l => l.type)]) {
+        const tracks = stack(events.filter(e => e.type === type));
+        if (!tracks.length && type !== 'clip') tracks.push([]);
+        for (const track of tracks) {
+            xml += `        <track>\n`;
+            for (const e of track) {
+                const start = elapsedFrames(e.start_ms, fps), dur = elapsedFrames(e.duration_ms, fps), source = elapsedFrames(e.source_in_ms, fps);
+                xml += `<clipitem><name>${escapeXml(e.asset.file_name || type)}</name><duration>${elapsedFrames(e.asset.duration_ms || e.duration_ms, fps)}</duration><rate><timebase>${timebase}</timebase><ntsc>${ntsc}</ntsc></rate><start>${start}</start><end>${start+dur}</end><in>${source}</in><out>${source+dur}</out><file><name>${escapeXml(e.asset.file_name || type)}</name><pathurl>${escapeXml(toFileUrl(e.asset.file_path))}</pathurl></file><sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>${audioLevelXml(e, fps)}</clipitem>\n`;
             }
-
-            audioOffset += durFrames;
+            xml += `        </track>\n`;
         }
-
-        xml += `        </track>\n`;
     }
-
     xml += `      </audio>\n`;
     xml += `    </media>\n`;
     xml += `  </sequence>\n`;
@@ -890,6 +846,10 @@ function premiereSequence(project, shots, assets = [], settings = {}, seqName = 
 }
 
 module.exports = {
+    actualRate,
+    elapsedFrames,
+    audioLevelXml,
+    isDropFrameFps,
     AUDIO_LANES,
     sceneBedsByShot,
     shootableShots,

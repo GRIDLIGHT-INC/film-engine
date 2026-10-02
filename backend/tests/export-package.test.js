@@ -149,9 +149,14 @@ test('the package carries the media and the XML points at it relatively', async 
 
     assert.ok(fs.existsSync(res.xml_path), 'the package has no XML');
     const xml = fs.readFileSync(res.xml_path, 'utf8');
-    assert.ok(!/file:\/\/\/(?!\.)/.test(xml.replace(new RegExp(RELATIVE_MEDIA_DIR, 'g'), RELATIVE_MEDIA_DIR))
-        || !xml.includes(fx.media),
-        'the XML still points outside the package — hand this over and every clip is offline');
+    const {pathToFileURL,fileURLToPath}=require('url');
+    const refs=[...xml.matchAll(/<pathurl>([^<]+)<\/pathurl>/g)].map(m=>m[1]);
+    assert.ok(refs.length >= 2, 'check every picture and sound media URI');
+    for (const ref of refs) {
+        const resolved=fileURLToPath(new URL(ref,pathToFileURL(res.xml_path)));
+        assert.ok(resolved.startsWith(dest+path.sep), 'media URI resolves outside the package: '+ref);
+        assert.ok(fs.existsSync(resolved), 'XML media URI does not resolve to copied file: '+ref);
+    }
     assert.ok(!xml.includes(fx.media), 'the original absolute media path is still in the XML');
     assert.ok(xml.includes(RELATIVE_MEDIA_DIR), 'the XML does not reference the packaged media at all');
 
@@ -205,4 +210,15 @@ test('the preflight and the package are reachable, and the preflight is free', (
     // The package must say what it refuses, or a 409 reads as a broken export.
     assert.ok(/[Rr]efuses/.test(tools.find(t => t.name === 'export_package').description),
         'export_package does not say that it refuses what the preflight blocks');
+});
+
+
+test('FCPXML packaged media URIs resolve beside the XML after relocation',async()=>{
+    const fx=fixture();const source=fx.write('picture #1.mp4',256);
+    const res=await packageExport({title:'Relative URI'},[{id:'s',shot_code:'S',duration_ms:2000}],[{id:'v',shot_id:'s',asset_type:'video_raw',file_path:source,file_name:'picture #1.mp4',duration_ms:2000}],{format:'fcpxml',dest:path.join(fx.root,'before')});
+    const moved=path.join(fx.root,'after');fs.renameSync(path.dirname(res.xml_path),moved);
+    const xmlPath=path.join(moved,path.basename(res.xml_path)),xml=fs.readFileSync(xmlPath,'utf8');
+    const {pathToFileURL,fileURLToPath}=require('url');
+    const refs=[...xml.matchAll(/src="([^"]+)"/g)].map(m=>m[1]);assert.ok(refs.length);
+    for(const ref of refs) {const resolved=fileURLToPath(new URL(ref,pathToFileURL(xmlPath)));assert.ok(resolved.startsWith(moved+path.sep));assert.ok(fs.existsSync(resolved),ref);}
 });

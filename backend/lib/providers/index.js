@@ -753,6 +753,7 @@ function withJobRecording_(adapter, capability, projectConfig) {
          * does not inherit them. Nothing chosen changes nothing.
          */
         require('../generation-options').applyChosen(cap || capability, cfg, adapter.id, payload);
+        if ((cap || capability) === 'video') Object.assign(payload, require('../video-audio-policy').applyVideoAudioPolicy(payload, { provider_config: cfg }));
         /*
          * STOP AT THE PROVIDER'S DOOR.
          *
@@ -813,7 +814,7 @@ function withJobRecording_(adapter, capability, projectConfig) {
                  * the caller's jobMeta says which sequence leg or shot, so a
                  * collected result can be FILED. Adapter facts win on a clash.
                  */
-                const m = Object.assign({}, o.jobMeta || {}, meta || {}, meterPlan ? { meter: meterPlan } : {});
+                const m = Object.assign({}, o.jobMeta || {}, meta || {}, (cap || capability) === 'video' ? { audio: payload.generate_audio, video_audio_policy: payload.video_audio_policy } : {}, meterPlan ? { meter: meterPlan } : {});
                 // The row opened at the start becomes the handle; if that write
                 // failed, record() still files the handle on its own.
                 jobId = jobId
@@ -841,12 +842,22 @@ function withJobRecording_(adapter, capability, projectConfig) {
         if (result && result.ok && result.data === undefined && typeof result.url === 'string' && result.url) {
             result.data = { url: result.url };
         }
+        if (result && result.ok && (cap || capability) === 'video') {
+            result.audio = payload.generate_audio;
+            if (result.data && typeof result.data === 'object') result.data.audio = payload.generate_audio;
+        }
         return result;
     };
     if (innerStream) {
         wrapped.generateStream = async (cap, payload, res, callbacks) => {
+            if ((cap || capability) === 'video') Object.assign(payload, require('../video-audio-policy').applyVideoAudioPolicy(payload, { provider_config: cfg }));
             const jobId = open(cap, null);
             const cb = Object.assign({}, callbacks || {});
+            const complete=cb.onComplete;
+            cb.onComplete=data=>{
+                if ((cap || capability)==='video' && data && typeof data==='object') { data.audio=payload.generate_audio; if(data.data && typeof data.data==='object') data.data.audio=payload.generate_audio; }
+                if (typeof complete==='function') return complete(data);
+            };
             const theirs = cb.onProgress;
             cb.onProgress = evt => {
                 try {
@@ -861,6 +872,7 @@ function withJobRecording_(adapter, capability, projectConfig) {
             try { result = await innerStream(cap, payload, res, cb); }
             catch (err) { settle(jobId, { ok: false, error: err && err.message }); throw err; }
             settle(jobId, result);
+            if (result && result.ok && (cap || capability)==='video') { result.audio=payload.generate_audio; if(result.data && typeof result.data==='object') result.data.audio=payload.generate_audio; }
             return result;
         };
     }

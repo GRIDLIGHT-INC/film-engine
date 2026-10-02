@@ -465,6 +465,8 @@ function handleVideoGen(req, res, urlParts, query) {
         if (!UUID_RE.test(shotId)) return json(res, 400, { error: 'Invalid shot ID' });
 
         const sub = urlParts[4];
+        if (sub === 'edit' && ['GET','PUT'].includes(req.method)) return editVideoSource(req,res,shotId);
+        if (sub === 'audio-review' && ['GET','PUT'].includes(req.method)) return reviewVideoAudio(req,res,shotId);
         // What this clip would cost and contain. Free. Under /video/ because
         // the dispatch above scopes on urlParts[3] === 'video'; a sibling
         // segment never reaches this handler at all.
@@ -501,6 +503,7 @@ function handleVideoGen(req, res, urlParts, query) {
         if (!UUID_RE.test(projectId)) return json(res, 400, { error: 'Invalid project ID' });
 
         const sub = urlParts[4];
+        if (sub === 'audio-policy' && ['GET','PUT'].includes(req.method)) return videoAudioPolicy(req,res,projectId);
         if (sub === 'batch' && req.method === 'POST') {
             if (urlParts[5] === 'stream') return batchVideoStream(req, res, projectId, query);
             return batchVideo(req, res, projectId);
@@ -530,6 +533,53 @@ function nextClip(shotId, shotCode) {
 }
 
 /** The shot's recorded dialogue goes as an audio reference only when asked. */
+function videoAudioPolicy(req,res,projectId) {
+    const project=db.prepare('SELECT * FROM film_projects WHERE id = ?').get(projectId);
+    if (!project) return json(res,404,{error:'Project not found'});
+    let cfg; try { cfg=JSON.parse(project.provider_config || '{}'); } catch (_) { cfg={}; }
+    if (req.method === 'PUT') {
+        const policy=req.body && req.body.video_audio_policy;
+        if (!['no_music','silent'].includes(policy)) return json(res,400,{error:'video_audio_policy must be no_music or silent'});
+        cfg.video_audio_policy=policy;
+        db.prepare('UPDATE film_projects SET provider_config = ? WHERE id = ?').run(JSON.stringify(cfg),projectId);
+    }
+    return json(res,200,{video_audio_policy:require('../lib/video-audio-policy').policyOf({provider_config:cfg}), dialogue_sfx_allowed:cfg.video_audio_policy !== 'silent', music_allowed:false, verification:'Human audition required for mixed video audio'});
+}
+function editVideoSource(req,res,shotId) {
+    const assetId=(req.body && req.body.asset_id) || (require('../lib/conform').selectedClip(db,shotId) || {}).id;
+    const asset=db.prepare("SELECT * FROM film_assets WHERE id = ? AND shot_id = ? AND asset_type IN ('video_raw','video_synced','video_final')").get(assetId,shotId);
+    if (!asset) return json(res,404,{error:'Video asset not found'});
+    const media=require('../lib/nle-media'); const metadata=media.metadata(asset);
+    if (req.method === 'PUT') {
+        const body=req.body || {};
+        if (!Number.isFinite(body.source_in_ms) || !Number.isFinite(body.duration_ms)) return json(res,400,{error:'source_in_ms and duration_ms must be finite numbers'});
+        try { media.sourceRange({source_in_ms:body.source_in_ms,duration_ms:body.duration_ms},asset); } catch(e) { return json(res,400,{error:e.message}); }
+        metadata.edit={...(metadata.edit || {}),source_in_ms:body.source_in_ms,duration_ms:body.duration_ms};
+        db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata),asset.id);
+        asset.metadata=metadata;
+    }
+    return json(res,200,{asset_id:asset.id,...media.sourceRange({duration_ms:Number(asset.duration_ms)},asset),verification:'Export trims validated; source files remain whole for available handles'});
+}
+
+function reviewVideoAudio(req,res,shotId) {
+    const assetId=(req.body && req.body.asset_id) || (require('../lib/conform').selectedClip(db,shotId) || {}).id;
+    const asset=db.prepare("SELECT * FROM film_assets WHERE id = ? AND shot_id = ? AND asset_type IN ('video_raw','video_synced','video_final')").get(assetId,shotId);
+    if (!asset) return json(res,404,{error:'Video asset not found'});
+    const media=require('../lib/nle-media'); const metadata=media.metadata(asset);
+    if (req.method === 'PUT') {
+        const body=req.body || {};
+        if (!['approved','rejected','pending'].includes(body.status) || (body.status === 'approved' && body.no_music !== true)) return json(res,400,{error:'Approve only after audition, with status approved and no_music true; otherwise use rejected or pending'});
+        const currentFingerprint=media.fingerprint(asset);
+        if (!currentFingerprint) return json(res,409,{error:'The video file is missing'});
+        if (body.status === 'approved' && typeof body.expected_fingerprint !== 'string') return json(res,400,{code:'AUDIO_REVIEW_FINGERPRINT_REQUIRED',error:'Approval requires the expected_fingerprint returned before audition'});
+        if (body.status === 'approved' && body.expected_fingerprint !== currentFingerprint) return json(res,409,{code:'AUDIO_REVIEW_STALE',error:'The video content changed after audition. Read and audition the current file before approving.',fingerprint:currentFingerprint});
+        metadata.audio_review={status:body.status,no_music:body.no_music === true,reviewed_at:new Date().toISOString(),reviewer:String(body.reviewer || ''),note:String(body.note || ''),fingerprint:currentFingerprint};
+        db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata),asset.id);
+        asset.metadata=metadata;
+    }
+    return json(res,200,{asset_id:asset.id,fingerprint:media.fingerprint(asset),has_audio:media.hasClipAudio(asset),audio_review:metadata.audio_review || null,blocking:media.audition(asset)});
+}
+
 function wantsDialogueAudio(src) {
     const v = src && src.use_dialogue_audio;
     return v === true || v === 1 || v === '1' || v === 'true';
@@ -574,7 +624,10 @@ async function generateVideo(req, res, shotId) {
      * reached nothing and the clip was generated from the words it replaced.
      */
     const override = req.body && typeof req.body.prompt_override === 'string' ? req.body.prompt_override.trim() : '';
-    if (override) payload.prompt = override.slice(0, 16000);
+    if (override) {
+        payload.prompt = override.slice(0, 16000);
+        payload.motion_prompt = payload.prompt;
+    }
     const startedAt = Date.now();
     const videoRefs = Array.isArray(payload.video_references) ? payload.video_references : [];
     const estimate = require('../lib/video-cost').estimateVideoCost({
@@ -615,7 +668,7 @@ async function generateVideo(req, res, shotId) {
 
         let filePath;
         try {
-            filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
+            filePath = await persistProviderMedia(scene.project_id, 'video', filename, result.data || result, { serveDir: 'videos', keepAudio: payload.generate_audio !== false });
         } catch (err) {
             db.prepare('UPDATE film_video_jobs SET status = ?, error_message = ? WHERE id = ?').run('failed', err.message, jobId);
             return json(res, 502, { error: `video generated but could not be stored: ${err.message}` });
@@ -768,7 +821,7 @@ async function generateVideoStream(req, res, shotId) {
         } else if (streamedAsset) {
             try {
                 const filePath = await persistProviderMedia(
-                    scene.project_id, 'video', streamedAsset.filename, streamedAsset.data, { serveDir: 'videos' }
+                    scene.project_id, 'video', streamedAsset.filename, streamedAsset.data, { serveDir: 'videos', keepAudio: payload.generate_audio !== false }
                 );
                 db.prepare('UPDATE film_assets SET file_path = ? WHERE id = ?').run(filePath, streamedAsset.assetId);
             } catch (err) {
@@ -835,7 +888,7 @@ async function batchVideoStream(req, res, projectId, query) {
 
             const { version: clipVersion, filename } = nextClip(shot.shot_id, shot.shot_code);
             ensureDir(projectId, 'video');
-            const filePath = await persistProviderMedia(projectId, 'video', filename, result.data, { serveDir: 'videos' });
+            const filePath = await persistProviderMedia(projectId, 'video', filename, result.data || result, { serveDir: 'videos', keepAudio: payload.generate_audio !== false });
 
             const assetId = generateId();
             db.prepare(
@@ -1087,7 +1140,7 @@ async function stitchVideo(req, res, shotId) {
             }
 
             const filename = `${shot.shot_code}_clip_${clip.index}.mp4`;
-            await persistProviderMedia(scene.project_id, 'video', filename, result.data, { serveDir: 'videos' });
+            await persistProviderMedia(scene.project_id, 'video', filename, result.data || result, { serveDir: 'videos', keepAudio: payload.generate_audio !== false });
             clip.clip_url = getFileUrl('video', scene.project_id, filename);
             clipResults.push({ index: clip.index, status: 'complete', clip_url: clip.clip_url });
         } catch (err) {

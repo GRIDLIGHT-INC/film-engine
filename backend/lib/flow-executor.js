@@ -302,6 +302,7 @@ async function runFlowStream(graph, ctx, opts, res) {
             error: result.error || '',
             message: result.message || '',
             provider: result.providerId || '',
+            generation: result.generation || null,
         }),
     };
 
@@ -408,7 +409,7 @@ function finishNodeRun(runId, nodeId, branch, status, outputs, result) {
          WHERE id = ?`
     ).run(
         status,
-        JSON.stringify(outputs || {}),
+        JSON.stringify({ ...(outputs || {}), ...(result && result.generation ? { __generation: result.generation } : {}) }),
         (result && result.providerId) || '',
         (result && result.error) || '',
         (result && result.routingNote) || '',

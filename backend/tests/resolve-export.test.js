@@ -90,6 +90,18 @@ db.prepare(`INSERT INTO film_music_cues (id, project_id, scene_id, cue_type, tit
     .run(generateId(), pid, scenes[0].id, doorBed);
 db.prepare(`INSERT INTO film_shot_notes (id, shot_id, content, timecode_ms) VALUES (?, ?, 'Hold on her hands longer', 500)`).run(generateId(), shots[0].id);
 
+// Fixture approval is explicit and tied to the exact generated clip.
+for (const a of db.prepare("SELECT * FROM film_assets WHERE project_id = ? AND asset_type LIKE 'video_%'").all(pid)) {
+    const media=require('../lib/nle-media');
+    if (media.hasClipAudio(a)) db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?').run(JSON.stringify({audio_review:{status:'approved',no_music:true,reviewed_at:new Date().toISOString(),fingerprint:media.fingerprint(a)}}),a.id);
+}
+
+// Fixture approval is explicit and tied to the exact generated clip.
+for (const a of db.prepare("SELECT * FROM film_assets WHERE project_id = ? AND asset_type LIKE 'video_%'").all(pid)) {
+    const media=require('../lib/nle-media');
+    if (media.hasClipAudio(a)) db.prepare('UPDATE film_assets SET metadata = ? WHERE id = ?').run(JSON.stringify({audio_review:{status:'approved',no_music:true,reviewed_at:new Date().toISOString(),fingerprint:media.fingerprint(a)}}),a.id);
+}
+
 test('the plan is free and describes the Playback cut, clip else storyboard frame', async () => {
     const before = fs.existsSync(path.join(process.env.FILM_DATA_DIR)) ? JSON.stringify(fs.readdirSync(process.env.FILM_DATA_DIR)) : '';
     const r = await call('GET', ['film', 'projects', pid, 'export', 'resolve']);
@@ -132,7 +144,7 @@ test('the export: XML, media per scene, markers, metadata and a script that comp
     // Dialogue: 1A (silent clip) is spoken; 2A carries its own sound, so its line is not laid and its clip sound is.
     const audio = xml.slice(xml.indexOf('<audio>'));
     assert.match(audio, /<name>1A line 1<\/name>/);
-    assert.doesNotMatch(audio, /<name>2A line 1<\/name>/);
+    assert.match(audio, /<name>2A line 1<\/name>/);
     assert.match(audio, /<clipitem id="[^"]+"><name>2A<\/name>/);
     // The ambient bed at its level (-12 dB = 0.25119).
     assert.match(audio, /<name>ambient harbour\.mp3<\/name>[\s\S]*?<value>0\.25119<\/value>/);

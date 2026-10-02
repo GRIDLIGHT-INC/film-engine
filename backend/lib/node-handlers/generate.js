@@ -35,9 +35,8 @@ function firstValue(portValue) {
 /**
  * Fold wired inputs into the context the payload builder reads.
  *
- * An upstream prompt must win over the scene card: wiring a prompt into a node
- * and having it silently ignored is the single most confusing thing a canvas
- * can do.
+ * Wired text is shot direction by default, preserving the scene and camera.
+ * Complete replacement requires the explicit prompt_mode: replace setting.
  */
 function contextFromInputs(ctx, inputs, node) {
     const merged = { ...ctx, overrides: { ...(ctx.overrides || {}), ...((node.config || {}).overrides || {}) } };
@@ -45,8 +44,9 @@ function contextFromInputs(ctx, inputs, node) {
 
     const text = firstValue(inputs.text);
     if (text) {
-        merged.sceneCard = { ...(merged.sceneCard || {}), action: text };
-        merged.promptOverride = text;
+        merged.sceneCard = { ...(merged.sceneCard || {}), direction: [merged.sceneCard && merged.sceneCard.direction, text].filter(Boolean).join('. ') };
+        merged.flowDirection = text;
+        if (config.prompt_mode === 'replace') merged.promptOverride = text;
     }
 
     const image = firstValue(inputs.image);
@@ -69,24 +69,46 @@ function contextFromInputs(ctx, inputs, node) {
     return merged;
 }
 
-/** Apply an upstream prompt to whatever field the built payload uses for it. */
-function applyPromptOverride(payload, promptOverride) {
-    if (!promptOverride) return payload;
-    const one = p => {
-        if (!p || typeof p !== 'object') return p;
-        if (typeof p.prompt === 'string') return { ...p, prompt: `${promptOverride}${p.prompt ? ', ' + p.prompt : ''}` };
-        if (typeof p.text === 'string') return { ...p, text: promptOverride };
-        return p;
-    };
-    return Array.isArray(payload) ? payload.map(one) : one(payload);
-}
-
 async function executeGenerator(node, inputs, ctx) {
     const def = nodeType(node.type);
     const capability = def && def.capability;
     if (!capability) return { ok: false, error: `node type '${node.type}' declares no capability` };
 
+    if (ctx.approvedGenerationRevision && ctx.shot && ctx.shot.id) {
+        const current = require('../generation-revision').generationRevision(require('../../db/database').db, ctx.shot.id, ctx.approvedInputAssets || []);
+        if (!current || current.fingerprint !== ctx.approvedGenerationRevision.fingerprint) {
+            return { ok: false, code: 'GENERATION_REVISION_MOVED', error: 'Generation inputs changed after approval. Review a fresh apply plan.' };
+        }
+    }
+    const config = node.config || {};
+    const projectConfig = { ...providerConfigOf(ctx.project) };
+    if (config.provider) projectConfig[capability] = config.provider;
+    const provider = ctx.providerFor
+        ? ctx.providerFor(capability, projectConfig)
+        : require('../providers').resolveGenerator(capability, projectConfig);
     const merged = contextFromInputs(ctx, inputs || {}, node);
+    merged.project = { ...ctx.project, provider_config: JSON.stringify(projectConfig) };
+    if (capability === 'video' && merged.flowDirection) {
+        merged.sceneCard = { ...merged.sceneCard, action: config.prompt_mode === 'replace' ? merged.flowDirection
+            : [ctx.sceneCard && (ctx.sceneCard.action || ctx.sceneCard.description), merged.flowDirection].filter(Boolean).join('. ') };
+    }
+    // Resolve reference slots/tags and prompt limits against the node's actual adapter.
+    if (capability === 'image') {
+        merged.imagePromptLimit = provider.promptLimit;
+        if (ctx.shot && ctx.shot.id) {
+            const refreshed = require('../capability-payloads').loadShotContext(ctx.shot.id, {
+                providerConfig: projectConfig, keepPlates: ctx.keepPlates,
+                referenceSupport: { canAttach: !!provider.supportsReferenceImages,
+                    canTag: !!provider.supportsReferenceTags, maxReferenceImages: provider.maxReferenceImages },
+            });
+            for (const key of ['references', 'tagged', 'anchorTag', 'anchorAttached', 'anchorCovers', 'referenceDiagnostics']) {
+                merged[key] = refreshed[key];
+            }
+        }
+    }
+    if (merged.previsApplication && !merged.previsApplication.applied && ['image', 'video'].includes(capability)) {
+        return { ok: false, error: 'Apply or re-seed the staged Previs before running this generation.', code: 'STAGED_PREVIS' };
+    }
 
     let built;
     try {
@@ -100,19 +122,11 @@ async function executeGenerator(node, inputs, ctx) {
         return { ok: false, error: `could not build ${capability} payload: ${err.message}` };
     }
 
-    const payload = applyPromptOverride(built.payload, merged.promptOverride);
+    const payload = built.payload;
     const requests = Array.isArray(payload) ? payload : [payload];
     if (requests.length === 0) {
         return { ok: true, skipped: true, message: `no ${capability} work for this node`, outputs: {} };
     }
-
-    // Per-node provider override layered over the project's configuration.
-    const projectConfig = { ...providerConfigOf(ctx.project) };
-    if (node.config && node.config.provider) projectConfig[capability] = node.config.provider;
-
-    const provider = ctx.providerFor
-        ? ctx.providerFor(capability, projectConfig)
-        : require('../providers').resolveGenerator(capability, projectConfig);
 
     const results = [];
     for (const request of requests) {
@@ -153,6 +167,7 @@ async function executeGenerator(node, inputs, ctx) {
     return {
         ok: true,
         providerId: provider.id,
+        generation: { ...built.meta, payload_fingerprint: require('crypto').createHash('sha256').update(JSON.stringify(payload)).digest('hex') },
         // A provider fallback is not an error; it is recorded so the UI can say
         // so without painting the node red.
         routingNote: (projectConfig[capability] && provider.id !== projectConfig[capability])

@@ -145,11 +145,11 @@ function planApply(db, args) {
     const { HELD_REASON } = require('./graph-hold');
     const shots = [];
     const held = [];
-    const cardOf = new Map();
+    const revisions = new Map();
+    const inputAssets = flow.nodes.map(n => (n.config || {}).asset_id).filter(Boolean);
     for (const id of [...from.keys()].sort((a, b) => order.get(a) - order.get(b))) {
         const node = byKey.get(`shot:${id}`);
         const row = db.prepare('SELECT scene_card_yaml FROM film_shots WHERE id = ?').get(id) || {};
-        cardOf.set(id, row.scene_card_yaml || '');
         if (node.held) { held.push({ shot_id: id, shot_code: node.shot_code, from: from.get(id), reason: HELD_REASON }); continue; }
         const shot = { shot_code: node.shot_code, card: parseJson(row.scene_card_yaml, {}) || {} };
         const bindings = [], reasons = [], warnings = [];
@@ -159,10 +159,18 @@ function planApply(db, args) {
             if (b.refused) reasons.push(b.refused);
             warnings.push(...(b.warnings || []));
         }
+        const revision = require('./generation-revision').generationRevision(db, id, inputAssets);
+        revisions.set(id, revision);
+        const ctx = require('./capability-payloads').loadShotContext(id);
+        if (ctx && ctx.previsApplication && !ctx.previsApplication.applied
+            && flow.nodes.some(n => ['gen.image', 'gen.video'].includes(n.type))) {
+            reasons.push('Apply or re-seed staged Previs before generating this shot.');
+        }
+        warnings.push(...((ctx && ctx.referenceDiagnostics) || []).map(d => `${d.code}: ${d.name || ''} ${d.action || ''}`));
         const ok = !reasons.length;
         shots.push({
             shot_id: id, shot_code: node.shot_code, from: from.get(id), status: ok ? 'ok' : 'refused',
-            bindings, reasons, warnings, cost: ok ? per.total : 0, calls: ok ? per.calls : 0,
+            bindings, reasons, warnings, revision, cost: ok ? per.total : 0, calls: ok ? per.calls : 0,
         });
     }
 
@@ -171,7 +179,7 @@ function planApply(db, args) {
     const budget = budgetStatus(db, pid, total);
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
         flow: flow.id, graph: flow.fingerprint, project: pid, vars, inputs: formValues,
-        shots: runnable.map(s => [s.shot_id, crypto.createHash('sha256').update(cardOf.get(s.shot_id)).digest('hex')]),
+        shots: runnable.map(s => [s.shot_id, revisions.get(s.shot_id).fingerprint]),
     })).digest('hex').slice(0, 32);
 
     const refusedTargets = targets.filter(t => t.status === 'refused').length;
@@ -262,7 +270,7 @@ function startApply(db, args) {
             .run(applyId, plan.flow_id, plan.project_id, plan.fingerprint, JSON.stringify(targets), JSON.stringify(args.vars || {}), plan.total_cost, args.ignoreBudget ? 1 : 0);
         const ins = db.prepare(`INSERT INTO film_flow_runs (id, flow_id, project_id, shot_id, status, params, apply_id)
                                 VALUES (?, ?, ?, ?, 'pending', ?, ?)`);
-        for (const r of runs) ins.run(r.run_id, plan.flow_id, plan.project_id, r.shot_id, JSON.stringify({ apply_id: applyId, shot_id: r.shot_id }), applyId);
+        for (const r of runs) ins.run(r.run_id, plan.flow_id, plan.project_id, r.shot_id, JSON.stringify({ apply_id: applyId, shot_id: r.shot_id, revision: plan.shots.find(s => s.shot_id === r.shot_id).revision }), applyId);
     })();
 
     live.add(applyId);
@@ -275,14 +283,22 @@ function startApply(db, args) {
             const { runContext } = require('../routes/flows');
             for (const r of runs) {
                 try {
+                    const approved = plan.shots.find(s => s.shot_id === r.shot_id).revision;
+                    const current = require('./generation-revision').generationRevision(db, r.shot_id,
+                        graph.nodes.map(n => (n.config || {}).asset_id).filter(Boolean));
+                    if (!current || current.fingerprint !== approved.fingerprint) {
+                        throw new Error('GENERATION_REVISION_MOVED: design, references, selected frames or Previs changed after approval. Review and apply a fresh plan.');
+                    }
                     const resolved = runContext({ shot_id: r.shot_id, vars: args.vars || {} });
                     if (resolved.error) {
                         db.prepare("UPDATE film_flow_runs SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ?").run(resolved.error, r.run_id);
                         continue;
                     }
+                    resolved.ctx.approvedGenerationRevision = approved;
+                    resolved.ctx.approvedInputAssets = graph.nodes.map(n => (n.config || {}).asset_id).filter(Boolean);
                     await runFlow({ nodes: graph.nodes, edges: graph.edges }, resolved.ctx, {
                         runId: r.run_id, applyId, flowId: plan.flow_id,
-                        params: { apply_id: applyId, shot_id: r.shot_id, vars: args.vars || {} },
+                        params: { apply_id: applyId, shot_id: r.shot_id, revision: approved, vars: args.vars || {} },
                         ignoreBudget: !!args.ignoreBudget,
                     });
                 } catch (err) {

@@ -109,6 +109,24 @@ function preflightExport(project, shots, assets = [], opts = {}) {
     }
 
     const referenced = referencedAssets(all, assets);
+    const media = require('./nle-media');
+    for (const shot of all) {
+        const asset = assets.find(a => a.shot_id === shot.id && ['video_final','video_synced','video_raw'].includes(a.asset_type));
+        if (!asset) continue;
+        try { const range=media.sourceRange(shot,asset);
+            const wanted=Math.max(Number(shot.transition_in_duration_ms)||0, Number(shot.transition_out_duration_ms)||0);
+            if (wanted && (range.head_handle_ms < wanted/2 || range.tail_handle_ms < wanted/2)) warnings.push({ code:'TRANSITION_HANDLES_INSUFFICIENT', shot_code:shot.shot_code, detail:'Transition handles are insufficient; rebuild or shorten the transition in the NLE.' });
+        } catch (e) { blocking.push({code:'SOURCE_RANGE_INVALID', shot_code:shot.shot_code, detail:e.message}); }
+        const pending=media.audition(asset); if (pending) blocking.push(pending);
+    }
+    const audioPlan = media.planAudioEvents(all, assets, sceneBedsByShot(all, assets), opts.settings?.target_fps || project.target_fps || 24);
+    for (const issue of audioPlan.blocking) {
+        if (!blocking.some(existing => existing.code === issue.code && existing.shot_code === issue.shot_code && existing.asset_id === issue.asset_id)) blocking.push(issue);
+    }
+    if (assets.some(a=>media.metadata(a).handoff_only)) warnings.push({code:'SCORE_STEMS_SIDECAR',detail:'Approved score stems are copied as separate files; the approved mix is the timeline music lane. Import stems manually when replacing that mix to avoid doubling the score.'});
+    warnings.push({code:'INTERCHANGE_LIMITATIONS', detail:opts.format === 'edl' ? 'EDL transfers picture edit decisions only: no media paths, audio lanes, captions, grades or compositing. Conform the media manually.' : 'Native grades/LUTs, compositing, caption tracks and plug-in effects do not transfer. Import SRT/VTT separately. Embedded production sound and separate stems are both retained; audition and mute duplicates when mixing.'});
+    if (assets.some(a => { const m=media.metadata(a); return m.fade_in_ms || m.fade_out_ms; }) && opts.format === 'fcpxml') warnings.push({ code:'AUDIO_FADES_UNSUPPORTED', detail:'Audio fade automation is preserved in Premiere/Resolve XML, but must be rebuilt for this FCPXML export.' });
+
     const missing = referenced.filter(a => a.file_path && !fs.existsSync(a.file_path));
     if (missing.length) {
         blocking.push({
@@ -245,7 +263,7 @@ async function packageExport(project, shots, assets = [], opts = {}) {
          * find-and-replace over generated XML is how one of the three formats
          * ends up missed.
          */
-        rewritten = assets.map(a => (newPath.has(a.id) ? { ...a, file_path: newPath.get(a.id) } : a));
+        rewritten = assets.map(a => (newPath.has(a.id) ? { ...a, file_path: newPath.get(a.id), metadata: JSON.stringify({ ...require('./nle-media').metadata(a), has_audio: require('./nle-media').hasClipAudio(a) }) } : a));
     }
 
     /*

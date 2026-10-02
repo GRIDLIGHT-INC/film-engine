@@ -1189,14 +1189,15 @@ async function generateStoryboard(req, res, projectId, query) {
                 // The ceiling of the provider that will actually run. A shot
                 // naming five subjects sent three because MAX_REFERENCES was
                 // Runway's limit applied to everyone.
-                { limit: leadProvider && leadProvider.maxReferenceImages, shotId: shot.id })
+                { limit: leadProvider && leadProvider.maxReferenceImages, shotId: shot.shot_id || shot.id,
+                  locationView: sceneCard.location_view || '', keepPlates: keepPlatesFor(body, sceneCard), diagnostics: [] })
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
-        const generationCtx = loadShotContext(shot.shot_id);
+        const generationCtx = loadShotContext(shot.shot_id, { keepPlates: keepPlatesFor(body, sceneCard) });
         Object.assign(generationCtx, {
             sceneCard, characters: matchedChars, location: matchedLocation, props,
-            consistency: null, references: shotRefs, tagged: canTag,
+            consistency: null, references: shotRefs, tagged: canTag, referenceDiagnostics: [...(generationCtx.referenceDiagnostics || []), ...(shotRefs.diagnostics || [])],
             anchorAttached: anchorState_.anchorAttached, anchorTag: anchorState_.anchorTag,
             annotations: shotMarks.marks, useAnnotations: shotMarks.enabled,
         });
@@ -1461,14 +1462,15 @@ async function generateStoryboardStream(req, res, projectId, query) {
                 // The ceiling of the provider that will actually run. A shot
                 // naming five subjects sent three because MAX_REFERENCES was
                 // Runway's limit applied to everyone.
-                { limit: leadProvider && leadProvider.maxReferenceImages, shotId: shot.id })
+                { limit: leadProvider && leadProvider.maxReferenceImages, shotId: shot.shot_id || shot.id,
+                  locationView: sceneCard.location_view || '', keepPlates: keepPlatesFor(body, sceneCard), diagnostics: [] })
             : [];
         const anchorState_ = anchorIn(shotRefs, canTag);
         const shotMarks = annotationsFor(shot.shot_id, project, body);
-        const generationCtx = loadShotContext(shot.shot_id);
+        const generationCtx = loadShotContext(shot.shot_id, { keepPlates: keepPlatesFor(body, sceneCard) });
         Object.assign(generationCtx, {
             sceneCard, characters: matchedChars, location: matchedLocation, props,
-            consistency: null, references: shotRefs, tagged: canTag,
+            consistency: null, references: shotRefs, tagged: canTag, referenceDiagnostics: [...(generationCtx.referenceDiagnostics || []), ...(shotRefs.diagnostics || [])],
             anchorAttached: anchorState_.anchorAttached, anchorTag: anchorState_.anchorTag,
             annotations: shotMarks.marks, useAnnotations: shotMarks.enabled,
         });
@@ -2229,6 +2231,8 @@ async function shotPromptPreview(req, res, shotId, query) {
             // model was shown.
             view: r.view || null,
         })),
+        reference_diagnostics: [...(ctx.referenceDiagnostics || []), ...((real && real.reference_diagnostics) || [])],
+        generation_revision: ctx.generationRevision || null,
         contributors,
         /*
          * The prompt budget, contributor by contributor: what each wanted, what
@@ -3325,7 +3329,8 @@ async function regenerateShot(req, res, shotId, opts) {
             matchLocation(scene.location, locs),
             matchProps(card, allProps),
             anchorState.anchor,
-            { limit: lead && lead.maxReferenceImages, shotId: shot.id });
+            { limit: lead && lead.maxReferenceImages, shotId: shot.id,
+              locationView: card.location_view || '', keepPlates: keepPlatesFor(body, card), diagnostics: [] });
     } catch (_) { shotRefs = []; }
     const { anchorAttached, anchorTag } = anchorIn(shotRefs, canTag);
 
@@ -3373,7 +3378,7 @@ async function regenerateShot(req, res, shotId, opts) {
         // Read staged state long enough to enforce the Apply boundary. A
         // deliberate ignore_staged override generates from the committed card
         // and leaves the director's Previs experiment untouched.
-        generationCtx = loadShotContext(shotId);
+        generationCtx = loadShotContext(shotId, { keepPlates: keepPlatesFor(body, sceneCard) });
         const application = generationCtx.previsApplication;
         if (application && !application.applied) {
             // A preview shows what the board would generate from the committed
@@ -3392,7 +3397,7 @@ async function regenerateShot(req, res, shotId, opts) {
         Object.assign(generationCtx, {
             sceneCard, characters: matchedChars, location: matchedLocation, props,
             project: { ...project, style_preset: body.style_override || project.style_preset },
-            consistency: null, references: shotRefs, tagged: canTag,
+            consistency: null, references: shotRefs, tagged: canTag, referenceDiagnostics: [...(generationCtx.referenceDiagnostics || []), ...(shotRefs.diagnostics || [])],
             anchorAttached, anchorTag,
             directionMode,
             anchorCovers: anchorCoversFor(anchorState, anchorAttached, keepPlatesFor(body, sceneCard)),
@@ -3469,7 +3474,7 @@ async function regenerateShot(req, res, shotId, opts) {
             const { preview: stoppedAt } = await callImageGen(imagePayload.prompt, imagePayload.negative_prompt,
                 imagePayload.seed, imagePayload, spendContext(project, shot, null, qualityOverride), payloadFactory,
                 { previewRequest: true });
-            return { preview: stoppedAt || null, budget: lastBudget, references: shotRefs,
+            return { preview: stoppedAt || null, budget: lastBudget, references: shotRefs, reference_diagnostics: shotRefs.diagnostics || [],
                 direction_mode: directionMode, anchor_attached: anchorAttached,
                 prompt_override: !!body.prompt_override };
         }
