@@ -6694,6 +6694,7 @@ node --test backend/tests/card-overflow.test.js
 node --test backend/tests/generator-costs.test.js
 node --test backend/tests/manual-edit.test.js
 node --test backend/tests/muapi-models.test.js
+node --test backend/tests/muapi-image-upscale.test.js
 node --test backend/tests/generation-handles.test.js
 node --test backend/tests/generation-progress.test.js
 node --test backend/tests/adapter-progress.test.js

@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**425 tools, 83 families.** Everything the app can do, you can ask for in a
+**426 tools, 88 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -386,6 +386,14 @@ the upscaler picks to reach the project's resolution, and the price.
 selected clip, with its sound. The original stays. On the production canvas
 the same thing is **Upscale…** in the node menu of a shot or a shot's clip.
 
+**Upscale any still with one request.** `image_upscale` takes the picture itself
+as a PNG or JPEG data URI and a `2K` or `4K` target. It SPENDS MuAPI credits and
+defaults to Topaz Precision's High Fidelity V3 model, choosing the smallest
+scale that reaches the requested long edge. When a small source needs more than
+Precision's 4x ceiling, it stays with Topaz and automatically uses the compatible
+8x endpoint. The finished image is returned directly to Claude and saved under
+Film Engine's `data/upscaled` folder; it is not attached to a project asset.
+
 **Your own recorded dialogue in the clip.** Upload each line to the shot with
 `media_upload` (capability `voice`), then pass `use_dialogue_audio: true` to
 `video_preview` and `video_generate`. The shot's lines travel in the order they
@@ -663,7 +671,8 @@ These resolve a provider and bill you:
 `node_gen_post` · `node_gen_model3d` · `node_gen_world` · `world_generate` ·
 `storyboard_generate` ·
 `storyboard_regenerate` · `storyboard_refine` · `plate_generate` ·
-`plate_generate_all` · `flow_run` · `run_changed` · `run_to_here`
+`plate_generate_all` · `flow_run` · `run_changed` · `run_to_here` ·
+`image_upscale`
 
 **Free and worth reading first:** `shot_prompt` (what a frame would send),
 `flow_estimate` (projected cost), `run_plan` (cost of a whole batch), `conform_plan`,

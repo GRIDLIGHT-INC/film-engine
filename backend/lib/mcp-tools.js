@@ -5472,6 +5472,21 @@ async function callRouteTool(t, args) {
 
 const BATCH_TOOLS = [
     {
+        name: 'image_upscale',
+        description: 'Upscale one supplied PNG or JPEG to the 2K or 4K tier with MuAPI Topaz. SPENDS MuAPI credits. '
+            + 'Uses Topaz Precision High Fidelity V3 at the smallest scale that reaches the target; a source too small '
+            + 'for Precision\'s 4x ceiling automatically uses Topaz\'s compatible 8x endpoint. Returns the finished '
+            + 'image inline and saves a durable copy under Film Engine data/upscaled.',
+        schema: {
+            image: { type: 'string', description: 'The source picture as data:image/png;base64,... or data:image/jpeg;base64,...' },
+            resolution: { type: 'string', enum: ['2K', '4K'], description: 'The minimum long-edge delivery tier.' },
+        },
+        required: ['image', 'resolution'],
+        async run(a) {
+            return require('./providers/muapi-topaz-upscale').upscaleImage(a);
+        },
+    },
+    {
         name: 'graph_hold',
         description: 'Hold or release a node by its graph key (shot:<id>, seq:<id>, sound:<id>): a held node is skipped by every '
             + 'batch run and said so, and stays in the film — conform and export never read the hold. FREE. Goes through the '
