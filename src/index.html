@@ -5161,6 +5161,12 @@ table, .render-table { border-radius:12px; overflow:hidden; }
    360° draw on the GL canvas under a transparent overlay; the rest paint the 2D one. */
 .pv-mode-geo, .pv-mode-depth, .pv-mode-plan { background-color:#0c0c0c; }
 .pv-mode-look, .pv-mode-pano { background:#08080a; }
+.pv-mode-board { background:#08080a; }
+/* The storyboard frame: the whole of the Board view, or half strength over the set. */
+.pv-board-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; z-index:1; pointer-events:none; display:none; }
+.pv-frame.pv-mode-board .pv-board-img { display:block; opacity:1; }
+.pv-frame.pv-onion .pv-board-img { display:block; opacity:0.45; }
+.pv-frame.pv-mode-board.pv-onion .pv-board-img { opacity:1; }
 .pv-gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
 .pv-frame #weFrameCanvas { z-index:1; }
 .pv-frame.pv-mode-pano #weFrameCanvas { pointer-events:none; }
@@ -15802,6 +15808,13 @@ THREE.GLTFLoader = GLTFLoader;
         ];
     }
 
+    /* The board frame laid over the set at half strength, to line the camera up with it. */
+    function worldToggleBoardOnion() {
+        WORLD.boardOnion = !WORLD.boardOnion;
+        const f = document.getElementById('weFrame');
+        if (f) f.classList.toggle('pv-onion', !!(WORLD.boardOnion && worldBoardSrc() && worldViewMode() !== 'plan'));
+    }
+
     function worldToggleOverlay(id) {
         if (!WORLD.overlays) WORLD.overlays = {};
         WORLD.overlays[id] = !WORLD.overlays[id];
@@ -15917,7 +15930,15 @@ THREE.GLTFLoader = GLTFLoader;
             <button class="pv-menu-action${worldViewMode() === 'geo' ? ' active' : ''}" onclick="worldSetViewMode('geo')">Geometry</button>
             <button class="pv-menu-action${worldViewMode() === 'depth' ? ' active' : ''}" onclick="worldSetViewMode('depth')">Depth</button>
         </div>`;
-        return technical + worldOverlays().map(o => {
+        const src = worldBoardSrc();
+        const board = `<div class="pv-overlay-views">
+            <span class="pv-menu-label">Storyboard frame</span>
+            ${src ? `<button class="pv-menu-action${worldViewMode() === 'board' ? ' active' : ''}" onclick="worldSetViewMode('board')">Board view</button>
+            <label class="we-ov-row"><input type="checkbox" id="pvBoardOnion" ${WORLD.boardOnion ? 'checked' : ''}
+                onchange="worldToggleBoardOnion()"><span>Board over the shot</span></label>`
+                : '<span class="we-hint">This shot has no storyboard frame yet.</span>'}
+        </div>`;
+        return technical + board + worldOverlays().map(o => {
             const on = st[o.id] === undefined ? o.on : st[o.id];
             return `<label class="we-ov-row"><input type="checkbox" data-overlay="${o.id}"
                 ${on ? 'checked' : ''} onchange="worldToggleOverlay('${o.id}')">
@@ -17328,7 +17349,8 @@ THREE.GLTFLoader = GLTFLoader;
           <div class="pv-grid">
             <div class="pv-stage">
               <div class="pv-view" id="pvView">
-                <div class="we-frame pv-frame pv-mode-${esc(worldViewMode())}" id="weFrame">
+                <div class="we-frame pv-frame pv-mode-${esc(worldViewMode())}${WORLD.boardOnion && worldBoardSrc() && worldViewMode() !== 'plan' ? ' pv-onion' : ''}" id="weFrame">
+                  ${worldBoardSrc() ? `<img class="pv-board-img" id="pvBoardImg" alt="Storyboard frame" src="${esc(worldBoardSrc())}">` : ''}
                   <canvas id="weFrameCanvas"></canvas>
                   <div class="we-readout" id="weReadout"></div>
                   <div class="we-plate-note" id="pvModeNote">${esc(PV_MODE_NOTES[worldViewMode()] || PV_MODE_NOTES.geo)}</div>
@@ -17451,6 +17473,7 @@ THREE.GLTFLoader = GLTFLoader;
         { id: 'geo',   label: 'Geometry' },
         { id: 'depth', label: 'Depth' },
         { id: 'plan',  label: 'Plan' },
+        { id: 'board', label: 'Board' },
     ]);
     const PV_MODE_NOTES = Object.freeze({
         look:  'SPLAT PREVIEW — THE SHOT REACHES THE FRAME AS WORDS, WITH THE LOCATION PLATE',
@@ -17458,7 +17481,18 @@ THREE.GLTFLoader = GLTFLoader;
         geo:   'GEOMETRIC PLATE — FOR READING THE SHOT; NOT SENT TO A BOARD FRAME',
         depth: 'DEPTH — NEAR IS LIGHT',
         plan:  'PLAN — THE COLLIDER FROM ABOVE',
+        board: 'STORYBOARD FRAME — THE PICTURE THE BOARD SHOWS FOR THIS SHOT',
     });
+
+    /*
+     * The shot's storyboard frame, the version the board is SHOWING, as the
+     * server keyed it (a regenerated frame gets a new ?v=). Null when the shot
+     * has no frame yet. Previs shows it as its own view, and over the set.
+     */
+    function worldBoardSrc() {
+        const k = WORLD.blocking && WORLD.blocking.keyframe;
+        return k && k.src ? API_BASE + k.src : null;
+    }
 
     const SPLAT = { mod: null, loading: null, info: null, infoFor: null, canvas: null, renderer: null,
         scene: null, camera: null, mesh: null, meshUrl: null, pano: null, panoUrl: null, running: false,
@@ -17466,7 +17500,10 @@ THREE.GLTFLoader = GLTFLoader;
 
     function worldViewMode() {
         if (!worldFlagOn('previs_console')) return 'geo';
-        if (WORLD.viewMode) return WORLD.viewMode;
+        // A shot with no frame cannot show the Board view; fall back to what it has.
+        if (WORLD.viewMode && !(WORLD.viewMode === 'board' && !worldBoardSrc())) return WORLD.viewMode;
+        // A shot with no set to stand in opens on its storyboard frame.
+        if (!WORLD.version && worldBoardSrc()) return 'board';
         // Open on the set itself when this version has splats; geometry otherwise.
         const info = SPLAT.info;
         // A scene built in Blender is drawn textured, splats or no splats.
@@ -17481,8 +17518,12 @@ THREE.GLTFLoader = GLTFLoader;
         let shotOff = '';
         if (info && !info.mesh && !info.enabled) shotOff = ' disabled title="Switch world_splats on in Setup to see the finished set"';
         else if (info && !info.mesh && info.enabled && !info.splats.length) shotOff = ' disabled title="This world version recorded no splat"';
-        return `<button class="pv-seg-btn${vm !== 'plan' ? ' active' : ''}"${shotOff}
-                    onclick="worldSetViewMode('look')">Shot</button>
+        if (!WORLD.version) shotOff = ' disabled title="This shot is not in a 3D set yet: build or scan the location, or pin the shot to a world"';
+        const boardOff = worldBoardSrc() ? '' : ' disabled title="This shot has no storyboard frame yet"';
+        return `<button class="pv-seg-btn${vm !== 'plan' && vm !== 'board' ? ' active' : ''}"${shotOff}
+                    onclick="worldSetViewMode('look')" title="The 3D previz set, from the shot's camera">Shot</button>
+                <button class="pv-seg-btn${vm === 'board' ? ' active' : ''}"${boardOff}
+                    onclick="worldSetViewMode('board')" title="The shot's storyboard frame">Board</button>
                 <button class="pv-seg-btn${vm === 'plan' ? ' active' : ''}"
                     onclick="worldSetViewMode('plan')">Plan</button>`;
     }

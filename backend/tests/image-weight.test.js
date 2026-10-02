@@ -83,6 +83,9 @@ test('every picture with real weight asks for a size', () => {
         // Rendered in the page from the world itself: a 320x180 JPEG data URI
         // drawn by SPLAT.thumb's renderer, never a file fetched from the server.
         [/EXPLORE\.thumbs\[/, 'a 320x180 JPEG the page renders itself — nothing is downloaded'],
+        // Previs's Board view is the frame filling the director's monitor, where
+        // the shot is judged against the set; a thumbnail would judge a blur.
+        [/class="pv-board-img"/, 'the Previs Board view is where a frame is judged, full size'],
     ];
     const offenders = [];
     for (const tag of servedImageTags()) {

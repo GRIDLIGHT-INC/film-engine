@@ -361,6 +361,7 @@ film-engine/
 │       ├── previs-decisions.test.js    # Each decision tried, applied, locked or stale — and the one-screen console
 │       ├── previs-views.test.js        # Look / 360° / Depth / Plan, the splats endpoint, and From Previs in Production
 │       ├── previs-redesign.test.js     # View-first Previs shell, complete tool/More parity, timeline drawer and phone layout
+│       ├── previs-board-view.test.js   # Previs shows the shot's storyboard frame (Board) as well as the 3D set, and lays one over the other
 │       ├── shot-negative-prompt.test.js # A shot's own generation.negative_prompt can be written and reaches the prompt
 │       ├── screenplay-ellipsis-and-print-fit.test.js # An ellipsis line stays dialogue; printed sheets are measured and refitted
 │       ├── previs-boundary.test.js     # Paid routes share one payload path and honor the Apply boundary
@@ -4099,6 +4100,8 @@ Migration 081 fingerprints the applied stage and applied card separately. A mism
 
 **Previs is organised around the view.** The console exposes only **Shot** and **Plan** as primary views. **Look around** is the former 360° view; Geometry and Depth live under **Overlays** with the composition guides. A labelled tool rail sits inside the view (Select, Walk, People, Edit set, Lights), the Camera/Light/Direct/Explore inspector stays on the right, and the seven decisions collapse into a summary in the top bar with Apply and Lock beside it. Rare actions moved to **⋯ More**: render the frame, match a reference, risk check, build/rebuild or choose another set version, new world, handover, and previz-video export. The move is a compact dock until **Timeline** opens the camera, people, lights and floors drawer; opening it gives the shot the full width. Plan owns the floor picker, subject paths and set editing. On a phone the header wraps, tools become a horizontal rail, the inspector stacks below the view, and menus become edge-to-edge sheets. The functions and writer IDs behind the old console are preserved so this is one control surface, not a replacement implementation. `tests/previs-redesign.test.js` holds the layout and action parity.
 
+**The storyboard frame or the 3D set.** *"In previz we should be able to look at the 2D storyboard shot if there is one or the 3D previz set."* The view switch is **Shot · Board · Plan**: Shot is the set from the shot's camera, **Board** is the frame the board shows for this shot (the selected version, from `GET /shots/:id/previs`'s `keyframe`, keyed to its version so a regenerated frame is not served from cache). A shot with no set opens on its board; Shot is disabled with why when there is no set, Board when there is no frame, and a Board choice left over from another shot falls back. Overlays has **Board over the shot**, the frame at half strength over the set, for lining the camera up with the picture. The composition guides draw over both. `tests/previs-board-view.test.js` runs the page's own functions.
+
 `tests/decision-parity.test.js` derives its denominator from three code sources — `EDITABLE` in `routes/shots.js`, the `film_previs_blocking` columns, and the `film_projects` switches the board actually reads — so a field added later is accounted for or fails. Its probes are behavioural where it matters: the round trip is **run**, and payload reachability is **differential** (change the value, assert what a provider would receive changes), because a stored choice and an applied choice look identical from the outside. Three of its early findings were the fixture's fault rather than the product's — a phantom plate path, byte-identical plate images, and a string accepted as `props` and then iterated character by character — and each was cheap to mistake for a real defect. Where the schema is loose, *what validates* and *what a field means* are different questions, so every sample the probe builds is now derived from something that constrains behaviour rather than from what the validator will tolerate.
 
 
@@ -6551,6 +6554,7 @@ node --test backend/tests/console-regions.test.js
 node --test backend/tests/console-layout.test.js
 node --test backend/tests/adr-spark.test.js
 node --test backend/tests/previs-views.test.js
+node --test backend/tests/previs-board-view.test.js
 node --test backend/tests/shot-negative-prompt.test.js
 node --test backend/tests/screenplay-ellipsis-and-print-fit.test.js
 node --test backend/tests/seedance-video-edit-retired.test.js
