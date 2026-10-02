@@ -532,7 +532,7 @@ film-engine/
 │       ├── nle-import-validity.test.js  # The export an NLE will actually open, not merely well-formed XML
 │       ├── export-package.test.js      # A handover that opens with the picture online
 │       ├── premiere-scenes.test.js     # A folder per scene holding the SELECTED clip of every shot, an XML with a bin per scene, and every NLE export naming the selected clip
-│       ├── resolve-export.test.js      # The Resolve first edit: running order, clip else storyboard frame, dialogue not laid over a clip's own sound, beds at level, markers, CSV, a script that compiles
+│       ├── resolve-export.test.js      # The Resolve first edit: running order, clip else storyboard frame, dialogue not laid over a clip's own sound, shot and scene effects, beds and an approved score at level, scene and note markers, CSV, a script that compiles
 │       ├── spot-duration.test.js       # A spot is a length, not an approximate length
 │       ├── deliverables.test.js        # Fourteen to twenty-two files, planned before anything is boarded
 │       ├── shot-aspect.test.js         # A vertical hero shot is generated vertical, or it is lost

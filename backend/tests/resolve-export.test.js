@@ -83,6 +83,12 @@ const sounding = make('2A.mp4', [...lavfiSource('color=c=green:s=320x180:d=2', '
 asset(shots[2], 'video_raw', sounding);
 asset(shots[2], 'audio_dialogue', tone('2A_RAY_0.mp3', 1), { duration_ms: 1000 });
 asset(null, 'audio_ambient', tone('harbour.mp3', 3), { scene_id: scenes[1].id, duration_ms: 3000 });
+// A shot's own effect on 1A, a scene effects cue on scene 1, and an open note on 1A.
+asset(shots[0], 'audio_sfx', tone('1A_door.mp3', 1), { duration_ms: 1000 });
+const doorBed = asset(null, 'audio_sfx', tone('diner_room.mp3', 3), { scene_id: scenes[0].id, duration_ms: 3000 });
+db.prepare(`INSERT INTO film_music_cues (id, project_id, scene_id, cue_type, title, generated_asset_id, volume_db) VALUES (?, ?, ?, 'sfx', 'Room', ?, -6)`)
+    .run(generateId(), pid, scenes[0].id, doorBed);
+db.prepare(`INSERT INTO film_shot_notes (id, shot_id, content, timecode_ms) VALUES (?, ?, 'Hold on her hands longer', 500)`).run(generateId(), shots[0].id);
 
 test('the plan is free and describes the Playback cut, clip else storyboard frame', async () => {
     const before = fs.existsSync(path.join(process.env.FILM_DATA_DIR)) ? JSON.stringify(fs.readdirSync(process.env.FILM_DATA_DIR)) : '';
@@ -130,6 +136,11 @@ test('the export: XML, media per scene, markers, metadata and a script that comp
     assert.match(audio, /<clipitem id="[^"]+"><name>2A<\/name>/);
     // The ambient bed at its level (-12 dB = 0.25119).
     assert.match(audio, /<name>ambient harbour\.mp3<\/name>[\s\S]*?<value>0\.25119<\/value>/);
+    // 1A's own effect lands on the effects lane at -4 dB; the scene effects cue at its -6 dB.
+    assert.match(audio, /<name>1A sfx 1<\/name>[\s\S]*?<value>0\.63096<\/value>/);
+    assert.match(audio, /<name>sfx diner_room\.mp3<\/name>[\s\S]*?<value>0\.50119<\/value>/);
+    // An open note is a timeline marker half a second into 1A (12 frames at 24 fps).
+    assert.match(xml, /<marker><name>Note 1A<\/name><comment>Hold on her hands longer<\/comment><in>12<\/in>/);
     // Every shot with picture carries its information as a marker.
     assert.match(xml, /<marker><name>1A<\/name><comment>Ray slides into the booth\.\nDialogue: RAY Coffee\.\nCamera: MS, 35mm/);
     assert.match(xml, /<marker><name>Scene 2<\/name><comment>EXT HARBOUR ROAD DAWN/);
@@ -147,6 +158,19 @@ test('the export: XML, media per scene, markers, metadata and a script that comp
     assert.match(body, /ImportTimelineFromFile/);
     assert.match(body, new RegExp(`HERE = ${JSON.stringify(dest).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.equal(JSON.parse(body.match(/MARKERS = json\.loads\((".*")\)/)[1].replace(/^"|"$/g, '"')) && true, true);
+});
+
+test('an approved score (the bed music-approval lays) goes to Score/ on the music lane', async () => {
+    const tl = require('../routes/timeline');
+    const real = tl.loadTimeline;
+    const scoreFile = tone('score_mix.wav', 4);
+    tl.loadTimeline = id => { const t = real(id); t.beds.push({ kind: 'music', source: 'score_session', scene_id: null, type: 'audio_music', path: scoreFile, asset_duration_ms: 4000, start_ms: 0, end_ms: 4000, gain_db: 0 }); return t; };
+    try {
+        const plan = require('../lib/resolve-export').planResolve(db, pid);
+        const f = plan.files.find(x => x.to === 'Score/score_mix.wav');
+        assert.ok(f, 'the score is copied into Score/');
+        assert.ok(plan.lanes.music.some(m => m.file === 'Score/score_mix.wav' && m.start_ms === 0));
+    } finally { tl.loadTimeline = real; }
 });
 
 test('a project with nothing to edit is refused, naming why', async () => {
