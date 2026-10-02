@@ -390,8 +390,8 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Parse body for POST/PUT (larger limit for bundle import)
-    if (req.method === 'POST' || req.method === 'PUT') {
+    // Parse JSON/raw bodies for every supported write method (larger limit for imports)
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
 
         /*
          * Any /import endpoint carries a file, so any /import endpoint gets the

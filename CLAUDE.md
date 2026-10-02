@@ -6966,3 +6966,5 @@ The screenplay epic provides a full-featured screenplay editor:
 ### Workflow handoff additions
 
 `generation-revision.js`, `nle-editorial-regressions.test.js`, `nle-media.js`, `previs-shot-navigation.test.js`, `selected-frame.js`, `video-audio-handoff.test.js`, `video-audio-policy.js`, `video-editorial-ui.test.js`, `workflow-handoffs.test.js`.
+
+`world-archive-http.test.js` verifies actual HTTP PATCH parsing, archive/restore, invalid JSON, domain validation, request size and preflight.
