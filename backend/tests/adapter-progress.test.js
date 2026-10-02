@@ -37,6 +37,8 @@ process.env.TOPAZ_API_KEY = process.env.TOPAZ_API_KEY || 'test-key-123456';
 process.env.TOPAZ_POLL_INTERVAL_MS = '5';
 process.env.MAGNIFIC_API_KEY = process.env.MAGNIFIC_API_KEY || 'test-key-123456';
 process.env.MAGNIFIC_POLL_INTERVAL_MS = '5';
+process.env.HF_CREDENTIALS = process.env.HF_CREDENTIALS || 'test-key-id:test-key-secret';
+process.env.HIGGSFIELD_POLL_INTERVAL_MS = '5';
 const TOPAZ_CLIP = path.join(process.env.FILM_DATA_DIR || os.tmpdir(), 'topaz-progress-clip.mp4');
 fs.mkdirSync(path.dirname(TOPAZ_CLIP), { recursive: true });
 fs.writeFileSync(TOPAZ_CLIP, Buffer.alloc(2048, 1));
@@ -62,6 +64,7 @@ const RUNNING = {
     worldlabs: { done: false, metadata: { progress: 0.5 } },
     topaz: { status: 'processing', progress: 50 },
     magnific: { data: { task_id: 't1', status: 'IN_PROGRESS' } },
+    higgsfield: { status: 'in_progress', request_id: 't1' },
 };
 const FINISHED = {
     runway: { status: 'FAILED', failure: 'stub' },
@@ -71,6 +74,7 @@ const FINISHED = {
     worldlabs: { done: true, error: { message: 'stub' } },
     topaz: { status: 'failed', message: 'stub' },
     magnific: { data: { task_id: 't1', status: 'FAILED' } },
+    higgsfield: { status: 'failed', request_id: 't1', error: 'stub' },
 };
 const FIXTURES = {
     runway: { cap: 'video', payload: { prompt: 'a quiet street at dusk', init_image: 'data:image/png;base64,iVBORw0KGgo=', duration: 5 } },
@@ -85,6 +89,7 @@ const FIXTURES = {
         source_seconds: 2, source_fps: 24, target_resolution: '1920x1080' } },
     magnific: { cap: 'post', payload: { model: 'magnific-video-upscaler-precision', source_video: TOPAZ_CLIP,
         source_seconds: 2, source_fps: 24, target_resolution: '1920x1080' } },
+    higgsfield: { cap: 'video', payload: { model: 'seedance-2-5', prompt: 'a quiet street at dusk', init_image: 'https://example.com/a.png', duration: 5 } },
 };
 
 function stubFetch(id) {

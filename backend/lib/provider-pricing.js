@@ -385,45 +385,51 @@ const RATE_BOOK = {
     },
 
     /*
-     * PRICED, NOT CONNECTED. These vendors have no adapter here, so nothing in
+     * PRICED, NOT CONNECTED (Midjourney). These vendors have no adapter here, so nothing in
      * Film Engine can generate with them; they are in the book so the film
      * estimate and Compare Generators can say what the same work would cost
      * there. `connected: false` and `not_connected_why` travel with every row,
      * so a price is never mistaken for a choice that can run.
      */
+    /*
+     * Higgsfield: connected (lib/providers/higgsfield.js). Rows are keyed by the
+     * adapter's own model ids (a family at a tier); a model not listed takes the
+     * row's default and is marked inferred by the meter's fall-through.
+     */
     'higgsfield:image': {
         unit: 'image', native_unit: 'image', native_per_unit: 1,
         usd_per_native: 0.0032,
-        connected: false,
-        not_connected_why: 'Higgsfield has a self-serve API (cloud.higgsfield.ai) but no adapter is wired in Film Engine yet: priced to compare, it cannot run here.',
         models: {
-            'soul-2':                 { usd_per_native: 0.0032 },
-            'soul-cinema':            { usd_per_native: 0.0032 },
-            'marketing-studio-image': { usd_per_native: 0.0059 },
+            'soul-standard':                  { usd_per_native: 0.0032 },
+            'soul-2':                         { usd_per_native: 0.0032 },
+            'soul-cinema':                    { usd_per_native: 0.0032 },
+            'marketing-studio-image':         { usd_per_native: 0.0059 },
+            'marketing-studio-image-flare':   { usd_per_native: 0.0059 },
+            'marketing-studio-image-sunburst':{ usd_per_native: 0.0059 },
         },
         source: 'https://higgsfield.ai/blog/higgsfield-api',
         checked: '2026-10-01',
-        note: 'Higgsfield\'s own API price table (post of 16 Sep 2026): Soul 2 and Soul Cinema $0.0032 per image, Marketing Studio $0.0059. Pay-as-you-go USD, failed requests refunded. The live table (open.higgsfield.ai/pricing) renders in the browser and could not be read directly.',
+        note: 'Higgsfield\'s own API price table (post of 16 Sep 2026): Soul 2 and Soul Cinema $0.0032 per image, Marketing Studio $0.0059. Other image models (Recraft, Qwen, Ideogram, Grok, Z-Image) are not in that table and are held at the Soul rate until the console says otherwise. Pay-as-you-go USD, failed and moderated requests refunded.',
     },
     'higgsfield:video': {
         unit: 'second', native_unit: 'second', native_per_unit: 1,
         usd_per_native: 0.112,
-        connected: false,
-        not_connected_why: 'Higgsfield has a self-serve API (cloud.higgsfield.ai) but no adapter is wired in Film Engine yet: priced to compare, it cannot run here.',
         models: {
-            'kling-2.5':    { usd_per_native: 0.042 },
-            'kling-2.6':    { usd_per_native: 0.07 },
-            'seedance-2.5': { usd_per_native: 0.0738 },
-            'kling-3.0':    { usd_per_native: 0.112 },
-            'pixverse-6':   { usd_per_native: 0.115 },
-            'minimax-h3':   { usd_per_native: 0.13 },
-            'ltx-2.5-pro':  { usd_per_native: 0.17 },
-            'wan-3.0':      { usd_per_native: 0.20 },
-            'seedance-2.0': { usd_per_native: 0.9332 },
+            'kling-2-5-turbo-pro':      { usd_per_native: 0.042 },
+            'kling-2-5-turbo-standard': { usd_per_native: 0.042 },
+            'kling-2-6-pro':            { usd_per_native: 0.07 },
+            'seedance-2-5':             { usd_per_native: 0.0738 },
+            'kling-3-pro':              { usd_per_native: 0.112 },
+            'kling-3-standard':         { usd_per_native: 0.112 },
+            'pixverse-v6':              { usd_per_native: 0.115 },
+            'minimax-h3':               { usd_per_native: 0.13 },
+            'ltx-2-5-pro':              { usd_per_native: 0.17 },
+            'wan-3':                    { usd_per_native: 0.20 },
+            'seedance-2':               { usd_per_native: 0.9332 },
         },
         source: 'https://higgsfield.ai/blog/higgsfield-api',
         checked: '2026-10-01',
-        note: 'Per second, from Higgsfield\'s own API price table (16 Sep 2026). DoP is $0.125 per generation and is not listed per second. A later third-party check (27 Sep 2026, omidsaffari.com) read Seedance 2.5 at $0.2056/s for 480p and $0.4622/s for 720p, far above the table\'s $0.0738: confirm in the Higgsfield console before budgeting against Seedance 2.5 there.',
+        note: 'Per second, from Higgsfield\'s own API price table (16 Sep 2026). Models not in that table are held at the Kling 3.0 rate, $0.112/s. A later third-party check (27 Sep 2026, omidsaffari.com) read Seedance 2.5 at $0.2056/s for 480p and $0.4622/s for 720p, far above the table\'s $0.0738: confirm in the Higgsfield console before budgeting against Seedance 2.5 there.',
     },
     'midjourney:image': {
         unit: 'image', native_unit: 'gpu_minute', native_per_unit: 1,

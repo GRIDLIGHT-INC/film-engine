@@ -77,6 +77,7 @@ Current resolution with the credentials on this machine:
 |---|---|---|
 | `llm` | `anthropic` | keyed — Claude Opus 5 via the Messages API |
 | `image` | `muapi` → `google` → `meshy` → `bfl` → `openai` | preference is an ordered walk; `muapi` leads when keyed — one MuAPI account key reaches the Nano Banana models (and the Seedance video ones), so a single credential covers what would otherwise be two. `google` reaches the same Gemini image models directly; `bfl` (FLUX.2) and `openai` follow |
+| `video`, `image` (named) | `higgsfield` | keyed, never a default: chosen per project or per generation — 24 video and 15 image models from one Higgsfield key, each request built from that model's own documented schema; pictures go up through Higgsfield's presigned upload; failed and moderated requests are not charged; cancellable only while queued, so stopping leaves it collectable |
 | `video` | `seedance` → `runway` | `seedance` (Seedance 2.5, via MuAPI) leads when keyed — its omni-reference workflow takes 30 reference images where Runway's gen4.5 takes two |
 | `voice`, `music`, `sfx`, `ambient` | `elevenlabs` | keyed |
 | `music` (a cue’s written notes, played) | `fluidsynth` | local: FluidSynth and a SoundFont on this machine; composes nothing, never a default |

@@ -3272,6 +3272,19 @@ const PRODUCTION_TOOLS = [
         required: [],
     },
     {
+        name: 'provider_check',
+        handler: handleProviders, method: 'GET',
+        description:
+            'Is a provider\'s stored API key right? FREE: generates nothing. Only providers that can ask '
+            + 'without spending answer (Higgsfield: it asks the status of a request that does not exist, so '
+            + 'a good key gets "not found" and a bad one 401). Others answer that they have no free check.',
+        path: a => `/film/providers/${encodeURIComponent(a.provider)}/check`,
+        schema: {
+            provider: { type: 'string', description: 'The provider id, e.g. "higgsfield".' },
+        },
+        required: ['provider'],
+    },
+    {
         name: 'spend_rates',
         handler: handleBudget, method: 'GET',
         description: 'The rate book every cost is priced from: per provider and capability, the billing unit, the provider-native unit (usually credits), the USD rate, the published source URL and the date it was checked. Meshy publishes credit costs but not what a credit costs, so its dollar figure is the Pro-plan rate and can be corrected per install; a rate marked inferred was not in the published table and inherits its tier.',

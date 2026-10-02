@@ -106,6 +106,20 @@ function handleProviders(req, res, urlParts, query) {
             if (sub === 'release-client' && req.method === 'POST') return releaseRegisteredClient(res, provider);
             if (sub === 'search' && req.method === 'GET') return sourceSearch(res, provider, query);
             if (sub === 'license' && req.method === 'POST') return sourceLicense(req, res, provider);
+            /*
+             * FREE: is the stored key right? Only adapters that can ask without
+             * spending declare checkCredential (Higgsfield asks the status of a
+             * request that does not exist: 404 for a good key, 401 for a bad one).
+             */
+            if (sub === 'check' && req.method === 'GET') {
+                const adapter = providers.get(provider);
+                if (typeof adapter.checkCredential !== 'function') {
+                    return json(res, 400, { error: `${provider} has no free key check`, provider });
+                }
+                return Promise.resolve(adapter.checkCredential())
+                    .then(r => json(res, r.ok ? 200 : (r.status === 401 ? 401 : 502), { provider, ...r }))
+                    .catch(err => json(res, 502, { provider, ok: false, error: err.message }));
+            }
             // FREE: the gateway's own manifest of what each video model takes.
             if (provider === 'gridlight' && sub === 'video-capabilities' && req.method === 'GET') {
                 return gridlightVideoCapabilities(res, query);
@@ -136,6 +150,8 @@ function getCatalog(res) {
             capabilities: a.capabilities || [],
             requiresKey: !!a.requiresKey,
             connection: a.connection || null, // { instructions, fields?, oauth? } — what the user must provide
+            // A free "is the key right?" exists for this provider (GET /providers/:id/check).
+            checkable: typeof a.checkCredential === 'function',
             /*
              * A keyless provider is not automatically ready.
              *

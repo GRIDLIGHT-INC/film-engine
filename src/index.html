@@ -33501,8 +33501,13 @@ ${fountainText.slice(0, 50000)}`;
                         </div>`;
                     }).join('');
                     return `<div class="set-key">
-                        <label>${esc(keyName(p))}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}${fieldsHtml}
-                        <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save</button>
+                        <label>${esc(keyName(p))}${p.enabled ? ' <span class="set-pill ok">set</span>' : ''}</label>${serves(p) ? `<div class="set-key-serves">${esc(serves(p))}</div>` : ''}${instr}${fieldsHtml}
+                        <div class="set-key-btns">
+                            ${conn.helpUrl ? '<a class="btn btn-secondary btn-sm" href="' + esc(conn.helpUrl) + '" target="_blank" rel="noopener">Get key &#8599;</a>' : ''}
+                            <button class="btn btn-secondary btn-sm" onclick="saveProviderFields('${esc(p.id)}')">Save</button>
+                            ${p.checkable ? `<button class="btn btn-secondary btn-sm" onclick="checkProviderKey('${esc(p.id)}', this)" title="Asks the provider whether the key works. Free: nothing is generated.">Check key</button>` : ''}
+                        </div>
+                        <div class="text-sm" id="provcheck-${esc(p.id)}"></div>
                     </div>`;
                 }
 
@@ -33747,6 +33752,19 @@ ${fountainText.slice(0, 50000)}`;
             setStatus(providerId + ' settings saved');
             loadProviders();
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    /** Is the stored key right? Free: the provider is asked something that costs nothing. */
+    async function checkProviderKey(providerId, btn) {
+        const out = document.getElementById('provcheck-' + providerId);
+        if (btn) btn.disabled = true;
+        if (out) out.textContent = 'Checking…';
+        try {
+            const r = await api('/providers/' + providerId + '/check');
+            if (out) { out.textContent = '✓ ' + (r.note || 'The key works.'); out.style.color = 'var(--gl-success, #22c55e)'; }
+        } catch (err) {
+            if (out) { out.textContent = '✗ ' + err.message; out.style.color = 'var(--gl-danger, #ef4444)'; }
+        } finally { if (btn) btn.disabled = false; }
     }
 
     // OAuth connect: open the authorize URL in a popup and

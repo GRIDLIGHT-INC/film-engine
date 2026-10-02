@@ -102,7 +102,8 @@ test('every MuAPI model the brief proposes adding is in MuAPI\'s catalogue and n
     const names = new Set(muapiNames());
     const offered = offeredToday();
     const notInCatalogue = rows.filter(([id]) => !names.has(id)).map(([id]) => id);
-    const alreadyOffered = rows.filter(([id]) => offered.has(id)).map(([id]) => id);
+    // A gap ON MUAPI: the same model id served by another vendor (Higgsfield's Z-Image) does not close it.
+    const alreadyOffered = rows.filter(([id]) => (offered.get(id) || []).some(x => /^(muapi|seedance):/.test(x))).map(([id]) => id);
     assert.deepEqual(notInCatalogue, [], `not in the MuAPI snapshot: ${notInCatalogue.join(', ')}`);
     assert.deepEqual(alreadyOffered, [], `already offered, so not a gap: ${alreadyOffered.join(', ')}`);
 });

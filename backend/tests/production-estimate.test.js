@@ -220,7 +220,10 @@ test('every upscaler, and every vendor priced without an adapter, is in the comp
     }
     const { RATE_BOOK } = require('../lib/provider-pricing');
     const unconnected = Object.keys(RATE_BOOK).filter(k => /:(image|video)$/.test(k) && !providers.get(k.split(':')[0]));
-    assert.ok(unconnected.includes('higgsfield:video') && unconnected.includes('midjourney:image'), 'Higgsfield or Midjourney is not priced');
+    assert.ok(unconnected.includes('midjourney:image'), 'Midjourney is not priced');
+    // Higgsfield has an adapter now: priced as a provider that can run, never as "not connected".
+    assert.ok(!unconnected.some(k => k.startsWith('higgsfield:')), 'Higgsfield is still treated as having no adapter');
+    for (const cap of ['image', 'video']) assert.ok(RATE_BOOK[`higgsfield:${cap}`] && !RATE_BOOK[`higgsfield:${cap}`].not_connected_why, `higgsfield:${cap} still says it cannot run`);
     const { compareGenerators } = require('../lib/generator-costs');
     for (const key of unconnected) {
         const [p, cap] = key.split(':');

@@ -44,12 +44,13 @@ function modelsOf(adapter) {
         return Object.entries(runway.RUNWAY_VIDEO_MODELS).filter(([, m]) => m.endpoint === 'image_to_video').map(([id]) => id);
     }
     if (adapter.id === 'seedance') return [undefined, ...Object.keys(seedance.VIDEO_MODELS)];
+    if (adapter.id === 'higgsfield') return [undefined, ...Object.keys(require('../lib/providers/higgsfield').MODELS.video)];
     return [undefined];
 }
 
 test('every video adapter says what frame it will deliver: the largest it offers at or below the ask, its best above that', () => {
     const video = providers.list().filter(a => (a.capabilities || []).includes('video'));
-    assert.deepEqual(video.map(a => a.id).sort(), ['gridlight', 'runway', 'seedance'], 'the video adapter set changed');
+    assert.deepEqual(video.map(a => a.id).sort(), ['gridlight', 'higgsfield', 'runway', 'seedance'], 'the video adapter set changed');
     const bad = [];
     for (const adapter of video) {
         assert.equal(typeof adapter.deliverableFrame, 'function', `${adapter.id} does not say what it will deliver`);

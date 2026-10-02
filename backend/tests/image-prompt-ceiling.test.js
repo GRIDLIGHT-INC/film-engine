@@ -67,6 +67,13 @@ const EXPECTED = {
      */
     muapi: { exact: 16000, documented: false },
     /*
+     * Higgsfield documents per-model prompt limits only on some pages (Kling
+     * "within 2,500 characters"); the request builder also cuts to a schema's
+     * own maxLength. 4000 is held as the adapter ceiling, matching OpenAI's
+     * documented figure, and marked undocumented as a whole-provider number.
+     */
+    higgsfield: { exact: 4000, documented: false },
+    /*
      * BFL publishes no character limit for FLUX.2. Held at 4000, matching
      * OpenAI's documented figure, on the same reasoning Meshy's was set:
      * matched to a comparable model rather than assumed unbounded.
