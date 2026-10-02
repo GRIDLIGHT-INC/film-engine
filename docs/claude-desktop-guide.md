@@ -1,6 +1,6 @@
 # Film Engine from Claude Desktop
 
-**440 tools, 90 families.** Everything the app can do, you can ask for in a
+**446 tools, 90 families.** Everything the app can do, you can ask for in a
 conversation.
 
 Held to the code by `backend/tests/mcp-guide.test.js`: if a tool is renamed or a
@@ -1263,6 +1263,16 @@ in the conversation rather than being paid for at a provider.
 `model_catalog` · `model_controls` · `model_catalog_audit` · `model_licence_grants` · `model_licence_grant` · `model_licence_revoke` — all free.
 
 The self-hosted models (MiniMax H3, FLUX.2 [dev], Fish Audio S2 Pro, Stable Audio 3 Medium and Small SFX, LatentSync 1.6) are catalogued in gridlight and read here. `model_catalog` shows each one's capabilities, licence and commercial-use state, allowed AWS regions, consent requirements, cost and limits; a field is null only when the catalog says why. `model_controls` is one model's control schema, as the Production client reads it. `model_catalog_audit` lists every recorded change to the catalog. Whether a model may run is decided fail-closed: H3 outside ca-central-1, an expired licence, a production run on a model not permitted commercially, or a request carrying a voice sample or a face without that consent is refused. A model whose public licence does not permit commercial use can be enabled for production only while the organisation's own licence for it is recorded: `model_licence_grant` records one (only a licence the user says they hold, with their name), `model_licence_grants` lists them, and `model_licence_revoke` revokes one without deleting the record.
+
+### Keeping the project list in order
+`project_archive` · `project_unarchive` · `project_reorder` — all free.
+
+`project_reorder` sets the list's order the way the director drags it (ids first to last; anything not named stays after). `project_archive` takes a project off the list and out of Delete All without deleting anything in it; `project_unarchive` puts it back exactly as it was. `project_list` leaves archived projects out unless asked with `archived: "only"` or `"all"`, filters to one stage with `status`, and answers with a count per stage.
+
+### A clip's sound and its edit range
+`video_audio_policy` · `video_audio_review` · `video_edit_range` — all free.
+
+`video_audio_policy` sets a generated clip's audio to dialogue, effects and ambience without music, or to silent; music stays a separate stem. `video_audio_review` records a person's audition of a clip's audio, approved only when a person confirms it has no music. `video_edit_range` sets the part of a clip the edit uses (in point and duration, in milliseconds), checked against the source and keeping the whole original for handles.
 
 ### Is a provider's key right
 `provider_check` — free.

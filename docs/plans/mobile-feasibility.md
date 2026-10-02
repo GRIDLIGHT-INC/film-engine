@@ -25,7 +25,7 @@ What changed, and the measurements that replaced the ones above:
 | Phase track on a phone | unreachable | **moved** into the drawer, one node |
 | API base | literal `http://localhost:3100` | follows `location.hostname` |
 | Page server | `127.0.0.1`, no opt-out | `FILM_ENGINE_HOST`, **default still loopback** |
-| Shell-aware media queries | 0 of 6 | **1 of 22 media queries** — the phone breakpoint |
+| Shell-aware media queries | 0 of 6 | **1 of 23 media queries** — the phone breakpoint |
 
 Verified in a real browser at both widths: at 1920px the panel is still 232px, `.main`
 still starts at 262px and the burger is hidden — **not one computed value above 700px
@@ -66,9 +66,9 @@ something. That is the single most useful thing to copy.
 | Rail entries | **7** | `var RAIL` |
 | MCP tools | **236** | `listTools()` |
 | SPA size | **2.01 MB** | one file, `build.target: single-html` |
-| Non-print media queries | **22** | 21 page-local queries + the phone breakpoint Option B added; see below |
+| Non-print media queries | **23** | 22 page-local queries + the phone breakpoint Option B added; see below |
 
-**The responsive layout did not exist.** There are 22 media queries that are not `print` —
+**The responsive layout did not exist.** There are 23 media queries that are not `print` —
 21 page-local queries, including the Previs console's desktop and phone layouts, plus the
 single app-shell phone breakpoint — and it is easy to read that as "already responsive".
 Only that one breakpoint touches the **app shell**. The page-local queries include rules that
@@ -140,7 +140,7 @@ is exactly the judgement NeonCore's README already made.
 
 ### Option A — the agent surface, which already works ✅ zero cost
 
-**440 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
+**446 MCP tools** are reachable from Claude on a phone today. That is not a workaround; for this
 codebase it is the native mobile interface. You can already, from a phone:
 
 - read the screenplay, revise a scene, re-run a breakdown

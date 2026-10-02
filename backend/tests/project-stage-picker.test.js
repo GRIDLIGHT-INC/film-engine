@@ -65,7 +65,7 @@ test('a stage the project cannot be in is refused with the list, and nothing cha
 });
 
 test('on the list, the badge opens the picker without opening the project, and a choice saves', async () => {
-    const card = SPA.slice(SPA.indexOf('<div class="project-card" onclick="openProject'), SPA.indexOf('project-delete-btn', SPA.indexOf('<div class="project-card" onclick="openProject')));
+    const card = SPA.slice(SPA.indexOf('<div class="project-card${p.archived_at'), SPA.indexOf('project-delete-btn', SPA.indexOf('<div class="project-card${p.archived_at')));
     assert.match(card, /onclick="event\.stopPropagation\(\); openStagePicker\('\$\{p\.id\}'\)"/, 'the badge opens the picker, and the click stops before the card opens the project');
     // Execute setProjectStage against a stub api and state.
     const body = SPA.slice(SPA.indexOf('    async function setProjectStage('), SPA.indexOf('\n    }\n', SPA.indexOf('    async function setProjectStage(')) + 6);

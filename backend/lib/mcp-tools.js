@@ -1900,9 +1900,41 @@ const PRODUCTION_TOOLS = [
     {
         name: 'project_list',
         handler: handleProjects, method: 'GET',
-        description: 'List every project. Start here to find the one you are working on and its id.',
-        path: () => '/film/projects',
-        schema: {}, required: [],
+        description: 'List the projects, in the order the director arranged them. Start here to find the one you are working on and its id. Archived projects are left out unless archived is "only" or "all"; status filters to one stage. The answer carries a count per stage and how many are archived.',
+        path: a => {
+            const q = [];
+            if (a.archived) q.push('archived=' + encodeURIComponent(a.archived));
+            if (a.status) q.push('status=' + encodeURIComponent(a.status));
+            return '/film/projects' + (q.length ? '?' + q.join('&') : '');
+        },
+        schema: {
+            archived: { type: 'string', enum: ['none', 'only', 'all'], description: 'Optional. "only" lists the archived projects, "all" both; default leaves them out.' },
+            status: { type: 'string', description: 'Optional. One stage, e.g. "production".' },
+        },
+        required: [],
+    },
+    {
+        name: 'project_archive',
+        handler: handleProjects, method: 'POST',
+        description: 'Archive a project: it leaves the project list and Delete All, and NOTHING in it is deleted. Recover it with project_unarchive. Free.',
+        path: a => `/film/projects/${a.project_id}/archive`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'project_unarchive',
+        handler: handleProjects, method: 'POST',
+        description: 'Put an archived project back on the project list, exactly as it was. Free. Find archived ones with project_list archived "only".',
+        path: a => `/film/projects/${a.project_id}/unarchive`,
+        schema: { project_id: { type: 'string' } }, required: ['project_id'],
+    },
+    {
+        name: 'project_reorder',
+        handler: handleProjects, method: 'POST',
+        description: 'Set the order of the project list, as the director drags it: ids in the order wanted. Projects not named keep their place after them. Free.',
+        path: () => '/film/projects/reorder',
+        body: a => ({ ids: (a && a.ids) || [] }),
+        schema: { ids: { type: 'array', items: { type: 'string' }, description: 'Project ids, first to last.' } },
+        required: ['ids'],
     },
     {
         name: 'project_get',

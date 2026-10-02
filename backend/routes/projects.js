@@ -46,6 +46,12 @@ function handleProjects(req, res, urlParts, query) {
         if (req.method === 'DELETE') return clearBoardLock(req, res, id);
     }
 
+    // The list's own order, set by dragging; and the archive, which hides without deleting.
+    if (id === 'reorder' && req.method === 'POST' && !urlParts[3]) return reorderProjects(req, res);
+    if (id && urlParts[3] === 'archive' && req.method === 'POST') return setArchived(req, res, id, true);
+    if (id && urlParts[3] === 'archive' && req.method === 'DELETE') return setArchived(req, res, id, false);
+    if (id && urlParts[3] === 'unarchive' && req.method === 'POST') return setArchived(req, res, id, false);
+
     if (req.method === 'GET' && !id) return listProjects(req, res, query);
     if (req.method === 'GET' && id) return getProject(req, res, id);
     if (req.method === 'POST' && !id) return createProject(req, res);
@@ -59,35 +65,66 @@ function handleProjects(req, res, urlParts, query) {
 
 function listProjects(req, res, query) {
     const page = Math.max(1, parseInt(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(query.limit) || 20));
+    // The list page shows every project; 500 is a ceiling, not a page size anyone meets.
+    const limit = Math.min(500, Math.max(1, parseInt(query.limit) || 500));
     const offset = (page - 1) * limit;
     const status = query.status && VALID_STATUSES.includes(query.status) ? query.status : null;
+    /*
+     * ARCHIVED IS HIDDEN, NOT GONE. The default list leaves archived projects
+     * out; ?archived=only lists just them (to restore one), ?archived=all both.
+     */
+    const archived = ['only', 'all'].includes(query.archived) ? query.archived : 'none';
 
-    let sql = 'SELECT * FROM film_projects';
+    const where = [];
     const params = [];
+    if (archived === 'none') where.push('archived_at IS NULL');
+    if (archived === 'only') where.push('archived_at IS NOT NULL');
+    if (status) { where.push('status = ?'); params.push(status); }
+    const clause = where.length ? ' WHERE ' + where.join(' AND ') : '';
 
-    if (status) {
-        sql += ' WHERE status = ?';
-        params.push(status);
+    // The order a person dragged them into; anything never placed after, newest first.
+    const rows = db.prepare(`SELECT * FROM film_projects${clause}
+        ORDER BY (sort_order IS NULL), sort_order, created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+    const total = db.prepare(`SELECT COUNT(*) AS count FROM film_projects${clause}`).get(...params).count;
+
+    // What the filter can offer: a count per stage on the visible list, and how many are archived.
+    const statusCounts = {};
+    for (const r of db.prepare(`SELECT status, COUNT(*) AS n FROM film_projects
+        WHERE ${archived === 'only' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'} GROUP BY status`).all()) {
+        statusCounts[r.status] = r.n;
     }
-
-    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
-
-    const rows = db.prepare(sql).all(...params);
-
-    // Get total count
-    let countSql = 'SELECT COUNT(*) AS count FROM film_projects';
-    const countParams = [];
-    if (status) {
-        countSql += ' WHERE status = ?';
-        countParams.push(status);
-    }
-    const countRow = db.prepare(countSql).get(...countParams);
-    const total = countRow.count;
+    const archivedCount = db.prepare('SELECT COUNT(*) AS n FROM film_projects WHERE archived_at IS NOT NULL').get().n;
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ projects: rows, total, page, limit }));
+    res.end(JSON.stringify({ projects: rows, total, page, limit, statuses: VALID_STATUSES,
+        status_counts: statusCounts, archived_count: archivedCount, archived }));
+}
+
+/**
+ * The order the list shows, as dragged. Every id named gets its place in the
+ * order given; projects not named keep theirs after them. Unknown ids refuse
+ * the whole write, so a stale page cannot half-apply an order.
+ */
+function reorderProjects(req, res) {
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(String) : null;
+    if (!ids || !ids.length) return sendJson(res, 400, { error: 'ids must be a non-empty list of project ids, in the order wanted' });
+    if (new Set(ids).size !== ids.length) return sendJson(res, 400, { error: 'ids repeats a project' });
+    const known = new Set(db.prepare('SELECT id FROM film_projects').all().map(r => r.id));
+    const unknown = ids.filter(i => !known.has(i));
+    if (unknown.length) return sendJson(res, 404, { error: `no such project: ${unknown.join(', ')}` });
+    const set = db.prepare('UPDATE film_projects SET sort_order = ? WHERE id = ?');
+    db.transaction(() => ids.forEach((pid, i) => set.run(i, pid)))();
+    return sendJson(res, 200, { ordered: ids.length, ids });
+}
+
+/** Archive or restore. Nothing in the project is touched: it only leaves (or rejoins) the list. */
+function setArchived(req, res, id, archive) {
+    const row = db.prepare('SELECT id, title, archived_at FROM film_projects WHERE id = ?').get(id);
+    if (!row) return sendJson(res, 404, { error: 'Project not found' });
+    if (archive) db.prepare("UPDATE film_projects SET archived_at = COALESCE(archived_at, datetime('now')) WHERE id = ?").run(id);
+    else db.prepare('UPDATE film_projects SET archived_at = NULL WHERE id = ?').run(id);
+    const now = db.prepare('SELECT archived_at FROM film_projects WHERE id = ?').get(id);
+    return sendJson(res, 200, { id, title: row.title, archived: !!now.archived_at, archived_at: now.archived_at });
 }
 
 function getProject(req, res, id) {
@@ -534,15 +571,25 @@ function deleteProject(req, res, id) {
 }
 
 function deleteAllProjects(req, res) {
-    const count = db.prepare('SELECT COUNT(*) AS count FROM film_projects').get().count;
+    // "Delete All" deletes what the list shows. An archived project was put away
+    // to be kept, so it is never swept up by a delete of everything else.
+    const count = db.prepare('SELECT COUNT(*) AS count FROM film_projects WHERE archived_at IS NULL').get().count;
     if (count === 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ deleted: 0, message: 'No projects to delete' }));
         return;
     }
 
-    require('../lib/orientation-plans').dropAllOrientationPlans();
-    db.prepare('DELETE FROM film_projects').run();
+    const archived = db.prepare('SELECT COUNT(*) AS n FROM film_projects WHERE archived_at IS NOT NULL').get().n;
+    if (archived) {
+        const orientation = require('../lib/orientation-plans');
+        for (const r of db.prepare('SELECT id FROM film_projects WHERE archived_at IS NULL').all()) {
+            orientation.dropOrientationPlansForProject(r.id);
+        }
+    } else {
+        require('../lib/orientation-plans').dropAllOrientationPlans();
+    }
+    db.prepare('DELETE FROM film_projects WHERE archived_at IS NULL').run();
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ deleted: count }));

@@ -34,7 +34,7 @@ film-engine/
 │   ├── db/
 │   │   ├── database.js     # SQLite connection (better-sqlite3)
 │   │   ├── schema.js       # Auto-migration runner
-│   │   └── migrations/     # SQL migration files (124 migrations)
+│   │   └── migrations/     # SQL migration files (125 migrations)
 │   ├── routes/
 │   │   ├── projects.js     # Project CRUD
 │   │   ├── project-storage.js # A project's folder: where its files are, choosing one, moving it
@@ -673,6 +673,7 @@ film-engine/
 │       ├── magnific-upscale.test.js    # Every Magnific upscaler at the smallest tier that reaches the delivery, uploaded through its own signed URL, the key never sent to the bucket
 │       ├── higgsfield.test.js          # Every Higgsfield model builds a request its own schema accepts; upload, submit, poll, download through a stub; the key checked for free
 │       ├── setup-models.test.js        # A model pinned per capability in Setup: checked against its provider, applied at the one funnel, outranked only by a per-generation choice
+│       ├── project-list.test.js        # The project list dragged into order, filtered by stage, archived without deleting anything, and kept out of Delete All
 │       ├── project-stage-picker.test.js # The stage changed from the project list: exactly the server's stages, saved and read back, a bad one refused
 │       ├── fixtures/topaz-contract.json # Topaz Video API shapes and supported models, probed free on 2026-09-30
 │       ├── fixtures/magnific-contract.json # Magnific upload and upscaler shapes, from its docs on 2026-09-30
@@ -833,7 +834,7 @@ All routes prefixed with `/film`:
 
 | Category | Endpoints |
 |----------|-----------|
-| Projects | `GET/POST /projects`, `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor` |
+| Projects | `GET/POST /projects` (`?status=`, `?archived=only\|all`), `GET/PUT/DELETE /projects/:id`, `GET/PUT/DELETE /projects/:id/anchor`, `POST /projects/reorder`, `POST /projects/:id/{archive,unarchive}` |
 | Edits | `GET /projects/:id/edits`, `POST /projects/:id/edits/import`, `GET/PUT/DELETE /edits/:id`, `POST /edits/:id/cut[/rematch]`, `GET /edits/:pid/:file` |
 | Folders | `GET /projects/:id/storage`, `POST /projects/:id/storage/move`, `GET /storage/{layout,suggest,browse}` (free), `POST /storage/choose` (the Mac folder dialog) |
 | Scripts | `POST /projects/:id/script[/append\|/insert]`, `GET/POST /projects/:id/outline`, `GET /projects/:id/scripts[/:ver]`, `PUT /projects/:id/script/:ver` |
@@ -1010,6 +1011,11 @@ The first version of the standard hardwired the size — boards fitted inside 38
 Each angle goes through `regenerateShot` itself with a server-only `capture` option, so it carries the same references, anchor and resolution a regenerate would. **Nothing reaches `{code}.png` until a pick**: candidates are `film_assets` rows (`other`, `kind: angle_candidate`) under `storyboards/<project>/angles/`, and ffmpeg joins them into a free contact sheet (A B over C D). The run answers at once with a token and continues in the background, because four generations outlast the sixty seconds an MCP host waits; the first angle runs before answering so a refusal a regenerate would give arrives as that refusal. The rest run one at a time, and a provider that starts refusing stops the run with the untried angles named. A candidate never records a generation handle, so an abandoned one can never be collected onto the board frame.
 
 **A pick is a file copy**: the frame on the board is archived, the candidate becomes a new version recording `angle_from`, and the other three stay, so changing your mind is another pick rather than another purchase. It is deliberately unfingerprinted (it was generated with a different camera from the card as it stands). A locked board refuses the pick, not the exploration. Served on the board card, the frame viewer and the Production drawer as **4 angles**, and as `storyboard_angles_preview` (free), `storyboard_angles`, `storyboard_angles_list` and `storyboard_angles_pick`.
+
+### The Project List: Your Order, a Stage Filter, and an Archive
+*"I'd like to be able to move projects (dragging and dropping), filter projects by status and archive them (they won't show on the list but are recoverable instead of deleted)."*
+
+Migration 128 gives `film_projects` a `sort_order` and an `archived_at`. **Order**: drag a card by its handle above or below another; the whole order is saved at once (`POST /projects/reorder`, all or nothing: an unknown or repeated id changes nothing). The list answers in that order, and a project never placed comes after, newest first. Dragging is offered on the full list only, since an order dragged inside a filter would say nothing about the projects it hides. **Filter**: a chip per stage with its count, from the server's own stage list; a chip toggles. **Archive**: takes a project off the list and nothing else: every scene, shot and file stays, it can still be opened, and Archived shows it with Restore. Delete All deletes what the list shows and never an archived project. The filter and the archive view are remembered per browser. `project_archive`, `project_unarchive`, `project_reorder`, and `project_list` with `archived` and `status`. `tests/project-list.test.js`.
 
 ### Project Settings
 Per-project technical settings: resolution (8 presets + custom), frame rate (8 options including 23.976, 29.97), aspect ratio (12 presets including IMAX 1.43:1/1.90:1, anamorphic 2.39:1, Univisium 2:1), color space (sRGB, Rec.709, DCI-P3, Rec.2020, ACES), and 6 delivery presets (Theatrical DCP, IMAX, Streaming HD/4K, Social Media, Broadcast).
@@ -6361,7 +6367,7 @@ Export entire projects as `.tar.gz` archives containing all database rows + asse
 
 ## Database
 
-SQLite via `better-sqlite3`. Schema auto-migrates on startup (124 migrations).
+SQLite via `better-sqlite3`. Schema auto-migrates on startup (125 migrations).
 
 **Core Tables:**
 - `film_projects` — Project metadata + status
@@ -6843,6 +6849,7 @@ node --test backend/tests/magnific-upscale.test.js
 node --test backend/tests/higgsfield.test.js
 node --test backend/tests/setup-models.test.js
 node --test backend/tests/project-stage-picker.test.js
+node --test backend/tests/project-list.test.js
 node --test backend/tests/dialogue-audio-reference.test.js
 node --test backend/tests/seedance-tiers.test.js
 node --test backend/tests/video-surfaces.test.js

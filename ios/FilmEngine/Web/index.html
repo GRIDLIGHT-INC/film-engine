@@ -896,6 +896,32 @@
         .project-list-actions {
             display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
         }
+        /* The list's own controls: a stage filter, the archive view, and dragging to reorder. */
+        .project-filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+        .project-filter {
+            background: var(--gl-bg-surface); border: 1px solid var(--gl-border-subtle); color: var(--gl-text-secondary, inherit);
+            border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer;
+        }
+        .project-filter.active { border-color: var(--gl-border-focus); color: var(--gl-text-primary, #fff); background: rgba(233,30,99,0.12); }
+        .project-filter .n { opacity: 0.6; margin-left: 4px; }
+        .project-filter-gap { flex: 1; }
+        .project-drag {
+            cursor: grab; color: var(--gl-text-muted); font-size: 16px; padding: 4px 2px; flex-shrink: 0;
+            opacity: 0.45; user-select: none;
+        }
+        .project-card:hover .project-drag { opacity: 1; }
+        .project-card.dragging { opacity: 0.4; }
+        .project-card.drop-before { box-shadow: 0 -3px 0 var(--gl-border-focus); }
+        .project-card.drop-after { box-shadow: 0 3px 0 var(--gl-border-focus); }
+        .project-archive-btn {
+            background: none; border: 1px solid transparent; color: var(--gl-text-muted); font-size: 11px;
+            cursor: pointer; padding: 4px 8px; border-radius: var(--gl-radius-sm);
+            opacity: 0; transition: var(--gl-transition-fast); flex-shrink: 0;
+        }
+        .project-card:hover .project-archive-btn, .project-card.archived .project-archive-btn { opacity: 1; }
+        .project-archive-btn:hover { border-color: var(--gl-border-subtle); color: var(--gl-text-primary, #fff); }
+        .project-card.archived { opacity: 0.75; }
+        @media (hover: none) { .project-drag, .project-archive-btn, .project-delete-btn { opacity: 1; } }
 
         /* ══════════════════════════════════════════════════════════
            DASHBOARD
@@ -21184,47 +21210,168 @@ THREE.GLTFLoader = GLTFLoader;
     // ══════════════════════════════════════════════════════════════
     // PROJECTS
     // ══════════════════════════════════════════════════════════════
+    /*
+     * THE PROJECT LIST: in the order the director drags it into, filtered by
+     * stage, with an Archive view. Archiving hides a project and deletes
+     * nothing; Restore puts it back. The filter and the view are remembered per
+     * browser (a convenience, never the source of truth: the order and the
+     * archive live on the server).
+     */
+    const PROJECT_LIST = { status: '', archived: false, dragId: null };
+    try {
+        const saved = JSON.parse(localStorage.getItem('fe_project_list') || '{}');
+        PROJECT_LIST.status = saved.status || ''; PROJECT_LIST.archived = !!saved.archived;
+    } catch (_) { /* storage unavailable: defaults */ }
+    function saveProjectListPrefs() {
+        try { localStorage.setItem('fe_project_list', JSON.stringify({ status: PROJECT_LIST.status, archived: PROJECT_LIST.archived })); } catch (_) {}
+    }
+
     async function loadProjects() {
         setStatus('Loading...');
         try {
-            const data = await api('/projects');
+            const q = [];
+            if (PROJECT_LIST.archived) q.push('archived=only');
+            if (PROJECT_LIST.status) q.push('status=' + encodeURIComponent(PROJECT_LIST.status));
+            const data = await api('/projects' + (q.length ? '?' + q.join('&') : ''));
             state.projects = data.projects || [];
+            state.projectListMeta = data;
 
-            // Sidebar project list
-            document.getElementById('sidebarProjects').innerHTML = state.projects.length === 0 ? '' :
-                state.projects.map(p => `<button class="nav-item" onclick="openProject('${p.id}')"><span class="nav-icon">&#127916;</span>${esc(p.title)}</button>`).join('');
+            // Sidebar project list: what is on the list, never the archive.
+            if (!PROJECT_LIST.archived && !PROJECT_LIST.status) {
+                document.getElementById('sidebarProjects').innerHTML = state.projects.length === 0 ? '' :
+                    state.projects.map(p => `<button class="nav-item" onclick="openProject('${p.id}')"><span class="nav-icon">&#127916;</span>${esc(p.title)}</button>`).join('');
+            }
 
-            // Main project list
             const el = document.getElementById('projectList');
-            if (state.projects.length === 0) {
+            const counts = data.status_counts || {};
+            const onList = Object.values(counts).reduce((a, b) => a + b, 0);
+            const stageLabel = st => String(st).replace(/[-_]/g, ' ');
+            const chip = (st, label, n) => `<button class="project-filter${PROJECT_LIST.status === st ? ' active' : ''}"
+                onclick="setProjectFilter('${esc(st)}')">${esc(label)}<span class="n">${n}</span></button>`;
+            const filters = `<div class="project-filters" id="projectFilters">
+                    ${chip('', PROJECT_LIST.archived ? 'All archived' : 'All', onList)}
+                    ${(data.statuses || Object.keys(counts)).filter(st => counts[st]).map(st => chip(st, stageLabel(st), counts[st])).join('')}
+                    <span class="project-filter-gap"></span>
+                    <button class="project-filter${PROJECT_LIST.archived ? ' active' : ''}" onclick="toggleArchivedView()"
+                        title="Archived projects are off the list and kept whole; restore one from here">Archived<span class="n">${data.archived_count || 0}</span></button>
+                </div>`;
+
+            if (!PROJECT_LIST.archived && !PROJECT_LIST.status && state.projects.length === 0 && !data.archived_count) {
                 el.innerHTML = `<div class="empty-state"><div class="icon">&#127916;</div><h3>No projects yet</h3><p>Create your first film project or load a demo.</p>
                     <div class="project-list-actions" style="justify-content:center;margin-top:12px;">
                         <button class="btn btn-primary" onclick="openNewProject()">New Project</button>
                         <button class="btn btn-secondary" onclick="loadDemoProject()">Load Demo Project</button>
                     </div></div>`;
             } else {
-                el.innerHTML = `<div class="project-list-actions">
+                const empty = state.projects.length ? '' : `<div class="empty-state"><p>${PROJECT_LIST.archived
+                    ? 'Nothing archived' + (PROJECT_LIST.status ? ' at this stage' : '') + '.'
+                    : 'No project at this stage.'}</p></div>`;
+                // Dragging sets the list's own order; it is offered on the whole list only,
+                // because an order dragged inside a filter would be ambiguous about the rest.
+                const canDrag = !PROJECT_LIST.archived && !PROJECT_LIST.status;
+                el.innerHTML = (PROJECT_LIST.archived ? '' : `<div class="project-list-actions">
                         <button class="btn btn-secondary" onclick="loadDemoProject()">Load Demo</button>
-                        <button class="btn btn-secondary" style="color:var(--gl-error);border-color:var(--gl-error);" onclick="deleteAllProjects()">Delete All</button>
-                    </div>` +
+                        <button class="btn btn-secondary" style="color:var(--gl-error);border-color:var(--gl-error);" onclick="deleteAllProjects()"
+                            title="Deletes every project on the list. Archived projects are kept.">Delete All</button>
+                    </div>`) + filters + empty +
                     state.projects.map(p => `
-                    <div class="project-card" onclick="openProject('${p.id}')">
+                    <div class="project-card${p.archived_at ? ' archived' : ''}" data-project-id="${p.id}" onclick="openProject('${p.id}')"
+                        ${canDrag ? `draggable="true" ondragstart="projectDragStart(event,'${p.id}')" ondragover="projectDragOver(event)"
+                        ondragleave="projectDragLeave(event)" ondrop="projectDrop(event,'${p.id}')" ondragend="projectDragEnd()"` : ''}>
+                        ${canDrag ? '<span class="project-drag" title="Drag to reorder" onclick="event.stopPropagation()">&#10303;</span>' : ''}
                         <div class="project-icon">&#127916;</div>
                         <div class="project-info">
                             <h3>${esc(p.title)}</h3>
                             <p>${esc(p.logline || 'No logline')}</p>
-                            <div class="project-meta">${p.genre ? esc(p.genre) + ' &middot; ' : ''}${new Date(p.created_at).toLocaleDateString()}</div>
+                            <div class="project-meta">${p.genre ? esc(p.genre) + ' &middot; ' : ''}${new Date(p.created_at).toLocaleDateString()}${p.archived_at ? ' &middot; archived ' + new Date(p.archived_at.replace(' ', 'T') + 'Z').toLocaleDateString() : ''}</div>
                         </div>
                         <span class="project-stage" onclick="event.stopPropagation()">
                             <button type="button" class="badge ${esc(p.status)} project-stage-btn" id="stagebtn-${p.id}"
                                 onclick="event.stopPropagation(); openStagePicker('${p.id}')" title="Change this project's stage">${esc(p.status.replace(/-/g, ' '))} &#9662;</button>
                         </span>
+                        ${p.archived_at
+                            ? `<button class="project-archive-btn" onclick="event.stopPropagation(); setProjectArchived('${p.id}', false)" title="Put it back on the project list">Restore</button>`
+                            : `<button class="project-archive-btn" onclick="event.stopPropagation(); setProjectArchived('${p.id}', true)" title="Take it off the list. Nothing is deleted; restore it from Archived.">Archive</button>`}
                         <button class="project-delete-btn" onclick="event.stopPropagation(); deleteProjectById('${p.id}', '${esc(p.title).replace(/'/g, "\\'")}')" title="Delete project">&times;</button>
                     </div>
                 `).join('');
             }
-            setStatus(state.projects.length + ' project(s)');
+            setStatus(state.projects.length + ' project(s)' + (PROJECT_LIST.archived ? ' archived' : '')
+                + (data.archived_count && !PROJECT_LIST.archived ? ` · ${data.archived_count} archived` : ''));
         } catch (err) { setStatus('Error: ' + err.message); }
+    }
+
+    function setProjectFilter(status) {
+        PROJECT_LIST.status = PROJECT_LIST.status === status ? '' : status;
+        saveProjectListPrefs();
+        loadProjects();
+    }
+    function toggleArchivedView() {
+        PROJECT_LIST.archived = !PROJECT_LIST.archived;
+        PROJECT_LIST.status = '';
+        saveProjectListPrefs();
+        loadProjects();
+    }
+    async function setProjectArchived(id, archive) {
+        const p = (state.projects || []).find(x => x.id === id);
+        try {
+            await api('/projects/' + id + (archive ? '/archive' : '/unarchive'), { method: 'POST' });
+            setStatus((p ? p.title : 'Project') + (archive ? ' archived — nothing was deleted; restore it from Archived.' : ' restored to the list.'));
+        } catch (err) { setStatus('Could not ' + (archive ? 'archive' : 'restore') + ': ' + err.message); }
+        loadProjects();
+    }
+
+    /* Drag to reorder: drop above or below a card, then the whole order is saved. */
+    function projectDragStart(e, id) {
+        PROJECT_LIST.dragId = id;
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', id); } catch (_) {}
+        e.currentTarget.classList.add('dragging');
+    }
+    function projectDropSide(e) {
+        const r = e.currentTarget.getBoundingClientRect();
+        return (e.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+    }
+    function projectDragOver(e) {
+        if (!PROJECT_LIST.dragId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const side = projectDropSide(e);
+        e.currentTarget.classList.toggle('drop-before', side === 'before');
+        e.currentTarget.classList.toggle('drop-after', side === 'after');
+    }
+    function projectDragLeave(e) { e.currentTarget.classList.remove('drop-before', 'drop-after'); }
+    function projectDragEnd() {
+        PROJECT_LIST.dragId = null;
+        document.querySelectorAll('.project-card').forEach(c => c.classList.remove('dragging', 'drop-before', 'drop-after'));
+    }
+    /** The new order of ids: `moving` taken out and put before or after `target`. Pure. */
+    function projectOrderAfterDrop(ids, moving, target, side) {
+        if (!moving || moving === target || !ids.includes(moving) || !ids.includes(target)) return ids.slice();
+        const out = ids.filter(i => i !== moving);
+        const at = out.indexOf(target) + (side === 'after' ? 1 : 0);
+        out.splice(at, 0, moving);
+        return out;
+    }
+    async function projectDrop(e, targetId) {
+        e.preventDefault();
+        const moving = PROJECT_LIST.dragId;
+        const side = projectDropSide(e);
+        projectDragEnd();
+        const before = (state.projects || []).map(p => p.id);
+        const ids = projectOrderAfterDrop(before, moving, targetId, side);
+        if (ids.join() === before.join()) return;
+        // Shown at once, then saved; a refusal reloads the order the server holds.
+        state.projects.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+        const list = document.getElementById('projectList');
+        for (const pid of ids) {
+            const card = list.querySelector(`.project-card[data-project-id="${pid}"]`);
+            if (card) list.appendChild(card);
+        }
+        try {
+            await api('/projects/reorder', { method: 'POST', body: JSON.stringify({ ids }) });
+            setStatus('Order saved');
+        } catch (err) { setStatus('Could not save the order: ' + err.message); loadProjects(); }
     }
 
     /*
